@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -101,6 +102,9 @@ impl Simulator {
             atr_period: self.config.atr_period,
             rsi_threshold: self.config.rsi_threshold,
             trend_riding_exit_buffer_pct: self.config.trend_riding_exit_buffer_pct,
+            mean_reversion_rsi_exit: self.config.mean_reversion_rsi_exit,
+            mean_reversion_bb_period: self.config.mean_reversion_bb_period,
+            slippage_pct: self.config.slippage_pct,
         };
 
         // Use Advanced strategy for simulations
@@ -199,12 +203,18 @@ impl Simulator {
         let mut executed_trades = Vec::new();
 
         while let Some(prop) = proposal_rx.recv().await {
+            let slippage = Decimal::from_f64_retain(self.config.slippage_pct).unwrap_or(Decimal::ZERO);
+            let execution_price = match prop.side {
+                crate::domain::types::OrderSide::Buy => prop.price * (Decimal::ONE + slippage),
+                crate::domain::types::OrderSide::Sell => prop.price * (Decimal::ONE - slippage),
+            };
+
             // Execute Immediately to update Portfolio State for next Analyst check
             let order = crate::domain::types::Order {
                 id: uuid::Uuid::new_v4().to_string(),
                 symbol: prop.symbol.clone(),
                 side: prop.side,
-                price: prop.price,
+                price: execution_price,
                 quantity: prop.quantity,
                 timestamp: prop.timestamp,
             };

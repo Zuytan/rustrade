@@ -15,6 +15,7 @@ pub enum StrategyMode {
     Advanced,
     Dynamic,
     TrendRiding,
+    MeanReversion,
 }
 
 impl StrategyMode {
@@ -24,8 +25,9 @@ impl StrategyMode {
             "advanced" => Ok(StrategyMode::Advanced),
             "dynamic" => Ok(StrategyMode::Dynamic),
             "trendriding" => Ok(StrategyMode::TrendRiding),
+            "meanreversion" => Ok(StrategyMode::MeanReversion),
             _ => anyhow::bail!(
-                "Invalid STRATEGY_MODE: {}. Must be 'standard', 'advanced', 'dynamic', or 'trendriding'",
+                "Invalid STRATEGY_MODE: {}. Must be 'standard', 'advanced', 'dynamic', 'trendriding', or 'meanreversion'",
                 s
             ),
         }
@@ -82,6 +84,9 @@ pub struct Config {
     pub commission_per_share: f64,
     // Trend Riding Strategy
     pub trend_riding_exit_buffer_pct: f64,
+    // Mean Reversion Strategy
+    pub mean_reversion_rsi_exit: f64,
+    pub mean_reversion_bb_period: usize,
 }
 
 impl Config {
@@ -246,6 +251,16 @@ impl Config {
             .parse::<f64>()
             .context("Failed to parse TREND_RIDING_EXIT_BUFFER_PCT")?;
 
+        let mean_reversion_rsi_exit = env::var("MEAN_REVERSION_RSI_EXIT")
+            .unwrap_or_else(|_| "50.0".to_string())
+            .parse::<f64>()
+            .context("Failed to parse MEAN_REVERSION_RSI_EXIT")?;
+
+        let mean_reversion_bb_period = env::var("MEAN_REVERSION_BB_PERIOD")
+            .unwrap_or_else(|_| "20".to_string())
+            .parse::<usize>()
+            .context("Failed to parse MEAN_REVERSION_BB_PERIOD")?;
+
         Ok(Config {
             mode,
             alpaca_api_key,
@@ -282,6 +297,8 @@ impl Config {
             slippage_pct,
             commission_per_share,
             trend_riding_exit_buffer_pct,
+            mean_reversion_rsi_exit,
+            mean_reversion_bb_period,
         })
     }
 }

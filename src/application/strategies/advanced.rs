@@ -133,6 +133,9 @@ mod tests {
             macd_histogram: 0.2,
             last_macd_histogram: Some(0.1),
             atr: 1.0,
+            bb_lower: 0.0,
+            bb_middle: 0.0,
+            bb_upper: 0.0,
             has_position: false,
             timestamp: 0,
         }

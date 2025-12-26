@@ -131,6 +131,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or("0.03".to_string())
             .parse()
             .unwrap(),
+        mean_reversion_rsi_exit: env::var("MEAN_REVERSION_RSI_EXIT")
+            .unwrap_or("50.0".to_string())
+            .parse()
+            .unwrap(),
+        mean_reversion_bb_period: env::var("MEAN_REVERSION_BB_PERIOD")
+            .unwrap_or("20".to_string())
+            .parse()
+            .unwrap(),
+        slippage_pct: env::var("SLIPPAGE_PCT")
+            .unwrap_or("0.001".to_string())
+            .parse()
+            .unwrap(),
     };
 
     if let Some(days) = batch_days {

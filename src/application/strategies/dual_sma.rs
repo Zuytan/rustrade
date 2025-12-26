@@ -70,6 +70,9 @@ mod tests {
             macd_histogram: 0.0,
             last_macd_histogram: None,
             atr: 1.0,
+            bb_lower: 0.0,
+            bb_middle: 0.0,
+            bb_upper: 0.0,
             has_position,
             timestamp: 0,
         }

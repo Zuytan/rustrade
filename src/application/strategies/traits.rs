@@ -20,6 +20,9 @@ pub struct AnalysisContext {
     pub macd_histogram: f64,
     pub last_macd_histogram: Option<f64>,
     pub atr: f64,
+    pub bb_lower: f64,
+    pub bb_upper: f64,
+    pub bb_middle: f64,
 
     // Position state
     pub has_position: bool,

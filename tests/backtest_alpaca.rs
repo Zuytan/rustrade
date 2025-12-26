@@ -73,6 +73,9 @@ async fn test_backtest_strategy_on_historical_data() {
         atr_period: 14,
         rsi_threshold: 55.0,
         trend_riding_exit_buffer_pct: 0.03,
+        mean_reversion_rsi_exit: 50.0,
+        mean_reversion_bb_period: 20,
+        slippage_pct: 0.0,
     };
 
     let simulator = Simulator::new(market_service, execution_service, config);

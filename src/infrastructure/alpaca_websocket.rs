@@ -14,6 +14,13 @@
 //! # Example
 //!
 //! ```rust,no_run
+//! use rustrade::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
+//!
+//! # async fn example() -> anyhow::Result<()> {
+//! let api_key = "key".to_string();
+//! let api_secret = "secret".to_string();
+//! let ws_url = "wss://example.com".to_string();
+//!
 //! let manager = AlpacaWebSocketManager::new(api_key, api_secret, ws_url);
 //!
 //! // Subscribe to events
@@ -21,6 +28,8 @@
 //!
 //! // Update symbols dynamically
 //! manager.update_subscription(vec!["AAPL".to_string()]).await?;
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::domain::types::MarketEvent;

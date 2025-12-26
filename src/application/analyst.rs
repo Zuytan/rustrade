@@ -10,7 +10,7 @@ use std::sync::Arc;
 use ta::Next;
 use ta::indicators::{
     AverageTrueRange, MovingAverageConvergenceDivergence, RelativeStrengthIndex,
-    SimpleMovingAverage,
+    SimpleMovingAverage, BollingerBands,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::info;
@@ -32,6 +32,10 @@ struct SymbolState {
     last_signal_time: i64,
     atr: AverageTrueRange,
     last_atr: Option<f64>,
+    bb: BollingerBands,
+    last_bb_lower: Option<f64>,
+    last_bb_upper: Option<f64>,
+    last_bb_middle: Option<f64>,
     trailing_stop: StopState, // State machine replacing entry_price/peak_price/trailing_stop_price
     pending_order: Option<OrderSide>, // Track in-flight orders
 }
@@ -56,6 +60,9 @@ pub struct AnalystConfig {
     pub atr_period: usize,
     pub rsi_threshold: f64,                // New Configurable Threshold
     pub trend_riding_exit_buffer_pct: f64, // Trend Riding Strategy
+    pub mean_reversion_rsi_exit: f64,
+    pub mean_reversion_bb_period: usize,
+    pub slippage_pct: f64,
 }
 
 pub struct Analyst {
@@ -150,6 +157,10 @@ impl Analyst {
                 last_signal_time: 0,
                 atr: AverageTrueRange::new(self.config.atr_period).unwrap(),
                 last_atr: None,
+                bb: BollingerBands::new(self.config.mean_reversion_bb_period, 2.0).unwrap(),
+                last_bb_lower: None,
+                last_bb_upper: None,
+                last_bb_middle: None,
                 trailing_stop: StopState::NoPosition,
                 pending_order: None,
             });
@@ -160,6 +171,7 @@ impl Analyst {
         let current_rsi = state.rsi.next(price_f64);
         let current_macd = state.macd.next(price_f64);
         let current_atr = state.atr.next(price_f64);
+        let current_bb = state.bb.next(price_f64);
 
         // --- Trailing Stop Check (Priority Exit) ---
         // --- Pending Order Synchronization ---
@@ -284,6 +296,9 @@ impl Analyst {
                 macd_histogram: current_macd.histogram,
                 last_macd_histogram: state.last_macd_histogram,
                 atr: current_atr,
+                bb_lower: current_bb.lower,
+                bb_upper: current_bb.upper,
+                bb_middle: current_bb.average,
                 has_position: state.trailing_stop.is_active(),
                 timestamp,
             };
@@ -442,6 +457,9 @@ impl Analyst {
             state.last_macd_signal = Some(current_macd.signal);
             state.last_macd_histogram = Some(current_macd.histogram);
             state.last_atr = Some(current_atr);
+            state.last_bb_lower = Some(current_bb.lower);
+            state.last_bb_upper = Some(current_bb.upper);
+            state.last_bb_middle = Some(current_bb.average);
         }
     }
 
@@ -590,6 +608,9 @@ mod tests {
             atr_period: 14,
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
+            mean_reversion_rsi_exit: 50.0,
+            mean_reversion_bb_period: 20,
+            slippage_pct: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -657,6 +678,9 @@ mod tests {
             atr_period: 14,
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
+            mean_reversion_rsi_exit: 50.0,
+            mean_reversion_bb_period: 20,
+            slippage_pct: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -744,6 +768,9 @@ mod tests {
             atr_period: 14,
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
+            mean_reversion_rsi_exit: 50.0,
+            mean_reversion_bb_period: 20,
+            slippage_pct: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -821,6 +848,9 @@ mod tests {
             atr_period: 14,
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
+            mean_reversion_rsi_exit: 50.0,
+            mean_reversion_bb_period: 20,
+            slippage_pct: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -904,6 +934,9 @@ mod tests {
             atr_period: 14,
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
+            mean_reversion_rsi_exit: 50.0,
+            mean_reversion_bb_period: 20,
+            slippage_pct: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -997,6 +1030,9 @@ mod tests {
             atr_period: 14,
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
+            mean_reversion_rsi_exit: 50.0,
+            mean_reversion_bb_period: 20,
+            slippage_pct: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,

@@ -122,6 +122,9 @@ impl Application {
             atr_period: self.config.atr_period,
             rsi_threshold: self.config.rsi_threshold,
             trend_riding_exit_buffer_pct: 0.03,
+            mean_reversion_rsi_exit: self.config.mean_reversion_rsi_exit,
+            mean_reversion_bb_period: self.config.mean_reversion_bb_period,
+            slippage_pct: self.config.slippage_pct,
         };
 
         // Create strategy based on config
@@ -151,6 +154,10 @@ impl Application {
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
                 self.config.trend_riding_exit_buffer_pct,
+            )),
+            crate::config::StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
+                self.config.mean_reversion_bb_period,
+                self.config.mean_reversion_rsi_exit,
             )),
         };
 
