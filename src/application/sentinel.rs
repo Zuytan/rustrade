@@ -77,10 +77,15 @@ impl Sentinel {
 
                             // Update subscription WITHOUT creating new connection
                             // The WebSocket manager handles this dynamically
-                            if let Err(e) = self.market_service.subscribe(new_symbols.clone()).await {
-                                error!("Sentinel: Failed to update subscription: {}", e);
-                            } else {
-                                current_symbols = new_symbols;
+                            match self.market_service.subscribe(new_symbols.clone()).await {
+                                Ok(new_rx) => {
+                                    market_rx = new_rx;
+                                    current_symbols = new_symbols;
+                                    info!("Sentinel: Subscription updated and receiver replaced");
+                                }
+                                Err(e) => {
+                                    error!("Sentinel: Failed to update subscription: {}", e);
+                                }
                             }
                         }
                         None => {

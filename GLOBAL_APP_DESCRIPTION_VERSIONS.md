@@ -1,5 +1,10 @@
 # Rustrade - Historique des Versions
 
+## Version 0.15.2 (Décembre 2025) - Dynamic Mode & Communication Fixes
+- **FIX: Sentinel Data Flux**: Correction d'un bug où le `Sentinel` ignorait les mises à jour de données lors d'un changement de watchlist en mode dynamique.
+- **AMÉLIORATION: Robotique Market Scanner**: Meilleure gestion des réponses vides or `null` de l'API Alpaca Movers.
+- **FIX: Précision des Quantités**: Augmentation de la précision à 4 décimales (contre 2) pour les calculs de quantités, évitant les ordres à 0.00 sur les petits budgets.
+
 ## Version 0.15.1 (Décembre 2025) - Market Scanner Fix & Quality Filtering
 **Améliorations du Market Scanner**:
 - **Fix Alpaca Movers Endpoint**: Passage de `v2/stocks/movers` (404) à `v1beta1/screener/stocks/movers` (fonctionnel).

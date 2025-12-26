@@ -74,52 +74,94 @@ impl MarketDataService for AlpacaMarketDataService {
         // v2/stocks/movers is often not found or requires specific tier.
         let url = "https://data.alpaca.markets/v1beta1/screener/stocks/movers";
 
-        let response = self
+        let mut response = self
             .client
             .get(url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
             .send()
             .await
-            .context("Failed to fetch top movers from Alpaca")?;
+            .context("Failed to fetch top movers from Alpaca (v1beta1)")?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("Alpaca movers fetch failed: {}", error_text);
+            info!("Alpaca v1beta1 movers failed: {}. Falling back to v2/stocks/movers...", error_text);
+            
+            // Fallback to V2 movers endpoint
+            let v2_url = "https://data.alpaca.markets/v2/stocks/movers";
+            response = self
+                .client
+                .get(v2_url)
+                .header("APCA-API-KEY-ID", &self.api_key)
+                .header("APCA-API-SECRET-KEY", &self.api_secret)
+                .send()
+                .await
+                .context("Failed to fetch top movers from Alpaca (v2 fallback)")?;
+                
+            if !response.status().is_success() {
+                let error_text = response.text().await.unwrap_or_default();
+                anyhow::bail!("Alpaca movers fetch failed (both v1beta1 and v2): {}", error_text);
+            }
         }
 
         #[derive(Debug, Deserialize)]
         struct Mover {
             symbol: String,
-            price: f64,
-            // percent_change: f64,
+            #[serde(default)]
+            price: f64, // Optional in some V2 responses or might be named differently
         }
         #[derive(Debug, Deserialize)]
         struct MoversResponse {
-            gainers: Vec<Mover>,
-            // losers: Vec<Mover>,
+            #[serde(alias = "gainers")]
+            movers: Vec<Mover>,
         }
 
-        let resp: MoversResponse = response
-            .json()
-            .await
-            .context("Failed to parse Alpaca movers response")?;
+        // V2 response format can differ, it sometimes returns a list directly or a different field.
+        // Actually Screener v1beta1 returns { gainers: [...] }. 
+        // V2 Movers returns [Mover, Mover, ...] or a struct? 
+        // Let's be smart about deserialization.
+        
+        let json_val: serde_json::Value = response.json().await.context("Failed to parse movers JSON")?;
+        
+        // Detailed logging of the raw response for debugging
+        // info!("Alpaca movers raw response: {}", json_val);
 
-        // Filter: 
-        // 1. Price > $5.0 (avoid penny stocks)
-        // 2. Exclude Warrants (usually have .WS or end with W)
-        // 3. Exclude Units (usually end with U)
-        let symbols = resp.gainers.into_iter()
+        let movers: Vec<Mover> = if let Some(gainers) = json_val.get("gainers") {
+            if gainers.is_null() {
+                info!("Alpaca movers: 'gainers' field is null. No movers found.");
+                vec![]
+            } else {
+                serde_json::from_value(gainers.clone())?
+            }
+        } else if let Some(movers) = json_val.as_array() {
+            serde_json::from_value(serde_json::Value::Array(movers.clone()))?
+        } else {
+            info!("Alpaca movers: No 'gainers' or array found in response. JSON: {}", json_val);
+            vec![]
+        };
+
+        if movers.is_empty() {
+            info!("MarketScanner: No movers found in Alpaca response.");
+        }
+
+        let symbols = movers.into_iter()
             .filter(|m| {
-                let is_penny = m.price < 5.0;
+                // If price is 0.0 (missing in some V2 responses), we don't confirm it's a penny stock
+                let is_penny = m.price > 0.0 && m.price < 5.0;
                 let is_warrant = m.symbol.contains(".WS") || m.symbol.ends_with('W');
                 let is_unit = m.symbol.ends_with('U');
                 
-                !is_penny && !is_warrant && !is_unit
+                let keep = !is_penny && !is_warrant && !is_unit;
+                if !keep {
+                    info!("MarketScanner: Filtering out {} (price: {:.2}, warrant: {}, unit: {})", 
+                        m.symbol, m.price, is_warrant, is_unit);
+                }
+                keep
             })
             .map(|m| m.symbol)
             .collect();
             
+        info!("MarketScanner: Final filtered movers list: {:?}", symbols);
         Ok(symbols)
     }
 

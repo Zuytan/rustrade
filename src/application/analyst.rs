@@ -557,7 +557,8 @@ impl Analyst {
         let mut quantity = config.trade_quantity;
 
         // Determine if we should use risk-based sizing
-        let use_risk_size = config.risk_per_trade_percent > 0.0 || config.max_position_size_pct > 0.0;
+        // We use risk-based sizing if risk_per_trade_percent is set
+        let use_risk_size = config.risk_per_trade_percent > 0.0;
 
         if use_risk_size {
             let portfolio_result = execution_service.get_portfolio().await;
@@ -567,36 +568,75 @@ impl Analyst {
                     total_equity += pos.quantity * pos.average_price;
                 }
 
+                info!(
+                    "Analyst: Portfolio State for {}: Cash={}, TotalEquity={}, Price={}",
+                    symbol, portfolio.cash, total_equity, price
+                );
+
                 if total_equity > Decimal::ZERO && price > Decimal::ZERO {
-                    // 1. Calculate the target amount to allocate
-                    // risk_per_trade_percent takes precedence as a sizing mechanism
-                    let mut target_amt = if config.risk_per_trade_percent > 0.0 {
-                        total_equity * Decimal::from_f64_retain(config.risk_per_trade_percent).unwrap_or(Decimal::ZERO)
-                    } else {
-                        total_equity * Decimal::from_f64_retain(config.max_position_size_pct).unwrap_or(Decimal::ZERO)
-                    };
+                    // 1. Calculate the target amount to allocate based on risk_per_trade_percent
+                    let mut target_amt = total_equity * Decimal::from_f64_retain(config.risk_per_trade_percent).unwrap_or(Decimal::ZERO);
+                    
+                    info!(
+                        "Analyst: Initial target amount for {} ({}% of equity): ${}",
+                        symbol,
+                        config.risk_per_trade_percent * 100.0,
+                        target_amt
+                    );
 
                     // 2. Apply Caps
                     // Cap 1: Max Positions bucket (if max_positions > 0)
                     if config.max_positions > 0 {
                         let max_bucket = total_equity / Decimal::from(config.max_positions);
+                        let before = target_amt;
                         target_amt = target_amt.min(max_bucket);
+                        if target_amt < before {
+                            info!(
+                                "Analyst: Capped {} by max_positions bucket: ${} -> ${}",
+                                symbol, before, target_amt
+                            );
+                        }
                     }
 
-                    // Cap 2: Max Position Size % (acts as a hard cap even if risk_per_trade is used)
-                    if config.risk_per_trade_percent > 0.0 && config.max_position_size_pct > 0.0 {
+                    // Cap 2: Max Position Size % (acts as a hard cap, applied independently)
+                    if config.max_position_size_pct > 0.0 {
                         let max_pos_val = total_equity * Decimal::from_f64_retain(config.max_position_size_pct).unwrap_or(Decimal::ZERO);
+                        let before = target_amt;
                         target_amt = target_amt.min(max_pos_val);
+                        if target_amt < before {
+                            info!(
+                                "Analyst: Capped {} by max_position_size_pct ({}%): ${} -> ${}",
+                                symbol,
+                                config.max_position_size_pct * 100.0,
+                                before,
+                                target_amt
+                            );
+                        }
                     }
 
-                    quantity = (target_amt / price).round_dp(2);
+                    quantity = (target_amt / price).round_dp(4);
                     
                     info!(
-                        "Analyst: Sizing for {}: Equity={}, TargetAmt={}, FinalQty={}",
-                        symbol, total_equity, target_amt, quantity
+                        "Analyst: Final quantity for {}: {} shares (${} / ${} per share)",
+                        symbol, quantity, target_amt, price
+                    );
+                } else {
+                    info!(
+                        "Analyst: Cannot calculate quantity for {} - TotalEquity={}, Price={}",
+                        symbol, total_equity, price
                     );
                 }
+            } else {
+                info!(
+                    "Analyst: Failed to get portfolio for {} quantity calculation",
+                    symbol
+                );
             }
+        } else {
+            info!(
+                "Analyst: Using static quantity for {}: {}",
+                symbol, quantity
+            );
         }
         
         quantity
@@ -1143,6 +1183,116 @@ mod tests {
         assert!(
             !received,
             "Should NOT receive signal when trend filter rejects it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_risk_based_quantity_calculation() {
+        setup_logging();
+        let (market_tx, market_rx) = mpsc::channel(10);
+        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
+        
+        // Start with empty portfolio - this is the production issue scenario
+        let mut portfolio = crate::domain::portfolio::Portfolio::new();
+        portfolio.cash = Decimal::new(100000, 0); // $100,000 starting cash
+        let portfolio_lock = Arc::new(RwLock::new(portfolio));
+        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
+            portfolio_lock,
+        ));
+
+        // Production-like configuration
+        let config = AnalystConfig {
+            fast_sma_period: 20,
+            slow_sma_period: 60,
+            max_positions: 5,
+            trade_quantity: Decimal::from(1), // Fallback if risk sizing not used
+            sma_threshold: 0.0005,
+            order_cooldown_seconds: 0,
+            risk_per_trade_percent: 0.01, // 1% of equity per trade
+            strategy_mode: crate::config::StrategyMode::Dynamic,
+            trend_sma_period: 200,
+            rsi_period: 14,
+            macd_fast_period: 12,
+            macd_slow_period: 26,
+            macd_signal_period: 9,
+            trend_divergence_threshold: 0.005,
+            trailing_stop_atr_multiplier: 3.0,
+            atr_period: 14,
+            rsi_threshold: 65.0,
+            trend_riding_exit_buffer_pct: 0.03,
+            mean_reversion_rsi_exit: 50.0,
+            mean_reversion_bb_period: 20,
+            slippage_pct: 0.001,
+            max_position_size_pct: 0.1, // 10% maximum position size
+        };
+        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
+            config.fast_sma_period,
+            config.slow_sma_period,
+            config.sma_threshold,
+        ));
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
+
+        tokio::spawn(async move {
+            analyst.run().await;
+        });
+
+        // Generate a golden cross scenario
+        // Start low, then cross up
+        let prices = vec![
+            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
+            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
+            102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0, 111.0,
+            112.0, 113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0, 120.0, 121.0,
+            122.0, 123.0, 124.0, 125.0, 126.0, 127.0, 128.0, 129.0, 130.0, 131.0,
+            132.0, 133.0, 134.0, 135.0, 136.0, 137.0, 138.0, 139.0, 140.0, 141.0,
+            142.0, 143.0, 144.0, 145.0,
+        ];
+
+        for (i, p) in prices.iter().enumerate() {
+            let candle = Candle {
+                symbol: "NVDA".to_string(),
+                open: Decimal::from_f64_retain(*p).unwrap(),
+                high: Decimal::from_f64_retain(*p).unwrap(),
+                low: Decimal::from_f64_retain(*p).unwrap(),
+                close: Decimal::from_f64_retain(*p).unwrap(),
+                volume: 1000000,
+                timestamp: (i * 1000) as i64,
+            };
+            let event = MarketEvent::Candle(candle);
+            market_tx.send(event).await.unwrap();
+        }
+
+        // Should receive at least one buy signal
+        let proposal = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            proposal_rx.recv()
+        )
+        .await
+        .expect("Should receive a proposal within timeout")
+        .expect("Should receive a buy signal");
+
+        assert_eq!(proposal.side, OrderSide::Buy, "Should generate a buy signal");
+        
+        // Verify quantity is calculated based on risk, not static value
+        // With $100,000 equity, 1% risk = $1,000
+        // At price ~140, quantity should be around 1000/140 = ~7 shares
+        // But also capped by max_position_size_pct of 10% = $10,000 / 140 = ~71 shares
+        // And by max_positions bucket: $100,000 / 5 = $20,000 / 140 = ~142 shares
+        // So we expect: min(1000/140, 10000/140, 20000/140) ≈ 7.14 shares
+        assert!(
+            proposal.quantity > Decimal::ZERO,
+            "Quantity should be greater than zero (was {})",
+            proposal.quantity
+        );
+        assert!(
+            proposal.quantity > Decimal::from(1),
+            "Quantity should be risk-based, not the static fallback of 1 share (was {})",
+            proposal.quantity
+        );
+        assert!(
+            proposal.quantity < Decimal::from(100),
+            "Quantity should be reasonable (was {})",
+            proposal.quantity
         );
     }
 }
