@@ -1,9 +1,9 @@
 use crate::domain::ports::MarketDataService;
 use crate::domain::types::MarketEvent;
+use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{self, Duration};
 use tracing::{error, info, warn};
-use std::sync::Arc;
 
 pub struct Sentinel {
     market_service: Arc<dyn MarketDataService>,
@@ -32,8 +32,8 @@ impl Sentinel {
 
         loop {
             info!("Sentinel subscribing to: {:?}", current_symbols);
-            
-            // Allow override of subscription logic if empty symbols? 
+
+            // Allow override of subscription logic if empty symbols?
             // Mock might handle empty, Alpaca might error.
             if current_symbols.is_empty() {
                 warn!("Sentinel has no symbols to subscribe to. Waiting for update...");

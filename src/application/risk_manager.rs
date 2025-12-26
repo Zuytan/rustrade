@@ -11,19 +11,19 @@ use uuid::Uuid;
 /// Risk management configuration
 #[derive(Debug, Clone)]
 pub struct RiskConfig {
-    pub max_position_size_pct: f64,      // Max % of equity per position (e.g., 0.25 = 25%)
-    pub max_daily_loss_pct: f64,         // Max % loss per day (e.g., 0.02 = 2%)
-    pub max_drawdown_pct: f64,           // Max % drawdown from high water mark (e.g., 0.10 = 10%)
-    pub consecutive_loss_limit: usize,  // Max consecutive losing trades before halt
+    pub max_position_size_pct: f64, // Max % of equity per position (e.g., 0.25 = 25%)
+    pub max_daily_loss_pct: f64,    // Max % loss per day (e.g., 0.02 = 2%)
+    pub max_drawdown_pct: f64,      // Max % drawdown from high water mark (e.g., 0.10 = 10%)
+    pub consecutive_loss_limit: usize, // Max consecutive losing trades before halt
 }
 
 impl Default for RiskConfig {
     fn default() -> Self {
         Self {
-            max_position_size_pct: 0.25,    // 25% max
-            max_daily_loss_pct: 0.02,       // 2% daily loss limit
-            max_drawdown_pct: 0.10,         // 10% max drawdown
-            consecutive_loss_limit: 3,      // 3 consecutive losses
+            max_position_size_pct: 0.25, // 25% max
+            max_daily_loss_pct: 0.02,    // 2% daily loss limit
+            max_drawdown_pct: 0.10,      // 10% max drawdown
+            consecutive_loss_limit: 3,   // 3 consecutive losses
         }
     }
 }
@@ -38,7 +38,7 @@ pub struct RiskManager {
     equity_high_water_mark: Decimal,
     session_start_equity: Decimal,
     consecutive_losses: usize,
-    current_prices: HashMap<String, Decimal>,  // Track current prices for equity calculation
+    current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
 }
 
 impl RiskManager {
@@ -68,7 +68,10 @@ impl RiskManager {
         let initial_equity = portfolio.cash;
         self.session_start_equity = initial_equity;
         self.equity_high_water_mark = initial_equity;
-        info!("RiskManager: Session initialized with equity: {}", initial_equity);
+        info!(
+            "RiskManager: Session initialized with equity: {}",
+            initial_equity
+        );
         Ok(())
     }
 
@@ -76,9 +79,11 @@ impl RiskManager {
     fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<String> {
         // Check daily loss limit
         if self.session_start_equity > Decimal::ZERO {
-            let daily_loss_pct = ((current_equity - self.session_start_equity) / self.session_start_equity)
-                .to_f64().unwrap_or(0.0);
-            
+            let daily_loss_pct = ((current_equity - self.session_start_equity)
+                / self.session_start_equity)
+                .to_f64()
+                .unwrap_or(0.0);
+
             if daily_loss_pct < -self.risk_config.max_daily_loss_pct {
                 return Some(format!(
                     "Daily loss limit breached: {:.2}% (limit: {:.2}%)",
@@ -90,9 +95,11 @@ impl RiskManager {
 
         // Check drawdown limit
         if self.equity_high_water_mark > Decimal::ZERO {
-            let drawdown_pct = ((current_equity - self.equity_high_water_mark) / self.equity_high_water_mark)
-                .to_f64().unwrap_or(0.0);
-            
+            let drawdown_pct = ((current_equity - self.equity_high_water_mark)
+                / self.equity_high_water_mark)
+                .to_f64()
+                .unwrap_or(0.0);
+
             if drawdown_pct < -self.risk_config.max_drawdown_pct {
                 return Some(format!(
                     "Max drawdown breached: {:.2}% (limit: {:.2}%)",
@@ -106,8 +113,7 @@ impl RiskManager {
         if self.consecutive_losses >= self.risk_config.consecutive_loss_limit {
             return Some(format!(
                 "Consecutive loss limit reached: {} trades (limit: {})",
-                self.consecutive_losses,
-                self.risk_config.consecutive_loss_limit
+                self.consecutive_losses, self.risk_config.consecutive_loss_limit
             ));
         }
 
@@ -117,7 +123,7 @@ impl RiskManager {
     /// Validate position size doesn't exceed limit
     fn validate_position_size(&self, proposal: &TradeProposal, current_equity: Decimal) -> bool {
         if current_equity <= Decimal::ZERO {
-            return true;  // Can't calculate percentage, allow (conservative)
+            return true; // Can't calculate percentage, allow (conservative)
         }
 
         let position_value = proposal.price * proposal.quantity;
@@ -147,7 +153,8 @@ impl RiskManager {
             info!("RiskManager: reviewing proposal {:?}", proposal);
 
             // Update current price for this symbol
-            self.current_prices.insert(proposal.symbol.clone(), proposal.price);
+            self.current_prices
+                .insert(proposal.symbol.clone(), proposal.price);
 
             // Fetch fresh portfolio data from exchange
             let portfolio = match self.execution_service.get_portfolio().await {
@@ -169,15 +176,20 @@ impl RiskManager {
             // Check circuit breaker BEFORE other validations
             if let Some(reason) = self.check_circuit_breaker(current_equity) {
                 error!("RiskManager: CIRCUIT BREAKER TRIGGERED - {}", reason);
-                error!("RiskManager: All trading halted. Current equity: {}", current_equity);
-                continue;  // Reject all orders
+                error!(
+                    "RiskManager: All trading halted. Current equity: {}",
+                    current_equity
+                );
+                continue; // Reject all orders
             }
 
             // Validate position size for buy orders
             if matches!(proposal.side, OrderSide::Buy) {
                 if !self.validate_position_size(&proposal, current_equity) {
-                    warn!("RiskManager: Rejecting {:?} order for {} - Position size limit", 
-                          proposal.side, proposal.symbol);
+                    warn!(
+                        "RiskManager: Rejecting {:?} order for {} - Position size limit",
+                        proposal.side, proposal.symbol
+                    );
                     continue;
                 }
             }
@@ -200,7 +212,7 @@ impl RiskManager {
                 OrderSide::Sell => {
                     // Normalize symbol for lookup (remove / and spaces)
                     let normalized_search = proposal.symbol.replace("/", "").replace(" ", "");
-                    
+
                     // Check if we hold the asset by checking all positions with normalized symbols
                     let found_pos = portfolio.positions.iter().find(|(sym, _)| {
                         sym.replace("/", "").replace(" ", "") == normalized_search
@@ -209,7 +221,8 @@ impl RiskManager {
                     if let Some((_, pos)) = found_pos {
                         // PDT Protection
                         if self.non_pdt_mode {
-                            let today_orders = match self.execution_service.get_today_orders().await {
+                            let today_orders = match self.execution_service.get_today_orders().await
+                            {
                                 Ok(orders) => orders,
                                 Err(e) => {
                                     error!("RiskManager: Failed to fetch today's orders: {}", e);
@@ -218,18 +231,22 @@ impl RiskManager {
                             };
 
                             let bought_today = today_orders.iter().any(|o| {
-                                o.side == OrderSide::Buy && 
-                                o.symbol.replace("/", "").replace(" ", "") == normalized_search
+                                o.side == OrderSide::Buy
+                                    && o.symbol.replace("/", "").replace(" ", "")
+                                        == normalized_search
                             });
 
                             if bought_today {
-                                warn!("RiskManager: REJECTED Sell for {} - PDT Protection active (bought today)", proposal.symbol);
+                                warn!(
+                                    "RiskManager: REJECTED Sell for {} - PDT Protection active (bought today)",
+                                    proposal.symbol
+                                );
                                 false
                             } else {
                                 true
                             }
                         } else {
-                            // If we hold any quantity, we can sell. 
+                            // If we hold any quantity, we can sell.
                             // If the proposal quantity is more than we own, we adjust to sell all.
                             let sell_qty = if pos.quantity < proposal.quantity {
                                 warn!(
@@ -244,12 +261,18 @@ impl RiskManager {
                             if sell_qty > rust_decimal::Decimal::ZERO {
                                 true
                             } else {
-                                warn!("RiskManager: Owned quantity is zero for {}", proposal.symbol);
+                                warn!(
+                                    "RiskManager: Owned quantity is zero for {}",
+                                    proposal.symbol
+                                );
                                 false
                             }
                         }
                     } else {
-                        warn!("RiskManager: No position found for {} (normalized: {})", proposal.symbol, normalized_search);
+                        warn!(
+                            "RiskManager: No position found for {} (normalized: {})",
+                            proposal.symbol, normalized_search
+                        );
                         false
                     }
                 }
@@ -260,10 +283,18 @@ impl RiskManager {
                 let final_qty = match proposal.side {
                     OrderSide::Sell => {
                         let normalized_search = proposal.symbol.replace("/", "").replace(" ", "");
-                        portfolio.positions.iter()
-                            .find(|(sym, _)| sym.replace("/", "").replace(" ", "") == normalized_search)
+                        portfolio
+                            .positions
+                            .iter()
+                            .find(|(sym, _)| {
+                                sym.replace("/", "").replace(" ", "") == normalized_search
+                            })
                             .map(|(_, pos)| {
-                                if pos.quantity < proposal.quantity { pos.quantity } else { proposal.quantity }
+                                if pos.quantity < proposal.quantity {
+                                    pos.quantity
+                                } else {
+                                    proposal.quantity
+                                }
                             })
                             .unwrap_or(proposal.quantity)
                     }
@@ -294,9 +325,9 @@ mod tests {
     use super::*;
     use crate::domain::portfolio::{Portfolio, Position};
     use crate::infrastructure::mock::MockExecutionService;
-    use rust_decimal::Decimal;
-    use tokio::sync::{mpsc, RwLock};
     use chrono::Utc;
+    use rust_decimal::Decimal;
+    use tokio::sync::{RwLock, mpsc};
 
     #[tokio::test]
     async fn test_buy_approval() {
@@ -307,7 +338,13 @@ mod tests {
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio));
 
-        let mut rm = RiskManager::new(proposal_rx, order_tx, exec_service, false, RiskConfig::default());
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            order_tx,
+            exec_service,
+            false,
+            RiskConfig::default(),
+        );
         tokio::spawn(async move { rm.run().await });
 
         let proposal = TradeProposal {
@@ -333,7 +370,13 @@ mod tests {
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio));
 
-        let mut rm = RiskManager::new(proposal_rx, order_tx, exec_service, false, RiskConfig::default());
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            order_tx,
+            exec_service,
+            false,
+            RiskConfig::default(),
+        );
         tokio::spawn(async move { rm.run().await });
 
         let proposal = TradeProposal {
@@ -367,7 +410,13 @@ mod tests {
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio));
 
-        let mut rm = RiskManager::new(proposal_rx, order_tx, exec_service, false, RiskConfig::default());
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            order_tx,
+            exec_service,
+            false,
+            RiskConfig::default(),
+        );
         tokio::spawn(async move { rm.run().await });
 
         let proposal = TradeProposal {
@@ -399,19 +448,28 @@ mod tests {
         );
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio));
-        
+
         // Simulate a BUY today
-        exec_service.execute(Order {
-            id: "buy1".to_string(),
-            symbol: "ABC".to_string(),
-            side: OrderSide::Buy,
-            price: Decimal::from(50),
-            quantity: Decimal::from(10),
-            timestamp: Utc::now().timestamp_millis(),
-        }).await.unwrap();
+        exec_service
+            .execute(Order {
+                id: "buy1".to_string(),
+                symbol: "ABC".to_string(),
+                side: OrderSide::Buy,
+                price: Decimal::from(50),
+                quantity: Decimal::from(10),
+                timestamp: Utc::now().timestamp_millis(),
+            })
+            .await
+            .unwrap();
 
         // New RiskManager with NON_PDT_MODE = true
-        let mut rm = RiskManager::new(proposal_rx, order_tx, exec_service, true, RiskConfig::default());
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            order_tx,
+            exec_service,
+            true,
+            RiskConfig::default(),
+        );
         tokio::spawn(async move { rm.run().await });
 
         let proposal = TradeProposal {

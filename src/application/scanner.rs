@@ -1,4 +1,4 @@
-use crate::domain::ports::{MarketDataService, ExecutionService};
+use crate::domain::ports::{ExecutionService, MarketDataService};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{self, Duration};
@@ -36,10 +36,10 @@ impl MarketScanner {
         }
 
         info!("MarketScanner started. Interval: {:?}", self.scan_interval);
-        
+
         let mut interval = time::interval(self.scan_interval);
         // The first tick completes immediately
-        interval.tick().await; 
+        interval.tick().await;
 
         loop {
             // 1. Get Top Movers
@@ -68,8 +68,11 @@ impl MarketScanner {
                     }
                 }
                 Err(e) => {
-                    error!("MarketScanner: Failed to fetch portfolio to preserve held assets: {}", e);
-                    // Decide if we should continue? 
+                    error!(
+                        "MarketScanner: Failed to fetch portfolio to preserve held assets: {}",
+                        e
+                    );
+                    // Decide if we should continue?
                     // If we fail to get portfolio, we might risk dropping surveillance on held assets.
                     // But we still have movers. Let's proceed with warning.
                 }
@@ -77,10 +80,10 @@ impl MarketScanner {
 
             // 3. Send Update
             if !symbols.is_empty() {
-                 if let Err(e) = self.sentinel_cmd_tx.send(symbols).await {
-                     error!("MarketScanner: Failed to update Sentinel: {}", e);
-                     break;
-                 }
+                if let Err(e) = self.sentinel_cmd_tx.send(symbols).await {
+                    error!("MarketScanner: Failed to update Sentinel: {}", e);
+                    break;
+                }
             }
 
             // Wait for next interval
@@ -92,15 +95,15 @@ impl MarketScanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ports::{MarketDataService, ExecutionService};
-    use crate::domain::types::{MarketEvent, Order};
     use crate::domain::portfolio::{Portfolio, Position};
+    use crate::domain::ports::{ExecutionService, MarketDataService};
+    use crate::domain::types::{MarketEvent, Order};
     use anyhow::Result;
     use async_trait::async_trait;
-    use tokio::sync::mpsc;
-    use tokio::sync::RwLock;
-    use std::sync::Mutex;
     use rust_decimal::Decimal;
+    use std::sync::Mutex;
+    use tokio::sync::RwLock;
+    use tokio::sync::mpsc;
 
     struct MockScannerService {
         movers: Mutex<Option<Vec<String>>>,
@@ -125,34 +128,44 @@ mod tests {
 
     #[async_trait]
     impl ExecutionService for MockExecService {
-        async fn execute(&self, _order: Order) -> Result<()> { unimplemented!() }
+        async fn execute(&self, _order: Order) -> Result<()> {
+            unimplemented!()
+        }
         async fn get_portfolio(&self) -> Result<Portfolio> {
             Ok(self.portfolio.read().await.clone())
         }
-        async fn get_today_orders(&self) -> Result<Vec<Order>> { unimplemented!() }
+        async fn get_today_orders(&self) -> Result<Vec<Order>> {
+            unimplemented!()
+        }
     }
 
     #[tokio::test]
     async fn test_scanner_sends_update() {
         let (cmd_tx, mut cmd_rx) = mpsc::channel(10);
-        
+
         let service = Arc::new(MockScannerService {
             movers: Mutex::new(Some(vec!["AAPL".to_string(), "GOOG".to_string()])),
         });
 
         // Held positions
         let mut port = Portfolio::new();
-        port.positions.insert("MSFT".to_string(), Position { 
-            symbol: "MSFT".to_string(), 
-            quantity: Decimal::from(10), 
-            average_price: Decimal::ZERO 
-        });
+        port.positions.insert(
+            "MSFT".to_string(),
+            Position {
+                symbol: "MSFT".to_string(),
+                quantity: Decimal::from(10),
+                average_price: Decimal::ZERO,
+            },
+        );
         // AAPL is also held, to test dedup
-        port.positions.insert("AAPL".to_string(), Position { 
-            symbol: "AAPL".to_string(), 
-            quantity: Decimal::from(5), 
-            average_price: Decimal::ZERO 
-        });
+        port.positions.insert(
+            "AAPL".to_string(),
+            Position {
+                symbol: "AAPL".to_string(),
+                quantity: Decimal::from(5),
+                average_price: Decimal::ZERO,
+            },
+        );
 
         let exec_service = Arc::new(MockExecService {
             portfolio: Arc::new(RwLock::new(port)),
@@ -172,12 +185,12 @@ mod tests {
 
         // Should receive the update
         let update = cmd_rx.recv().await.expect("Should receive update");
-        
+
         // Check for AAPL, GOOG (movers) and MSFT (held)
         assert!(update.contains(&"AAPL".to_string()));
         assert!(update.contains(&"GOOG".to_string()));
         assert!(update.contains(&"MSFT".to_string()));
-        // Logic might change order, but all 3 should be there. 
+        // Logic might change order, but all 3 should be there.
         // Size should be 3 because AAPL is deduped.
         assert_eq!(update.len(), 3);
     }

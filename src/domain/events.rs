@@ -12,12 +12,10 @@ pub enum TradingEvent {
         reason: String,
         timestamp: i64,
     },
-    
+
     /// Trade proposal created by Analyst
-    TradeProposed {
-        proposal: TradeProposal,
-    },
-    
+    TradeProposed { proposal: TradeProposal },
+
     /// Trade approved by Risk Manager
     TradeApproved {
         symbol: String,
@@ -25,7 +23,7 @@ pub enum TradingEvent {
         quantity: Decimal,
         reason: String,
     },
-    
+
     /// Trade rejected by Risk Manager
     TradeRejected {
         symbol: String,
@@ -33,13 +31,10 @@ pub enum TradingEvent {
         quantity: Decimal,
         reason: String,
     },
-    
+
     /// Order executed on exchange
-    OrderExecuted {
-        order: Order,
-        fill_price: Decimal,
-    },
-    
+    OrderExecuted { order: Order, fill_price: Decimal },
+
     /// Trailing stop triggered
     TrailingStopTriggered {
         symbol: String,
@@ -47,14 +42,14 @@ pub enum TradingEvent {
         stop_price: Decimal,
         current_price: Decimal,
     },
-    
+
     /// Portfolio updated
     PortfolioUpdated {
         equity: Decimal,
         cash: Decimal,
         positions_count: usize,
     },
-    
+
     /// Circuit breaker activated
     CircuitBreakerActivated {
         reason: String,
@@ -73,35 +68,80 @@ pub struct LoggingListener;
 impl EventListener for LoggingListener {
     fn on_event(&self, event: &TradingEvent) {
         use tracing::{info, warn};
-        
+
         match event {
-            TradingEvent::SignalGenerated { symbol, side, price, reason, .. } => {
+            TradingEvent::SignalGenerated {
+                symbol,
+                side,
+                price,
+                reason,
+                ..
+            } => {
                 info!("📊 Signal: {:?} {} @ ${} - {}", side, symbol, price, reason);
             }
             TradingEvent::TradeProposed { proposal } => {
-                info!("💡 Proposal: {:?} {} x{} @ ${}", 
-                    proposal.side, proposal.symbol, proposal.quantity, proposal.price);
+                info!(
+                    "💡 Proposal: {:?} {} x{} @ ${}",
+                    proposal.side, proposal.symbol, proposal.quantity, proposal.price
+                );
             }
-            TradingEvent::TradeApproved { symbol, side, quantity, reason } => {
-                info!("✅ Approved: {:?} {} x{} - {}", side, symbol, quantity, reason);
+            TradingEvent::TradeApproved {
+                symbol,
+                side,
+                quantity,
+                reason,
+            } => {
+                info!(
+                    "✅ Approved: {:?} {} x{} - {}",
+                    side, symbol, quantity, reason
+                );
             }
-            TradingEvent::TradeRejected { symbol, side, quantity, reason } => {
-                warn!("❌ Rejected: {:?} {} x{} - {}", side, symbol, quantity, reason);
+            TradingEvent::TradeRejected {
+                symbol,
+                side,
+                quantity,
+                reason,
+            } => {
+                warn!(
+                    "❌ Rejected: {:?} {} x{} - {}",
+                    side, symbol, quantity, reason
+                );
             }
             TradingEvent::OrderExecuted { order, fill_price } => {
-                info!("🎯 Executed: {:?} {} x{} @ ${} (fill: ${})", 
-                    order.side, order.symbol, order.quantity, order.price, fill_price);
+                info!(
+                    "🎯 Executed: {:?} {} x{} @ ${} (fill: ${})",
+                    order.side, order.symbol, order.quantity, order.price, fill_price
+                );
             }
-            TradingEvent::TrailingStopTriggered { symbol, entry_price, stop_price, current_price } => {
-                info!("🛑 Trailing Stop: {} triggered at ${} (entry: ${}, stop: ${})",
-                    symbol, current_price, entry_price, stop_price);
+            TradingEvent::TrailingStopTriggered {
+                symbol,
+                entry_price,
+                stop_price,
+                current_price,
+            } => {
+                info!(
+                    "🛑 Trailing Stop: {} triggered at ${} (entry: ${}, stop: ${})",
+                    symbol, current_price, entry_price, stop_price
+                );
             }
-            TradingEvent::PortfolioUpdated { equity, cash, positions_count } => {
-                info!("💰 Portfolio: Equity=${}, Cash=${}, Positions={}",
-                    equity, cash, positions_count);
+            TradingEvent::PortfolioUpdated {
+                equity,
+                cash,
+                positions_count,
+            } => {
+                info!(
+                    "💰 Portfolio: Equity=${}, Cash=${}, Positions={}",
+                    equity, cash, positions_count
+                );
             }
-            TradingEvent::CircuitBreakerActivated { reason, cooldown_seconds } => {
-                warn!("🚨 Circuit Breaker: {} (cooldown: {}s)", reason, cooldown_seconds);
+            TradingEvent::CircuitBreakerActivated {
+                reason,
+                cooldown_seconds,
+            } => {
+                warn!(
+                    "🚨 Circuit Breaker: {} (cooldown: {}s)",
+                    reason, cooldown_seconds
+                );
             }
         }
     }
@@ -111,7 +151,7 @@ impl EventListener for LoggingListener {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    
+
     #[test]
     fn test_logging_listener_signal_generated() {
         let listener = LoggingListener;
@@ -122,15 +162,15 @@ mod tests {
             reason: "Golden Cross".to_string(),
             timestamp: 1234567890,
         };
-        
+
         // Should not panic
         listener.on_event(&event);
     }
-    
+
     #[test]
     fn test_logging_listener_all_events() {
         let listener = LoggingListener;
-        
+
         let events = vec![
             TradingEvent::TradeApproved {
                 symbol: "AAPL".to_string(),
@@ -149,7 +189,7 @@ mod tests {
                 cooldown_seconds: 3600,
             },
         ];
-        
+
         for event in events {
             listener.on_event(&event);
         }

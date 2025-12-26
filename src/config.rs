@@ -24,7 +24,10 @@ impl StrategyMode {
             "advanced" => Ok(StrategyMode::Advanced),
             "dynamic" => Ok(StrategyMode::Dynamic),
             "trendriding" => Ok(StrategyMode::TrendRiding),
-            _ => anyhow::bail!("Invalid STRATEGY_MODE: {}. Must be 'standard', 'advanced', 'dynamic', or 'trendriding'", s),
+            _ => anyhow::bail!(
+                "Invalid STRATEGY_MODE: {}. Must be 'standard', 'advanced', 'dynamic', or 'trendriding'",
+                s
+            ),
         }
     }
 }
@@ -83,7 +86,6 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-
         let mode_str = env::var("MODE").unwrap_or_else(|_| "mock".to_string());
         let mode = Mode::from_str(&mode_str)?;
 
@@ -95,7 +97,10 @@ impl Config {
             .unwrap_or_else(|_| "wss://stream.data.alpaca.markets/v2/iex".to_string());
 
         let symbols_str = env::var("SYMBOLS").unwrap_or_else(|_| "AAPL".to_string());
-        let symbols: Vec<String> = symbols_str.split(',').map(|s| s.trim().to_string()).collect();
+        let symbols: Vec<String> = symbols_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
 
         let max_positions = env::var("MAX_POSITIONS")
             .unwrap_or_else(|_| "5".to_string())
@@ -147,7 +152,8 @@ impl Config {
             .parse::<bool>()
             .unwrap_or(true);
 
-        let strategy_mode_str = env::var("STRATEGY_MODE").unwrap_or_else(|_| "standard".to_string());
+        let strategy_mode_str =
+            env::var("STRATEGY_MODE").unwrap_or_else(|_| "standard".to_string());
         let strategy_mode = StrategyMode::from_str(&strategy_mode_str)?;
 
         let trend_sma_period = env::var("TREND_SMA_PERIOD")

@@ -38,7 +38,10 @@ enum AlpacaMessage {
     #[serde(rename = "error")]
     Error { code: i32, msg: String },
     #[serde(rename = "subscription")]
-    Subscription { trades: Option<Vec<String>>, quotes: Option<Vec<String>> },
+    Subscription {
+        trades: Option<Vec<String>>,
+        quotes: Option<Vec<String>>,
+    },
     #[serde(rename = "welcome")]
     Welcome { msg: String },
     #[serde(rename = "q")]
@@ -87,15 +90,17 @@ impl MarketDataService for AlpacaMarketDataService {
                     while let Some(msg_result) = read.next().await {
                         match msg_result {
                             Ok(Message::Text(text)) => {
-                                if let Ok(messages) = serde_json::from_str::<Vec<AlpacaMessage>>(&text) {
-                                                                        for message in messages {
+                                if let Ok(messages) =
+                                    serde_json::from_str::<Vec<AlpacaMessage>>(&text)
+                                {
+                                    for message in messages {
                                         match message {
                                             AlpacaMessage::Welcome { msg } => {
                                                 info!("Alpaca Welcome: {}", msg);
                                             }
                                             AlpacaMessage::Success { msg } => {
                                                 info!("Alpaca Success: {}", msg);
-                                                
+
                                                 // 1. If connected, send auth
                                                 if msg == "connected" && !auth_sent {
                                                     let auth_msg = serde_json::json!({
@@ -103,9 +108,17 @@ impl MarketDataService for AlpacaMarketDataService {
                                                         "key": api_key.clone(),
                                                         "secret": api_secret.clone()
                                                     });
-                                                    
-                                                    if let Err(e) = write.send(Message::Text(auth_msg.to_string().into())).await {
-                                                        error!("Failed to send auth message: {}", e);
+
+                                                    if let Err(e) = write
+                                                        .send(Message::Text(
+                                                            auth_msg.to_string().into(),
+                                                        ))
+                                                        .await
+                                                    {
+                                                        error!(
+                                                            "Failed to send auth message: {}",
+                                                            e
+                                                        );
                                                         return;
                                                     }
                                                     auth_sent = true;
@@ -119,29 +132,46 @@ impl MarketDataService for AlpacaMarketDataService {
                                                         "quotes": symbols_clone,
                                                         "trades": symbols_clone
                                                     });
-                                                    
-                                                    if let Err(e) = write.send(Message::Text(subscribe_msg.to_string().into())).await {
-                                                        error!("Failed to send subscribe message: {}", e);
+
+                                                    if let Err(e) = write
+                                                        .send(Message::Text(
+                                                            subscribe_msg.to_string().into(),
+                                                        ))
+                                                        .await
+                                                    {
+                                                        error!(
+                                                            "Failed to send subscribe message: {}",
+                                                            e
+                                                        );
                                                         return;
                                                     }
-                                                    info!("Subscription request sent for {:?}", symbols_clone);
+                                                    info!(
+                                                        "Subscription request sent for {:?}",
+                                                        symbols_clone
+                                                    );
                                                 }
                                             }
                                             AlpacaMessage::Error { code, msg } => {
                                                 error!("Alpaca error ({}): {}", code, msg);
                                             }
                                             AlpacaMessage::Subscription { trades, quotes } => {
-                                                info!("Subscribed successfully. Trades: {:?}, Quotes: {:?}", trades, quotes);
+                                                info!(
+                                                    "Subscribed successfully. Trades: {:?}, Quotes: {:?}",
+                                                    trades, quotes
+                                                );
                                             }
                                             AlpacaMessage::Quote(quote) => {
                                                 // Use mid-price
-                                                let mid_price = (quote.bid_price + quote.ask_price) / 2.0;
+                                                let mid_price =
+                                                    (quote.bid_price + quote.ask_price) / 2.0;
                                                 let event = MarketEvent::Quote {
                                                     symbol: quote.symbol,
-                                                    price: Decimal::from_f64_retain(mid_price).unwrap_or(Decimal::ZERO),
-                                                    timestamp: chrono::Utc::now().timestamp_millis(),
+                                                    price: Decimal::from_f64_retain(mid_price)
+                                                        .unwrap_or(Decimal::ZERO),
+                                                    timestamp: chrono::Utc::now()
+                                                        .timestamp_millis(),
                                                 };
-                                                
+
                                                 if tx.send(event).await.is_err() {
                                                     warn!("Market data receiver dropped");
                                                     return;
@@ -150,10 +180,12 @@ impl MarketDataService for AlpacaMarketDataService {
                                             AlpacaMessage::Trade(trade) => {
                                                 let event = MarketEvent::Quote {
                                                     symbol: trade.symbol,
-                                                    price: Decimal::from_f64_retain(trade.price).unwrap_or(Decimal::ZERO),
-                                                    timestamp: chrono::Utc::now().timestamp_millis(),
+                                                    price: Decimal::from_f64_retain(trade.price)
+                                                        .unwrap_or(Decimal::ZERO),
+                                                    timestamp: chrono::Utc::now()
+                                                        .timestamp_millis(),
                                                 };
-                                                
+
                                                 if tx.send(event).await.is_err() {
                                                     warn!("Market data receiver dropped");
                                                     return;
@@ -187,8 +219,9 @@ impl MarketDataService for AlpacaMarketDataService {
     async fn get_top_movers(&self) -> Result<Vec<String>> {
         // Alpaca Data V2 Top Movers endpoint
         let url = "https://data.alpaca.markets/v2/stocks/movers";
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
@@ -211,7 +244,9 @@ impl MarketDataService for AlpacaMarketDataService {
             // losers: Vec<Mover>,
         }
 
-        let resp: MoversResponse = response.json().await
+        let resp: MoversResponse = response
+            .json()
+            .await
             .context("Failed to parse Alpaca movers response")?;
 
         let symbols = resp.gainers.into_iter().map(|m| m.symbol).collect();
@@ -228,8 +263,9 @@ impl AlpacaMarketDataService {
         timeframe: &str,
     ) -> Result<Vec<AlpacaBar>> {
         let url = "https://data.alpaca.markets/v2/stocks/bars";
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
@@ -243,7 +279,7 @@ impl AlpacaMarketDataService {
             .send()
             .await
             .context("Failed to fetch historical bars")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             anyhow::bail!("Alpaca bars fetch failed: {}", error_text);
@@ -254,7 +290,9 @@ impl AlpacaMarketDataService {
             bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
         }
 
-        let resp: BarsResponse = response.json().await
+        let resp: BarsResponse = response
+            .json()
+            .await
             .context("Failed to parse Alpaca bars response")?;
 
         Ok(resp.bars.into_values().flatten().collect())
@@ -357,8 +395,9 @@ impl ExecutionService for AlpacaExecutionService {
         };
 
         let url = format!("{}/v2/orders", self.base_url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
@@ -368,12 +407,20 @@ impl ExecutionService for AlpacaExecutionService {
             .context("Failed to send order to Alpaca")?;
 
         if response.status().is_success() {
-            let order_resp: AlpacaOrderResponse = response.json().await
+            let order_resp: AlpacaOrderResponse = response
+                .json()
+                .await
                 .context("Failed to parse Alpaca order response")?;
-            info!("Alpaca order placed: {} (status: {})", order_resp.id, order_resp.status);
+            info!(
+                "Alpaca order placed: {} (status: {})",
+                order_resp.id, order_resp.status
+            );
             Ok(())
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             anyhow::bail!("Alpaca order failed: {}", error_text)
         }
     }
@@ -383,7 +430,8 @@ impl ExecutionService for AlpacaExecutionService {
         let positions_url = format!("{}/v2/positions", self.base_url);
 
         // Fetch Account
-        let account_resp_raw = self.client
+        let account_resp_raw = self
+            .client
             .get(&account_url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
@@ -391,12 +439,21 @@ impl ExecutionService for AlpacaExecutionService {
             .await
             .context("Failed to send account request")?;
 
-        let account_text = account_resp_raw.text().await.context("Failed to read account response text")?;
-        let account_resp: AlpacaAccount = serde_json::from_str(&account_text)
-            .map_err(|e| anyhow::anyhow!("Failed to decode Alpaca Account: {}. Body: {}", e, account_text))?;
+        let account_text = account_resp_raw
+            .text()
+            .await
+            .context("Failed to read account response text")?;
+        let account_resp: AlpacaAccount = serde_json::from_str(&account_text).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to decode Alpaca Account: {}. Body: {}",
+                e,
+                account_text
+            )
+        })?;
 
         // Fetch Positions
-        let positions_resp_raw = self.client
+        let positions_resp_raw = self
+            .client
             .get(&positions_url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
@@ -404,34 +461,52 @@ impl ExecutionService for AlpacaExecutionService {
             .await
             .context("Failed to send positions request")?;
 
-        let positions_text = positions_resp_raw.text().await.context("Failed to read positions response text")?;
-        let positions_resp: Vec<AlpacaPosition> = serde_json::from_str(&positions_text)
-            .map_err(|e| anyhow::anyhow!("Failed to decode Alpaca Positions: {}. Body: {}", e, positions_text))?;
+        let positions_text = positions_resp_raw
+            .text()
+            .await
+            .context("Failed to read positions response text")?;
+        let positions_resp: Vec<AlpacaPosition> =
+            serde_json::from_str(&positions_text).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to decode Alpaca Positions: {}. Body: {}",
+                    e,
+                    positions_text
+                )
+            })?;
 
         let mut portfolio = crate::domain::portfolio::Portfolio::new();
         // Use buying_power or cash? For crypto, buying_power is usually what we have available.
         // Actually, let's log both for debugging.
-        let cash = account_resp.cash.parse::<Decimal>().unwrap_or(Decimal::ZERO);
-        let bp = account_resp.buying_power.parse::<Decimal>().unwrap_or(Decimal::ZERO);
-        
+        let cash = account_resp
+            .cash
+            .parse::<Decimal>()
+            .unwrap_or(Decimal::ZERO);
+        let bp = account_resp
+            .buying_power
+            .parse::<Decimal>()
+            .unwrap_or(Decimal::ZERO);
+
         info!("Alpaca Account: Cash={}, BuyingPower={}", cash, bp);
         portfolio.cash = cash; // Using cash for now as it's what the validator expects
 
         for alp_pos in positions_resp {
-            // Normalize symbol: Alpaca might return BTCUSD or BTC/USD. 
+            // Normalize symbol: Alpaca might return BTCUSD or BTC/USD.
             // We strip any / to be consistent if needed, or just keep it.
             // Let's try to match exactly first, but log if it's different.
             let alp_symbol = alp_pos.symbol.clone();
             let pos = crate::domain::portfolio::Position {
                 symbol: alp_symbol.clone(),
                 quantity: alp_pos.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO),
-                average_price: alp_pos.avg_entry_price.parse::<Decimal>().unwrap_or(Decimal::ZERO),
+                average_price: alp_pos
+                    .avg_entry_price
+                    .parse::<Decimal>()
+                    .unwrap_or(Decimal::ZERO),
             };
-            
+
             // Log positions for debugging
             info!("Alpaca Position: {} qty={}", alp_symbol, pos.quantity);
-            
-            // Store with and without slash to be safe? 
+
+            // Store with and without slash to be safe?
             // Better: use a normalized key in the map or normalize during lookup.
             portfolio.positions.insert(alp_symbol, pos);
         }
@@ -443,37 +518,43 @@ impl ExecutionService for AlpacaExecutionService {
         let now = chrono::Utc::now();
         // Start of today (UTC)
         let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc();
-        
+
         let url = format!("{}/v2/orders", self.base_url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .query(&[
-                ("status", "all"),
-                ("after", &today_start.to_rfc3339()),
-            ])
+            .query(&[("status", "all"), ("after", &today_start.to_rfc3339())])
             .send()
             .await
             .context("Failed to fetch orders from Alpaca")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             anyhow::bail!("Alpaca orders fetch failed: {}", error_text);
         }
-        
-        let alp_orders: Vec<AlpacaOrder> = response.json().await
+
+        let alp_orders: Vec<AlpacaOrder> = response
+            .json()
+            .await
             .context("Failed to parse Alpaca orders")?;
-            
+
         let mut orders = Vec::new();
         for ao in alp_orders {
-            let side = if ao.side == "buy" { OrderSide::Buy } else { OrderSide::Sell };
+            let side = if ao.side == "buy" {
+                OrderSide::Buy
+            } else {
+                OrderSide::Sell
+            };
             let qty = ao.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO);
-            let price = ao.filled_avg_price.as_ref()
+            let price = ao
+                .filled_avg_price
+                .as_ref()
                 .and_then(|p| p.parse::<Decimal>().ok())
                 .unwrap_or(Decimal::ZERO);
-                
+
             let created_at = chrono::DateTime::parse_from_rfc3339(&ao.created_at)
                 .map(|dt| dt.timestamp_millis())
                 .unwrap_or(0);
@@ -487,7 +568,7 @@ impl ExecutionService for AlpacaExecutionService {
                 timestamp: created_at,
             });
         }
-        
+
         Ok(orders)
     }
 }

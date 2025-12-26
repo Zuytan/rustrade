@@ -7,12 +7,12 @@ pub struct AnalysisContext {
     pub symbol: String,
     pub current_price: Decimal,
     pub price_f64: f64,
-    
+
     // SMA state
     pub fast_sma: f64,
     pub slow_sma: f64,
     pub trend_sma: f64,
-    
+
     // Technical indicators
     pub rsi: f64,
     pub macd_value: f64,
@@ -20,10 +20,10 @@ pub struct AnalysisContext {
     pub macd_histogram: f64,
     pub last_macd_histogram: Option<f64>,
     pub atr: f64,
-    
+
     // Position state
     pub has_position: bool,
-    
+
     // Timestamp
     pub timestamp: i64,
 }
@@ -44,7 +44,7 @@ impl Signal {
             confidence: 1.0,
         }
     }
-    
+
     pub fn sell(reason: impl Into<String>) -> Self {
         Self {
             side: OrderSide::Sell,
@@ -52,7 +52,7 @@ impl Signal {
             confidence: 1.0,
         }
     }
-    
+
     pub fn with_confidence(mut self, confidence: f64) -> Self {
         self.confidence = confidence.clamp(0.0, 1.0);
         self
@@ -63,7 +63,7 @@ impl Signal {
 pub trait TradingStrategy: Send + Sync {
     /// Analyze market context and potentially generate a trading signal
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal>;
-    
+
     /// Strategy name for logging and identification
     fn name(&self) -> &str;
 }
@@ -72,23 +72,23 @@ pub trait TradingStrategy: Send + Sync {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    
+
     #[test]
     fn test_signal_creation() {
         let buy_signal = Signal::buy("Test reason");
         assert!(matches!(buy_signal.side, OrderSide::Buy));
         assert_eq!(buy_signal.confidence, 1.0);
-        
+
         let sell_signal = Signal::sell("Another reason").with_confidence(0.8);
         assert!(matches!(sell_signal.side, OrderSide::Sell));
         assert_eq!(sell_signal.confidence, 0.8);
     }
-    
+
     #[test]
     fn test_confidence_clamping() {
         let signal = Signal::buy("Test").with_confidence(1.5);
         assert_eq!(signal.confidence, 1.0);
-        
+
         let signal2 = Signal::sell("Test").with_confidence(-0.5);
         assert_eq!(signal2.confidence, 0.0);
     }

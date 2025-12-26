@@ -58,7 +58,7 @@ pub struct Trade {
     pub entry_price: Decimal,
     pub exit_price: Option<Decimal>,
     pub quantity: Decimal,
-    pub pnl: Decimal,  // Realized profit/loss
+    pub pnl: Decimal, // Realized profit/loss
     pub entry_timestamp: i64,
     pub exit_timestamp: Option<i64>,
 }
@@ -83,7 +83,7 @@ impl Trade {
     pub fn close(&mut self, exit_price: Decimal, exit_timestamp: i64) {
         self.exit_price = Some(exit_price);
         self.exit_timestamp = Some(exit_timestamp);
-        
+
         // Calculate P&L: (exit - entry) * quantity for buy, (entry - exit) * quantity for sell
         self.pnl = match self.side {
             OrderSide::Buy => (exit_price - self.entry_price) * self.quantity,

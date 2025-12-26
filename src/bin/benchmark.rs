@@ -4,9 +4,9 @@ use rust_decimal::prelude::ToPrimitive;
 use rustrade::application::analyst::AnalystConfig;
 use rustrade::application::simulator::Simulator;
 use rustrade::config::StrategyMode;
+use rustrade::domain::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
-use rustrade::domain::portfolio::Portfolio;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // If .env.benchmark doesn't exist, try standard .env
         dotenv::dotenv().ok();
     }
-    
+
     // 3. Parse Args (Simple manual parsing)
     let args: Vec<String> = env::args().collect();
     let mut symbol = "TSLA".to_string();
@@ -40,31 +40,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match args[i].as_str() {
             "--symbol" => {
                 if i + 1 < args.len() {
-                    symbol = args[i+1].clone();
+                    symbol = args[i + 1].clone();
                     i += 1;
                 }
             }
             "--start" => {
                 if i + 1 < args.len() {
-                    start_date_str = args[i+1].clone();
+                    start_date_str = args[i + 1].clone();
                     i += 1;
                 }
             }
             "--end" => {
                 if i + 1 < args.len() {
-                    end_date_str = args[i+1].clone();
+                    end_date_str = args[i + 1].clone();
                     i += 1;
                 }
             }
             "--strategy" => {
                 if i + 1 < args.len() {
-                    strategy_mode_str = args[i+1].clone();
+                    strategy_mode_str = args[i + 1].clone();
                     i += 1;
                 }
             }
             "--batch-days" => {
                 if i + 1 < args.len() {
-                    batch_days = Some(args[i+1].parse().expect("Invalid batch-days"));
+                    batch_days = Some(args[i + 1].parse().expect("Invalid batch-days"));
                     i += 1;
                 }
             }
@@ -73,9 +73,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
 
-    let strategy_mode = StrategyMode::from_str(&strategy_mode_str).unwrap_or(StrategyMode::Standard);
+    let strategy_mode =
+        StrategyMode::from_str(&strategy_mode_str).unwrap_or(StrategyMode::Standard);
 
-    println!("Starting Benchmark for Symbol: {} on Date: {} to Date: {} with Strategy: {:?}", symbol, start_date_str, end_date_str, strategy_mode);
+    println!(
+        "Starting Benchmark for Symbol: {} on Date: {} to Date: {} with Strategy: {:?}",
+        symbol, start_date_str, end_date_str, strategy_mode
+    );
     if let Some(days) = batch_days {
         println!("Batch Mode: {} day segments", days);
     }
@@ -89,9 +93,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 5. Initialize Services
     let api_key = env::var("ALPACA_API_KEY").expect("ALPACA_API_KEY must be set");
     let api_secret = env::var("ALPACA_SECRET_KEY").expect("ALPACA_SECRET_KEY must be set");
-    let ws_url = env::var("ALPACA_WS_URL").unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
+    let ws_url =
+        env::var("ALPACA_WS_URL").unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
     let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url));
-    
+
     let config = AnalystConfig {
         fast_sma_period: 20,
         slow_sma_period: 60,
@@ -106,11 +111,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         macd_fast_period: 12,
         macd_slow_period: 26,
         macd_signal_period: 9,
-        trend_divergence_threshold: env::var("TREND_DIVERGENCE_THRESHOLD").unwrap_or("0.005".to_string()).parse().unwrap(),
-        trailing_stop_atr_multiplier: env::var("TRAILING_STOP_ATR_MULTIPLIER").unwrap_or("3.0".to_string()).parse().unwrap(),
-        atr_period: env::var("ATR_PERIOD").unwrap_or("14".to_string()).parse().unwrap(),
-        rsi_threshold: env::var("RSI_THRESHOLD").unwrap_or("55.0".to_string()).parse().unwrap(),
-            trend_riding_exit_buffer_pct: env::var("TREND_RIDING_EXIT_BUFFER_PCT").unwrap_or("0.03".to_string()).parse().unwrap(),
+        trend_divergence_threshold: env::var("TREND_DIVERGENCE_THRESHOLD")
+            .unwrap_or("0.005".to_string())
+            .parse()
+            .unwrap(),
+        trailing_stop_atr_multiplier: env::var("TRAILING_STOP_ATR_MULTIPLIER")
+            .unwrap_or("3.0".to_string())
+            .parse()
+            .unwrap(),
+        atr_period: env::var("ATR_PERIOD")
+            .unwrap_or("14".to_string())
+            .parse()
+            .unwrap(),
+        rsi_threshold: env::var("RSI_THRESHOLD")
+            .unwrap_or("55.0".to_string())
+            .parse()
+            .unwrap(),
+        trend_riding_exit_buffer_pct: env::var("TREND_RIDING_EXIT_BUFFER_PCT")
+            .unwrap_or("0.03".to_string())
+            .parse()
+            .unwrap(),
     };
 
     if let Some(days) = batch_days {
@@ -118,28 +138,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", "=".repeat(95));
         println!("🚀 BATCH BENCHMARK MODE - {} Day Segments", batch_days_val);
         println!("{}", "=".repeat(95));
-        println!("{:<4} | {:<12} | {:<12} | {:>9} | {:>9} | {:>13} | {:>6} | {:>8} | {:<6}", 
-            "#", "Start", "End", "Return%", "B&H%", "Net Profit", "Trades", "Sharpe", "Status");
+        println!(
+            "{:<4} | {:<12} | {:<12} | {:>9} | {:>9} | {:>13} | {:>6} | {:>8} | {:<6}",
+            "#", "Start", "End", "Return%", "B&H%", "Net Profit", "Trades", "Sharpe", "Status"
+        );
         println!("{}", "-".repeat(95));
 
         let mut batch_results = Vec::new();
         let mut current_start = start;
         let mut batch_num = 1;
         let total_batches_estimate = ((final_end - start).num_days() / batch_days_val).max(1);
-        
+
         while current_start < final_end {
             let mut current_end = current_start + chrono::Duration::days(days);
             if current_end > final_end {
                 current_end = final_end;
             }
             // Ensure end time is market close
-            current_end = current_end.date_naive().and_hms_opt(21, 0, 0).unwrap().and_utc();
+            current_end = current_end
+                .date_naive()
+                .and_hms_opt(21, 0, 0)
+                .unwrap()
+                .and_utc();
 
             // Setup FRESH Simulation environment for each batch
             let mut portfolio = Portfolio::new();
             portfolio.cash = Decimal::new(100000, 0); // Reset cash
             let portfolio_lock = Arc::new(RwLock::new(portfolio));
-            
+
             // Get transaction cost parameters from env
             let slippage_pct = env::var("SLIPPAGE_PCT")
                 .unwrap_or_else(|_| "0.001".to_string())
@@ -149,13 +175,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| "0.001".to_string())
                 .parse::<f64>()
                 .unwrap_or(0.001);
-            
+
             let execution_service = Arc::new(MockExecutionService::with_costs(
                 portfolio_lock.clone(),
                 slippage_pct,
-                commission_per_share
+                commission_per_share,
             ));
-            let simulator = Simulator::new(market_service.clone(), execution_service.clone(), config.clone());
+            let simulator = Simulator::new(
+                market_service.clone(),
+                execution_service.clone(),
+                config.clone(),
+            );
 
             // Run
             match simulator.run(&symbol, current_start, current_end).await {
@@ -167,7 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         0.0
                     };
-                    
+
                     // Status indicator
                     let status = if result.total_return_pct > Decimal::ZERO {
                         "✅ WIN"
@@ -176,16 +206,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         "➖ FLAT"
                     };
-                    
+
                     // Progress indicator
                     let progress = format!("({}/~{})", batch_num, total_batches_estimate);
-                    
-                    println!("{:<4} | {:<12} | {:<12} | {:>9.2}% | {:>9.2}% | ${:>11.2} | {:>6} | {:>8.2} | {}", 
+
+                    println!(
+                        "{:<4} | {:<12} | {:<12} | {:>9.2}% | {:>9.2}% | ${:>11.2} | {:>6} | {:>8.2} | {}",
                         progress,
-                        current_start.format("%Y-%m-%d"), 
-                        current_end.format("%Y-%m-%d"), 
-                        result.total_return_pct, 
-                        result.buy_and_hold_return_pct, 
+                        current_start.format("%Y-%m-%d"),
+                        current_end.format("%Y-%m-%d"),
+                        result.total_return_pct,
+                        result.buy_and_hold_return_pct,
                         net_profit,
                         result.trades.len(),
                         sharpe,
@@ -193,9 +224,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                     batch_results.push(result);
                     batch_num += 1;
-                },
+                }
                 Err(e) => {
-                    println!("{:<4} | {:<12} | {:<12} | ERROR: {}", 
+                    println!(
+                        "{:<4} | {:<12} | {:<12} | ERROR: {}",
                         format!("({}/~{})", batch_num, total_batches_estimate),
                         current_start.format("%Y-%m-%d"),
                         current_end.format("%Y-%m-%d"),
@@ -206,28 +238,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Move to next batch (start of next day)
-            current_start = current_end + chrono::Duration::days(1); 
-            current_start = current_start.date_naive().and_hms_opt(14, 30, 0).unwrap().and_utc();
+            current_start = current_end + chrono::Duration::days(1);
+            current_start = current_start
+                .date_naive()
+                .and_hms_opt(14, 30, 0)
+                .unwrap()
+                .and_utc();
         }
 
         // Aggregate Stats
         let total_batches = batch_results.len();
-        
+
         if total_batches > 0 {
-            let avg_return: f64 = batch_results.iter().map(|r| r.total_return_pct.to_f64().unwrap_or(0.0)).sum::<f64>() / total_batches as f64;
-            let avg_bh_return: f64 = batch_results.iter().map(|r| r.buy_and_hold_return_pct.to_f64().unwrap_or(0.0)).sum::<f64>() / total_batches as f64;
-            let positive_batches = batch_results.iter().filter(|r| r.total_return_pct > Decimal::ZERO).count();
-            let negative_batches = batch_results.iter().filter(|r| r.total_return_pct < Decimal::ZERO).count();
+            let avg_return: f64 = batch_results
+                .iter()
+                .map(|r| r.total_return_pct.to_f64().unwrap_or(0.0))
+                .sum::<f64>()
+                / total_batches as f64;
+            let avg_bh_return: f64 = batch_results
+                .iter()
+                .map(|r| r.buy_and_hold_return_pct.to_f64().unwrap_or(0.0))
+                .sum::<f64>()
+                / total_batches as f64;
+            let positive_batches = batch_results
+                .iter()
+                .filter(|r| r.total_return_pct > Decimal::ZERO)
+                .count();
+            let negative_batches = batch_results
+                .iter()
+                .filter(|r| r.total_return_pct < Decimal::ZERO)
+                .count();
             let total_trades: usize = batch_results.iter().map(|r| r.trades.len()).sum();
-            
+
             // Calculate average Return across batches (Sharpe not available in BacktestResult)
             let avg_sharpe = 0.0; // Placeholder - would need full metrics implementation
-            
+
             // Best and worst batch
-            let best_batch = batch_results.iter()
+            let best_batch = batch_results
+                .iter()
                 .max_by(|a, b| a.total_return_pct.partial_cmp(&b.total_return_pct).unwrap())
                 .unwrap();
-            let worst_batch = batch_results.iter()
+            let worst_batch = batch_results
+                .iter()
                 .min_by(|a, b| a.total_return_pct.partial_cmp(&b.total_return_pct).unwrap())
                 .unwrap();
 
@@ -238,10 +290,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Average Buy & Hold:   {:.2}%", avg_bh_return);
             println!("Outperformance:       {:.2}%", avg_return - avg_bh_return);
             println!("{}", "-".repeat(95));
-            println!("Win Rate:             {}/{} ({:.1}%) ✅", positive_batches, total_batches, (positive_batches as f64 / total_batches as f64) * 100.0);
-            println!("Loss Rate:            {}/{} ({:.1}%) ❌", negative_batches, total_batches, (negative_batches as f64 / total_batches as f64) * 100.0);
+            println!(
+                "Win Rate:             {}/{} ({:.1}%) ✅",
+                positive_batches,
+                total_batches,
+                (positive_batches as f64 / total_batches as f64) * 100.0
+            );
+            println!(
+                "Loss Rate:            {}/{} ({:.1}%) ❌",
+                negative_batches,
+                total_batches,
+                (negative_batches as f64 / total_batches as f64) * 100.0
+            );
             println!("Total Trades:         {}", total_trades);
-            println!("Trades per Batch:     {:.1}", total_trades as f64 / total_batches as f64);
+            println!(
+                "Trades per Batch:     {:.1}",
+                total_trades as f64 / total_batches as f64
+            );
             println!("{}", "-".repeat(95));
             println!("Average Sharpe Ratio: {:.2}", avg_sharpe);
             println!("Best Batch Return:    {:.2}%", best_batch.total_return_pct);
@@ -252,15 +317,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("❌ ERROR: No batches completed successfully!");
             println!("{}", "=".repeat(95));
         }
-
     } else {
         // SINGLE RUN (Legacy)
         let end = final_end;
         let mut portfolio = Portfolio::new();
         portfolio.cash = Decimal::new(100000, 0);
         let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        
-        // Get transaction cost parameters  
+
+        // Get transaction cost parameters
         let slippage_pct = env::var("SLIPPAGE_PCT")
             .unwrap_or_else(|_| "0.001".to_string())
             .parse::<f64>()
@@ -269,23 +333,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_else(|_| "0.001".to_string())
             .parse::<f64>()
             .unwrap_or(0.001);
-        
+
         let execution_service = Arc::new(MockExecutionService::with_costs(
             portfolio_lock.clone(),
             slippage_pct,
-            commission_per_share
+            commission_per_share,
         ));
-    
+
         let simulator = Simulator::new(market_service.clone(), execution_service.clone(), config);
         let result = simulator.run(&symbol, start, end).await?;
-        
+
         // Calculate period in days for annualization
         let period_days = (end - start).num_days() as f64;
 
         // Convert Orders to Trades by pairing Buy/Sell
         let mut trades: Vec<rustrade::domain::types::Trade> = Vec::new();
         let mut open_position: Option<&rustrade::domain::types::Order> = None;
-        
+
         for order in &result.trades {
             match order.side {
                 rustrade::domain::types::OrderSide::Buy => {
@@ -312,7 +376,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Calculate comprehensive metrics  
+        // Calculate comprehensive metrics
         let metrics = rustrade::domain::metrics::PerformanceMetrics::calculate(
             &trades,
             result.initial_equity,
@@ -338,7 +402,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("📈 TRADE STATISTICS");
         println!("--------------------------------------------------");
         println!("Total Trades:        {}", metrics.total_trades);
-        println!("Winning Trades:      {} ({:.1}%)", metrics.winning_trades, metrics.win_rate);
+        println!(
+            "Winning Trades:      {} ({:.1}%)",
+            metrics.winning_trades, metrics.win_rate
+        );
         println!("Losing Trades:       {}", metrics.losing_trades);
         println!("Profit Factor:       {:.2}", metrics.profit_factor);
         println!("Average Win:         ${:.2}", metrics.average_win);
@@ -351,16 +418,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("⏱️  EXPOSURE");
         println!("--------------------------------------------------");
         println!("Total Days:          {:.1}", metrics.total_days);
-        println!("Days in Market:      {:.1}",  metrics.days_in_market);
+        println!("Days in Market:      {:.1}", metrics.days_in_market);
         println!("Exposure:            {:.1}%", metrics.exposure_pct);
         println!("--------------------------------------------------");
         println!("TRADE HISTORY");
         println!("--------------------------------------------------");
-        
+
         for (i, t) in result.trades.iter().enumerate() {
             let time = chrono::DateTime::from_timestamp_millis(t.timestamp).unwrap();
-            println!("{}. [{}] {:?} {} shares @ ${}", 
-                i+1, time, t.side, t.quantity, t.price);
+            println!(
+                "{}. [{}] {:?} {} shares @ ${}",
+                i + 1,
+                time,
+                t.side,
+                t.quantity,
+                t.price
+            );
         }
         println!("--------------------------------------------------");
     }

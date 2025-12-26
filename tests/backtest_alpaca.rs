@@ -3,12 +3,12 @@ use rust_decimal::Decimal;
 
 use rustrade::application::analyst::AnalystConfig;
 use rustrade::application::simulator::Simulator;
+use rustrade::domain::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
-use rustrade::domain::portfolio::Portfolio;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, Level};
+use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 // Run with: cargo test --test backtest_alpaca -- --nocapture
@@ -38,11 +38,12 @@ async fn test_backtest_strategy_on_historical_data() {
             return;
         }
     };
-    let ws_url = std::env::var("ALPACA_WS_URL").unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
+    let ws_url = std::env::var("ALPACA_WS_URL")
+        .unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
 
     // 3. Initialize Services
     let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url));
-    
+
     let mut portfolio = Portfolio::new();
     portfolio.cash = Decimal::new(100000, 0);
     let portfolio_lock = Arc::new(RwLock::new(portfolio));
@@ -51,14 +52,14 @@ async fn test_backtest_strategy_on_historical_data() {
     // 4. Fetch Historical Data (e.g., TSLA on a volatile day)
     let symbol = "TSLA";
     let start_date = Utc.with_ymd_and_hms(2024, 12, 20, 14, 30, 0).unwrap(); // Market Open
-    let end_date = Utc.with_ymd_and_hms(2024, 12, 20, 21, 0, 0).unwrap();   // Market Close
-    
+    let end_date = Utc.with_ymd_and_hms(2024, 12, 20, 21, 0, 0).unwrap(); // Market Close
+
     let config = AnalystConfig {
         fast_sma_period: 5,
         slow_sma_period: 20,
         max_positions: 1,
         trade_quantity: Decimal::from(1),
-        sma_threshold: 0.001, 
+        sma_threshold: 0.001,
         order_cooldown_seconds: 60,
         risk_per_trade_percent: 0.02,
         strategy_mode: rustrade::config::StrategyMode::Standard,
@@ -77,11 +78,14 @@ async fn test_backtest_strategy_on_historical_data() {
     let simulator = Simulator::new(market_service, execution_service, config);
 
     // 5. Run Simulation
-    let result = simulator.run(symbol, start_date, end_date).await.expect("Simulation failed");
+    let result = simulator
+        .run(symbol, start_date, end_date)
+        .await
+        .expect("Simulation failed");
 
     // 6. Assertions
     info!("Trades Executed: {}", result.trades.len());
     info!("Return: {:.2}%", result.total_return_pct);
-    
+
     // assert!(!result.trades.is_empty(), "Should have executed at least one trade");
 }

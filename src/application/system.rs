@@ -1,22 +1,22 @@
+use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 use tracing::info;
-use anyhow::Result;
 
-use crate::config::{Config, Mode};
-use crate::domain::portfolio::Portfolio;
-use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
-use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::application::{
     analyst::{Analyst, AnalystConfig},
     executor::Executor,
     order_throttler::OrderThrottler,
     risk_manager::RiskManager,
-    sentinel::Sentinel,
     scanner::MarketScanner,
+    sentinel::Sentinel,
     strategies::*,
 };
+use crate::config::{Config, Mode};
+use crate::domain::portfolio::Portfolio;
+use crate::domain::ports::{ExecutionService, MarketDataService};
+use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
+use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 
 pub struct Application {
     pub config: Config,
@@ -28,8 +28,8 @@ pub struct Application {
 impl Application {
     pub async fn build(config: Config) -> Result<Self> {
         // Setup Logging if not already set (optional, or handle in main)
-        // For tests we might want to suppress or redirect logs, but for now we'll assume main handles it 
-        // or we do it here if it's the first time. 
+        // For tests we might want to suppress or redirect logs, but for now we'll assume main handles it
+        // or we do it here if it's the first time.
         // A common pattern is to let the binary handle global logging setup.
 
         info!("Building Rustrade Application (Mode: {:?})...", config.mode);
@@ -40,7 +40,10 @@ impl Application {
         let portfolio = Arc::new(RwLock::new(initial_portfolio));
 
         // Initialize Infrastructure
-        let (market_service, execution_service): (Arc<dyn MarketDataService>, Arc<dyn ExecutionService>) = match config.mode {
+        let (market_service, execution_service): (
+            Arc<dyn MarketDataService>,
+            Arc<dyn ExecutionService>,
+        ) = match config.mode {
             Mode::Mock => {
                 info!("Using Mock services");
                 (
@@ -75,7 +78,7 @@ impl Application {
 
     pub async fn run(&self) -> Result<()> {
         info!("Starting Agents...");
-        
+
         let (market_tx, market_rx) = mpsc::channel(100);
         let (proposal_tx, proposal_rx) = mpsc::channel(100);
         let (order_tx, order_rx) = mpsc::channel(100);
@@ -83,14 +86,15 @@ impl Application {
         let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(100);
 
         let mut sentinel = Sentinel::new(
-            self.market_service.clone(), 
-            market_tx, 
-            self.config.symbols.clone(), 
-            Some(sentinel_cmd_rx)
+            self.market_service.clone(),
+            market_tx,
+            self.config.symbols.clone(),
+            Some(sentinel_cmd_rx),
         );
-        
+
         // Scan internal in seconds for simpler config mapping if needed, or keep duration
-        let scanner_interval = std::time::Duration::from_secs(self.config.dynamic_scan_interval_minutes * 60);
+        let scanner_interval =
+            std::time::Duration::from_secs(self.config.dynamic_scan_interval_minutes * 60);
         let scanner = MarketScanner::new(
             self.market_service.clone(),
             self.execution_service.clone(),
@@ -119,57 +123,49 @@ impl Application {
             rsi_threshold: self.config.rsi_threshold,
             trend_riding_exit_buffer_pct: 0.03,
         };
-        
-        
+
         // Create strategy based on config
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
-            crate::config::StrategyMode::Standard => {
-                Arc::new(DualSMAStrategy::new(
-                    self.config.fast_sma_period,
-                    self.config.slow_sma_period,
-                    self.config.sma_threshold,
-                ))
-            }
-            crate::config::StrategyMode::Advanced => {
-                Arc::new(AdvancedTripleFilterStrategy::new(
-                    self.config.fast_sma_period,
-                    self.config.slow_sma_period,
-                    self.config.sma_threshold,
-                    self.config.trend_sma_period,
-                    self.config.rsi_threshold,
-                ))
-            }
-            crate::config::StrategyMode::Dynamic => {
-                Arc::new(DynamicRegimeStrategy::new(
-                    self.config.fast_sma_period,
-                    self.config.slow_sma_period,
-                    self.config.sma_threshold,
-                    self.config.trend_sma_period,
-                    self.config.rsi_threshold,
-                    self.config.trend_divergence_threshold,
-                ))
-            }
-            crate::config::StrategyMode::TrendRiding => {
-                Arc::new(TrendRidingStrategy::new(
-                    self.config.fast_sma_period,
-                    self.config.slow_sma_period,
-                    self.config.sma_threshold,
-                    self.config.trend_riding_exit_buffer_pct,
-                ))
-            }
+            crate::config::StrategyMode::Standard => Arc::new(DualSMAStrategy::new(
+                self.config.fast_sma_period,
+                self.config.slow_sma_period,
+                self.config.sma_threshold,
+            )),
+            crate::config::StrategyMode::Advanced => Arc::new(AdvancedTripleFilterStrategy::new(
+                self.config.fast_sma_period,
+                self.config.slow_sma_period,
+                self.config.sma_threshold,
+                self.config.trend_sma_period,
+                self.config.rsi_threshold,
+            )),
+            crate::config::StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(
+                self.config.fast_sma_period,
+                self.config.slow_sma_period,
+                self.config.sma_threshold,
+                self.config.trend_sma_period,
+                self.config.rsi_threshold,
+                self.config.trend_divergence_threshold,
+            )),
+            crate::config::StrategyMode::TrendRiding => Arc::new(TrendRidingStrategy::new(
+                self.config.fast_sma_period,
+                self.config.slow_sma_period,
+                self.config.sma_threshold,
+                self.config.trend_riding_exit_buffer_pct,
+            )),
         };
-        
-        info!("Using strategy: {}", strategy.name());        let mut analyst = Analyst::new(
-            market_rx, 
-            proposal_tx, 
+
+        info!("Using strategy: {}", strategy.name());
+        let mut analyst = Analyst::new(
+            market_rx,
+            proposal_tx,
             self.execution_service.clone(),
             strategy,
-            analyst_config
+            analyst_config,
         );
 
         let mut risk_manager = RiskManager::new(
-            proposal_rx, 
-            order_tx, 
+            proposal_rx,
+            order_tx,
             self.execution_service.clone(),
             self.config.non_pdt_mode,
             crate::application::risk_manager::RiskConfig {
@@ -181,15 +177,15 @@ impl Application {
         );
 
         let mut order_throttler = OrderThrottler::new(
-            order_rx, 
-            throttled_order_tx, 
-            self.config.max_orders_per_minute
+            order_rx,
+            throttled_order_tx,
+            self.config.max_orders_per_minute,
         );
 
         let mut executor = Executor::new(
-            self.execution_service.clone(), 
-            throttled_order_rx, 
-            self.portfolio.clone()
+            self.execution_service.clone(),
+            throttled_order_rx,
+            self.portfolio.clone(),
         );
 
         // Spawn Tasks

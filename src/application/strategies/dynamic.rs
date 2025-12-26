@@ -1,9 +1,9 @@
-use super::traits::{AnalysisContext, Signal, TradingStrategy};
 use super::advanced::AdvancedTripleFilterStrategy;
+use super::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::types::OrderSide;
 
 /// Dynamic Regime Detection Strategy
-/// 
+///
 /// Adapts behavior based on market regime:
 /// - Strong Trend: Looser filters, hold through pullbacks
 /// - Choppy/Range-bound: Strict filters (uses Advanced strategy)
@@ -33,7 +33,7 @@ impl DynamicRegimeStrategy {
             trend_divergence_threshold,
         }
     }
-    
+
     fn detect_regime(&self, ctx: &AnalysisContext) -> MarketRegime {
         // Calculate divergence between fast and slow SMA as % of price
         let divergence = if ctx.price_f64 > 0.0 {
@@ -41,7 +41,7 @@ impl DynamicRegimeStrategy {
         } else {
             0.0
         };
-        
+
         if divergence > self.trend_divergence_threshold {
             MarketRegime::StrongTrend
         } else {
@@ -59,13 +59,13 @@ enum MarketRegime {
 impl TradingStrategy for DynamicRegimeStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
         let regime = self.detect_regime(ctx);
-        
+
         match regime {
             MarketRegime::StrongTrend => {
                 // In strong trends, be more permissive
                 // Buy: Just need price above trend
                 // Sell: Only if trend breaks (price below trend SMA)
-                
+
                 if ctx.fast_sma > ctx.slow_sma * (1.0 + 0.001) {
                     // Golden cross
                     if ctx.price_f64 > ctx.trend_sma {
@@ -82,7 +82,7 @@ impl TradingStrategy for DynamicRegimeStrategy {
                     }
                     // Otherwise suppress sell - hold through pullback
                 }
-                
+
                 None
             }
             MarketRegime::Choppy => {
@@ -94,7 +94,7 @@ impl TradingStrategy for DynamicRegimeStrategy {
             }
         }
     }
-    
+
     fn name(&self) -> &str {
         "DynamicRegime"
     }
@@ -104,7 +104,7 @@ impl TradingStrategy for DynamicRegimeStrategy {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    
+
     fn create_test_context(
         fast_sma: f64,
         slow_sma: f64,
@@ -128,42 +128,45 @@ mod tests {
             timestamp: 0,
         }
     }
-    
+
     #[test]
     fn test_strong_trend_buy_signal() {
         let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
         // Large divergence = strong trend
         let ctx = create_test_context(105.0, 100.0, 110.0, 95.0);
-        
+
         let signal = strategy.analyze(&ctx);
-        
+
         assert!(signal.is_some());
         let sig = signal.unwrap();
         assert!(matches!(sig.side, OrderSide::Buy));
         assert!(sig.reason.contains("Dynamic (Trend)"));
     }
-    
+
     #[test]
     fn test_strong_trend_hold_through_pullback() {
         let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
         // Large divergence but death cross with price still above trend
         let mut ctx = create_test_context(98.0, 100.0, 102.0, 95.0);
         ctx.has_position = true;
-        
+
         let signal = strategy.analyze(&ctx);
-        
+
         // Should NOT sell - holding through pullback
-        assert!(signal.is_none(), "Should hold through pullback in strong trend");
+        assert!(
+            signal.is_none(),
+            "Should hold through pullback in strong trend"
+        );
     }
-    
+
     #[test]
     fn test_choppy_uses_advanced_filters() {
         let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
         // Small divergence = choppy market
         let ctx = create_test_context(100.2, 100.0, 105.0, 95.0);
-        
+
         let signal = strategy.analyze(&ctx);
-        
+
         // In choppy, uses Advanced filters which would reject this
         // (MACD too weak, etc.)
         if let Some(sig) = signal {
