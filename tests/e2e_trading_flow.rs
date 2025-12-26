@@ -64,6 +64,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         trend_riding_exit_buffer_pct: 0.03,
         mean_reversion_rsi_exit: 50.0,
         mean_reversion_bb_period: 20,
+        risk_appetite: None,
     });
 
     config.mode = Mode::Mock;

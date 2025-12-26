@@ -140,6 +140,7 @@ impl Application {
             mean_reversion_rsi_exit: self.config.mean_reversion_rsi_exit,
             mean_reversion_bb_period: self.config.mean_reversion_bb_period,
             slippage_pct: self.config.slippage_pct,
+            max_position_size_pct: self.config.max_position_size_pct,
         };
 
         // Create strategy based on config

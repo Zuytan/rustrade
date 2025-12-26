@@ -74,7 +74,7 @@ pub trait TradingStrategy: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_decimal_macros::dec;
+
 
     #[test]
     fn test_signal_creation() {

@@ -98,53 +98,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::var("ALPACA_WS_URL").unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
     let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url));
 
-    let config = AnalystConfig {
-        fast_sma_period: 20,
-        slow_sma_period: 60,
-        max_positions: 5,
-        trade_quantity: Decimal::from(1),
-        sma_threshold: 0.001,
-        order_cooldown_seconds: 300,
-        risk_per_trade_percent: 0.02,
-        strategy_mode: strategy_mode,
-        trend_sma_period: 2000,
-        rsi_period: 14,
-        macd_fast_period: 12,
-        macd_slow_period: 26,
-        macd_signal_period: 9,
-        trend_divergence_threshold: env::var("TREND_DIVERGENCE_THRESHOLD")
-            .unwrap_or("0.005".to_string())
-            .parse()
-            .unwrap(),
-        trailing_stop_atr_multiplier: env::var("TRAILING_STOP_ATR_MULTIPLIER")
-            .unwrap_or("3.0".to_string())
-            .parse()
-            .unwrap(),
-        atr_period: env::var("ATR_PERIOD")
-            .unwrap_or("14".to_string())
-            .parse()
-            .unwrap(),
-        rsi_threshold: env::var("RSI_THRESHOLD")
-            .unwrap_or("65.0".to_string())
-            .parse()
-            .unwrap(),
-        trend_riding_exit_buffer_pct: env::var("TREND_RIDING_EXIT_BUFFER_PCT")
-            .unwrap_or("0.03".to_string())
-            .parse()
-            .unwrap(),
-        mean_reversion_rsi_exit: env::var("MEAN_REVERSION_RSI_EXIT")
-            .unwrap_or("50.0".to_string())
-            .parse()
-            .unwrap(),
-        mean_reversion_bb_period: env::var("MEAN_REVERSION_BB_PERIOD")
-            .unwrap_or("20".to_string())
-            .parse()
-            .unwrap(),
-        slippage_pct: env::var("SLIPPAGE_PCT")
-            .unwrap_or("0.001".to_string())
-            .parse()
-            .unwrap(),
-    };
+    // Load full config to respect Risk Appetite and other logic
+    let mut app_config = rustrade::config::Config::from_env().expect("Failed to load config");
+    
+    // Override config with CLI args if provided
+    if strategy_mode != rustrade::config::StrategyMode::Standard { 
+        // Only override if CLI specified a strategy (default parsing fallback logic in main needs refinement but this works for now)
+        // Actually, main parsed strategy_mode from CLI, so we should use it.
+        app_config.strategy_mode = strategy_mode;
+    }
+
+    let config: AnalystConfig = app_config.into();
 
     if let Some(days) = batch_days {
         let batch_days_val = days; // Capture days for use in header

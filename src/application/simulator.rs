@@ -162,6 +162,7 @@ impl Simulator {
             mean_reversion_rsi_exit: self.config.mean_reversion_rsi_exit,
             mean_reversion_bb_period: self.config.mean_reversion_bb_period,
             slippage_pct: self.config.slippage_pct,
+            max_position_size_pct: self.config.max_position_size_pct,
         };
 
         // Use Advanced strategy for simulations
@@ -430,7 +431,7 @@ mod tests {
         let strategy_returns = vec![0.02, 0.03, 0.01, 0.04];
         let benchmark_returns = vec![0.01, 0.01, 0.01, 0.01];
         
-        let (alpha, beta, _correlation) = Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
+        let (alpha, _beta, _correlation) = Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
         
         // Positive alpha (strategy outperforms)
         assert!(alpha > 0.0, "Alpha should be positive for outperformance, got {}", alpha);

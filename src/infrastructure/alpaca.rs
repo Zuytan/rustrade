@@ -70,8 +70,9 @@ impl MarketDataService for AlpacaMarketDataService {
     }
 
     async fn get_top_movers(&self) -> Result<Vec<String>> {
-        // Alpaca Data V2 Top Movers endpoint
-        let url = "https://data.alpaca.markets/v2/stocks/movers";
+        // Alpaca Data v1beta1 Screener Movers endpoint
+        // v2/stocks/movers is often not found or requires specific tier.
+        let url = "https://data.alpaca.markets/v1beta1/screener/stocks/movers";
 
         let response = self
             .client
@@ -90,6 +91,8 @@ impl MarketDataService for AlpacaMarketDataService {
         #[derive(Debug, Deserialize)]
         struct Mover {
             symbol: String,
+            price: f64,
+            // percent_change: f64,
         }
         #[derive(Debug, Deserialize)]
         struct MoversResponse {
@@ -102,7 +105,21 @@ impl MarketDataService for AlpacaMarketDataService {
             .await
             .context("Failed to parse Alpaca movers response")?;
 
-        let symbols = resp.gainers.into_iter().map(|m| m.symbol).collect();
+        // Filter: 
+        // 1. Price > $5.0 (avoid penny stocks)
+        // 2. Exclude Warrants (usually have .WS or end with W)
+        // 3. Exclude Units (usually end with U)
+        let symbols = resp.gainers.into_iter()
+            .filter(|m| {
+                let is_penny = m.price < 5.0;
+                let is_warrant = m.symbol.contains(".WS") || m.symbol.ends_with('W');
+                let is_unit = m.symbol.ends_with('U');
+                
+                !is_penny && !is_warrant && !is_unit
+            })
+            .map(|m| m.symbol)
+            .collect();
+            
         Ok(symbols)
     }
 
@@ -186,39 +203,66 @@ impl AlpacaMarketDataService {
         timeframe: &str,
     ) -> Result<Vec<AlpacaBar>> {
         let url = "https://data.alpaca.markets/v2/stocks/bars";
+        let mut all_bars = Vec::new();
+        let mut page_token: Option<String> = None;
 
-        let response = self
-            .client
-            .get(url)
-            .header("APCA-API-KEY-ID", &self.api_key)
-            .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .query(&[
-                ("symbols", symbol),
-                ("start", &start.to_rfc3339()),
-                ("end", &end.to_rfc3339()),
-                ("timeframe", timeframe),
-                ("limit", "10000"), // Max limit usually
-            ])
-            .send()
-            .await
-            .context("Failed to fetch historical bars")?;
+        loop {
+            let mut query_params = vec![
+                ("symbols", symbol.to_string()),
+                ("start", start.to_rfc3339()),
+                ("end", end.to_rfc3339()),
+                ("timeframe", timeframe.to_string()),
+                ("limit", "10000".to_string()),
+            ];
 
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("Alpaca bars fetch failed: {}", error_text);
+            if let Some(token) = &page_token {
+                query_params.push(("page_token", token.clone()));
+            }
+
+            let response = self
+                .client
+                .get(url)
+                .header("APCA-API-KEY-ID", &self.api_key)
+                .header("APCA-API-SECRET-KEY", &self.api_secret)
+                .query(&query_params)
+                .send()
+                .await
+                .context("Failed to fetch historical bars")?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await.unwrap_or_default();
+                anyhow::bail!("Alpaca bars fetch failed: {}", error_text);
+            }
+
+            #[derive(Debug, Deserialize)]
+            struct BarsResponse {
+                bars: Option<std::collections::HashMap<String, Vec<AlpacaBar>>>,
+                next_page_token: Option<String>,
+            }
+
+            let resp: BarsResponse = response
+                .json()
+                .await
+                .context("Failed to parse Alpaca bars response")?;
+
+            if let Some(bars_map) = resp.bars {
+                if let Some(bars) = bars_map.get(symbol) {
+                    all_bars.extend(bars.clone());
+                }
+            }
+
+            match resp.next_page_token {
+                Some(token) if !token.is_empty() => {
+                    page_token = Some(token);
+                    // Add a small delay to respect rate limits if fetching many pages
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+                _ => break,
+            }
         }
 
-        #[derive(Debug, Deserialize)]
-        struct BarsResponse {
-            bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
-        }
-
-        let resp: BarsResponse = response
-            .json()
-            .await
-            .context("Failed to parse Alpaca bars response")?;
-
-        Ok(resp.bars.into_values().flatten().collect())
+        info!("Fetched total {} bars for {}", all_bars.len(), symbol);
+        Ok(all_bars)
     }
 }
 

@@ -76,6 +76,7 @@ async fn test_backtest_strategy_on_historical_data() {
         mean_reversion_rsi_exit: 50.0,
         mean_reversion_bb_period: 20,
         slippage_pct: 0.0,
+        max_position_size_pct: 0.1,
     };
 
     let simulator = Simulator::new(market_service, execution_service, config);

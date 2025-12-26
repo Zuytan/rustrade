@@ -63,6 +63,36 @@ pub struct AnalystConfig {
     pub mean_reversion_rsi_exit: f64,
     pub mean_reversion_bb_period: usize,
     pub slippage_pct: f64,
+    pub max_position_size_pct: f64,
+}
+
+impl From<crate::config::Config> for AnalystConfig {
+    fn from(config: crate::config::Config) -> Self {
+        Self {
+            fast_sma_period: config.fast_sma_period,
+            slow_sma_period: config.slow_sma_period,
+            max_positions: config.max_positions,
+            trade_quantity: config.trade_quantity,
+            sma_threshold: config.sma_threshold,
+            order_cooldown_seconds: config.order_cooldown_seconds,
+            risk_per_trade_percent: config.risk_per_trade_percent,
+            strategy_mode: config.strategy_mode,
+            trend_sma_period: config.trend_sma_period,
+            rsi_period: config.rsi_period,
+            macd_fast_period: config.macd_fast_period,
+            macd_slow_period: config.macd_slow_period,
+            macd_signal_period: config.macd_signal_period,
+            trend_divergence_threshold: config.trend_divergence_threshold,
+            rsi_threshold: config.rsi_threshold,
+            trailing_stop_atr_multiplier: config.trailing_stop_atr_multiplier,
+            atr_period: config.atr_period,
+            trend_riding_exit_buffer_pct: config.trend_riding_exit_buffer_pct,
+            mean_reversion_rsi_exit: config.mean_reversion_rsi_exit,
+            mean_reversion_bb_period: config.mean_reversion_bb_period,
+            slippage_pct: config.slippage_pct,
+            max_position_size_pct: config.max_position_size_pct,
+        }
+    }
 }
 
 pub struct Analyst {
@@ -525,7 +555,11 @@ impl Analyst {
         price: Decimal,
     ) -> Decimal {
         let mut quantity = config.trade_quantity;
-        if config.risk_per_trade_percent > 0.0 {
+
+        // Determine if we should use risk-based sizing
+        let use_risk_size = config.risk_per_trade_percent > 0.0 || config.max_position_size_pct > 0.0;
+
+        if use_risk_size {
             let portfolio_result = execution_service.get_portfolio().await;
             if let Ok(portfolio) = portfolio_result {
                 let mut total_equity = portfolio.cash;
@@ -533,27 +567,38 @@ impl Analyst {
                     total_equity += pos.quantity * pos.average_price;
                 }
 
-                if total_equity > Decimal::ZERO && price > Decimal::ZERO && config.max_positions > 0
-                {
-                    // Risk % of Total Equity, but capped by (Total Equity / Max Positions) to ensure liquidity/diversification
-                    let risk_amount = total_equity
-                        * Decimal::from_f64_retain(config.risk_per_trade_percent)
-                            .unwrap_or(Decimal::ZERO);
-                    let max_allocation = total_equity / Decimal::from(config.max_positions);
+                if total_equity > Decimal::ZERO && price > Decimal::ZERO {
+                    // 1. Calculate the target amount to allocate
+                    // risk_per_trade_percent takes precedence as a sizing mechanism
+                    let mut target_amt = if config.risk_per_trade_percent > 0.0 {
+                        total_equity * Decimal::from_f64_retain(config.risk_per_trade_percent).unwrap_or(Decimal::ZERO)
+                    } else {
+                        total_equity * Decimal::from_f64_retain(config.max_position_size_pct).unwrap_or(Decimal::ZERO)
+                    };
 
-                    // Actual amount to spend is min(risk_amount, max_allocation)
-                    let allocated_amount = risk_amount.min(max_allocation);
+                    // 2. Apply Caps
+                    // Cap 1: Max Positions bucket (if max_positions > 0)
+                    if config.max_positions > 0 {
+                        let max_bucket = total_equity / Decimal::from(config.max_positions);
+                        target_amt = target_amt.min(max_bucket);
+                    }
 
-                    let calculated_qty = (allocated_amount / price).round_dp(2);
-                    quantity = calculated_qty;
+                    // Cap 2: Max Position Size % (acts as a hard cap even if risk_per_trade is used)
+                    if config.risk_per_trade_percent > 0.0 && config.max_position_size_pct > 0.0 {
+                        let max_pos_val = total_equity * Decimal::from_f64_retain(config.max_position_size_pct).unwrap_or(Decimal::ZERO);
+                        target_amt = target_amt.min(max_pos_val);
+                    }
 
+                    quantity = (target_amt / price).round_dp(2);
+                    
                     info!(
-                        "Analyst: Risk-based allocation for {}: TotalEquity={}, RiskAmt={}, MaxAlloc={}, FinalQty={}",
-                        symbol, total_equity, risk_amount, max_allocation, quantity
+                        "Analyst: Sizing for {}: Equity={}, TargetAmt={}, FinalQty={}",
+                        symbol, total_equity, target_amt, quantity
                     );
                 }
             }
         }
+        
         quantity
     }
 }
@@ -562,7 +607,6 @@ impl Analyst {
 mod tests {
     use super::*;
     use crate::domain::types::Candle;
-    use rust_decimal::prelude::FromPrimitive;
     use std::sync::Once;
     use tokio::sync::mpsc;
     use tokio::sync::RwLock;
@@ -612,6 +656,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            max_position_size_pct: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -682,6 +727,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -772,6 +818,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -852,6 +899,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -938,6 +986,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1034,6 +1083,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,

@@ -1,5 +1,14 @@
 # Rustrade - Historique des Versions
 
+## Version 0.15.1 (Décembre 2025) - Market Scanner Fix & Quality Filtering
+**Améliorations du Market Scanner**:
+- **Fix Alpaca Movers Endpoint**: Passage de `v2/stocks/movers` (404) à `v1beta1/screener/stocks/movers` (fonctionnel).
+- **Filtrage Qualitatif des Symboles**:
+  - Exclusion automatique des **Penny Stocks** (prix < $5.0).
+  - Exclusion des **Warrants** (contient `.WS` ou finit par `W`).
+  - Exclusion des **Units** (finit par `U`).
+- **Nettoyage de Code**: Suppression des avertissements de compilation (imports inutilisés, duplications).
+
 ## Version 0.15.0 (Décembre 2025) - Risk Appetite Score
 
 **Nouvelle fonctionnalité majeure**:

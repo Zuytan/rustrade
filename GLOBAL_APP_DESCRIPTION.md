@@ -29,6 +29,7 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
 - **Responsabilités**:
     - Scanner périodiquement le marché (API Top Movers).
     - Identifier les actifs les plus volatils (Gainers).
+    - **Filtrage Qualitatif** : Exclure les penny stocks (<$5), warrants et units pour assurer une meilleure liquidité et sécurité.
     - Ordonner au Sentinel de changer de cible.
 
 ### 3. Agent "Analyst" (Strategy)
