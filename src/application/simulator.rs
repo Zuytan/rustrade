@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -20,6 +21,9 @@ pub struct BacktestResult {
     pub total_return_pct: Decimal,
     pub buy_and_hold_return_pct: Decimal,
     pub daily_closes: Vec<(i64, Decimal)>, // (Timestamp seconds, Close Price)
+    pub alpha: f64,
+    pub beta: f64,
+    pub benchmark_correlation: f64,
 }
 
 pub struct Simulator {
@@ -29,6 +33,59 @@ pub struct Simulator {
 }
 
 impl Simulator {
+    /// Calculate alpha and beta using linear regression
+    /// Returns (alpha, beta, correlation)
+    /// Formula: strategy_return = alpha + beta * benchmark_return + error
+    fn calculate_alpha_beta(
+        strategy_returns: &[f64],
+        benchmark_returns: &[f64],
+    ) -> (f64, f64, f64) {
+        if strategy_returns.len() != benchmark_returns.len() || strategy_returns.is_empty() {
+            return (0.0, 0.0, 0.0);
+        }
+
+        let n = strategy_returns.len() as f64;
+
+        // Calculate means
+        let mean_strategy: f64 = strategy_returns.iter().sum::<f64>() / n;
+        let mean_benchmark: f64 = benchmark_returns.iter().sum::<f64>() / n;
+
+        // Calculate covariance and variance
+        let mut covariance = 0.0;
+        let mut variance_benchmark = 0.0;
+        let mut variance_strategy = 0.0;
+
+        for i in 0..strategy_returns.len() {
+            let diff_strategy = strategy_returns[i] - mean_strategy;
+            let diff_benchmark = benchmark_returns[i] - mean_benchmark;
+            covariance += diff_strategy * diff_benchmark;
+            variance_benchmark += diff_benchmark * diff_benchmark;
+            variance_strategy += diff_strategy * diff_strategy;
+        }
+
+        covariance /= n;
+        variance_benchmark /= n;
+        variance_strategy /= n;
+
+        // Beta = Cov(strategy, benchmark) / Var(benchmark)
+        let beta = if variance_benchmark > 0.0 {
+            covariance / variance_benchmark
+        } else {
+            0.0
+        };
+
+        // Alpha = mean_strategy - beta * mean_benchmark
+        let alpha = mean_strategy - beta * mean_benchmark;
+
+        // Correlation = Cov / (StdDev_strategy * StdDev_benchmark)
+        let correlation = if variance_benchmark > 0.0 && variance_strategy > 0.0 {
+            covariance / (variance_benchmark.sqrt() * variance_strategy.sqrt())
+        } else {
+            0.0
+        };
+
+        (alpha, beta, correlation)
+    }
     pub fn new(
         market_data: Arc<AlpacaMarketDataService>,
         execution_service: Arc<dyn ExecutionService>,
@@ -253,6 +310,82 @@ impl Simulator {
             Decimal::ZERO
         };
 
+        // Fetch SPY (S&P 500) benchmark data for alpha/beta calculation
+        info!("Simulator: Fetching SPY benchmark data...");
+        let (alpha, beta, benchmark_correlation) = match self
+            .market_data
+            .get_historical_bars("SPY", start, end, "1Day")
+            .await
+        {
+            Ok(spy_bars) if !spy_bars.is_empty() && daily_closes.len() > 1 => {
+                // Calculate daily returns for strategy
+                let mut strategy_returns = Vec::new();
+                for i in 1..daily_closes.len() {
+                    let prev_price = daily_closes[i - 1].1.to_f64().unwrap_or(1.0);
+                    let curr_price = daily_closes[i].1.to_f64().unwrap_or(1.0);
+                    if prev_price > 0.0 {
+                        strategy_returns.push((curr_price - prev_price) / prev_price);
+                    }
+                }
+
+                // Build SPY daily close map
+                let mut spy_daily_map: std::collections::BTreeMap<String, f64> =
+                    std::collections::BTreeMap::new();
+                for bar in &spy_bars {
+                    let dt = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
+                        .unwrap_or_default()
+                        .with_timezone(&Utc);
+                    let date_key = dt.format("%Y-%m-%d").to_string();
+                    spy_daily_map.insert(date_key, bar.close);
+                }
+
+                // Calculate SPY daily returns aligned with strategy dates
+                let mut benchmark_returns = Vec::new();
+                for i in 1..daily_closes.len() {
+                    let prev_ts = daily_closes[i - 1].0;
+                    let curr_ts = daily_closes[i].0;
+                    let prev_dt = chrono::DateTime::from_timestamp(prev_ts / 1000, 0)
+                        .unwrap_or_default()
+                        .format("%Y-%m-%d")
+                        .to_string();
+                    let curr_dt = chrono::DateTime::from_timestamp(curr_ts / 1000, 0)
+                        .unwrap_or_default()
+                        .format("%Y-%m-%d")
+                        .to_string();
+
+                    if let (Some(&prev_spy), Some(&curr_spy)) =
+                        (spy_daily_map.get(&prev_dt), spy_daily_map.get(&curr_dt))
+                    {
+                        if prev_spy > 0.0 {
+                            benchmark_returns.push((curr_spy - prev_spy) / prev_spy);
+                        }
+                    }
+                }
+
+                // Only calculate if we have matching returns
+                if strategy_returns.len() == benchmark_returns.len()
+                    && !strategy_returns.is_empty()
+                {
+                    Self::calculate_alpha_beta(&strategy_returns, &benchmark_returns)
+                } else {
+                    info!(
+                        "Simulator: Mismatched return lengths (strategy: {}, benchmark: {})",
+                        strategy_returns.len(),
+                        benchmark_returns.len()
+                    );
+                    (0.0, 0.0, 0.0)
+                }
+            }
+            Ok(_) => {
+                info!("Simulator: Insufficient SPY data for alpha/beta calculation");
+                (0.0, 0.0, 0.0)
+            }
+            Err(e) => {
+                info!("Simulator: Failed to fetch SPY data: {}", e);
+                (0.0, 0.0, 0.0)
+            }
+        };
+
         Ok(BacktestResult {
             trades: executed_trades,
             initial_equity,
@@ -260,6 +393,67 @@ impl Simulator {
             total_return_pct,
             buy_and_hold_return_pct,
             daily_closes,
+            alpha,
+            beta,
+            benchmark_correlation,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_alpha_beta_calculation() {
+        // Strategy returns: 1%, 2%, -1%, 3%
+        // Benchmark returns: 0.5%, 1%, -0.5%, 1.5%
+        // Expected: Beta ~= 2.0 (strategy is twice as volatile as benchmark)
+        let strategy_returns = vec![0.01, 0.02, -0.01, 0.03];
+        let benchmark_returns = vec![0.005, 0.01, -0.005, 0.015];
+        
+        let (alpha, beta, correlation) = Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
+        
+        // Beta should be around 2.0 (strategy moves 2x benchmark)
+        assert!(beta > 1.5 && beta < 2.5, "Beta should be ~2.0, got {}", beta);
+        
+        // Alpha should be close to 0 (strategy follows benchmark proportionally)
+        assert!(alpha.abs() < 0.01, "Alpha should be near 0, got {}", alpha);
+        
+        // Correlation should be positive and high
+        assert!(correlation > 0.8, "Correlation should be high, got {}", correlation);
+    }
+
+    #[test]
+    fn test_alpha_beta_with_excess_return() {
+        // Strategy consistently beats benchmark
+        let strategy_returns = vec![0.02, 0.03, 0.01, 0.04];
+        let benchmark_returns = vec![0.01, 0.01, 0.01, 0.01];
+        
+        let (alpha, beta, _correlation) = Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
+        
+        // Positive alpha (strategy outperforms)
+        assert!(alpha > 0.0, "Alpha should be positive for outperformance, got {}", alpha);
+    }
+
+    #[test]
+    fn test_alpha_beta_negative_correlation() {
+        // Strategy moves opposite to benchmark
+        let strategy_returns = vec![0.01, -0.01, 0.02, -0.02];
+        let benchmark_returns = vec![-0.01, 0.01, -0.02, 0.02];
+        
+        let (_alpha, _beta, correlation) = Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
+        
+        // Negative correlation
+        assert!(correlation < 0.0, "Correlation should be negative, got {}", correlation);
+    }
+
+    #[test]
+    fn test_alpha_beta_empty_returns() {
+        let (alpha, beta, correlation) = Simulator::calculate_alpha_beta(&[], &[]);
+        
+        assert_eq!(alpha, 0.0);
+        assert_eq!(beta, 0.0);
+        assert_eq!(correlation, 0.0);
     }
 }

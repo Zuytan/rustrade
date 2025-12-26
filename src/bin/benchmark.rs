@@ -150,12 +150,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let batch_days_val = days; // Capture days for use in header
         println!("{}", "=".repeat(95));
         println!("🚀 BATCH BENCHMARK MODE - {} Day Segments", batch_days_val);
-        println!("{}", "=".repeat(95));
+        println!("{}", "=".repeat(115));
         println!(
-            "{:<4} | {:<12} | {:<12} | {:>9} | {:>9} | {:>13} | {:>6} | {:>8} | {:<6}",
-            "#", "Start", "End", "Return%", "B&H%", "Net Profit", "Trades", "Sharpe", "Status"
+            "{:<4} | {:<12} | {:<12} | {:>9} | {:>9} | {:>13} | {:>6} | {:>8} | {:>6} | {:>6} | {:<6}",
+            "#", "Start", "End", "Return%", "B&H%", "Net Profit", "Trades", "Sharpe", "Alpha", "Beta", "Status"
         );
-        println!("{}", "-".repeat(95));
+        println!("{}", "-".repeat(115));
 
         let mut batch_results = Vec::new();
         let mut current_start = start;
@@ -255,7 +255,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let progress = format!("({}/~{})", batch_num, total_batches_estimate);
 
                     println!(
-                        "{:<4} | {:<12} | {:<12} | {:>9.2}% | {:>9.2}% | ${:>11.2} | {:>6} | {:>8.2} | {}",
+                        "{:<4} | {:<12} | {:<12} | {:>9.2}% | {:>9.2}% | ${:>11.2} | {:>6} | {:>8.2} | {:>6.2} | {:>6.2} | {}",
                         progress,
                         current_start.format("%Y-%m-%d"),
                         current_end.format("%Y-%m-%d"),
@@ -264,6 +264,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         net_profit,
                         result.trades.len(),
                         sharpe,
+                        result.alpha * 100.0, // Convert to percentage
+                        result.beta,
                         status
                     );
                     batch_results.push(result);
@@ -435,12 +437,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Total Return:   {:.2}%", result.total_return_pct);
         println!("Buy & Hold:     {:.2}%", result.buy_and_hold_return_pct);
         println!("--------------------------------------------------");
-        println!("📊 PERFORMANCE METRICS");
+        println!("📊 RISK-ADJUSTED METRICS");
         println!("--------------------------------------------------");
         println!("Sharpe Ratio:        {:.2}", metrics.sharpe_ratio);
         println!("Sortino Ratio:       {:.2}", metrics.sortino_ratio);
         println!("Calmar Ratio:        {:.2}", metrics.calmar_ratio);
         println!("Max Drawdown:        {:.2}%", metrics.max_drawdown_pct);
+        println!("--------------------------------------------------");
+        println!("📈 ALPHA/BETA vs S&P 500");
+        println!("--------------------------------------------------");
+        println!("Alpha:              {:.4}% (annualized excess return)", result.alpha * 100.0);
+        println!("Beta:               {:.2} (market sensitivity)", result.beta);
+        println!("Correlation:        {:.2} (relationship strength)", result.benchmark_correlation);
         println!("--------------------------------------------------");
         println!(
             "Inputs: {} trades, {} daily data points",
