@@ -105,6 +105,76 @@ impl MarketDataService for AlpacaMarketDataService {
         let symbols = resp.gainers.into_iter().map(|m| m.symbol).collect();
         Ok(symbols)
     }
+
+    async fn get_prices(
+        &self,
+        symbols: Vec<String>,
+    ) -> Result<std::collections::HashMap<String, rust_decimal::Decimal>> {
+        if symbols.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let url = "https://data.alpaca.markets/v2/stocks/snapshots";
+        // Join symbols with comma
+        let symbols_param = symbols.join(",");
+
+        let response = self
+            .client
+            .get(url)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .query(&[("symbols", &symbols_param)])
+            .send()
+            .await
+            .context("Failed to fetch snapshots from Alpaca")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Alpaca snapshots fetch failed: {}", error_text);
+        }
+
+        // Response structure: Keys are symbols, Values are Snapshot objects
+        // Snapshot object has "dailyBar" or "latestTrade" or "latestQuote".
+        // We prefer "latestTrade" price.
+        #[derive(Debug, Deserialize)]
+        struct SnapshotTrade {
+            #[serde(rename = "p")]
+            price: f64,
+        }
+        #[derive(Debug, Deserialize)]
+        struct Snapshot {
+            #[serde(rename = "latestTrade")]
+            latest_trade: Option<SnapshotTrade>,
+            #[serde(rename = "prevDailyBar")]
+            prev_daily_bar: Option<AlpacaBar>, // Fallback
+        }
+
+        // Alpaca returns a map of symbol -> snapshot
+        let resp: std::collections::HashMap<String, Snapshot> = response
+            .json()
+            .await
+            .context("Failed to parse Alpaca snapshots response")?;
+
+        let mut prices = std::collections::HashMap::new();
+
+        for (sym, snapshot) in resp {
+            let price_f64 = if let Some(trade) = snapshot.latest_trade {
+                trade.price
+            } else if let Some(bar) = snapshot.prev_daily_bar {
+                bar.close
+            } else {
+                0.0
+            };
+
+            if price_f64 > 0.0 {
+                 if let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64) {
+                     prices.insert(sym, dec);
+                 }
+            }
+        }
+
+        Ok(prices)
+    }
 }
 
 impl AlpacaMarketDataService {

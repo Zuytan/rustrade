@@ -120,6 +120,13 @@ mod tests {
             let movers = guard.take().unwrap_or_default();
             Ok(movers)
         }
+
+        async fn get_prices(
+            &self,
+            _symbols: Vec<String>,
+        ) -> Result<std::collections::HashMap<String, Decimal>> {
+            Ok(std::collections::HashMap::new())
+        }
     }
 
     struct MockExecService {

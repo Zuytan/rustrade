@@ -121,6 +121,13 @@ mod tests {
         async fn get_top_movers(&self) -> Result<Vec<String>> {
             Ok(vec!["ETH/USD".to_string()])
         }
+
+        async fn get_prices(
+            &self,
+            _symbols: Vec<String>,
+        ) -> Result<std::collections::HashMap<String, Decimal>> {
+            Ok(std::collections::HashMap::new())
+        }
     }
 
     #[tokio::test]

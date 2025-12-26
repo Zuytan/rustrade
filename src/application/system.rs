@@ -174,6 +174,7 @@ impl Application {
             proposal_rx,
             order_tx,
             self.execution_service.clone(),
+            self.market_service.clone(),
             self.config.non_pdt_mode,
             crate::application::risk_manager::RiskConfig {
                 max_position_size_pct: self.config.max_position_size_pct,

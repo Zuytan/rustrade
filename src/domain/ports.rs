@@ -9,6 +9,7 @@ use tokio::sync::mpsc::Receiver;
 pub trait MarketDataService: Send + Sync {
     async fn subscribe(&self, symbols: Vec<String>) -> Result<Receiver<MarketEvent>>;
     async fn get_top_movers(&self) -> Result<Vec<String>>;
+    async fn get_prices(&self, symbols: Vec<String>) -> Result<std::collections::HashMap<String, rust_decimal::Decimal>>;
 }
 
 #[async_trait]

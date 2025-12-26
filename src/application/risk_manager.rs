@@ -1,4 +1,4 @@
-use crate::domain::ports::ExecutionService;
+use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::types::{Order, OrderSide, TradeProposal};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
@@ -32,6 +32,7 @@ pub struct RiskManager {
     proposal_rx: Receiver<TradeProposal>,
     order_tx: Sender<Order>,
     execution_service: Arc<dyn ExecutionService>,
+    market_service: Arc<dyn MarketDataService>,
     non_pdt_mode: bool,
     risk_config: RiskConfig,
     // Risk Tracking State
@@ -46,6 +47,7 @@ impl RiskManager {
         proposal_rx: Receiver<TradeProposal>,
         order_tx: Sender<Order>,
         execution_service: Arc<dyn ExecutionService>,
+        market_service: Arc<dyn MarketDataService>,
         non_pdt_mode: bool,
         risk_config: RiskConfig,
     ) -> Self {
@@ -53,6 +55,7 @@ impl RiskManager {
             proposal_rx,
             order_tx,
             execution_service,
+            market_service,
             non_pdt_mode,
             risk_config,
             equity_high_water_mark: Decimal::ZERO,
@@ -65,7 +68,23 @@ impl RiskManager {
     /// Initialize session tracking with starting equity
     async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let portfolio = self.execution_service.get_portfolio().await?;
-        let initial_equity = portfolio.cash;
+        
+        // Fetch initial prices for accurate equity calculation
+        let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
+        if !symbols.is_empty() {
+             match self.market_service.get_prices(symbols).await {
+                Ok(prices) => {
+                    for (sym, price) in prices {
+                        self.current_prices.insert(sym, price);
+                    }
+                }
+                Err(e) => {
+                    warn!("RiskManager: Failed to fetch initial prices: {}", e);
+                }
+             }
+        }
+
+        let initial_equity = portfolio.total_equity(&self.current_prices);
         self.session_start_equity = initial_equity;
         self.equity_high_water_mark = initial_equity;
         info!(
@@ -141,6 +160,47 @@ impl RiskManager {
         true
     }
 
+    /// Fetch latest prices for all held positions and update valuation
+    async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // 1. Get Portfolio to know what we hold
+        let portfolio = self.execution_service.get_portfolio().await?;
+        
+        // 2. Collect symbols
+        let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
+        if symbols.is_empty() {
+            return Ok(());
+        }
+
+        // 3. Fetch latest prices
+        match self.market_service.get_prices(symbols).await {
+            Ok(prices) => {
+                // Update our cache
+                for (sym, price) in prices {
+                    self.current_prices.insert(sym, price);
+                }
+                
+                // 4. Calculate Equity with NEW prices
+                let current_equity = portfolio.total_equity(&self.current_prices);
+                
+                // 5. Update High Water Mark
+                if current_equity > self.equity_high_water_mark {
+                    self.equity_high_water_mark = current_equity;
+                }
+
+                // 6. Check Risks (Async check)
+                if let Some(reason) = self.check_circuit_breaker(current_equity) {
+                    error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
+                    // In a real system, we might want to shut down or cancel all orders here.
+                    // For now, next proposal will be rejected.
+                }
+            }
+            Err(e) => {
+                warn!("RiskManager: Failed to update valuation prices: {}", e);
+            }
+        }
+        Ok(())
+    }
+
     pub async fn run(&mut self) {
         info!("RiskManager started with config: {:?}", self.risk_config);
 
@@ -149,8 +209,18 @@ impl RiskManager {
             error!("RiskManager: Failed to initialize session: {}", e);
         }
 
-        while let Some(proposal) = self.proposal_rx.recv().await {
-            info!("RiskManager: reviewing proposal {:?}", proposal);
+        // Ticker for periodic valuation (every 60s)
+        let mut valuation_interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+
+        loop {
+            tokio::select! {
+                _ = valuation_interval.tick() => {
+                    if let Err(e) = self.update_portfolio_valuation().await {
+                        error!("RiskManager: Valuation update error: {}", e);
+                    }
+                }
+                Some(proposal) = self.proposal_rx.recv() => {
+                    info!("RiskManager: reviewing proposal {:?}", proposal);
 
             // Update current price for this symbol
             self.current_prices
@@ -319,15 +389,130 @@ impl RiskManager {
         }
     }
 }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::domain::portfolio::{Portfolio, Position};
-    use crate::infrastructure::mock::MockExecutionService;
+    use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
     use chrono::Utc;
     use rust_decimal::Decimal;
     use tokio::sync::{RwLock, mpsc};
+
+    use std::sync::Mutex;
+
+    struct ConfigurableMockMarketData {
+        prices: Arc<Mutex<HashMap<String, Decimal>>>,
+    }
+
+    impl ConfigurableMockMarketData {
+        fn new() -> Self {
+            Self {
+                prices: Arc::new(Mutex::new(HashMap::new())),
+            }
+        }
+        fn set_price(&self, symbol: &str, price: Decimal) {
+            let mut prices = self.prices.lock().unwrap();
+            prices.insert(symbol.to_string(), price);
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MarketDataService for ConfigurableMockMarketData {
+        async fn subscribe(&self, _symbols: Vec<String>) -> Result<mpsc::Receiver<crate::domain::types::MarketEvent>, anyhow::Error> {
+            let (_, rx) = mpsc::channel(1);
+            Ok(rx)
+        }
+        async fn get_top_movers(&self) -> Result<Vec<String>, anyhow::Error> {
+            Ok(vec![])
+        }
+        async fn get_prices(&self, symbols: Vec<String>) -> Result<HashMap<String, Decimal>, anyhow::Error> {
+            let prices = self.prices.lock().unwrap();
+            let mut result = HashMap::new();
+            for sym in symbols {
+                if let Some(p) = prices.get(&sym) {
+                    result.insert(sym, *p);
+                }
+            }
+            Ok(result)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_on_market_crash() {
+        let (proposal_tx, proposal_rx) = mpsc::channel(1);
+        let (order_tx, mut order_rx) = mpsc::channel(1);
+        
+        // Setup Portfolio: $10,000 Cash + 100 TSLA @ $100 ($10,000 Value) = $20,000 Equity
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(10000);
+        port.positions.insert(
+            "TSLA".to_string(),
+            Position {
+                symbol: "TSLA".to_string(),
+                quantity: Decimal::from(100),
+                average_price: Decimal::from(100),
+            },
+        );
+        let portfolio = Arc::new(RwLock::new(port));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        
+        // Setup Market: TSLA @ $100 Initially
+        let market_data = Arc::new(ConfigurableMockMarketData::new());
+        market_data.set_price("TSLA", Decimal::from(100));
+        let market_service = market_data.clone();
+
+        // Config: Max Daily Loss 5%
+        let config = RiskConfig {
+            max_daily_loss_pct: 0.05,
+            ..RiskConfig::default()
+        };
+
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            order_tx,
+            exec_service,
+            market_service,
+            false,
+            config,
+        );
+
+        // Run RiskManager in background
+        tokio::spawn(async move { rm.run().await });
+
+        // Wait for initialization (should set session start equity to $20,000)
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // CRASH MARKET: TSLA -> $80 (-20%)
+        // New Equity: $10k + $8k = $18k. Loss = $2k (10%). Should trigger 5% limit.
+        market_data.set_price("TSLA", Decimal::from(80));
+
+        // Wait for RiskManager ticker (we set it to 60s in code... WAIT)
+        // The ticker is hardcoded to 60s in `RiskManager::run`.
+        // Ideally we should make it configurable or use a mocked time, but for this integration test:
+        // We can't wait 60s.
+        // Option 1: Change RiskManager to accept ticker interval config.
+        // Option 2: Send a proposal! The proposal loop ALSO updates valuation.
+        
+        let proposal = TradeProposal {
+            symbol: "TSLA".to_string(),
+            side: OrderSide::Buy, // Buy more?
+            price: Decimal::from(80),
+            quantity: Decimal::from(10),
+            reason: "Buy the dip".to_string(),
+            timestamp: 0,
+        };
+        proposal_tx.send(proposal).await.unwrap();
+
+        // Expect rejection due to Circuit Breaker
+        // The order channel should NOT receive anything.
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        assert!(order_rx.try_recv().is_err(), "Order should be rejected due to circuit breaker");
+
+        // Note: verifying logs is hard here, but rejection confirms logic.
+    }
 
     #[tokio::test]
     async fn test_buy_approval() {
@@ -337,11 +522,13 @@ mod tests {
         port.cash = Decimal::from(1000);
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let market_service = Arc::new(MockMarketDataService::new());
 
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
+            market_service,
             false,
             RiskConfig::default(),
         );
@@ -369,11 +556,13 @@ mod tests {
         port.cash = Decimal::from(50); // Less than 100
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let market_service = Arc::new(MockMarketDataService::new());
 
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
+            market_service,
             false,
             RiskConfig::default(),
         );
@@ -409,11 +598,13 @@ mod tests {
         );
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let market_service = Arc::new(MockMarketDataService::new());
 
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
+            market_service,
             false,
             RiskConfig::default(),
         );
@@ -463,10 +654,12 @@ mod tests {
             .unwrap();
 
         // New RiskManager with NON_PDT_MODE = true
+        let market_service = Arc::new(MockMarketDataService::new());
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
+            market_service,
             true,
             RiskConfig::default(),
         );

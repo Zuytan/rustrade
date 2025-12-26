@@ -86,6 +86,34 @@ impl MarketDataService for MockMarketDataService {
             "GOOGL".to_string(),
         ])
     }
+
+    async fn get_prices(
+        &self,
+        symbols: Vec<String>,
+    ) -> Result<std::collections::HashMap<String, rust_decimal::Decimal>> {
+        let mut prices = std::collections::HashMap::new();
+        // Return some dummy prices or 100.0 for everything
+        // For E2E tests, this might be tricky if we want specific values.
+        // We could use a shared map in the struct to store "current" prices that can be set by tests?
+        // For now, let's just return a constant for simplicity or randomized variations.
+        // To trigger the circuit breaker test, we might need a way to inject a "crash" price.
+        // CHECK: The MockMarketDataService doesn't accept external price updates in this simple version
+        // except via publish(). But get_prices is Pull. 
+        // We will return $100.0 for everything as a baseline.
+        
+        for sym in symbols {
+             // If we want to simulate a crash for TSLA in the test, we might hardcode it here?
+             // That's ugly for general use.
+             // Better: RiskManager test will likely mock the service trait directly OR 
+             // we can add a `set_price` method to MockMarketDataService.
+             
+             // Check if it's TSLA for the specific test case? No, that's bad.
+             // Let's implement a rudimentary price store in MockMarketDataService later if needed.
+             // For now: $100.0.
+             prices.insert(sym, rust_decimal::Decimal::from(100)); 
+        }
+        Ok(prices)
+    }
 }
 
 use crate::domain::portfolio::Portfolio;
