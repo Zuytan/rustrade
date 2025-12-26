@@ -1,4 +1,5 @@
 use crate::application::analyst::{Analyst, AnalystConfig};
+use crate::application::strategies::{AdvancedTripleFilterStrategy, TradingStrategy};
 use crate::domain::ports::ExecutionService;
 use crate::domain::types::MarketEvent;
 use crate::infrastructure::alpaca::AlpacaMarketDataService;
@@ -80,7 +81,17 @@ impl Simulator {
             trend_riding_exit_buffer_pct: self.config.trend_riding_exit_buffer_pct,
         };
 
-        let mut analyst = Analyst::new(market_rx, proposal_tx, self.execution_service.clone(), sim_config);
+        
+        // Use Advanced strategy for simulations
+        let strategy: Arc<dyn TradingStrategy> = Arc::new(AdvancedTripleFilterStrategy::new(
+            sim_config.fast_sma_period,
+            sim_config.slow_sma_period,
+            sim_config.sma_threshold,
+            sim_config.trend_sma_period,
+            sim_config.rsi_threshold,
+        ));
+
+        let mut analyst = Analyst::new(market_rx, proposal_tx, self.execution_service.clone(), strategy, sim_config);
 
         let analyst_handle = tokio::spawn(async move {
             analyst.run().await;

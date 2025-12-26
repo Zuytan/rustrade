@@ -15,6 +15,7 @@ use crate::application::{
     risk_manager::RiskManager,
     sentinel::Sentinel,
     scanner::MarketScanner,
+    strategies::*,
 };
 
 pub struct Application {
@@ -119,10 +120,50 @@ impl Application {
             trend_riding_exit_buffer_pct: 0.03,
         };
         
-        let mut analyst = Analyst::new(
+        
+        // Create strategy based on config
+        let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
+            crate::config::StrategyMode::Standard => {
+                Arc::new(DualSMAStrategy::new(
+                    self.config.fast_sma_period,
+                    self.config.slow_sma_period,
+                    self.config.sma_threshold,
+                ))
+            }
+            crate::config::StrategyMode::Advanced => {
+                Arc::new(AdvancedTripleFilterStrategy::new(
+                    self.config.fast_sma_period,
+                    self.config.slow_sma_period,
+                    self.config.sma_threshold,
+                    self.config.trend_sma_period,
+                    self.config.rsi_threshold,
+                ))
+            }
+            crate::config::StrategyMode::Dynamic => {
+                Arc::new(DynamicRegimeStrategy::new(
+                    self.config.fast_sma_period,
+                    self.config.slow_sma_period,
+                    self.config.sma_threshold,
+                    self.config.trend_sma_period,
+                    self.config.rsi_threshold,
+                    self.config.trend_divergence_threshold,
+                ))
+            }
+            crate::config::StrategyMode::TrendRiding => {
+                Arc::new(TrendRidingStrategy::new(
+                    self.config.fast_sma_period,
+                    self.config.slow_sma_period,
+                    self.config.sma_threshold,
+                    self.config.trend_riding_exit_buffer_pct,
+                ))
+            }
+        };
+        
+        info!("Using strategy: {}", strategy.name());        let mut analyst = Analyst::new(
             market_rx, 
             proposal_tx, 
-            self.execution_service.clone(), 
+            self.execution_service.clone(),
+            strategy,
             analyst_config
         );
 

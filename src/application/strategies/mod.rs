@@ -1,9 +1,11 @@
 mod traits;
+mod dual_sma;
+mod advanced;
+mod dynamic;
+mod trend_riding;
 
 pub use traits::{AnalysisContext, Signal, TradingStrategy};
-
-// Strategy implementations will be added here
-// mod dual_sma;
-// mod advanced;
-// mod dynamic;
-// mod trend_riding;
+pub use dual_sma::DualSMAStrategy;
+pub use advanced::AdvancedTripleFilterStrategy;
+pub use dynamic::DynamicRegimeStrategy;
+pub use trend_riding::TrendRidingStrategy;

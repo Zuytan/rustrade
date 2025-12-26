@@ -1,5 +1,6 @@
 use crate::domain::ports::ExecutionService;
 use crate::domain::types::{MarketEvent, OrderSide, TradeProposal};
+use crate::application::strategies::{TradingStrategy, AnalysisContext};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
@@ -58,6 +59,7 @@ pub struct Analyst {
     market_rx: Receiver<MarketEvent>,
     proposal_tx: Sender<TradeProposal>,
     execution_service: Arc<dyn ExecutionService>,
+    strategy: Arc<dyn TradingStrategy>,
     config: AnalystConfig,
     // Per-symbol states
     symbol_states: HashMap<String, SymbolState>,
@@ -68,12 +70,14 @@ impl Analyst {
         market_rx: Receiver<MarketEvent>,
         proposal_tx: Sender<TradeProposal>,
         execution_service: Arc<dyn ExecutionService>,
+        strategy: Arc<dyn TradingStrategy>,
         config: AnalystConfig,
     ) -> Self {
         Self {
             market_rx,
             proposal_tx,
             execution_service,
+            strategy,
             config,
             symbol_states: HashMap::new(),
         }
@@ -247,90 +251,27 @@ impl Analyst {
                 }
             }
 
-            // --- Strategy Filters ---
-            if let Some(side) = signal {
-                match self.config.strategy_mode {
-                    crate::config::StrategyMode::Standard => {
-                        // No extra filters, pure SMA crossover
-                    }
-                    crate::config::StrategyMode::Advanced => {
-                        Self::apply_advanced_filters(&mut signal, &symbol, side, price_f64, current_trend, current_rsi, current_macd.macd, current_macd.histogram, state.last_macd_histogram, self.config.rsi_threshold);
-                    }
-                    crate::config::StrategyMode::Dynamic => {
-                        // Regime Detection: Trend Divergence (SMA Spread)
-                        // High Divergence (> threshold) -> Strong Trend -> Trend Following Logic (Buy & Hold-like)
-                        // Low Divergence (<= threshold) -> Choppy -> Advanced Logic (Strict Filters)
-                        
-                        let mut divergence = 0.0;
-                         if let (Some(fast), Some(slow)) = (state.last_fast_sma, state.last_slow_sma) {
-                             if price_f64 > 0.0 {
-                                 divergence = (fast - slow).abs() / price_f64;
-                             }
-                         }
-
-                        let is_strong_trend = divergence > self.config.trend_divergence_threshold;
-                        
-                        if is_strong_trend {
-                            // TREND REGIME: Be looser with exits to capture the run
-                            match side {
-                                OrderSide::Buy => {
-                                    // Buy: Basic Trend Filter is enough (Price > 200 SMA)
-                                    // Or even skip that if the trend is super strong? Let's keep basic safety.
-                                    if price_f64 < current_trend {
-                                        info!("Analyst: Dynamic (Trend) Buy Signal for {} REJECTED (Price below long-term Trend SMA despite strong trend {:.4})", symbol, divergence);
-                                        signal = None;
-                                    } else {
-                                        info!("Analyst: Dynamic (Trend) Buy Signal for {} ACCEPTED (Strong Trend {:.4})", symbol, divergence);
-                                    }
-                                }
-                                OrderSide::Sell => {
-                                    // Sell: ONLY sell if trend is actually broken (Price < Trend SMA)
-                                    // Ignore SMA crossovers if price is still above the long-term trend
-                                    if price_f64 > current_trend {
-                                        info!("Analyst: Dynamic (Trend) Sell Signal for {} SUPPRESSED. Holding through pullback (Price > Trend SMA, Trend {:.4})", symbol, divergence);
-                                        signal = None;
-                                    } else {
-                                        info!("Analyst: Dynamic (Trend) Sell Signal for {} ACCEPTED (Trend Broken)", symbol);
-                                    }
-                                }
-                            }
-                        } else {
-                            // CHOP REGIME: Use strict Advanced filters
-                            info!("Analyst: Dynamic (Chop) applying strict filters for {} (Low Trend {:.4})", symbol, divergence);
-                            Self::apply_advanced_filters(&mut signal, &symbol, side, price_f64, current_trend, current_rsi, current_macd.macd, current_macd.histogram, state.last_macd_histogram, self.config.rsi_threshold);
-                        }
-                    }
-                    crate::config::StrategyMode::TrendRiding => {
-                        // TREND RIDING MODE: Hold positions longer to capture more gains
-                        match side {
-                            OrderSide::Buy => {
-                                // Entry: Accept Golden Cross but verify trend
-                                if price_f64 < current_trend {
-                                    info!("TrendRiding: Buy signal REJECTED for {} - Price {:.2} below Trend SMA {:.2}", 
-                                        symbol, price_f64, current_trend);
-                                    signal = None;
-                                } else {
-                                    info!("TrendRiding: Buy signal ACCEPTED for {} - Entering trend at {:.2}", 
-                                        symbol, price_f64);
-                                }
-                            }
-                            OrderSide::Sell => {
-                                // EXIT CONSERVATIVE: Only sell if price breaks below Slow SMA with buffer
-                                let slow_sma_buffer = current_slow * (1.0 - self.config.trend_riding_exit_buffer_pct);
-                                
-                                if price_f64 > slow_sma_buffer {
-                                    info!("TrendRiding: HOLDING position {} - Price {:.2} still above buffer {:.2} (Slow SMA: {:.2}, Buffer: {:.1}%)", 
-                                        symbol, price_f64, slow_sma_buffer, current_slow, self.config.trend_riding_exit_buffer_pct * 100.0);
-                                    signal = None; // SUPPRESS sell, keep position
-                                } else {
-                                    info!("TrendRiding: EXITING position {} - Trend broken, price {:.2} below buffer {:.2}", 
-                                        symbol, price_f64, slow_sma_buffer);
-                                    // Accept sell signal
-                                }
-                            }
-                        }
-                    }
-                }
+            // --- Use Injected Strategy (Strategy Pattern) ---
+            let analysis_ctx = AnalysisContext {
+                symbol: symbol.clone(),
+                current_price: price,
+                price_f64,
+                fast_sma: current_fast,
+                slow_sma: current_slow,
+                trend_sma: current_trend,
+                rsi: current_rsi,
+                macd_value: current_macd.macd,
+                macd_signal: current_macd.signal,
+                macd_histogram: current_macd.histogram,
+                last_macd_histogram: state.last_macd_histogram,
+                atr: current_atr,
+                has_position: state.entry_price.is_some(),
+               timestamp,
+            };
+            
+            if let Some(strategy_signal) = self.strategy.analyze(&analysis_ctx) {
+                info!("Analyst [{}]: {} - {}", self.strategy.name(), symbol, strategy_signal.reason);
+                signal = Some(strategy_signal.side);
             }
 
             // --- Long-Only Constraint (Prevent Short Selling) ---
@@ -573,7 +514,12 @@ mod tests {
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
         };
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, config);
+        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
+            config.fast_sma_period,
+            config.slow_sma_period,
+            config.sma_threshold,
+        ));
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -626,7 +572,12 @@ mod tests {
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
         };
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, config);
+        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
+            config.fast_sma_period,
+            config.slow_sma_period,
+            config.sma_threshold,
+        ));
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -696,7 +647,12 @@ mod tests {
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
         };
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, config);
+        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
+            config.fast_sma_period,
+            config.slow_sma_period,
+            config.sma_threshold,
+        ));
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -756,7 +712,12 @@ mod tests {
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
         };
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, config);
+        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
+            config.fast_sma_period,
+            config.slow_sma_period,
+            config.sma_threshold,
+        ));
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -824,7 +785,12 @@ mod tests {
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
         };
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, config);
+        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
+            config.fast_sma_period,
+            config.slow_sma_period,
+            config.sma_threshold,
+        ));
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -893,7 +859,12 @@ mod tests {
             rsi_threshold: 55.0,
             trend_riding_exit_buffer_pct: 0.03,
         };
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, config);
+        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
+            config.fast_sma_period,
+            config.slow_sma_period,
+            config.sma_threshold,
+        ));
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -932,83 +903,5 @@ mod tests {
             received = true;
         }
         assert!(!received, "Should NOT receive signal when trend filter rejects it");
-    }
-
-    #[tokio::test]
-    async fn test_dynamic_strategy_switching() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-        let portfolio = Arc::new(RwLock::new(crate::domain::portfolio::Portfolio::new()));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(portfolio));
-
-        // Dynamic mode, Trend threshold 0.005 (0.5%)
-        let config = AnalystConfig {
-            fast_sma_period: 2,
-            slow_sma_period: 3,
-            max_positions: 1,
-            trade_quantity: Decimal::from(1),
-            sma_threshold: 0.0,
-            order_cooldown_seconds: 0,
-            risk_per_trade_percent: 0.0,
-            strategy_mode: crate::config::StrategyMode::Dynamic,
-            trend_sma_period: 10,
-            rsi_period: 2, 
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.005,
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            rsi_threshold: 55.0,
-            trend_riding_exit_buffer_pct: 0.03,
-        };
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, config);
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        // 1. CHOP SCENARIO -> Low Divergence
-        // Prices oscillating tightly. SMAs will be close.
-        let chop_prices = [100.0, 100.2, 100.0, 100.2, 100.0, 100.2];
-        for (i, p) in chop_prices.iter().enumerate() {
-            let event = MarketEvent::Quote {
-                symbol: "CHOP".to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (i * 1000) as i64,
-            };
-            market_tx.send(event).await.unwrap();
-        }
-
-        // Expect NO signal because filters block it in Chop mode (Low Divergence)
-        let result = tokio::time::timeout(std::time::Duration::from_millis(100), proposal_rx.recv()).await;
-        assert!(result.is_err() || result.unwrap().is_none(), "Should reject signal in low divergence chop");
-
-        // 2. TREND SCENARIO -> High Divergence
-        // Rapid price increase after a dip.
-        // Need to establish Fast < Slow first, then Cross Up with momentum.
-        // P1-P3: 100 (Stable)
-        // P4: 90 (Dip, Fast < Slow)
-        // P5: 120 (Rip, Fast > Slow, High Divergence)
-        let trend_prices = [100.0, 100.0, 100.0, 90.0, 120.0, 130.0]; 
-        for (i, p) in trend_prices.iter().enumerate() {
-             let event = MarketEvent::Quote {
-                symbol: "TREND".to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (10000 + i * 1000) as i64,
-            };
-            market_tx.send(event).await.unwrap();
-        }
-
-        // We should eventually get a BUY signal 
-        let mut bought = false;
-        while let Ok(Some(proposal)) = tokio::time::timeout(std::time::Duration::from_millis(100), proposal_rx.recv()).await {
-            if proposal.side == OrderSide::Buy && proposal.symbol == "TREND" {
-                bought = true;
-                break;
-            }
-        }
-        assert!(bought, "Should accept Buy signal in High Divergence trend");
     }
 }

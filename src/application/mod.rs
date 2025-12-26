@@ -1,3 +1,4 @@
+pub mod strategies;
 pub mod analyst;
 pub mod executor;
 pub mod order_throttler;
