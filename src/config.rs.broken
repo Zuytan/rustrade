@@ -1,0 +1,94 @@
+use anyhow::{Context, Result};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
+use std::env;
+use std::str::FromStr;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Mode {
+    Mock,
+    Alpaca,
+}
+
+impl FromStr for Mode {
+    type Err = anyhow::Error;
+    
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "mock" => Ok(Mode::Mock),
+            "alpaca" => Ok(Mode::Alpaca),
+            _ => anyhow::bail!("Invalid mode: {}. Use 'mock' or 'alpaca'", s),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StrategyMode {
+    Standard,
+    Advanced,
+    Dynamic,
+    TrendRiding,
+}
+
+impl FromStr for StrategyMode {
+    type Err = anyhow::Error;
+    
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "standard" => Ok(StrategyMode::Standard),
+            "advanced" => Ok(StrategyMode::Advanced),
+            "dynamic" => Ok(StrategyMode::Dynamic),
+            "trendriding" | "trend_riding" => Ok(StrategyMode::TrendRiding),
+            _ => anyhow::bail!("Invalid strategy mode: {}", s),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub mode: Mode,
+    pub alpaca_api_key: Option<String>,
+    pub alpaca_secret_key: Option<String>,
+    pub alpaca_base_url: String,
+    pub alpaca_ws_url: String,
+    pub symbols: Vec<String>,
+    pub strategy_mode: StrategyMode,
+    
+    // Analyst Configuration
+    pub fast_sma_period: usize,
+    pub slow_sma_period: usize,
+    pub trend_sma_period: usize,
+    pub sma_threshold: f64,
+    pub rsi_period: usize,
+    pub rsi_threshold: f64,
+    pub macd_fast_period: usize,
+    pub macd_slow_period: usize,
+    pub macd_signal_period: usize,
+    pub trend_divergence_threshold: f64,
+    pub trailing_stop_atr_multiplier: f64,
+    pub atr_period: usize,
+    pub trend_riding_exit_buffer_pct: f64,
+    
+    // Risk Management
+    pub max_position_size_pct: f64,
+    pub max_daily_loss_pct: f64,
+    pub max_drawdown_pct: f64,
+    pub pdt_mode: bool,
+    
+    // Bot Configuration
+    pub max_positions: usize,
+    pub trade_quantity: Decimal,
+    pub order_cooldown_seconds: u64,
+    pub risk_per_trade_percent: f64,
+    pub dynamic_scanning_enabled: bool,
+    pub watchlist_size: usize,
+    pub scan_interval_seconds: u64,
+    
+    // Transaction Costs
+    pub slippage_pct: f64,
+    pub commission_per_share: f64,
+}
+
+impl Config {
+    pub fn from_env() -> Result<Self> {
+        let mode_str = env::var("MODE").unwrap_or_else(|_| "mock".to_string());

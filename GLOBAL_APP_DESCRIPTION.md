@@ -1,0 +1,68 @@
+# RustTrade Agentic Bot 🦀
+
+## Objectif du Projet
+Développer un système multi-agents capable de surveiller le marché des actions et ETF, d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
+
+> 📘 **Nouveau :** Pour une explication simplifiée des stratégies, voir [Guide des Stratégies (Non-Spécialistes)](docs/guide_strategie_simplifie.md).
+
+## Architecture des Agents
+
+### 1. L'Agent "Sentinel" (Data Ingestion)
+- **Rôle**: Oreilles et yeux sur le marché.
+- **Responsabilités**:
+    - Maintenir les WebSockets (Mock ou Alpaca).
+    - Pousser les ticks de prix vers l'Analyst via `mpsc::channel`.
+    - **Re-configuration Dynamique** : Capable de changer sa "Watchlist" en temps réel sur ordre du Market Scanner.
+
+### 2. L'Agent "Market Scanner" (Discovery)
+- **Rôle**: L'éclaireur.
+- **Responsabilités**:
+    - Scanner périodiquement le marché (API Top Movers).
+    - Identifier les actifs les plus volatils (Gainers).
+    - Ordonner au Sentinel de changer de cible.
+
+### 3. Agent "Analyst" (Strategy)
+- **Rôle**: Le cerveau décisionnel.
+- **Responsabilités**: Détecter les signaux via une stratégie de **Dual SMA Crossover** ou une stratégie **Advanced Analyst** (Crossover + Trend + RSI + MACD). Le mode Advanced utilise une "Triple Confirmation" (Tendance, RSI, Momentum MACD) pour ne choisir que les meilleurs moments de la journée. 
+    - **Long-Only Safety**: Par sécurité, l'Analyste vérifie systématiquement que le portefeuille détient l'actif avant d'émettre un signal de Vente, empêchant tout Short Selling involontaire.
+
+### 3. Agent "Risk Manager" (Safety Gate)
+- **Rôle**: Contrôleur de conformité financier.
+- **Responsabilités**: Validation des propositions de trade via l' `ExecutionService`. Gère la normalisation des symboles (ex: `BTC/USD` vs `BTCUSD`) et ajuste automatiquement les quantités de vente en cas de positions fractionnaires. **Protection PDT (Non-Pattern Day Trader)** : Empêche la revente d'un actif acheté le jour même si l'option est activée.
+
+### 4. L'Agent "Order Throttler" (Rate Limiting)
+- **Rôle**: Garde-fou technique.
+- **Responsabilités**:
+    - Garantir le respect des limites de l'API de l'exchange (ex: 10 ordres/min).
+    - Mise en file d'attente (FIFO) des ordres excédentaires.
+
+### 5. L'Agent "Executor" (Order Management)
+- **Rôle**: Le bras armé.
+- **Responsabilités**:
+    - Transmission des ordres via API REST Alpaca ou Mock.
+    - Mise à jour du Portfolio interne.
+
+## Gestion de l'État du Portefeuille (State Management)
+Pour garantir l'intégrité des fonds, le bot maintient une Source de Vérité locale synchronisée avec le courtier.
+
+- **Structure Portfolio**: Utilisation d'un `Arc<RwLock<Portfolio>>` pour permettre une lecture concurrente par l'Analyste et une écriture sécurisée par l'Exécuteur.
+- **Synchronisation Initiale**: "Cold Boot" via REST pour récupérer le cash et les positions.
+- **Synchronisation Temps Réel**: Mise à jour incrémentale via WebSocket AccountEvents.
+- **Boucle de Réconciliation**: Thread de vérification périodique.
+
+## Règles de Sécurité Antigravity
+1. **Strict Decimal Policy**: Calculs de cash obligatoirement en `rust_decimal::Decimal`. `f64` interdit pour le cash.
+2. **Graceful Shutdown**: Annulation des ordres ouverts en cas d'arrêt.
+3. **Circuit Breaker**: Arrêt des achats après 3 échecs de connexion consécutifs.
+4. **Paper Trading**: Activé par défaut.
+
+## 6. Vérification & Backtesting
+- **Harnais de Test Historique**: Capacité de rejouer des données historiques (Alpaca Bars v2) pour vérifier les décisions de l'Analyste.
+- **Trailing Stops Actifs**: Mécanisme de sortie automatique basé sur ATR (Average True Range) pour protection du capital. Surveille en continu les positions et déclenche des ventes quand le prix descend sous le seuil calculé.
+- **Utilitaire de Benchmark (`src/bin/benchmark.rs`)**: Outil CLI permettant de simuler l'exécution d'une stratégie sur une période donnée et de calculer des métriques de performance précises.
+    - **Métriques Avancées** (v0.13.0+): Sharpe Ratio, Sortino Ratio, Calmar Ratio, Max Drawdown, Win Rate, Profit Factor, Average Win/Loss, Exposure.
+    - Supporte plusieurs modes de stratégie (Standard vs Advanced vs Dynamic vs TrendRiding).
+    - Simule l'exécution des ordres avec gestion précise du portefeuille (Sorties via trailing stops, Cash, Positions).
+    - Pairing automatique Buy/Sell pour calcul du P&L réalisé.
+- **Support Intégration Continue**: Test d'intégration `tests/backtest_alpaca.rs` et `tests/e2e_trading_flow.rs` prêts pour vérifier les stratégies sur des scénarios réels.
+- **32 Unit Tests**: Couverture complète des modules critiques (Analyst, Risk Manager, Portfolio, Metrics).
