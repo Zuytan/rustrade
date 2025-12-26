@@ -67,6 +67,7 @@ impl TradingStrategy for MeanReversionStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::OrderSide;
     use rust_decimal_macros::dec;
 
     fn create_context(
