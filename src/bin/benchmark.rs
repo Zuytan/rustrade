@@ -100,10 +100,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AnalystConfig {
         fast_sma_period: 20,
         slow_sma_period: 60,
-        max_positions: 1,
+        max_positions: 5,
         trade_quantity: Decimal::from(1),
         sma_threshold: 0.001,
-        order_cooldown_seconds: 3600,
+        order_cooldown_seconds: 300,
         risk_per_trade_percent: 0.02,
         strategy_mode: strategy_mode,
         trend_sma_period: 2000,
@@ -124,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .parse()
             .unwrap(),
         rsi_threshold: env::var("RSI_THRESHOLD")
-            .unwrap_or("55.0".to_string())
+            .unwrap_or("65.0".to_string())
             .parse()
             .unwrap(),
         trend_riding_exit_buffer_pct: env::var("TREND_RIDING_EXIT_BUFFER_PCT")

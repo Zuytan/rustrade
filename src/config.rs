@@ -138,7 +138,7 @@ impl Config {
             .context("Failed to parse SMA_THRESHOLD")?;
 
         let order_cooldown_seconds = env::var("ORDER_COOLDOWN_SECONDS")
-            .unwrap_or_else(|_| "3600".to_string())
+            .unwrap_or_else(|_| "300".to_string())
             .parse::<u64>()
             .context("Failed to parse ORDER_COOLDOWN_SECONDS")?;
 
@@ -182,12 +182,12 @@ impl Config {
             .context("Failed to parse MACD_SIGNAL_PERIOD")?;
 
         let trend_divergence_threshold = env::var("TREND_DIVERGENCE_THRESHOLD")
-            .unwrap_or_else(|_| "0.0002".to_string())
+            .unwrap_or_else(|_| "0.005".to_string())
             .parse::<f64>()
             .context("Failed to parse TREND_DIVERGENCE_THRESHOLD")?;
 
         let rsi_threshold = env::var("RSI_THRESHOLD")
-            .unwrap_or_else(|_| "75.0".to_string())
+            .unwrap_or_else(|_| "65.0".to_string())
             .parse::<f64>()
             .context("Failed to parse RSI_THRESHOLD")?;
 
