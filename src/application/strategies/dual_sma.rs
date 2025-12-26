@@ -1,5 +1,4 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
-use crate::domain::types::OrderSide;
 
 /// Dual Simple Moving Average (SMA) crossover strategy
 ///
@@ -54,6 +53,7 @@ impl TradingStrategy for DualSMAStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::OrderSide;
     use rust_decimal_macros::dec;
 
     fn create_test_context(fast_sma: f64, slow_sma: f64, has_position: bool) -> AnalysisContext {

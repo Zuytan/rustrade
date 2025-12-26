@@ -1,4 +1,5 @@
 pub mod alpaca;
+pub mod alpaca_websocket;
 pub mod event_bus;
 pub mod mock;
 pub mod repositories;

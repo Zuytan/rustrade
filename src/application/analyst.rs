@@ -433,6 +433,7 @@ impl Analyst {
         }
     }
 
+    #[allow(dead_code)]
     fn apply_advanced_filters(
         signal: &mut Option<OrderSide>,
         symbol: &str,

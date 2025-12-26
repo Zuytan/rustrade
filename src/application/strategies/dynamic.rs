@@ -1,6 +1,5 @@
 use super::advanced::AdvancedTripleFilterStrategy;
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
-use crate::domain::types::OrderSide;
 
 /// Dynamic Regime Detection Strategy
 ///
@@ -103,6 +102,7 @@ impl TradingStrategy for DynamicRegimeStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::OrderSide;
     use rust_decimal_macros::dec;
 
     fn create_test_context(

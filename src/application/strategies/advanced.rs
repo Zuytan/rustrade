@@ -12,6 +12,7 @@ use crate::domain::types::OrderSide;
 pub struct AdvancedTripleFilterStrategy {
     sma_strategy: DualSMAStrategy,
     rsi_threshold: f64,
+    #[allow(dead_code)]
     trend_sma_period: usize,
 }
 

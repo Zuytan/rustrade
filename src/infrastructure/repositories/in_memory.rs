@@ -136,11 +136,8 @@ mod tests {
             symbol: symbol.to_string(),
             side,
             quantity: dec!(10),
-            limit_price: None,
-            filled_avg_price: None,
-            status: "filled".to_string(),
-            submitted_at: Utc::now(),
-            filled_at: Some(Utc::now()),
+            price: dec!(100),
+            timestamp: Utc::now().timestamp(),
         }
     }
 

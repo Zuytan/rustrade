@@ -17,7 +17,7 @@
 //! use rustrade::application::trailing_stops::StopState;
 //!
 //! let mut stop = StopState::on_buy(100.0, 2.0, 3.0); // price=100, ATR=2, multiplier=3
-//! 
+//!
 //! // Price rises to 110
 //! let trigger = stop.on_price_update(110.0, 2.0, 3.0);
 //! assert!(trigger.is_none()); // Stop raised, not triggered
@@ -26,9 +26,6 @@
 //! let trigger = stop.on_price_update(103.0, 2.0, 3.0);
 //! assert!(trigger.is_some()); // Stop triggered at 104
 //! ```
-
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 
 /// State machine for trailing stop loss management
 #[derive(Debug, Clone, PartialEq)]

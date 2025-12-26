@@ -1,14 +1,14 @@
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::types::{MarketEvent, Order, OrderSide};
+use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver};
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use tracing::{error, info, warn};
+use tracing::info;
 
 // ===== Market Data Service (WebSocket) =====
 
@@ -16,199 +16,52 @@ pub struct AlpacaMarketDataService {
     client: Client,
     api_key: String,
     api_secret: String,
-    ws_url: String,
+    ws_manager: Arc<AlpacaWebSocketManager>, // Singleton WebSocket manager
 }
 
 impl AlpacaMarketDataService {
     pub fn new(api_key: String, api_secret: String, ws_url: String) -> Self {
+        // Configure client with connection pool limits
+        let client = Client::builder()
+            .pool_max_idle_per_host(5)
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
+        // Create singleton WebSocket manager
+        let ws_manager = Arc::new(AlpacaWebSocketManager::new(
+            api_key.clone(),
+            api_secret.clone(),
+            ws_url,
+        ));
+
         Self {
-            client: Client::new(),
+            client,
             api_key,
             api_secret,
-            ws_url,
+            ws_manager,
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "T")]
-enum AlpacaMessage {
-    #[serde(rename = "success")]
-    Success { msg: String },
-    #[serde(rename = "error")]
-    Error { code: i32, msg: String },
-    #[serde(rename = "subscription")]
-    Subscription {
-        trades: Option<Vec<String>>,
-        quotes: Option<Vec<String>>,
-    },
-    #[serde(rename = "welcome")]
-    Welcome { msg: String },
-    #[serde(rename = "q")]
-    Quote(AlpacaQuote),
-    #[serde(rename = "t")]
-    Trade(AlpacaTrade),
-}
-
-#[derive(Debug, Deserialize)]
-struct AlpacaQuote {
-    #[serde(rename = "S")]
-    symbol: String,
-    #[serde(rename = "bp")]
-    bid_price: f64,
-    #[serde(rename = "ap")]
-    ask_price: f64,
-}
-
-#[derive(Debug, Deserialize)]
-struct AlpacaTrade {
-    #[serde(rename = "S")]
-    symbol: String,
-    #[serde(rename = "p")]
-    price: f64,
 }
 
 #[async_trait]
 impl MarketDataService for AlpacaMarketDataService {
     async fn subscribe(&self, symbols: Vec<String>) -> Result<Receiver<MarketEvent>> {
+        // Update subscription on the singleton WebSocket manager
+        self.ws_manager.update_subscription(symbols).await?;
+
+        // Get a broadcast receiver from the manager
+        let mut broadcast_rx = self.ws_manager.subscribe();
+
+        // Convert broadcast to mpsc for API compatibility
         let (tx, rx) = mpsc::channel(100);
-        let url = self.ws_url.clone();
-        let api_key = self.api_key.clone();
-        let api_secret = self.api_secret.clone();
-        let symbols_clone = symbols.clone();
 
         tokio::spawn(async move {
-            match connect_async(&url).await {
-                Ok((ws_stream, _)) => {
-                    info!("Connected to Alpaca WebSocket");
-                    let (mut write, mut read) = ws_stream.split();
-                    info!("Waiting for welcome message...");
-                    let mut authenticated = false;
-                    let mut auth_sent = false;
-
-                    // Read messages
-                    while let Some(msg_result) = read.next().await {
-                        match msg_result {
-                            Ok(Message::Text(text)) => {
-                                if let Ok(messages) =
-                                    serde_json::from_str::<Vec<AlpacaMessage>>(&text)
-                                {
-                                    for message in messages {
-                                        match message {
-                                            AlpacaMessage::Welcome { msg } => {
-                                                info!("Alpaca Welcome: {}", msg);
-                                            }
-                                            AlpacaMessage::Success { msg } => {
-                                                info!("Alpaca Success: {}", msg);
-
-                                                // 1. If connected, send auth
-                                                if msg == "connected" && !auth_sent {
-                                                    let auth_msg = serde_json::json!({
-                                                        "action": "auth",
-                                                        "key": api_key.clone(),
-                                                        "secret": api_secret.clone()
-                                                    });
-
-                                                    if let Err(e) = write
-                                                        .send(Message::Text(
-                                                            auth_msg.to_string().into(),
-                                                        ))
-                                                        .await
-                                                    {
-                                                        error!(
-                                                            "Failed to send auth message: {}",
-                                                            e
-                                                        );
-                                                        return;
-                                                    }
-                                                    auth_sent = true;
-                                                    info!("Auth message sent");
-                                                }
-                                                // 2. If authenticated, send subscription
-                                                else if msg == "authenticated" && !authenticated {
-                                                    authenticated = true;
-                                                    let subscribe_msg = serde_json::json!({
-                                                        "action": "subscribe",
-                                                        "quotes": symbols_clone,
-                                                        "trades": symbols_clone
-                                                    });
-
-                                                    if let Err(e) = write
-                                                        .send(Message::Text(
-                                                            subscribe_msg.to_string().into(),
-                                                        ))
-                                                        .await
-                                                    {
-                                                        error!(
-                                                            "Failed to send subscribe message: {}",
-                                                            e
-                                                        );
-                                                        return;
-                                                    }
-                                                    info!(
-                                                        "Subscription request sent for {:?}",
-                                                        symbols_clone
-                                                    );
-                                                }
-                                            }
-                                            AlpacaMessage::Error { code, msg } => {
-                                                error!("Alpaca error ({}): {}", code, msg);
-                                            }
-                                            AlpacaMessage::Subscription { trades, quotes } => {
-                                                info!(
-                                                    "Subscribed successfully. Trades: {:?}, Quotes: {:?}",
-                                                    trades, quotes
-                                                );
-                                            }
-                                            AlpacaMessage::Quote(quote) => {
-                                                // Use mid-price
-                                                let mid_price =
-                                                    (quote.bid_price + quote.ask_price) / 2.0;
-                                                let event = MarketEvent::Quote {
-                                                    symbol: quote.symbol,
-                                                    price: Decimal::from_f64_retain(mid_price)
-                                                        .unwrap_or(Decimal::ZERO),
-                                                    timestamp: chrono::Utc::now()
-                                                        .timestamp_millis(),
-                                                };
-
-                                                if tx.send(event).await.is_err() {
-                                                    warn!("Market data receiver dropped");
-                                                    return;
-                                                }
-                                            }
-                                            AlpacaMessage::Trade(trade) => {
-                                                let event = MarketEvent::Quote {
-                                                    symbol: trade.symbol,
-                                                    price: Decimal::from_f64_retain(trade.price)
-                                                        .unwrap_or(Decimal::ZERO),
-                                                    timestamp: chrono::Utc::now()
-                                                        .timestamp_millis(),
-                                                };
-
-                                                if tx.send(event).await.is_err() {
-                                                    warn!("Market data receiver dropped");
-                                                    return;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Ok(Message::Close(_)) => {
-                                info!("WebSocket closed");
-                                break;
-                            }
-                            Err(e) => {
-                                error!("WebSocket error: {}", e);
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to connect to Alpaca WebSocket: {}", e);
+            while let Ok(event) = broadcast_rx.recv().await {
+                if tx.send(event).await.is_err() {
+                    // Receiver dropped, exit
+                    break;
                 }
             }
         });
@@ -326,8 +179,16 @@ pub struct AlpacaExecutionService {
 
 impl AlpacaExecutionService {
     pub fn new(api_key: String, api_secret: String, base_url: String) -> Self {
+        // Configure client with connection pool limits to avoid exhausting API connections
+        let client = Client::builder()
+            .pool_max_idle_per_host(5) // Limit idle connections per host
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
         Self {
-            client: Client::new(),
+            client,
             api_key,
             api_secret,
             base_url,
@@ -370,6 +231,7 @@ struct AlpacaOrder {
     symbol: String,
     side: String,
     qty: String,
+    #[allow(dead_code)]
     filled_qty: Option<String>,
     filled_avg_price: Option<String>,
     created_at: String,

@@ -1,5 +1,4 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
-use crate::domain::types::OrderSide;
 
 /// Trend Riding Strategy
 ///
@@ -9,7 +8,9 @@ use crate::domain::types::OrderSide;
 /// - Exit only when price drops significantly below trend
 #[derive(Debug, Clone)]
 pub struct TrendRidingStrategy {
+    #[allow(dead_code)]
     fast_period: usize,
+    #[allow(dead_code)]
     slow_period: usize,
     sma_threshold: f64,
     exit_buffer_pct: f64, // Buffer below trend SMA before exiting
@@ -68,6 +69,7 @@ impl TradingStrategy for TrendRidingStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::OrderSide;
     use rust_decimal_macros::dec;
 
     fn create_test_context(
