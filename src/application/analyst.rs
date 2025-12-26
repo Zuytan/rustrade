@@ -1,4 +1,5 @@
 use crate::application::strategies::{AnalysisContext, TradingStrategy};
+use crate::application::candle_aggregator::CandleAggregator;
 use crate::application::trailing_stops::StopState;
 use crate::domain::ports::ExecutionService;
 use crate::domain::types::{MarketEvent, OrderSide, TradeProposal};
@@ -65,6 +66,7 @@ pub struct Analyst {
     config: AnalystConfig,
     // Per-symbol states
     symbol_states: HashMap<String, SymbolState>,
+    candle_aggregator: CandleAggregator,
 }
 
 impl Analyst {
@@ -82,6 +84,7 @@ impl Analyst {
             strategy,
             config,
             symbol_states: HashMap::new(),
+            candle_aggregator: CandleAggregator::new(),
         }
     }
 
@@ -98,13 +101,22 @@ impl Analyst {
                     price,
                     timestamp,
                 } => {
-                    self.handle_quote(symbol, price, timestamp).await;
+                    if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, timestamp) {
+                        self.process_candle(candle).await;
+                    }
+                }
+                MarketEvent::Candle(candle) => {
+                    self.process_candle(candle).await;
                 }
             }
         }
     }
 
-    async fn handle_quote(&mut self, symbol: String, price: Decimal, timestamp: i64) {
+    async fn process_candle(&mut self, candle: crate::domain::types::Candle) {
+        let symbol = candle.symbol;
+        let price = candle.close;
+        let timestamp = candle.timestamp * 1000; // Convert seconds to millis for compatibility with existing logic
+
         let price_f64 = price.to_f64().unwrap_or(0.0);
 
         // Get or initialize state for this symbol
@@ -530,6 +542,7 @@ impl Analyst {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::Candle;
     use rust_decimal::prelude::FromPrimitive;
     use std::sync::Once;
     use tokio::sync::RwLock;
@@ -589,15 +602,22 @@ mod tests {
             analyst.run().await;
         });
 
+        use crate::domain::types::Candle;
+
         // Dual SMA (2, 3)
         let prices = [100.0, 100.0, 100.0, 90.0, 110.0, 120.0];
 
         for (i, p) in prices.iter().enumerate() {
-            let event = MarketEvent::Quote {
+            let candle = Candle {
                 symbol: "BTC".to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (i * 1000) as i64,
+                open: Decimal::from_f64_retain(*p).unwrap(),
+                high: Decimal::from_f64_retain(*p).unwrap(),
+                low: Decimal::from_f64_retain(*p).unwrap(),
+                close: Decimal::from_f64_retain(*p).unwrap(),
+                volume: 100,
+                timestamp: i as i64,
             };
+            let event = MarketEvent::Candle(candle);
             market_tx.send(event).await.unwrap();
         }
 
@@ -656,11 +676,16 @@ mod tests {
         let prices = [100.0, 100.0, 100.0, 120.0, 70.0];
 
         for (i, p) in prices.iter().enumerate() {
-            let event = MarketEvent::Quote {
-                symbol: "BTC".to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (i * 1000) as i64,
+            let candle = Candle {
+                symbol: "AAPL".to_string(),
+                open: Decimal::from_f64_retain(*p).unwrap(),
+                high: Decimal::from_f64_retain(*p).unwrap(),
+                low: Decimal::from_f64_retain(*p).unwrap(),
+                close: Decimal::from_f64_retain(*p).unwrap(),
+                volume: 100,
+                timestamp: i as i64,
             };
+            let event = MarketEvent::Candle(candle);
             market_tx.send(event).await.unwrap();
         }
 
@@ -734,11 +759,16 @@ mod tests {
         let prices = [100.0, 100.0, 100.0, 120.0, 70.0];
 
         for (i, p) in prices.iter().enumerate() {
-            let event = MarketEvent::Quote {
+            let candle = Candle {
                 symbol: "BTC".to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (i * 1000) as i64,
+                open: Decimal::from_f64_retain(*p).unwrap(),
+                high: Decimal::from_f64_retain(*p).unwrap(),
+                low: Decimal::from_f64_retain(*p).unwrap(),
+                close: Decimal::from_f64_retain(*p).unwrap(),
+                volume: 100,
+                timestamp: i as i64,
             };
+            let event = MarketEvent::Candle(candle);
             market_tx.send(event).await.unwrap();
         }
 
@@ -809,11 +839,16 @@ mod tests {
         let prices = [110.0, 110.0, 90.0, 100.0];
 
         for (i, p) in prices.iter().enumerate() {
-            let event = MarketEvent::Quote {
+            let candle = Candle {
                 symbol: "AAPL".to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (i * 1000) as i64,
+                open: Decimal::from_f64_retain(*p).unwrap(),
+                high: Decimal::from_f64_retain(*p).unwrap(),
+                low: Decimal::from_f64_retain(*p).unwrap(),
+                close: Decimal::from_f64_retain(*p).unwrap(),
+                volume: 100,
+                timestamp: i as i64,
             };
+            let event = MarketEvent::Candle(candle);
             market_tx.send(event).await.unwrap();
         }
 
@@ -898,11 +933,16 @@ mod tests {
         ];
 
         for (i, (sym, p)) in sequence.iter().enumerate() {
-            let event = MarketEvent::Quote {
+            let candle = Candle {
                 symbol: sym.to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (i * 1000) as i64,
+                open: Decimal::from_f64_retain(*p).unwrap(),
+                high: Decimal::from_f64_retain(*p).unwrap(),
+                low: Decimal::from_f64_retain(*p).unwrap(),
+                close: Decimal::from_f64_retain(*p).unwrap(),
+                volume: 100,
+                timestamp: i as i64,
             };
+            let event = MarketEvent::Candle(candle);
             market_tx.send(event).await.unwrap();
         }
 
@@ -974,11 +1014,16 @@ mod tests {
         let prices = [50.0, 50.0, 50.0, 45.0, 55.0];
 
         for (i, p) in prices.iter().enumerate() {
-            let event = MarketEvent::Quote {
+            let candle = Candle {
                 symbol: "AAPL".to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (i * 1000) as i64,
+                open: Decimal::from_f64_retain(*p).unwrap(),
+                high: Decimal::from_f64_retain(*p).unwrap(),
+                low: Decimal::from_f64_retain(*p).unwrap(),
+                close: Decimal::from_f64_retain(*p).unwrap(),
+                volume: 100,
+                timestamp: i as i64,
             };
+            let event = MarketEvent::Candle(candle);
             market_tx.send(event).await.unwrap();
         }
 
@@ -989,11 +1034,16 @@ mod tests {
         // Prices: 100, 100, 100, 90, 95. Trend SMA will be ~97. Current Price 95 < 97.
         let prices2 = [100.0, 100.0, 100.0, 90.0, 95.0];
         for (i, p) in prices2.iter().enumerate() {
-            let event = MarketEvent::Quote {
+            let candle = Candle {
                 symbol: "MSFT".to_string(),
-                price: Decimal::from_f64(*p).unwrap(),
-                timestamp: (i * 1000 + 10000) as i64,
+                open: Decimal::from_f64_retain(*p).unwrap(),
+                high: Decimal::from_f64_retain(*p).unwrap(),
+                low: Decimal::from_f64_retain(*p).unwrap(),
+                close: Decimal::from_f64_retain(*p).unwrap(),
+                volume: 100,
+                timestamp: (i + 10) as i64,
             };
+            let event = MarketEvent::Candle(candle);
             market_tx.send(event).await.unwrap();
         }
 

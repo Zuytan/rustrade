@@ -17,6 +17,17 @@ impl fmt::Display for OrderSide {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Candle {
+    pub symbol: String,
+    pub open: Decimal,
+    pub high: Decimal,
+    pub low: Decimal,
+    pub close: Decimal,
+    pub volume: u64,
+    pub timestamp: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MarketEvent {
     Quote {
@@ -24,7 +35,7 @@ pub enum MarketEvent {
         price: Decimal,
         timestamp: i64,
     },
-    // Can add Trade, OrderBookUpdate, etc.
+    Candle(Candle),
 }
 
 #[allow(dead_code)]

@@ -191,12 +191,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match simulator.run(&symbol, current_start, current_end).await {
                 Ok(result) => {
                     let net_profit = result.final_equity - result.initial_equity;
-                    // Simple Sharpe approximation from return (proper calc needs daily returns)
-                    let sharpe = if result.total_return_pct != Decimal::ZERO {
-                        result.total_return_pct.to_f64().unwrap_or(0.0)
-                    } else {
-                        0.0
-                    };
+
+                    // Convert Orders to Trades for metrics
+                    let mut trades: Vec<rustrade::domain::types::Trade> = Vec::new();
+                    let mut open_position: Option<&rustrade::domain::types::Order> = None;
+
+                    for order in &result.trades {
+                        match order.side {
+                            rustrade::domain::types::OrderSide::Buy => {
+                                open_position = Some(order);
+                            }
+                            rustrade::domain::types::OrderSide::Sell => {
+                                if let Some(buy_order) = open_position {
+                                    let pnl = (order.price - buy_order.price) * order.quantity;
+                                    trades.push(rustrade::domain::types::Trade {
+                                        id: order.id.clone(),
+                                        symbol: order.symbol.clone(),
+                                        side: rustrade::domain::types::OrderSide::Buy,
+                                        entry_price: buy_order.price,
+                                        exit_price: Some(order.price),
+                                        quantity: order.quantity,
+                                        pnl,
+                                        entry_timestamp: buy_order.timestamp,
+                                        exit_timestamp: Some(order.timestamp),
+                                    });
+                                    open_position = None;
+                                }
+                            }
+                        }
+                    }
+
+                    // Calculate accurate metrics for this batch
+                    let metrics = rustrade::domain::metrics::PerformanceMetrics::calculate_time_series_metrics(
+                        &trades,
+                        &result.daily_closes,
+                        result.initial_equity,
+                    );
+                    let sharpe = metrics.sharpe_ratio;
 
                     // Status indicator
                     let status = if result.total_return_pct > Decimal::ZERO {
@@ -376,12 +407,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Calculate comprehensive metrics
-        let metrics = rustrade::domain::metrics::PerformanceMetrics::calculate(
+        // Calculate comprehensive metrics using daily data
+        let metrics = rustrade::domain::metrics::PerformanceMetrics::calculate_time_series_metrics(
             &trades,
+            &result.daily_closes,
             result.initial_equity,
-            result.final_equity,
-            period_days,
         );
 
         println!("--------------------------------------------------");
@@ -398,6 +428,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Sortino Ratio:       {:.2}", metrics.sortino_ratio);
         println!("Calmar Ratio:        {:.2}", metrics.calmar_ratio);
         println!("Max Drawdown:        {:.2}%", metrics.max_drawdown_pct);
+        println!("--------------------------------------------------");
+        println!("Inputs: {} trades, {} daily data points", trades.len(), result.daily_closes.len());
         println!("--------------------------------------------------");
         println!("📈 TRADE STATISTICS");
         println!("--------------------------------------------------");

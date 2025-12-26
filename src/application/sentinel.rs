@@ -155,6 +155,7 @@ mod tests {
                 assert_eq!(price, Decimal::from(3000));
                 assert_eq!(timestamp, 1234567890);
             }
+            MarketEvent::Candle(_) => panic!("Unexpected candle event"),
         }
     }
 }

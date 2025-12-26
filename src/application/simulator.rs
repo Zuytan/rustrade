@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
 
-use crate::domain::types::Order;
+use crate::domain::types::{Candle, Order};
 
 pub struct BacktestResult {
     pub trades: Vec<Order>,
@@ -19,6 +19,7 @@ pub struct BacktestResult {
     pub final_equity: Decimal,
     pub total_return_pct: Decimal,
     pub buy_and_hold_return_pct: Decimal,
+    pub daily_closes: Vec<(i64, Decimal)>, // (Timestamp seconds, Close Price)
 }
 
 pub struct Simulator {
@@ -57,6 +58,23 @@ impl Simulator {
             "Simulator: Fetched {} bars. Starting simulation...",
             bars.len()
         );
+
+        // Pre-process bars to extract daily closes
+        // Map: Date (String YYYY-MM-DD) -> (Timestamp, ClosePrice)
+        // We want the LAST bar of each day
+        let mut daily_map: std::collections::BTreeMap<String, (i64, Decimal)> = std::collections::BTreeMap::new();
+        
+        for bar in &bars {
+             let dt = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
+                .unwrap_or_default()
+                .with_timezone(&Utc);
+            let date_key = dt.format("%Y-%m-%d").to_string();
+            let close = Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO);
+            daily_map.insert(date_key, (dt.timestamp_millis(), close));
+        }
+        
+        // Convert to Vec sorted by date (BTreeMap ensures sort)
+        let daily_closes: Vec<(i64, Decimal)> = daily_map.values().cloned().collect();
 
         let initial_portfolio = self.execution_service.get_portfolio().await?;
         let initial_equity = initial_portfolio.cash; // simplify: assume cash only start
@@ -128,7 +146,6 @@ impl Simulator {
         // We wait for checking proposals.
         // But Analyst might not emit proposal for that bar.
         // How do we know "Analyst finished processing bar X"? We don't.
-
         // Compromise for this Architectuure:
         // 1. Config Analyst order_cooldown enough that we don't have overlapping trades in short time.
         // 2. Just run it. Analyst will be slightly behind Feeder.
@@ -156,15 +173,19 @@ impl Simulator {
             for bar in bars {
                 let timestamp = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
                     .unwrap_or_default()
-                    .timestamp_millis();
+                    .timestamp(); // Seconds
 
-                let price = Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO);
-
-                let event = MarketEvent::Quote {
+                let candle = Candle {
                     symbol: symbol_clone.clone(),
-                    price,
+                    open: Decimal::from_f64_retain(bar.open).unwrap_or(Decimal::ZERO),
+                    high: Decimal::from_f64_retain(bar.high).unwrap_or(Decimal::ZERO),
+                    low: Decimal::from_f64_retain(bar.low).unwrap_or(Decimal::ZERO),
+                    close: Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO),
+                    volume: bar.volume as u64,
                     timestamp,
                 };
+
+                let event = MarketEvent::Candle(candle);
 
                 // artificial delay to allow Analyst to catch up / generate proposal before we feed next 100 bars?
                 // tokio::time::sleep(std::time::Duration::from_micros(10)).await;
@@ -227,6 +248,7 @@ impl Simulator {
             final_equity,
             total_return_pct,
             buy_and_hold_return_pct,
+            daily_closes,
         })
     }
 }
