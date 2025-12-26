@@ -42,7 +42,20 @@ Pour éviter d'acheter lors de faux départs, nous activons parfois un "Mode Ava
 
 ---
 
-## 4. Les Garde-Fous (Gestion des Risques)
+## 4. La Stratégie "Trend Riding" (Le Surfeur)
+
+Cette stratégie est conçue pour les grandes tendances (comme une action qui monte régulièrement pendant des heures).
+
+*   **Le Principe** : Imaginez un surfeur sur une vague.
+*   **L'Entrée** : Il attend que la vague se forme (Golden Cross au-dessus de la moyenne long terme).
+*   **Le "Ride"** : Une fois dessus, il ne descend pas à la moindre petite éclaboussure. Il reste sur la vague tant qu'elle le porte.
+*   **La Sortie** : Il ne vend que si le prix passe franchement *sous* la courbe de tendance (avec une marge de sécurité), prouvant que la vague est cassée.
+
+**Avantage** : Permet de garder une position gagnante beaucoup plus longtemps sans vendre trop tôt.
+
+---
+
+## 5. Les Garde-Fous (Gestion des Risques)
 
 C'est sans doute la partie la plus importante. Même avec une bonne stratégie, on peut perdre de l'argent si on parie tout sur un seul coup.
 
@@ -52,7 +65,7 @@ C'est sans doute la partie la plus importante. Même avec une bonne stratégie, 
 
 ---
 
-## 5. Le Radar (Scanner de Marché)
+## 6. Le Radar (Scanner de Marché)
 
 Au lieu de surveiller une liste fixe d'actions (comme Apple ou Tesla), le robot possède un **Scanner**.
 Régulièrement (ex: toutes les minutes), il interroge le marché pour demander : *"Quelles sont les actions qui bougent le plus en ce moment ?"*.

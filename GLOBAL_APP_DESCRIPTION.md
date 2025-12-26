@@ -23,7 +23,10 @@ Développer un système multi-agents capable de surveiller le marché des action
 
 ### 3. Agent "Analyst" (Strategy)
 - **Rôle**: Le cerveau décisionnel.
-- **Responsabilités**: Détecter les signaux via une stratégie de **Dual SMA Crossover** ou une stratégie **Advanced Analyst** (Crossover + Trend + RSI + MACD). Le mode Advanced utilise une "Triple Confirmation" (Tendance, RSI, Momentum MACD) pour ne choisir que les meilleurs moments de la journée. 
+- **Responsabilités**: Détecter les signaux via trois modes principaux :
+    - **Dual SMA Crossover** : Stratégie standard de croisement de moyennes mobiles.
+    - **Advanced Analyst** : Stratégie "Triple Confirmation" (Crossover + Trend + RSI + MACD) pour ne choisir que les meilleurs moments.
+    - **Trend Riding** : Stratégie de suivi de tendance long-terme. Achète sur Golden Cross et maintient la position tant que le prix reste au-dessus de la tendance (avec buffer), ignorant les fluctuations mineures pour capturer les grands mouvements. 
     - **Long-Only Safety**: Par sécurité, l'Analyste vérifie systématiquement que le portefeuille détient l'actif avant d'émettre un signal de Vente, empêchant tout Short Selling involontaire.
 
 ### 3. Agent "Risk Manager" (Safety Gate)
