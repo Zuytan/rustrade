@@ -1,4 +1,34 @@
-# Rustrade Versions History
+# Rustrade - Historique des Versions
+
+## Version 0.14.0 (Décembre 2026) - Backtesting Avancé & Optimisation
+
+**Nouvelles fonctionnalités majeures**:
+- **Alpha/Beta Calculation**: Calcul automatique de l'alpha et beta vs S&P500 (SPY) dans les backtests
+  - Régression linéaire pour déterminer la sensibilité au marché (beta)
+  - Calcul du rendement excédentaire ajusté au risque (alpha)
+  - Corrélation avec le benchmark pour évaluer l'indépendance de la stratégie
+  - Intégré dans `benchmark.rs` (affichage single + batch mode)
+  
+- **Grid Search Parameter Optimizer**: Nouveau binaire `optimize` pour optimisation systématique
+  - Module `optimizer.rs` avec `ParameterGrid`, `OptimizationResult`, `GridSearchOptimizer`
+  - Configuration via fichier TOML (`grid.toml`)
+  - Score objectif composite: Sharpe (40%) + Return (30%) + WinRate (20%) - Drawdown (10%)
+  - Export JSON de tous les résultats avec ranking automatique
+  - Support CLI complet: `--symbol`, `--start`, `--end`, `--grid-config`, `--output`, `--top-n`
+  - Test de centaines de combinaisons de paramètres (fast/slow SMA, RSI, ATR multiplier, etc.)
+
+**Améliorations techniques**:
+- Ajout Serialize/Deserialize à `AnalystConfig` et `StrategyMode` pour export config optimales
+- Nouvelle dépendance: `toml = "0.8"` pour parsing configuration grilles
+- Fonction `calculate_alpha_beta()` dans simulator.rs avec validation statistique
+- Fetch automatique données SPY pour benchmark dans chaque backtest
+- 74+ tests unitaires (ajout tests optimizer)
+
+**Documentation**:
+- README.md étendu avec sections "Backtest a Strategy" et "Optimize Strategy Parameters"
+- GLOBAL_APP_DESCRIPTION.md enrichi avec détails outils backtesting/optimisation
+- Walkthrough.md complet avec exemples d'usage optimizer et interprétation résultats
+- Fichier `grid.toml` d'exemple créé
 
 ## Version 0.13.1 - Code Cleanup & Risk Hardening (2025-12-26)
 - **Codebase Clean-up**: Resolved all `cargo clippy` warnings (redundant casts, unused imports, formatting) for a pristine codebase.

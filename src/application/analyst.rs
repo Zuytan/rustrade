@@ -40,7 +40,7 @@ struct SymbolState {
     pending_order: Option<OrderSide>, // Track in-flight orders
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AnalystConfig {
     pub fast_sma_period: usize,
     pub slow_sma_period: usize,

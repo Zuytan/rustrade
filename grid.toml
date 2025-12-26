@@ -1,0 +1,22 @@
+# Grid Search Parameter Configuration
+# Example configuration file for optimize CLI
+
+# Fast SMA periods to test
+fast_sma = [10, 20, 30]
+
+# Slow SMA periods to test  
+slow_sma = [50, 60, 100]
+
+# RSI threshold values (buy signal when RSI < threshold)
+rsi_threshold = [60.0, 65.0, 70.0]
+
+# Trend divergence threshold (price vs long-term SMA)
+trend_divergence_threshold = [0.003, 0.005, 0.01]
+
+# ATR multiplier for trailing stops
+trailing_stop_atr_multiplier = [2.0, 3.0, 4.0]
+
+# Order cooldown in seconds
+order_cooldown_seconds = [0, 300, 600]
+
+# Total combinations: 3 * 3 * 3 * 3 * 3 * 3 = 729

@@ -59,13 +59,28 @@ Pour garantir l'intégrité des fonds, le bot maintient une Source de Vérité l
 3. **Circuit Breaker**: Arrêt des achats après 3 échecs de connexion consécutifs.
 4. **Paper Trading**: Activé par défaut.
 
-## 6. Vérification & Backtesting
-- **Harnais de Test Historique**: Capacité de rejouer des données historiques (Alpaca Bars v2) pour vérifier les décisions de l'Analyste.
-- **Trailing Stops Actifs**: Mécanisme de sortie automatique basé sur ATR (Average True Range) pour protection du capital. Surveille en continu les positions et déclenche des ventes quand le prix descend sous le seuil calculé.
+## Vérification & Backtesting
+
+### Tools de Backtesting
+
 - **Utilitaire de Benchmark (`src/bin/benchmark.rs`)**: Outil CLI permettant de simuler l'exécution d'une stratégie sur une période donnée et de calculer des métriques de performance précises.
     - **Métriques Avancées** (v0.13.0+): Sharpe Ratio, Sortino Ratio, Calmar Ratio, Max Drawdown, Win Rate, Profit Factor, Average Win/Loss, Exposure.
-    - Supporte plusieurs modes de stratégie (Standard vs Advanced vs Dynamic vs TrendRiding).
+    - **Alpha/Beta vs S&P500**: Calcul automatique de l'alpha (rendement excédentaire) et beta (sensibilité au marché) via régression linéaire contre SPY.
+    - Support plusieurs modes de stratégie (Standard, Advanced, Dynamic, TrendRiding, MeanReversion).
+    - **Batch Mode**: Segmentation de période en fenêtres pour analyse de stabilité.
     - Simule l'exécution des ordres avec gestion précise du portefeuille (Sorties via trailing stops, Cash, Positions).
     - Pairing automatique Buy/Sell pour calcul du P&L réalisé.
+
+- **Optimiseur de Paramètres (`src/bin/optimize.rs`)**: Outil de grid search pour trouver les meilleurs paramètres de stratégie.
+    - **Grid Search**: Teste systématiquement toutes les combinaisons de paramètres définis dans un fichier TOML.
+    - **Objective Scoring**: Score composite pondéré (Sharpe 40% + Return 30% + WinRate 20% - Drawdown 10%).
+    - **Export JSON**: Sauvegarde tous les résultats pour analyse approfondie.
+    - **Top-N Ranking**: Affiche les meilleures configurations automatiquement.
+    - Exemple: Optimiser fast/slow SMA, RSI threshold, ATR multiplier, etc.
+
+### Harnais de Test
+
+- **Harnais de Test Historique**: Capacité de rejouer des données historiques (Alpaca Bars v2) pour vérifier les décisions de l'Analyste.
+- **Trailing Stops Actifs**: Mécanisme de sortie automatique basé sur ATR (Average True Range) pour protection du capital. Surveille en continu les positions et déclenche des ventes quand le prix descend sous le seuil calculé.
 - **Support Intégration Continue**: Test d'intégration `tests/backtest_alpaca.rs` et `tests/e2e_trading_flow.rs` prêts pour vérifier les stratégies sur des scénarios réels.
-- **32 Unit Tests**: Couverture complète des modules critiques (Analyst, Risk Manager, Portfolio, Metrics).
+- **74+ Unit Tests**: Couverture complète des modules critiques (Analyst, Risk Manager, Portfolio, Metrics, Simulator, Optimizer).

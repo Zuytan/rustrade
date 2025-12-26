@@ -3,10 +3,19 @@
 A high-performance, multi-agent algorithmic trading system built in Rust. Capable of real-time market surveillance, trend analysis, and autonomous execution.
 
 ## 🚀 Key Features
-- **Multi-Agent Architecture**: Dedicated agents for Sentinel (Data), Analyst (Strategy), Risk Manager, and Execution.
-- **Real-Time Analysis**: Dual SMA & Triple Filter (Trend/RSI/MACD) strategies processed on live WebSocket data.
-- **Safety First**: "Strict Decimal" policy, PDT protection, and **Real-time Circuit Breakers** (active valuation loop).
-- **Backtesting & Benchmark**: Integrated historical simulation engine for strategy verification.
+- **Multi-Agent Architecture**: 6 specialized agents (Sentinel, Scanner, Analyst, Risk Manager, Order Throttler, Executor)
+- **5 Trading Strategies**: Standard Dual SMA, Advanced Triple Filter, Dynamic Regime Adaptive, Trend Riding, Mean Reversion
+- **Real-Time Market Analysis**: WebSocket streaming with intelligent candle aggregation
+- **Advanced Risk Management**: Circuit breakers, PDT protection, trailing stops (ATR-based)
+- **Backtesting & Optimization**: 
+  - Historical backtesting with S&P500 benchmark comparison
+  - Alpha/Beta calculation vs market
+  - Grid search parameter optimization
+  - Comprehensive performance metrics (Sharpe, Sortino, Calmar)
+- **Safety Features**: 
+  - Strict `Decimal` arithmetic (no floating-point errors)
+  - Multi-level safeguards (Position sizing, Max drawdown, Daily loss limits)
+  - Order throttling and cooldown periods
 
 ## 🛠️ Technical Stack
 
@@ -47,17 +56,46 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 cp .env.example .env
 
 # 2. Run (Mock Mode)
-cargo run
+# Edit .env with your Alpaca API keys
 
-# 3. Run (Alpaca Paper Mode)
-MODE=alpaca cargo run
+# 2. Run with a strategy
+cargo run --bin rustrade -- --strategy advanced
+
+# Available strategies: standard, advanced, dynamic, trendriding, meanreversion
 ```
 
-### Running Benchmarks
-```bash
-# Config for benchmark
-cp .env.benchmark .env.benchmark.local
+### Backtest a Strategy
 
-# Run Strategy Test
-cargo run --bin benchmark -- --symbol NVDA --start 2024-01-01 --strategy advanced
+```bash
+# Single backtest with alpha/beta vs S&P500
+cargo run --bin benchmark -- \
+  --symbol NVDA \
+  --start 2020-01-01 \
+  --end 2024-12-31 \
+  --strategy trendriding
+
+# Batch mode (30-day windows)
+cargo run --bin benchmark -- \
+  --symbol TSLA \
+  --start 2023-01-01 \
+  --end 2023-12-31 \
+  --strategy advanced \
+  --batch-days 30
+```
+
+### Optimize Strategy Parameters
+
+```bash
+# Create parameter grid (grid.toml already exists)
+# Run optimization
+cargo run --bin optimize -- \
+  --symbol NVDA \
+  --start 2020-01-01 \
+  --end 2023-12-31 \
+  --grid-config grid.toml \
+  --output nvda_best_params.json \
+  --top-n 10
+
+# View results
+cat nvda_best_params.json | jq '.[0]'  # Best configuration
 ```

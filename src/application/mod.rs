@@ -1,6 +1,7 @@
 pub mod analyst;
 pub mod candle_aggregator;
 pub mod executor;
+pub mod optimizer;
 pub mod order_throttler;
 pub mod risk_manager;
 pub mod scanner;
