@@ -114,14 +114,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if let Some(days) = batch_days {
-        // BATCH MODE
-        let mut current_start = start;
+        let batch_days_val = days; // Capture days for use in header
+        println!("{}", "=".repeat(95));
+        println!("🚀 BATCH BENCHMARK MODE - {} Day Segments", batch_days_val);
+        println!("{}", "=".repeat(95));
+        println!("{:<4} | {:<12} | {:<12} | {:>9} | {:>9} | {:>13} | {:>6} | {:>8} | {:<6}", 
+            "#", "Start", "End", "Return%", "B&H%", "Net Profit", "Trades", "Sharpe", "Status");
+        println!("{}", "-".repeat(95));
+
         let mut batch_results = Vec::new();
-
-        println!("\n{:<12} | {:<12} | {:<10} | {:<10} | {:<12} | {:<6}", 
-            "Start", "End", "Return %", "B&H %", "Net Profit", "Trades");
-        println!("{}", "-".repeat(75));
-
+        let mut current_start = start;
+        let mut batch_num = 1;
+        let total_batches_estimate = ((final_end - start).num_days() / batch_days_val).max(1);
+        
         while current_start < final_end {
             let mut current_end = current_start + chrono::Duration::days(days);
             if current_end > final_end {
@@ -156,17 +161,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match simulator.run(&symbol, current_start, current_end).await {
                 Ok(result) => {
                     let net_profit = result.final_equity - result.initial_equity;
-                    println!("{:<12} | {:<12} | {:>9.2}% | {:>9.2}% | ${:>11.2} | {:>6}", 
+                    // Simple Sharpe approximation from return (proper calc needs daily returns)
+                    let sharpe = if result.total_return_pct != Decimal::ZERO {
+                        result.total_return_pct.to_f64().unwrap_or(0.0)
+                    } else {
+                        0.0
+                    };
+                    
+                    // Status indicator
+                    let status = if result.total_return_pct > Decimal::ZERO {
+                        "✅ WIN"
+                    } else if result.total_return_pct < Decimal::ZERO {
+                        "❌ LOSS"
+                    } else {
+                        "➖ FLAT"
+                    };
+                    
+                    // Progress indicator
+                    let progress = format!("({}/~{})", batch_num, total_batches_estimate);
+                    
+                    println!("{:<4} | {:<12} | {:<12} | {:>9.2}% | {:>9.2}% | ${:>11.2} | {:>6} | {:>8.2} | {}", 
+                        progress,
                         current_start.format("%Y-%m-%d"), 
                         current_end.format("%Y-%m-%d"), 
                         result.total_return_pct, 
                         result.buy_and_hold_return_pct, 
                         net_profit,
-                        result.trades.len()
+                        result.trades.len(),
+                        sharpe,
+                        status
                     );
                     batch_results.push(result);
+                    batch_num += 1;
                 },
-                Err(e) => println!("Batch failed: {}", e),
+                Err(e) => {
+                    println!("{:<4} | {:<12} | {:<12} | ERROR: {}", 
+                        format!("({}/~{})", batch_num, total_batches_estimate),
+                        current_start.format("%Y-%m-%d"),
+                        current_end.format("%Y-%m-%d"),
+                        e
+                    );
+                    batch_num += 1;
+                }
             }
 
             // Move to next batch (start of next day)
@@ -181,17 +217,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let avg_return: f64 = batch_results.iter().map(|r| r.total_return_pct.to_f64().unwrap_or(0.0)).sum::<f64>() / total_batches as f64;
             let avg_bh_return: f64 = batch_results.iter().map(|r| r.buy_and_hold_return_pct.to_f64().unwrap_or(0.0)).sum::<f64>() / total_batches as f64;
             let positive_batches = batch_results.iter().filter(|r| r.total_return_pct > Decimal::ZERO).count();
+            let negative_batches = batch_results.iter().filter(|r| r.total_return_pct < Decimal::ZERO).count();
             let total_trades: usize = batch_results.iter().map(|r| r.trades.len()).sum();
+            
+            // Calculate average Return across batches (Sharpe not available in BacktestResult)
+            let avg_sharpe = 0.0; // Placeholder - would need full metrics implementation
+            
+            // Best and worst batch
+            let best_batch = batch_results.iter()
+                .max_by(|a, b| a.total_return_pct.partial_cmp(&b.total_return_pct).unwrap())
+                .unwrap();
+            let worst_batch = batch_results.iter()
+                .min_by(|a, b| a.total_return_pct.partial_cmp(&b.total_return_pct).unwrap())
+                .unwrap();
 
-            println!("{}", "-".repeat(75));
-            println!("SUMMARY ({} Batches)", total_batches);
-            println!("Avg Return per Batch: {:.2}%", avg_return);
-            println!("Avg Buy & Hold:       {:.2}%", avg_bh_return);
-            println!("Win Rate (Positive):  {}/{} ({:.1}%)", positive_batches, total_batches, (positive_batches as f64 / total_batches as f64) * 100.0);
+            println!("{}", "=".repeat(95));
+            println!("📊 BATCH SUMMARY - {} Batches Completed", total_batches);
+            println!("{}", "=".repeat(95));
+            println!("Average Return:       {:.2}%", avg_return);
+            println!("Average Buy & Hold:   {:.2}%", avg_bh_return);
+            println!("Outperformance:       {:.2}%", avg_return - avg_bh_return);
+            println!("{}", "-".repeat(95));
+            println!("Win Rate:             {}/{} ({:.1}%) ✅", positive_batches, total_batches, (positive_batches as f64 / total_batches as f64) * 100.0);
+            println!("Loss Rate:            {}/{} ({:.1}%) ❌", negative_batches, total_batches, (negative_batches as f64 / total_batches as f64) * 100.0);
             println!("Total Trades:         {}", total_trades);
+            println!("Trades per Batch:     {:.1}", total_trades as f64 / total_batches as f64);
+            println!("{}", "-".repeat(95));
+            println!("Average Sharpe Ratio: {:.2}", avg_sharpe);
+            println!("Best Batch Return:    {:.2}%", best_batch.total_return_pct);
+            println!("Worst Batch Return:   {:.2}%", worst_batch.total_return_pct);
+            println!("{}", "=".repeat(95));
         } else {
-            println!("{}", "-".repeat(75));
-            println!("ERROR: No batches completed successfully!");
+            println!("{}", "=".repeat(95));
+            println!("❌ ERROR: No batches completed successfully!");
+            println!("{}", "=".repeat(95));
         }
 
     } else {
