@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
-use rust_decimal::Decimal;
+use std::str::FromStr;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use std::env;
 
 #[derive(Debug, Clone)]
@@ -18,8 +19,10 @@ pub enum StrategyMode {
     MeanReversion,
 }
 
-impl StrategyMode {
-    pub fn from_str(s: &str) -> Result<Self> {
+impl std::str::FromStr for StrategyMode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "standard" => Ok(StrategyMode::Standard),
             "advanced" => Ok(StrategyMode::Advanced),
@@ -34,8 +37,10 @@ impl StrategyMode {
     }
 }
 
-impl Mode {
-    pub fn from_str(s: &str) -> Result<Self> {
+impl std::str::FromStr for Mode {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "mock" => Ok(Mode::Mock),
             "alpaca" => Ok(Mode::Alpaca),

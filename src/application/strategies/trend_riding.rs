@@ -38,13 +38,11 @@ impl TradingStrategy for TrendRidingStrategy {
         let slow = ctx.slow_sma;
 
         // Buy: Golden cross above trend SMA
-        if fast > slow * (1.0 + self.sma_threshold) {
-            if ctx.price_f64 > ctx.trend_sma {
-                return Some(Signal::buy(format!(
-                    "TrendRiding: Golden Cross above Trend (price={:.2}, trend={:.2})",
-                    ctx.price_f64, ctx.trend_sma
-                )));
-            }
+        if fast > slow * (1.0 + self.sma_threshold) && ctx.price_f64 > ctx.trend_sma {
+            return Some(Signal::buy(format!(
+                "TrendRiding: Golden Cross above Trend (price={:.2}, trend={:.2})",
+                ctx.price_f64, ctx.trend_sma
+            )));
         }
 
         // Sell: Price drops below trend SMA with buffer

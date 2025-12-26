@@ -2,8 +2,8 @@ use crate::domain::portfolio::{Portfolio, Position};
 use crate::domain::ports::ExecutionService;
 use crate::domain::types::{Order, OrderSide};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::RwLock;
 use tracing::{error, info};
 
 pub struct Executor {

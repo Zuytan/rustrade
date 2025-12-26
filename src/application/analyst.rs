@@ -1,17 +1,17 @@
-use crate::application::strategies::{AnalysisContext, TradingStrategy};
 use crate::application::candle_aggregator::CandleAggregator;
+use crate::application::strategies::{AnalysisContext, TradingStrategy};
 use crate::application::trailing_stops::StopState;
 use crate::domain::ports::ExecutionService;
 use crate::domain::types::{MarketEvent, OrderSide, TradeProposal};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
-use ta::Next;
 use ta::indicators::{
-    AverageTrueRange, MovingAverageConvergenceDivergence, RelativeStrengthIndex,
-    SimpleMovingAverage, BollingerBands,
+    AverageTrueRange, BollingerBands, MovingAverageConvergenceDivergence, RelativeStrengthIndex,
+    SimpleMovingAverage,
 };
+use ta::Next;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::info;
 
@@ -108,7 +108,8 @@ impl Analyst {
                     price,
                     timestamp,
                 } => {
-                    if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, timestamp) {
+                    if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, timestamp)
+                    {
                         self.process_candle(candle).await;
                     }
                 }
@@ -563,8 +564,8 @@ mod tests {
     use crate::domain::types::Candle;
     use rust_decimal::prelude::FromPrimitive;
     use std::sync::Once;
-    use tokio::sync::RwLock;
     use tokio::sync::mpsc;
+    use tokio::sync::RwLock;
 
     static INIT: Once = Once::new();
 

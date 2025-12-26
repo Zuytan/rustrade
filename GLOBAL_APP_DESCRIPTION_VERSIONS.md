@@ -1,5 +1,13 @@
 # Rustrade Versions History
 
+## Version 0.13.1 - Code Cleanup & Risk Hardening (2025-12-26)
+- **Codebase Clean-up**: Resolved all `cargo clippy` warnings (redundant casts, unused imports, formatting) for a pristine codebase.
+- **Risk Management Hardening**:
+    - **Active Valuation Loop**: `RiskManager` now actively polls market prices (every 60s via `MarketDataService`) to recalculate equity.
+    - **Crash Protection**: Circuit Breakers (Daily Loss/Drawdown) now trigger *immediately* on market drops, without waiting for the next trade proposal.
+    - **Initialization Fix**: Fixed a bug where initial equity was miscalculated (ignoring held positions) on restart.
+- **Documentation**: Updated architecture docs to reflect active risk monitoring.
+
 ## Version 0.13.0 - Tier 1 Critical Fixes (2025-12-26)
 - **CRITICAL FIX: Trailing Stops Enabled**: Uncommented and activated trailing stop mechanism that was previously disabled.
     - Trailing stops now actively monitor price movements and trigger sell signals when threshold is hit.

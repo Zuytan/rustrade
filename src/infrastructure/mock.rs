@@ -3,13 +3,13 @@ use crate::domain::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
 // use chrono::Utc;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use std::sync::Arc;
 // use std::time::Duration;
 use tokio::sync::{
-    RwLock,
     mpsc::{self, Receiver, Sender},
+    RwLock,
 };
 // use tokio::time;
 use tracing::info;
@@ -24,6 +24,15 @@ impl MockMarketDataService {
             subscribers: Arc::new(RwLock::new(Vec::new())),
         }
     }
+}
+
+impl Default for MockMarketDataService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MockMarketDataService {
 
     pub async fn publish(&self, event: MarketEvent) {
         let mut subs = self.subscribers.write().await;
@@ -98,19 +107,19 @@ impl MarketDataService for MockMarketDataService {
         // For now, let's just return a constant for simplicity or randomized variations.
         // To trigger the circuit breaker test, we might need a way to inject a "crash" price.
         // CHECK: The MockMarketDataService doesn't accept external price updates in this simple version
-        // except via publish(). But get_prices is Pull. 
+        // except via publish(). But get_prices is Pull.
         // We will return $100.0 for everything as a baseline.
-        
+
         for sym in symbols {
-             // If we want to simulate a crash for TSLA in the test, we might hardcode it here?
-             // That's ugly for general use.
-             // Better: RiskManager test will likely mock the service trait directly OR 
-             // we can add a `set_price` method to MockMarketDataService.
-             
-             // Check if it's TSLA for the specific test case? No, that's bad.
-             // Let's implement a rudimentary price store in MockMarketDataService later if needed.
-             // For now: $100.0.
-             prices.insert(sym, rust_decimal::Decimal::from(100)); 
+            // If we want to simulate a crash for TSLA in the test, we might hardcode it here?
+            // That's ugly for general use.
+            // Better: RiskManager test will likely mock the service trait directly OR
+            // we can add a `set_price` method to MockMarketDataService.
+
+            // Check if it's TSLA for the specific test case? No, that's bad.
+            // Let's implement a rudimentary price store in MockMarketDataService later if needed.
+            // For now: $100.0.
+            prices.insert(sym, rust_decimal::Decimal::from(100));
         }
         Ok(prices)
     }

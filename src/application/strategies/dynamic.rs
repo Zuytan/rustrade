@@ -67,17 +67,19 @@ impl TradingStrategy for DynamicRegimeStrategy {
 
                 if ctx.fast_sma > ctx.slow_sma * (1.0 + 0.001) {
                     // Golden cross
+                    // Golden cross
                     if ctx.price_f64 > ctx.trend_sma {
-                        return Some(Signal::buy(format!(
+                        return Some(Signal::buy(
                             "Dynamic (Trend): Strong trend detected, buying above Trend SMA"
-                        )));
+                                .to_string(),
+                        ));
                     }
                 } else if ctx.fast_sma < ctx.slow_sma * (1.0 - 0.001) && ctx.has_position {
                     // Death cross
                     if ctx.price_f64 < ctx.trend_sma {
-                        return Some(Signal::sell(format!(
-                            "Dynamic (Trend): Trend broken, exiting"
-                        )));
+                        return Some(Signal::sell(
+                            "Dynamic (Trend): Trend broken, exiting".to_string(),
+                        ));
                     }
                     // Otherwise suppress sell - hold through pullback
                 }

@@ -1,6 +1,7 @@
 use chrono::{TimeZone, Utc};
-use rust_decimal::Decimal;
+use std::str::FromStr;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use rustrade::application::analyst::AnalystConfig;
 use rustrade::application::simulator::Simulator;
 use rustrade::config::StrategyMode;
@@ -387,7 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let result = simulator.run(&symbol, start, end).await?;
 
         // Calculate period in days for annualization
-        let period_days = (end - start).num_days() as f64;
+        let _period_days = (end - start).num_days() as f64;
 
         // Convert Orders to Trades by pairing Buy/Sell
         let mut trades: Vec<rustrade::domain::types::Trade> = Vec::new();
@@ -441,7 +442,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Calmar Ratio:        {:.2}", metrics.calmar_ratio);
         println!("Max Drawdown:        {:.2}%", metrics.max_drawdown_pct);
         println!("--------------------------------------------------");
-        println!("Inputs: {} trades, {} daily data points", trades.len(), result.daily_closes.len());
+        println!(
+            "Inputs: {} trades, {} daily data points",
+            trades.len(),
+            result.daily_closes.len()
+        );
         println!("--------------------------------------------------");
         println!("📈 TRADE STATISTICS");
         println!("--------------------------------------------------");

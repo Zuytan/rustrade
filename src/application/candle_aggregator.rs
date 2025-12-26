@@ -61,21 +61,21 @@ impl CandleBuilder {
 pub struct CandleAggregator {
     // Map Symbol -> Current partial candle
     builders: HashMap<String, CandleBuilder>,
-    timeframe: Duration, // e.g., 1 minute
+    _timeframe: Duration, // e.g., 1 minute
 }
 
 impl CandleAggregator {
     pub fn new() -> Self {
         Self {
             builders: HashMap::new(),
-            timeframe: Duration::minutes(1),
+            _timeframe: Duration::minutes(1),
         }
     }
 
     /// Process a Quote event. Returns Some(Candle) if a candle is completed (i.e., we moved to a new minute).
     pub fn on_quote(&mut self, symbol: &str, price: Decimal, timestamp_ms: i64) -> Option<Candle> {
         let timestamp = Utc.timestamp_millis_opt(timestamp_ms).unwrap();
-        
+
         let current_minute = timestamp
             .date_naive()
             .and_hms_opt(timestamp.hour(), timestamp.minute(), 0)
@@ -91,10 +91,10 @@ impl CandleAggregator {
             } else {
                 // New minute! Finalize the old candle and start a new one
                 let completed_candle = builder.build();
-                
+
                 // Start new candle
                 *builder = CandleBuilder::new(symbol.to_string(), price, timestamp);
-                
+
                 return Some(completed_candle);
             }
         } else {
@@ -119,22 +119,34 @@ mod tests {
         let symbol = "BTC/USD";
 
         // T0: 00:00:01 - First tick
-        let t1 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 1).unwrap().timestamp_millis();
+        let t1 = Utc
+            .with_ymd_and_hms(2024, 1, 1, 0, 0, 1)
+            .unwrap()
+            .timestamp_millis();
         let c1 = agg.on_quote(symbol, dec!(100), t1);
         assert!(c1.is_none());
 
         // T1: 00:00:30 - Update
-        let t2 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 30).unwrap().timestamp_millis();
+        let t2 = Utc
+            .with_ymd_and_hms(2024, 1, 1, 0, 0, 30)
+            .unwrap()
+            .timestamp_millis();
         let c2 = agg.on_quote(symbol, dec!(105), t2);
         assert!(c2.is_none()); // Still same minute
 
         // T2: 00:00:59 - Low
-        let t3 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 59).unwrap().timestamp_millis();
+        let t3 = Utc
+            .with_ymd_and_hms(2024, 1, 1, 0, 0, 59)
+            .unwrap()
+            .timestamp_millis();
         let c3 = agg.on_quote(symbol, dec!(95), t3);
         assert!(c3.is_none());
 
         // T3: 00:01:05 - NEW MINUTE -> Trigger close of previous
-        let t4 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 1, 5).unwrap().timestamp_millis();
+        let t4 = Utc
+            .with_ymd_and_hms(2024, 1, 1, 0, 1, 5)
+            .unwrap()
+            .timestamp_millis();
         let c4 = agg.on_quote(symbol, dec!(100), t4);
 
         assert!(c4.is_some());
@@ -143,6 +155,11 @@ mod tests {
         assert_eq!(candle.high, dec!(105));
         assert_eq!(candle.low, dec!(95));
         assert_eq!(candle.close, dec!(95)); // Last tick of minute 0
-        assert_eq!(candle.timestamp, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap().timestamp()); 
+        assert_eq!(
+            candle.timestamp,
+            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+                .unwrap()
+                .timestamp()
+        );
     }
 }

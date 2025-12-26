@@ -1,5 +1,5 @@
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use rustrade::application::system::Application;
 use rustrade::config::{Config, Mode};
 use rustrade::domain::ports::ExecutionService;
@@ -159,7 +159,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         let price = Decimal::from_f64(*price_f64).unwrap();
         // Advance time by 60 sec + i * 60 sec to ensure new candles
         let timestamp = start_time + chrono::Duration::seconds(60 * (i as i64 + 1));
-        
+
         mock_market
             .publish(MarketEvent::Quote {
                 symbol: symbol.clone(),
@@ -173,11 +173,13 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
 
     // Flush the aggregator by sending one more event in the future
     let flush_timestamp = start_time + chrono::Duration::seconds(60 * (events.len() as i64 + 5));
-    mock_market.publish(MarketEvent::Quote {
-        symbol: symbol.clone(),
-        price: Decimal::from(120),
-        timestamp: flush_timestamp.timestamp_millis(),
-    }).await;
+    mock_market
+        .publish(MarketEvent::Quote {
+            symbol: symbol.clone(),
+            price: Decimal::from(120),
+            timestamp: flush_timestamp.timestamp_millis(),
+        })
+        .await;
     sleep(Duration::from_millis(100)).await;
 
     sleep(Duration::from_secs(1)).await;
@@ -191,7 +193,10 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     assert_eq!(order.symbol, symbol);
     assert!(matches!(order.side, OrderSide::Buy));
     // assert_eq!(order.quantity, config.trade_quantity); // Analyst uses risk-based sizing
-    assert!(order.quantity > Decimal::ZERO, "Quantity should be positive");
+    assert!(
+        order.quantity > Decimal::ZERO,
+        "Quantity should be positive"
+    );
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 use crate::domain::types::Trade;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 
 /// Comprehensive performance metrics for trading strategies
 #[derive(Debug, Clone)]
@@ -55,8 +55,8 @@ impl PerformanceMetrics {
     pub fn calculate(
         trades: &[Trade],
         initial_equity: Decimal,
-        final_equity: Decimal,
-        period_days: f64,
+        _final_equity: Decimal,
+        _period_days: f64,
     ) -> Self {
         // Default calculation using simplified assumptions if no time series provided
         Self::calculate_time_series_metrics(trades, &[], initial_equity)
@@ -71,80 +71,80 @@ impl PerformanceMetrics {
     ) -> Self {
         // 1. Reconstruct Daily Equity Curve
         let mut daily_equity = Vec::new();
-        let mut current_cash = initial_equity;
-        let mut current_position_qty = Decimal::ZERO;
-        
+        let mut _current_cash = initial_equity;
+        let mut _current_position_qty = Decimal::ZERO;
+
         // Trades sorted by exit timestamp (or entry if open?) - Assumes trades are closed
         // Actually, we need to replay trades against the daily closes.
-        // Simplified approach: 
+        // Simplified approach:
         // Iterate days. For each day, apply all trades that happened BEFORE that day's close.
         // Update cash and quantity. Value = Cash + Qty * ClosePrice.
-        
-        let mut trade_idx = 0;
+
+        let mut _trade_idx = 0;
         // Sort trades by timestamp to be safe (though usually sorted)
         let mut sorted_trades = trades.to_vec();
         sorted_trades.sort_by_key(|t| t.exit_timestamp.unwrap_or(0));
 
         let mut period_days = 0.0;
-        
+
         if !daily_closes.is_empty() {
-             let start_ts = daily_closes.first().unwrap().0;
-             let end_ts = daily_closes.last().unwrap().0;
-             period_days = (end_ts - start_ts) as f64 / 86400.0;
+            let start_ts = daily_closes.first().unwrap().0;
+            let end_ts = daily_closes.last().unwrap().0;
+            period_days = (end_ts - start_ts) as f64 / 86400.0;
         }
 
         // We need to track executed trades to update cash/qty
         for (ts, close_price) in daily_closes {
-             // Process all trades that exited on or before this day
-             // NOTE: This assumes we are calculating metrics on CLOSED trades primarily, 
-             // or we need to handle entry/exits separately to track current position.
-             // But Trade struct abstracts Entry and Exit. 
-             // Better: Use `trades` list purely for PnL stats, but for Equity Curve, 
-             // we need to know when cash changed.
-             // Limitation: `BacktestResult` only gives us `trades` (completed orders paired).
-             // It doesn't give us raw Order history easily without refactoring.
-             // BUT, `trades` contain entry_timestamp and exit_timestamp.
-             // So we can reconstruct position state.
-             
-             // Reset state for replay (inefficient but safe) or incremental?
-             // Incremental is better.
-             
-             // Issue: A Trade has entry and exit. 
-             // At `ts`, if `entry_ts <= ts < exit_ts`, we hold position.
-             // If `exit_ts <= ts`, we have realized PnL (cash increased).
-             // Cash starts at initial_equity.
-             
-             // Let's do it per day:
-             // Value = InitialEquity + Sum(Realized PnL) + Sum(Unrealized PnL)
-             
-             let mut realized_pnl = Decimal::ZERO;
-             let mut unrealized_pnl = Decimal::ZERO;
-             
-             for trade in trades {
-                 let entry_ts = trade.entry_timestamp;
-                 let exit_ts = trade.exit_timestamp.unwrap_or(i64::MAX);
-                 
-                 if exit_ts <= *ts {
-                     // Trade closed before or on this day -> Realized
-                     realized_pnl += trade.pnl;
-                 } else if entry_ts <= *ts {
-                      // Trade is open on this day (Entry <= Day < Exit)
-                      // Unrealized = (DailyClose - EntryPrice) * Qty
-                      unrealized_pnl += (close_price - trade.entry_price) * trade.quantity;
-                 }
-             }
+            // Process all trades that exited on or before this day
+            // NOTE: This assumes we are calculating metrics on CLOSED trades primarily,
+            // or we need to handle entry/exits separately to track current position.
+            // But Trade struct abstracts Entry and Exit.
+            // Better: Use `trades` list purely for PnL stats, but for Equity Curve,
+            // we need to know when cash changed.
+            // Limitation: `BacktestResult` only gives us `trades` (completed orders paired).
+            // It doesn't give us raw Order history easily without refactoring.
+            // BUT, `trades` contain entry_timestamp and exit_timestamp.
+            // So we can reconstruct position state.
 
-             let total_equity = initial_equity + realized_pnl + unrealized_pnl;
-             daily_equity.push(total_equity);
+            // Reset state for replay (inefficient but safe) or incremental?
+            // Incremental is better.
+
+            // Issue: A Trade has entry and exit.
+            // At `ts`, if `entry_ts <= ts < exit_ts`, we hold position.
+            // If `exit_ts <= ts`, we have realized PnL (cash increased).
+            // Cash starts at initial_equity.
+
+            // Let's do it per day:
+            // Value = InitialEquity + Sum(Realized PnL) + Sum(Unrealized PnL)
+
+            let mut realized_pnl = Decimal::ZERO;
+            let mut unrealized_pnl = Decimal::ZERO;
+
+            for trade in trades {
+                let entry_ts = trade.entry_timestamp;
+                let exit_ts = trade.exit_timestamp.unwrap_or(i64::MAX);
+
+                if exit_ts <= *ts {
+                    // Trade closed before or on this day -> Realized
+                    realized_pnl += trade.pnl;
+                } else if entry_ts <= *ts {
+                    // Trade is open on this day (Entry <= Day < Exit)
+                    // Unrealized = (DailyClose - EntryPrice) * Qty
+                    unrealized_pnl += (close_price - trade.entry_price) * trade.quantity;
+                }
+            }
+
+            let total_equity = initial_equity + realized_pnl + unrealized_pnl;
+            daily_equity.push(total_equity);
         }
-        
+
         // If no daily data (e.g. single day or empty), fallback to end-point
         let final_equity = if let Some(last) = daily_equity.last() {
             *last
         } else {
             // Fallback implies simple start/end
-             let total_pnl: Decimal = trades.iter().map(|t| t.pnl).sum();
-             initial_equity + total_pnl
+            let total_pnl: Decimal = trades.iter().map(|t| t.pnl).sum();
+            initial_equity + total_pnl
         };
 
         let total_return = final_equity - initial_equity;
@@ -168,7 +168,7 @@ impl PerformanceMetrics {
         let num_wins = winning_trades.len();
         let num_losses = losing_trades.len();
 
-       let win_rate = if total_trades > 0 {
+        let win_rate = if total_trades > 0 {
             (num_wins as f64 / total_trades as f64) * 100.0
         } else {
             0.0
@@ -177,36 +177,51 @@ impl PerformanceMetrics {
         let gross_profit: Decimal = winning_trades.iter().map(|t| t.pnl).sum();
         let gross_loss: Decimal = losing_trades.iter().map(|t| t.pnl).sum();
 
-         let profit_factor = if gross_loss < Decimal::ZERO {
+        let profit_factor = if gross_loss < Decimal::ZERO {
             gross_profit.to_f64().unwrap_or(0.0) / gross_loss.abs().to_f64().unwrap_or(1.0)
+        } else if gross_profit > Decimal::ZERO {
+            f64::INFINITY
         } else {
-            if gross_profit > Decimal::ZERO {
-                f64::INFINITY
-            } else {
-                0.0
-            }
+            0.0
         };
-        
-        let average_win = if num_wins > 0 { gross_profit / Decimal::from(num_wins) } else { Decimal::ZERO };
-        let average_loss = if num_losses > 0 { gross_loss / Decimal::from(num_losses) } else { Decimal::ZERO };
-        let largest_win = winning_trades.iter().map(|t| t.pnl).max().unwrap_or(Decimal::ZERO);
-        let largest_loss = losing_trades.iter().map(|t| t.pnl).min().unwrap_or(Decimal::ZERO);
-         let (max_consecutive_wins, max_consecutive_losses) = Self::calculate_consecutive_streaks(trades);
+
+        let average_win = if num_wins > 0 {
+            gross_profit / Decimal::from(num_wins)
+        } else {
+            Decimal::ZERO
+        };
+        let average_loss = if num_losses > 0 {
+            gross_loss / Decimal::from(num_losses)
+        } else {
+            Decimal::ZERO
+        };
+        let largest_win = winning_trades
+            .iter()
+            .map(|t| t.pnl)
+            .max()
+            .unwrap_or(Decimal::ZERO);
+        let largest_loss = losing_trades
+            .iter()
+            .map(|t| t.pnl)
+            .min()
+            .unwrap_or(Decimal::ZERO);
+        let (max_consecutive_wins, max_consecutive_losses) =
+            Self::calculate_consecutive_streaks(trades);
 
         // Time Series Metrics (Sharpe, Drawdown)
         let max_drawdown_pct = Self::calculate_max_drawdown(&daily_equity);
         let max_drawdown = max_drawdown_pct * initial_equity.to_f64().unwrap_or(0.0) / 100.0;
-        
+
         let returns = Self::calculate_returns(&daily_equity);
         let sharpe_ratio = Self::calculate_sharpe_ratio(&returns);
         let sortino_ratio = Self::calculate_sortino_ratio(&returns);
-        
+
         let calmar_ratio = if max_drawdown_pct.abs() > 0.01 {
             annualized_return_pct / max_drawdown_pct.abs()
         } else {
             0.0
         };
-        
+
         let days_in_market = Self::calculate_days_in_market(trades);
         let exposure_pct = if period_days > 0.0 {
             (days_in_market / period_days) * 100.0
@@ -242,6 +257,7 @@ impl PerformanceMetrics {
         }
     }
 
+    #[allow(dead_code)]
     fn build_equity_curve(trades: &[Trade], initial_equity: Decimal) -> Vec<Decimal> {
         let mut curve = vec![initial_equity];
         let mut current_equity = initial_equity;
@@ -415,15 +431,20 @@ mod tests {
 
         // Mock Daily Closes
         let daily_closes = vec![
-             (0, dec!(100)), // Start
-             (86400, dec!(110)), // Day 1
-             (172800, dec!(120)), // Day 2
+            (0, dec!(100)),      // Start
+            (86400, dec!(110)),  // Day 1
+            (172800, dec!(120)), // Day 2
         ];
-        
-        // Convert to (i64, Decimal)
-        let daily_closes_ts: Vec<(i64, Decimal)> = daily_closes.iter().map(|(t, p)| (*t as i64, *p)).collect();
 
-        let metrics = PerformanceMetrics::calculate_time_series_metrics(&trades, &daily_closes_ts, dec!(10000));
+        // Convert to (i64, Decimal)
+        let daily_closes_ts: Vec<(i64, Decimal)> =
+            daily_closes.iter().map(|(t, p)| (*t as i64, *p)).collect();
+
+        let metrics = PerformanceMetrics::calculate_time_series_metrics(
+            &trades,
+            &daily_closes_ts,
+            dec!(10000),
+        );
 
         assert_eq!(metrics.total_trades, 2);
         assert_eq!(metrics.winning_trades, 2);
@@ -488,42 +509,37 @@ mod tests {
 
     #[test]
     fn test_time_series_metrics() {
-        let trades = vec![
-            Trade {
-                id: "1".to_string(),
-                symbol: "AAPL".to_string(),
-                side: OrderSide::Buy,
-                entry_price: dec!(100),
-                exit_price: Some(dec!(110)),
-                quantity: dec!(10),
-                pnl: dec!(100),
-                entry_timestamp: 1000,
-                exit_timestamp: Some(2000), 
-            }
-        ];
-        
-        // Days: 
+        let trades = vec![Trade {
+            id: "1".to_string(),
+            symbol: "AAPL".to_string(),
+            side: OrderSide::Buy,
+            entry_price: dec!(100),
+            exit_price: Some(dec!(110)),
+            quantity: dec!(10),
+            pnl: dec!(100),
+            entry_timestamp: 1000,
+            exit_timestamp: Some(2000),
+        }];
+
+        // Days:
         // 1. TS=1500 (Trade Open, Price=105). Eq = 1000 + (105-100)*10 = 1050.
         // 2. TS=2500 (Trade Closed). Eq = 1000 + 100 = 1100.
         // 3. TS=3500 (No pos). Eq = 1100.
-        
+
         let daily_closes = vec![
             (1500, dec!(105)),
             (2500, dec!(120)), // Price is 120 but trade closed at 110
             (3500, dec!(125)),
         ];
-        
-        let metrics = PerformanceMetrics::calculate_time_series_metrics(
-            &trades,
-            &daily_closes,
-            dec!(1000)
-        );
-        
+
+        let metrics =
+            PerformanceMetrics::calculate_time_series_metrics(&trades, &daily_closes, dec!(1000));
+
         // Returns:
         // D1: 1050 (Start 1000 -> +5%)
         // D2: 1100 (Prev 1050 -> +4.76%)
         // D3: 1100 (Prev 1100 -> 0%)
-        
+
         println!("Sharpe: {}", metrics.sharpe_ratio);
         // assert!(metrics.sharpe_ratio > 0.0); // Check output
         assert_eq!(metrics.max_drawdown, 0.0);

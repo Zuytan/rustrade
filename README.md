@@ -5,7 +5,7 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 ## 🚀 Key Features
 - **Multi-Agent Architecture**: Dedicated agents for Sentinel (Data), Analyst (Strategy), Risk Manager, and Execution.
 - **Real-Time Analysis**: Dual SMA & Triple Filter (Trend/RSI/MACD) strategies processed on live WebSocket data.
-- **Safety First**: "Strict Decimal" policy for financial math, PDT protection, and Circuit Breakers.
+- **Safety First**: "Strict Decimal" policy, PDT protection, and **Real-time Circuit Breakers** (active valuation loop).
 - **Backtesting & Benchmark**: Integrated historical simulation engine for strategy verification.
 
 ## 🛠️ Technical Stack

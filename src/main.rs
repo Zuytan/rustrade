@@ -1,6 +1,6 @@
 use rustrade::application::system::Application;
 use rustrade::config::Config;
-use tracing::{Level, info};
+use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]

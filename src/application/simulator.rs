@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -63,17 +62,18 @@ impl Simulator {
         // Pre-process bars to extract daily closes
         // Map: Date (String YYYY-MM-DD) -> (Timestamp, ClosePrice)
         // We want the LAST bar of each day
-        let mut daily_map: std::collections::BTreeMap<String, (i64, Decimal)> = std::collections::BTreeMap::new();
-        
+        let mut daily_map: std::collections::BTreeMap<String, (i64, Decimal)> =
+            std::collections::BTreeMap::new();
+
         for bar in &bars {
-             let dt = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
+            let dt = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
                 .unwrap_or_default()
                 .with_timezone(&Utc);
             let date_key = dt.format("%Y-%m-%d").to_string();
             let close = Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO);
             daily_map.insert(date_key, (dt.timestamp_millis(), close));
         }
-        
+
         // Convert to Vec sorted by date (BTreeMap ensures sort)
         let daily_closes: Vec<(i64, Decimal)> = daily_map.values().cloned().collect();
 
@@ -185,7 +185,7 @@ impl Simulator {
                     high: Decimal::from_f64_retain(bar.high).unwrap_or(Decimal::ZERO),
                     low: Decimal::from_f64_retain(bar.low).unwrap_or(Decimal::ZERO),
                     close: Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO),
-                    volume: bar.volume as u64,
+                    volume: bar.volume,
                     timestamp,
                 };
 
@@ -194,7 +194,7 @@ impl Simulator {
                 // artificial delay to allow Analyst to catch up / generate proposal before we feed next 100 bars?
                 // tokio::time::sleep(std::time::Duration::from_micros(10)).await;
 
-                if let Err(_) = market_tx.send(event).await {
+                if market_tx.send(event).await.is_err() {
                     break;
                 }
             }
@@ -203,7 +203,8 @@ impl Simulator {
         let mut executed_trades = Vec::new();
 
         while let Some(prop) = proposal_rx.recv().await {
-            let slippage = Decimal::from_f64_retain(self.config.slippage_pct).unwrap_or(Decimal::ZERO);
+            let slippage =
+                Decimal::from_f64_retain(self.config.slippage_pct).unwrap_or(Decimal::ZERO);
             let execution_price = match prop.side {
                 crate::domain::types::OrderSide::Buy => prop.price * (Decimal::ONE + slippage),
                 crate::domain::types::OrderSide::Sell => prop.price * (Decimal::ONE - slippage),

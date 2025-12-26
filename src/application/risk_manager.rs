@@ -1,7 +1,7 @@
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::types::{Order, OrderSide, TradeProposal};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -68,11 +68,11 @@ impl RiskManager {
     /// Initialize session tracking with starting equity
     async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let portfolio = self.execution_service.get_portfolio().await?;
-        
+
         // Fetch initial prices for accurate equity calculation
         let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
         if !symbols.is_empty() {
-             match self.market_service.get_prices(symbols).await {
+            match self.market_service.get_prices(symbols).await {
                 Ok(prices) => {
                     for (sym, price) in prices {
                         self.current_prices.insert(sym, price);
@@ -81,7 +81,7 @@ impl RiskManager {
                 Err(e) => {
                     warn!("RiskManager: Failed to fetch initial prices: {}", e);
                 }
-             }
+            }
         }
 
         let initial_equity = portfolio.total_equity(&self.current_prices);
@@ -164,7 +164,7 @@ impl RiskManager {
     async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // 1. Get Portfolio to know what we hold
         let portfolio = self.execution_service.get_portfolio().await?;
-        
+
         // 2. Collect symbols
         let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
         if symbols.is_empty() {
@@ -178,10 +178,10 @@ impl RiskManager {
                 for (sym, price) in prices {
                     self.current_prices.insert(sym, price);
                 }
-                
+
                 // 4. Calculate Equity with NEW prices
                 let current_equity = portfolio.total_equity(&self.current_prices);
-                
+
                 // 5. Update High Water Mark
                 if current_equity > self.equity_high_water_mark {
                     self.equity_high_water_mark = current_equity;
@@ -214,181 +214,181 @@ impl RiskManager {
 
         loop {
             tokio::select! {
-                _ = valuation_interval.tick() => {
-                    if let Err(e) = self.update_portfolio_valuation().await {
-                        error!("RiskManager: Valuation update error: {}", e);
-                    }
-                }
-                Some(proposal) = self.proposal_rx.recv() => {
-                    info!("RiskManager: reviewing proposal {:?}", proposal);
-
-            // Update current price for this symbol
-            self.current_prices
-                .insert(proposal.symbol.clone(), proposal.price);
-
-            // Fetch fresh portfolio data from exchange
-            let portfolio = match self.execution_service.get_portfolio().await {
-                Ok(p) => p,
-                Err(e) => {
-                    error!("RiskManager: Failed to fetch portfolio: {}", e);
-                    continue;
-                }
-            };
-
-            // Calculate current equity
-            let current_equity = portfolio.total_equity(&self.current_prices);
-
-            // Update high water mark
-            if current_equity > self.equity_high_water_mark {
-                self.equity_high_water_mark = current_equity;
-            }
-
-            // Check circuit breaker BEFORE other validations
-            if let Some(reason) = self.check_circuit_breaker(current_equity) {
-                error!("RiskManager: CIRCUIT BREAKER TRIGGERED - {}", reason);
-                error!(
-                    "RiskManager: All trading halted. Current equity: {}",
-                    current_equity
-                );
-                continue; // Reject all orders
-            }
-
-            // Validate position size for buy orders
-            if matches!(proposal.side, OrderSide::Buy) {
-                if !self.validate_position_size(&proposal, current_equity) {
-                    warn!(
-                        "RiskManager: Rejecting {:?} order for {} - Position size limit",
-                        proposal.side, proposal.symbol
-                    );
-                    continue;
-                }
-            }
-
-            // Validation Logic
-            let cost = proposal.price * proposal.quantity;
-
-            let is_valid = match proposal.side {
-                OrderSide::Buy => {
-                    if portfolio.cash >= cost {
-                        true
-                    } else {
-                        warn!(
-                            "RiskManager: Insufficient funds. Cash: {}, Cost: {}",
-                            portfolio.cash, cost
-                        );
-                        false
-                    }
-                }
-                OrderSide::Sell => {
-                    // Normalize symbol for lookup (remove / and spaces)
-                    let normalized_search = proposal.symbol.replace("/", "").replace(" ", "");
-
-                    // Check if we hold the asset by checking all positions with normalized symbols
-                    let found_pos = portfolio.positions.iter().find(|(sym, _)| {
-                        sym.replace("/", "").replace(" ", "") == normalized_search
-                    });
-
-                    if let Some((_, pos)) = found_pos {
-                        // PDT Protection
-                        if self.non_pdt_mode {
-                            let today_orders = match self.execution_service.get_today_orders().await
-                            {
-                                Ok(orders) => orders,
-                                Err(e) => {
-                                    error!("RiskManager: Failed to fetch today's orders: {}", e);
-                                    Vec::new()
-                                }
-                            };
-
-                            let bought_today = today_orders.iter().any(|o| {
-                                o.side == OrderSide::Buy
-                                    && o.symbol.replace("/", "").replace(" ", "")
-                                        == normalized_search
-                            });
-
-                            if bought_today {
-                                warn!(
-                                    "RiskManager: REJECTED Sell for {} - PDT Protection active (bought today)",
-                                    proposal.symbol
-                                );
-                                false
-                            } else {
-                                true
+                        _ = valuation_interval.tick() => {
+                            if let Err(e) = self.update_portfolio_valuation().await {
+                                error!("RiskManager: Valuation update error: {}", e);
                             }
-                        } else {
-                            // If we hold any quantity, we can sell.
-                            // If the proposal quantity is more than we own, we adjust to sell all.
-                            let sell_qty = if pos.quantity < proposal.quantity {
-                                warn!(
-                                    "RiskManager: Adjusting sell quantity from {} to available {}",
-                                    proposal.quantity, pos.quantity
-                                );
-                                pos.quantity
-                            } else {
-                                proposal.quantity
-                            };
+                        }
+                        Some(proposal) = self.proposal_rx.recv() => {
+                            info!("RiskManager: reviewing proposal {:?}", proposal);
 
-                            if sell_qty > rust_decimal::Decimal::ZERO {
+                    // Update current price for this symbol
+                    self.current_prices
+                        .insert(proposal.symbol.clone(), proposal.price);
+
+                    // Fetch fresh portfolio data from exchange
+                    let portfolio = match self.execution_service.get_portfolio().await {
+                        Ok(p) => p,
+                        Err(e) => {
+                            error!("RiskManager: Failed to fetch portfolio: {}", e);
+                            continue;
+                        }
+                    };
+
+                    // Calculate current equity
+                    let current_equity = portfolio.total_equity(&self.current_prices);
+
+                    // Update high water mark
+                    if current_equity > self.equity_high_water_mark {
+                        self.equity_high_water_mark = current_equity;
+                    }
+
+                    // Check circuit breaker BEFORE other validations
+                    if let Some(reason) = self.check_circuit_breaker(current_equity) {
+                        error!("RiskManager: CIRCUIT BREAKER TRIGGERED - {}", reason);
+                        error!(
+                            "RiskManager: All trading halted. Current equity: {}",
+                            current_equity
+                        );
+                        continue; // Reject all orders
+                    }
+
+                    // Validate position size for buy orders
+                    if matches!(proposal.side, OrderSide::Buy) {
+                        if !self.validate_position_size(&proposal, current_equity) {
+                            warn!(
+                                "RiskManager: Rejecting {:?} order for {} - Position size limit",
+                                proposal.side, proposal.symbol
+                            );
+                            continue;
+                        }
+                    }
+
+                    // Validation Logic
+                    let cost = proposal.price * proposal.quantity;
+
+                    let is_valid = match proposal.side {
+                        OrderSide::Buy => {
+                            if portfolio.cash >= cost {
                                 true
                             } else {
                                 warn!(
-                                    "RiskManager: Owned quantity is zero for {}",
-                                    proposal.symbol
+                                    "RiskManager: Insufficient funds. Cash: {}, Cost: {}",
+                                    portfolio.cash, cost
                                 );
                                 false
                             }
                         }
-                    } else {
-                        warn!(
-                            "RiskManager: No position found for {} (normalized: {})",
-                            proposal.symbol, normalized_search
-                        );
-                        false
-                    }
-                }
-            };
+                        OrderSide::Sell => {
+                            // Normalize symbol for lookup (remove / and spaces)
+                            let normalized_search = proposal.symbol.replace("/", "").replace(" ", "");
 
-            if is_valid {
-                // Determine actual quantity (might have changed during validation)
-                let final_qty = match proposal.side {
-                    OrderSide::Sell => {
-                        let normalized_search = proposal.symbol.replace("/", "").replace(" ", "");
-                        portfolio
-                            .positions
-                            .iter()
-                            .find(|(sym, _)| {
+                            // Check if we hold the asset by checking all positions with normalized symbols
+                            let found_pos = portfolio.positions.iter().find(|(sym, _)| {
                                 sym.replace("/", "").replace(" ", "") == normalized_search
-                            })
-                            .map(|(_, pos)| {
-                                if pos.quantity < proposal.quantity {
-                                    pos.quantity
+                            });
+
+                            if let Some((_, pos)) = found_pos {
+                                // PDT Protection
+                                if self.non_pdt_mode {
+                                    let today_orders = match self.execution_service.get_today_orders().await
+                                    {
+                                        Ok(orders) => orders,
+                                        Err(e) => {
+                                            error!("RiskManager: Failed to fetch today's orders: {}", e);
+                                            Vec::new()
+                                        }
+                                    };
+
+                                    let bought_today = today_orders.iter().any(|o| {
+                                        o.side == OrderSide::Buy
+                                            && o.symbol.replace("/", "").replace(" ", "")
+                                                == normalized_search
+                                    });
+
+                                    if bought_today {
+                                        warn!(
+                                            "RiskManager: REJECTED Sell for {} - PDT Protection active (bought today)",
+                                            proposal.symbol
+                                        );
+                                        false
+                                    } else {
+                                        true
+                                    }
                                 } else {
-                                    proposal.quantity
+                                    // If we hold any quantity, we can sell.
+                                    // If the proposal quantity is more than we own, we adjust to sell all.
+                                    let sell_qty = if pos.quantity < proposal.quantity {
+                                        warn!(
+                                            "RiskManager: Adjusting sell quantity from {} to available {}",
+                                            proposal.quantity, pos.quantity
+                                        );
+                                        pos.quantity
+                                    } else {
+                                        proposal.quantity
+                                    };
+
+                                    if sell_qty > rust_decimal::Decimal::ZERO {
+                                        true
+                                    } else {
+                                        warn!(
+                                            "RiskManager: Owned quantity is zero for {}",
+                                            proposal.symbol
+                                        );
+                                        false
+                                    }
                                 }
-                            })
-                            .unwrap_or(proposal.quantity)
+                            } else {
+                                warn!(
+                                    "RiskManager: No position found for {} (normalized: {})",
+                                    proposal.symbol, normalized_search
+                                );
+                                false
+                            }
+                        }
+                    };
+
+                    if is_valid {
+                        // Determine actual quantity (might have changed during validation)
+                        let final_qty = match proposal.side {
+                            OrderSide::Sell => {
+                                let normalized_search = proposal.symbol.replace("/", "").replace(" ", "");
+                                portfolio
+                                    .positions
+                                    .iter()
+                                    .find(|(sym, _)| {
+                                        sym.replace("/", "").replace(" ", "") == normalized_search
+                                    })
+                                    .map(|(_, pos)| {
+                                        if pos.quantity < proposal.quantity {
+                                            pos.quantity
+                                        } else {
+                                            proposal.quantity
+                                        }
+                                    })
+                                    .unwrap_or(proposal.quantity)
+                            }
+                            OrderSide::Buy => proposal.quantity,
+                        };
+
+                        let order = Order {
+                            id: Uuid::new_v4().to_string(),
+                            symbol: proposal.symbol,
+                            side: proposal.side,
+                            price: proposal.price,
+                            quantity: final_qty,
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                        };
+
+                        info!("RiskManager: Approved. Sending Order {}", order.id);
+                        if let Err(e) = self.order_tx.send(order).await {
+                            error!("RiskManager: Failed to send order: {}", e);
+                            break;
+                        }
                     }
-                    OrderSide::Buy => proposal.quantity,
-                };
-
-                let order = Order {
-                    id: Uuid::new_v4().to_string(),
-                    symbol: proposal.symbol,
-                    side: proposal.side,
-                    price: proposal.price,
-                    quantity: final_qty,
-                    timestamp: chrono::Utc::now().timestamp_millis(),
-                };
-
-                info!("RiskManager: Approved. Sending Order {}", order.id);
-                if let Err(e) = self.order_tx.send(order).await {
-                    error!("RiskManager: Failed to send order: {}", e);
-                    break;
                 }
             }
         }
-    }
-}
     }
 }
 
@@ -399,7 +399,7 @@ mod tests {
     use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
     use chrono::Utc;
     use rust_decimal::Decimal;
-    use tokio::sync::{RwLock, mpsc};
+    use tokio::sync::{mpsc, RwLock};
 
     use std::sync::Mutex;
 
@@ -421,14 +421,20 @@ mod tests {
 
     #[async_trait::async_trait]
     impl MarketDataService for ConfigurableMockMarketData {
-        async fn subscribe(&self, _symbols: Vec<String>) -> Result<mpsc::Receiver<crate::domain::types::MarketEvent>, anyhow::Error> {
+        async fn subscribe(
+            &self,
+            _symbols: Vec<String>,
+        ) -> Result<mpsc::Receiver<crate::domain::types::MarketEvent>, anyhow::Error> {
             let (_, rx) = mpsc::channel(1);
             Ok(rx)
         }
         async fn get_top_movers(&self) -> Result<Vec<String>, anyhow::Error> {
             Ok(vec![])
         }
-        async fn get_prices(&self, symbols: Vec<String>) -> Result<HashMap<String, Decimal>, anyhow::Error> {
+        async fn get_prices(
+            &self,
+            symbols: Vec<String>,
+        ) -> Result<HashMap<String, Decimal>, anyhow::Error> {
             let prices = self.prices.lock().unwrap();
             let mut result = HashMap::new();
             for sym in symbols {
@@ -444,7 +450,7 @@ mod tests {
     async fn test_circuit_breaker_on_market_crash() {
         let (proposal_tx, proposal_rx) = mpsc::channel(1);
         let (order_tx, mut order_rx) = mpsc::channel(1);
-        
+
         // Setup Portfolio: $10,000 Cash + 100 TSLA @ $100 ($10,000 Value) = $20,000 Equity
         let mut port = Portfolio::new();
         port.cash = Decimal::from(10000);
@@ -458,7 +464,7 @@ mod tests {
         );
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio));
-        
+
         // Setup Market: TSLA @ $100 Initially
         let market_data = Arc::new(ConfigurableMockMarketData::new());
         market_data.set_price("TSLA", Decimal::from(100));
@@ -495,7 +501,7 @@ mod tests {
         // We can't wait 60s.
         // Option 1: Change RiskManager to accept ticker interval config.
         // Option 2: Send a proposal! The proposal loop ALSO updates valuation.
-        
+
         let proposal = TradeProposal {
             symbol: "TSLA".to_string(),
             side: OrderSide::Buy, // Buy more?
@@ -509,7 +515,10 @@ mod tests {
         // Expect rejection due to Circuit Breaker
         // The order channel should NOT receive anything.
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        assert!(order_rx.try_recv().is_err(), "Order should be rejected due to circuit breaker");
+        assert!(
+            order_rx.try_recv().is_err(),
+            "Order should be rejected due to circuit breaker"
+        );
 
         // Note: verifying logs is hard here, but rejection confirms logic.
     }

@@ -28,7 +28,7 @@ Développer un système multi-agents capable de surveiller le marché des action
 
 ### 3. Agent "Risk Manager" (Safety Gate)
 - **Rôle**: Contrôleur de conformité financier.
-- **Responsabilités**: Validation des propositions de trade via l' `ExecutionService`. Gère la normalisation des symboles (ex: `BTC/USD` vs `BTCUSD`) et ajuste automatiquement les quantités de vente en cas de positions fractionnaires. **Protection PDT (Non-Pattern Day Trader)** : Empêche la revente d'un actif acheté le jour même si l'option est activée.
+- **Responsabilités**: Validation des propositions de trade via l' `ExecutionService`. Gère la normalisation des symboles (ex: `BTC/USD` vs `BTCUSD`) et ajuste automatiquement les quantités de vente en cas de positions fractionnaires. **Protection PDT (Non-Pattern Day Trader)** : Empêche la revente d'un actif acheté le jour même si l'option est activée. **Valuation Temps Réel** : Surveille activement la valeur du portefeuille (Polling 60s) pour déclencher les Circuit Breakers (Max Drawdown/Daily Loss) même en l'absence de nouvelle proposition de trade (Protection contre les Market Crashes).
 
 ### 4. L'Agent "Order Throttler" (Rate Limiting)
 - **Rôle**: Garde-fou technique.

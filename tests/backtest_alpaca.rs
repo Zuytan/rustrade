@@ -8,7 +8,7 @@ use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{Level, info};
+use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 // Run with: cargo test --test backtest_alpaca -- --nocapture

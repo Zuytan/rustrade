@@ -26,6 +26,15 @@ impl Portfolio {
             trade_history: Vec::new(),
         }
     }
+}
+
+impl Default for Portfolio {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Portfolio {
 
     /// Calculate total equity (cash + unrealized position value)
     pub fn total_equity(&self, current_prices: &HashMap<String, Decimal>) -> Decimal {

@@ -1,5 +1,4 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
-use crate::domain::types::OrderSide;
 
 /// Mean Reversion Strategy
 ///
@@ -70,7 +69,14 @@ mod tests {
     use super::*;
     use rust_decimal_macros::dec;
 
-    fn create_context(price: f64, rsi: f64, lower: f64, middle: f64, upper: f64, has_pos: bool) -> AnalysisContext {
+    fn create_context(
+        price: f64,
+        rsi: f64,
+        lower: f64,
+        middle: f64,
+        upper: f64,
+        has_pos: bool,
+    ) -> AnalysisContext {
         AnalysisContext {
             symbol: "TEST".to_string(),
             current_price: dec!(100.0), // Irrelevant for this logic
@@ -97,7 +103,7 @@ mod tests {
         let strategy = MeanReversionStrategy::new(20, 70.0);
         // Price 95, Lower 96 -> Below Band. RSI 25 -> Oversold. -> BUY
         let ctx = create_context(95.0, 25.0, 96.0, 100.0, 104.0, false);
-        
+
         let signal = strategy.analyze(&ctx);
         assert!(signal.is_some());
         assert!(matches!(signal.unwrap().side, OrderSide::Buy));
@@ -108,7 +114,7 @@ mod tests {
         let strategy = MeanReversionStrategy::new(20, 70.0);
         // Price 95, Lower 96 -> Below Band. RSI 40 -> Not Oversold. -> NO BUY
         let ctx = create_context(95.0, 40.0, 96.0, 100.0, 104.0, false);
-        
+
         let signal = strategy.analyze(&ctx);
         assert!(signal.is_none());
     }
@@ -118,7 +124,7 @@ mod tests {
         let strategy = MeanReversionStrategy::new(20, 70.0);
         // Price 101, Middle 100 -> Above Mean. -> SELL
         let ctx = create_context(101.0, 50.0, 96.0, 100.0, 104.0, true);
-        
+
         let signal = strategy.analyze(&ctx);
         assert!(signal.is_some());
         assert!(matches!(signal.unwrap().side, OrderSide::Sell));

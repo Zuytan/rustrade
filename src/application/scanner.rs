@@ -102,8 +102,8 @@ mod tests {
     use async_trait::async_trait;
     use rust_decimal::Decimal;
     use std::sync::Mutex;
-    use tokio::sync::RwLock;
     use tokio::sync::mpsc;
+    use tokio::sync::RwLock;
 
     struct MockScannerService {
         movers: Mutex<Option<Vec<String>>>,
