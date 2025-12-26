@@ -3,7 +3,17 @@
 ## Objectif du Projet
 Développer un système multi-agents capable de surveiller le marché des actions et ETF, d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
 
-> 📘 **Nouveau :** Pour une explication simplifiée des stratégies, voir [Guide des Stratégies (Non-Spécialistes)](docs/guide_strategie_simplifie.md).
+> 📘 **Nouveau  :** Pour une explication simplifiée des stratégies, voir [Guide des Stratégies (Non-Spécialistes)](docs/guide_strategie_simplifie.md).
+
+## Score d'Appétit au Risque (Risk Appetite)
+
+Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 à 10, permettant d'ajuster automatiquement les paramètres de trading selon votre tolérance au risque :
+
+- **Scores 1-3 (Conservateur)** : Préservation du capital, positions petites (5-10%), stops serrés (2.0-2.5x ATR), seuil RSI bas (30-45)
+- **Scores 4-7 (Équilibré)** : Approche modérée, positions moyennes (10-20%), stops modérés (2.5-3.5x ATR), seuil RSI médian (45-65)
+- **Scores 8-10 (Agressif)** : Recherche de rendement, positions larges (20-30%), stops lâches (3.5-5.0x ATR), seuil RSI élevé (65-75)
+
+**Configuration** : Définir `RISK_APPETITE_SCORE=5` dans `.env`. Si non défini, les paramètres individuels sont utilisés (rétrocompatibilité).
 
 ## Architecture des Agents
 

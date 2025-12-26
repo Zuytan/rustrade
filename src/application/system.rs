@@ -68,6 +68,21 @@ impl Application {
             }
         };
 
+        // Log Risk Appetite configuration
+        if let Some(ref appetite) = config.risk_appetite {
+            info!(
+                "Risk Appetite Score: {} ({:?}) - Calculated Parameters: risk_per_trade={:.2}%, trailing_stop={:.1}x, rsi_threshold={:.0}, max_position={:.1}%",
+                appetite.score(),
+                appetite.profile(),
+                config.risk_per_trade_percent * 100.0,
+                config.trailing_stop_atr_multiplier,
+                config.rsi_threshold,
+                config.max_position_size_pct * 100.0
+            );
+        } else {
+            info!("Using individual risk parameters from environment");
+        }
+
         Ok(Self {
             config,
             market_service,

@@ -3,6 +3,7 @@ use std::str::FromStr;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::env;
+use crate::domain::risk_appetite::RiskAppetite;
 
 #[derive(Debug, Clone)]
 pub enum Mode {
@@ -92,6 +93,8 @@ pub struct Config {
     // Mean Reversion Strategy
     pub mean_reversion_rsi_exit: f64,
     pub mean_reversion_bb_period: usize,
+    // Risk Appetite (optional - if set, overrides individual risk params)
+    pub risk_appetite: Option<RiskAppetite>,
 }
 
 impl Config {
@@ -266,6 +269,35 @@ impl Config {
             .parse::<usize>()
             .context("Failed to parse MEAN_REVERSION_BB_PERIOD")?;
 
+        // Risk Appetite Score (optional - overrides individual risk params if set)
+        let risk_appetite = if let Ok(score_str) = env::var("RISK_APPETITE_SCORE") {
+            let score = score_str.parse::<u8>()
+                .context("Failed to parse RISK_APPETITE_SCORE - must be integer 1-10")?;
+            Some(RiskAppetite::new(score)
+                .context("RISK_APPETITE_SCORE must be between 1 and 10")?)
+        } else {
+            None
+        };
+
+        // If risk_appetite is set, override the individual risk parameters
+        let (final_risk_per_trade, final_trailing_stop, final_rsi_threshold, final_max_position_size) = 
+            if let Some(ref appetite) = risk_appetite {
+                (
+                    appetite.calculate_risk_per_trade_percent(),
+                    appetite.calculate_trailing_stop_multiplier(),
+                    appetite.calculate_rsi_threshold(),
+                    appetite.calculate_max_position_size_pct(),
+                )
+            } else {
+                // Use individual env vars as before (backward compatibility)
+                (
+                    risk_per_trade_percent,
+                    trailing_stop_atr_multiplier,
+                    rsi_threshold,
+                    max_position_size_pct,
+                )
+            };
+
         Ok(Config {
             mode,
             alpaca_api_key,
@@ -281,7 +313,7 @@ impl Config {
             trade_quantity: Decimal::from_f64(trade_quantity).unwrap_or(Decimal::from(1)),
             sma_threshold,
             order_cooldown_seconds,
-            risk_per_trade_percent,
+            risk_per_trade_percent: final_risk_per_trade,
             non_pdt_mode,
             strategy_mode,
             trend_sma_period,
@@ -290,12 +322,12 @@ impl Config {
             macd_slow_period,
             macd_signal_period,
             trend_divergence_threshold,
-            rsi_threshold,
+            rsi_threshold: final_rsi_threshold,
             dynamic_symbol_mode,
             dynamic_scan_interval_minutes,
-            trailing_stop_atr_multiplier,
+            trailing_stop_atr_multiplier: final_trailing_stop,
             atr_period,
-            max_position_size_pct,
+            max_position_size_pct: final_max_position_size,
             max_daily_loss_pct,
             max_drawdown_pct,
             consecutive_loss_limit,
@@ -304,6 +336,7 @@ impl Config {
             trend_riding_exit_buffer_pct,
             mean_reversion_rsi_exit,
             mean_reversion_bb_period,
+            risk_appetite,
         })
     }
 }

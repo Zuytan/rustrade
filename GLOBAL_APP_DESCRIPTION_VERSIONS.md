@@ -1,5 +1,35 @@
 # Rustrade - Historique des Versions
 
+## Version 0.15.0 (Décembre 2025) - Risk Appetite Score
+
+**Nouvelle fonctionnalité majeure**:
+- **Score d'Appétit au Risque (1-10)**: Système de configuration simplifié permettant d'ajuster automatiquement tous les paramètres de risque selon le profil utilisateur
+  - Une seule variable `RISK_APPETITE_SCORE` remplace la configuration manuelle de 4+ paramètres
+  - Interpolation linéaire continue sur toute la plage 1-10 pour granularité maximale
+  - Formules automatiques: risk_per_trade (0.5%-3%), trailing_stop (2.0-5.0x ATR), rsi_threshold (30-75), max_position (5%-30%)
+  - Différence significative entre scores: 25-38% de variation progressive entre score 7 et 10
+  
+**Architecture Domain-Driven Design**:
+- Nouveau value object `RiskAppetite` dans `src/domain/risk_appetite.rs`
+  - Validation stricte du score (1-10 uniquement)
+  - Enum `RiskProfile` (Conservative/Balanced/Aggressive) pour classification
+  - Méthodes de calcul des paramètres avec interpolation linéaire
+- Intégration dans `Config` avec rétrocompatibilité totale
+  - Si `RISK_APPETITE_SCORE` défini → override automatique des params individuels
+  - Si non défini → comportement identique aux versions précédentes
+  
+**Tests**:
+- 14 nouveaux tests unitaires et d'intégration
+  - 9 tests pour `RiskAppetite` (validation, profiles, interpolation, granularité score 7 vs 10)
+  - 5 tests pour `Config` (avec/sans score, override, erreurs, boundary values)
+  - Tous tests passent avec `--test-threads=1` (isolation environnement)
+- Total tests projet: **90 tests** (précédent: 76)
+
+**Documentation**:
+- Mise à jour `GLOBAL_APP_DESCRIPTION.md` avec section dédiée Risk Appetite
+- Extension `.env.example` avec documentation complète des profils de risque
+- Logging au démarrage affichant score et paramètres calculés
+
 ## Version 0.14.0 (Décembre 2026) - Backtesting Avancé & Optimisation
 
 **Nouvelles fonctionnalités majeures**:
