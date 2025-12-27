@@ -2,6 +2,8 @@ use crate::domain::types::Candle;
 use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
+use tracing::{error, info};
+use std::sync::Arc;
 
 #[derive(Debug)]
 struct CandleBuilder {
@@ -62,13 +64,15 @@ pub struct CandleAggregator {
     // Map Symbol -> Current partial candle
     builders: HashMap<String, CandleBuilder>,
     _timeframe: Duration, // e.g., 1 minute
+    repository: Option<Arc<crate::infrastructure::persistence::repositories::CandleRepository>>,
 }
 
 impl CandleAggregator {
-    pub fn new() -> Self {
+    pub fn new(repository: Option<Arc<crate::infrastructure::persistence::repositories::CandleRepository>>) -> Self {
         Self {
             builders: HashMap::new(),
             _timeframe: Duration::minutes(1),
+            repository,
         }
     }
 
@@ -91,14 +95,35 @@ impl CandleAggregator {
             } else {
                 // New minute! Finalize the old candle and start a new one
                 let completed_candle = builder.build();
+                
+                info!(
+                    "CandleAggregator: {} candle completed → O:{} H:{} L:{} C:{} V:{}",
+                    symbol,
+                    completed_candle.open,
+                    completed_candle.high,
+                    completed_candle.low,
+                    completed_candle.close,
+                    completed_candle.volume
+                );
 
                 // Start new candle
                 *builder = CandleBuilder::new(symbol.to_string(), price, timestamp);
+
+                if let Some(repo) = &self.repository {
+                    let candle_clone = completed_candle.clone();
+                    let repo = repo.clone();
+                    tokio::spawn(async move {
+                         if let Err(e) = repo.save(&candle_clone).await {
+                             error!("Failed to persist candle for {}: {}", candle_clone.symbol, e);
+                         }
+                    });
+                }
 
                 return Some(completed_candle);
             }
         } else {
             // First tick for this symbol
+            info!("CandleAggregator: {} - First quote @ {}, starting aggregation", symbol, price);
             self.builders.insert(
                 symbol.to_string(),
                 CandleBuilder::new(symbol.to_string(), price, timestamp),
@@ -115,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_candle_aggregation() {
-        let mut agg = CandleAggregator::new();
+        let mut agg = CandleAggregator::new(None);
         let symbol = "BTC/USD";
 
         // T0: 00:00:01 - First tick

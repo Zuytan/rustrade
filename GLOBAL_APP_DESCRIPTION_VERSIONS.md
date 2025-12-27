@@ -1,5 +1,25 @@
 # Rustrade - Historique des Versions
 
+## Version 0.16.0 (Décembre 2025) - Persistence Layer (SQLite)
+- **NOUVEAU: Base de Données Locale**: Intégration de **SQLite** via `sqlx` pour une persistance robuste et zéro-conf.
+- **Historisation des Transactions**: Chaque ordre exécuté est désormais sauvegardé durablement dans la table `trades` (auditabilité fiscale et performance).
+- **Historisation des Données de Marché**: Les bougies (Candles) 1-minute agrégées sont sauvegardées dans la table `candles`.
+- **Architecture Asynchrone**: Les écritures en base sont effectuées en arrière-plan (Fire-and-Forget) pour ne jamais ralentir le trading haute fréquence.
+- **Idempotence**: Gestion robuste des doublons via `ON CONFLICT DO NOTHING/UPDATE`.
+
+## Version 0.15.3 (Décembre 2025) - WebSocket Resilience & Fast Reconnection
+- **AMÉLIORATION: Reconnexion WebSocket Rapide**: Implémentation d'une stratégie de reconnexion immédiate avec backoff exponentiel.
+  - Délai de reconnexion: **0s** (immédiat) pour la 1ère tentative, puis 1s, 2s, 4s, 8s, 16s avec cap à **30s**.
+  - Précédent: délai fixe de 5s pour toutes les reconnexions.
+- **NOUVEAU: Heartbeat Proactif**: Détection proactive des connexions mortes avant erreur de lecture.
+  - Envoi de **Ping WebSocket** toutes les 20 secondes.
+  - Timeout de Pong: **5 secondes** - déclenche reconnexion immédiate si pas de réponse.
+  - Permet de détecter les déconnexions silencieuses (firewall, proxy, etc.).
+- **AMÉLIORATION: Restauration Automatique**: Après reconnexion, les symboles sont automatiquement re-souscrits.
+  - Logging amélioré: indique le nombre de symboles restaurés et le nombre de tentatives de reconnexion.
+  - Réinitialisation du compteur de reconnexion après authentification réussie.
+- **ROBUSTESSE**: Logs détaillés pour tracking des états de connexion (Connected → Authenticated → Subscribed).
+
 ## Version 0.15.2 (Décembre 2025) - Dynamic Mode & Communication Fixes
 - **FIX: Sentinel Data Flux**: Correction d'un bug où le `Sentinel` ignorait les mises à jour de données lors d'un changement de watchlist en mode dynamique.
 - **AMÉLIORATION: Robotique Market Scanner**: Meilleure gestion des réponses vides or `null` de l'API Alpaca Movers.

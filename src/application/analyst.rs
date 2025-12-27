@@ -113,6 +113,7 @@ impl Analyst {
         execution_service: Arc<dyn ExecutionService>,
         strategy: Arc<dyn TradingStrategy>,
         config: AnalystConfig,
+        repository: Option<Arc<crate::infrastructure::persistence::repositories::CandleRepository>>,
     ) -> Self {
         Self {
             market_rx,
@@ -121,7 +122,7 @@ impl Analyst {
             strategy,
             config,
             symbol_states: HashMap::new(),
-            candle_aggregator: CandleAggregator::new(),
+            candle_aggregator: CandleAggregator::new(repository),
         }
     }
 
@@ -703,7 +704,7 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -774,7 +775,7 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
+        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;

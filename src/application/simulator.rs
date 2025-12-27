@@ -180,6 +180,7 @@ impl Simulator {
             self.execution_service.clone(),
             strategy,
             sim_config,
+            None,
         );
 
         let analyst_handle = tokio::spawn(async move {

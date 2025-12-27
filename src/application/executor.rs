@@ -10,6 +10,7 @@ pub struct Executor {
     execution_service: Arc<dyn ExecutionService>,
     order_rx: Receiver<Order>,
     portfolio: Arc<RwLock<Portfolio>>,
+    repository: Option<Arc<crate::infrastructure::persistence::repositories::OrderRepository>>,
 }
 
 impl Executor {
@@ -17,11 +18,13 @@ impl Executor {
         execution_service: Arc<dyn ExecutionService>,
         order_rx: Receiver<Order>,
         portfolio: Arc<RwLock<Portfolio>>,
+        repository: Option<Arc<crate::infrastructure::persistence::repositories::OrderRepository>>,
     ) -> Self {
         Self {
             execution_service,
             order_rx,
             portfolio,
+            repository,
         }
     }
 
@@ -77,6 +80,16 @@ impl Executor {
                     error!("Executor: Execution failed for {}: {}", order.id, e);
                 }
             }
+
+            if let Some(repo) = &self.repository {
+                let order_clone = order.clone();
+                let repo = repo.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = repo.save(&order_clone).await {
+                        error!("Failed to persist order {}: {}", order_clone.id, e);
+                    }
+                });
+            }
         }
     }
 }
@@ -125,7 +138,7 @@ mod tests {
         port.cash = Decimal::from(1000);
         let portfolio = Arc::new(RwLock::new(port));
 
-        let mut executor = Executor::new(Arc::new(MockExecService), rx, portfolio.clone());
+        let mut executor = Executor::new(Arc::new(MockExecService), rx, portfolio.clone(), None);
         tokio::spawn(async move { executor.run().await });
 
         let order = Order {
@@ -153,7 +166,7 @@ mod tests {
         port.cash = Decimal::from(1000);
         let portfolio = Arc::new(RwLock::new(port));
 
-        let mut executor = Executor::new(Arc::new(FailExecService), rx, portfolio.clone());
+        let mut executor = Executor::new(Arc::new(FailExecService), rx, portfolio.clone(), None);
         tokio::spawn(async move { executor.run().await });
 
         let order = Order {

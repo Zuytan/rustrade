@@ -6,4 +6,5 @@ pub mod repositories;
 
 pub use event_bus::EventBus;
 pub use repositories::{InMemoryPortfolioRepository, InMemoryTradeRepository};
-// pub mod exchange_api; // Will be added later
+pub mod persistence;
+

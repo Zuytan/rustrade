@@ -17,12 +17,16 @@ use crate::domain::portfolio::Portfolio;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
+use crate::infrastructure::persistence::database::Database;
+use crate::infrastructure::persistence::repositories::{CandleRepository, OrderRepository};
 
 pub struct Application {
     pub config: Config,
     pub market_service: Arc<dyn MarketDataService>,
     pub execution_service: Arc<dyn ExecutionService>,
     pub portfolio: Arc<RwLock<Portfolio>>,
+    pub order_repository: Option<Arc<OrderRepository>>,
+    pub candle_repository: Option<Arc<CandleRepository>>,
 }
 
 impl Application {
@@ -68,6 +72,22 @@ impl Application {
             }
         };
 
+        // Initialize Persistence
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://rustrade.db".to_string());
+        info!("Initializing Database at {}", db_url);
+        
+        // We need runtime initialization, so we use block_in_place or just await if build was async (it is)
+        // However, Application::build is async so we can await.
+        // But we want to handle failures gracefully or fail hard.
+        // If DB fails, should we fallback to no persistence? 
+        // For now, let's fail hard as planned.
+        let db = Database::new(&db_url).await.map_err(|e| {
+            anyhow::anyhow!("Failed to initialize database: {}", e)
+        })?;
+        
+        let order_repo = Arc::new(OrderRepository::new(db.pool.clone()));
+        let candle_repo = Arc::new(CandleRepository::new(db.pool.clone()));
+
         // Log Risk Appetite configuration
         if let Some(ref appetite) = config.risk_appetite {
             info!(
@@ -88,6 +108,8 @@ impl Application {
             market_service,
             execution_service,
             portfolio,
+            order_repository: Some(order_repo),
+            candle_repository: Some(candle_repo),
         })
     }
 
@@ -184,6 +206,7 @@ impl Application {
             self.execution_service.clone(),
             strategy,
             analyst_config,
+            self.candle_repository.clone(),
         );
 
         let mut risk_manager = RiskManager::new(
@@ -210,6 +233,7 @@ impl Application {
             self.execution_service.clone(),
             throttled_order_rx,
             self.portfolio.clone(),
+            self.order_repository.clone(),
         );
 
         // Spawn Tasks

@@ -44,6 +44,11 @@ use tokio::time::{self, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{error, info, warn};
 
+// WebSocket heartbeat and reconnection configuration
+const PING_INTERVAL_SECS: u64 = 20;
+const PONG_TIMEOUT_SECS: u64 = 5;
+const MAX_RECONNECT_DELAY_SECS: u64 = 30;
+
 /// Connection state for the WebSocket
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionState {
@@ -175,8 +180,14 @@ impl AlpacaWebSocketManager {
         let subscribed_symbols = self.subscribed_symbols.clone();
 
         tokio::spawn(async move {
+            let mut reconnect_attempts = 0u32;
+
             loop {
-                info!("WebSocketManager: Starting connection...");
+                if reconnect_attempts == 0 {
+                    info!("WebSocketManager: Starting connection...");
+                } else {
+                    info!("WebSocketManager: Reconnection attempt #{}", reconnect_attempts);
+                }
 
                 match Self::run_connection(
                     &ws_url,
@@ -189,14 +200,37 @@ impl AlpacaWebSocketManager {
                 )
                 .await
                 {
-                    Ok(_) => {
-                        info!("WebSocketManager: Connection ended cleanly");
+                    Ok(authenticated) => {
+                        if authenticated {
+                            info!("WebSocketManager: Connection ended cleanly after successful authentication");
+                            reconnect_attempts = 0; // Reset counter after successful connection
+                        } else {
+                            info!("WebSocketManager: Connection ended before authentication");
+                        }
                         break;
                     }
                     Err(e) => {
-                        error!("WebSocketManager error: {}. Reconnecting in 5s...", e);
+                        error!("WebSocketManager error: {}. Reconnecting...", e);
                         *state.write().await = ConnectionState::Disconnected;
-                        time::sleep(Duration::from_secs(5)).await;
+                        
+                        // Exponential backoff: 0s, 1s, 2s, 4s, 8s, 16s, 30s (cap)
+                        let delay_secs = if reconnect_attempts == 0 {
+                            0
+                        } else {
+                            std::cmp::min(
+                                2u64.pow(reconnect_attempts - 1),
+                                MAX_RECONNECT_DELAY_SECS,
+                            )
+                        };
+                        
+                        if delay_secs > 0 {
+                            info!("WebSocketManager: Waiting {} seconds before reconnecting...", delay_secs);
+                            time::sleep(Duration::from_secs(delay_secs)).await;
+                        } else {
+                            info!("WebSocketManager: Reconnecting immediately...");
+                        }
+                        
+                        reconnect_attempts += 1;
                     }
                 }
             }
@@ -204,6 +238,7 @@ impl AlpacaWebSocketManager {
     }
 
     /// Main connection loop
+    /// Returns Ok(true) if connection was authenticated successfully, Ok(false) if ended before auth
     async fn run_connection(
         ws_url: &str,
         api_key: &str,
@@ -212,7 +247,7 @@ impl AlpacaWebSocketManager {
         state: &Arc<RwLock<ConnectionState>>,
         subscribed_symbols: &Arc<RwLock<Vec<String>>>,
         command_rx: &mut mpsc::Receiver<SubscriptionCommand>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         // Connect to WebSocket
         let (ws_stream, _) = connect_async(ws_url)
             .await
@@ -225,6 +260,11 @@ impl AlpacaWebSocketManager {
 
         let mut authenticated = false;
         let mut current_subscribed: Vec<String> = Vec::new();
+        
+        // Heartbeat timers
+        let mut ping_interval = time::interval(Duration::from_secs(PING_INTERVAL_SECS));
+        ping_interval.tick().await; // First tick completes immediately
+        let mut pong_deadline: Option<time::Instant> = None;
 
         loop {
             tokio::select! {
@@ -259,8 +299,9 @@ impl AlpacaWebSocketManager {
                                                 let initial = subscribed_symbols.read().await.clone();
                                                 if !initial.is_empty() {
                                                     Self::send_subscription(&mut write, &initial).await?;
-                                                    current_subscribed = initial;
+                                                    current_subscribed = initial.clone();
                                                     *state.write().await = ConnectionState::Subscribed;
+                                                    info!("WebSocketManager: Restored subscription to {} symbols", initial.len());
                                                 }
                                             }
                                         }
@@ -291,9 +332,16 @@ impl AlpacaWebSocketManager {
                                 }
                             }
                         }
+                        Some(Ok(Message::Pong(_))) => {
+                            // Received pong response
+                            if pong_deadline.is_some() {
+                                pong_deadline = None;
+                                info!("WebSocketManager: Pong received");
+                            }
+                        }
                         Some(Ok(Message::Close(_))) => {
                             info!("WebSocketManager: Connection closed by server");
-                            return Ok(());
+                            return Ok(authenticated);
                         }
                         Some(Err(e)) => {
                             error!("WebSocketManager: WebSocket error: {}", e);
@@ -301,10 +349,32 @@ impl AlpacaWebSocketManager {
                         }
                         None => {
                             warn!("WebSocketManager: Stream ended");
-                            return Ok(());
+                            return Ok(authenticated);
                         }
                         _ => {}
                     }
+                }
+
+                // Send periodic pings (heartbeat)
+                _ = ping_interval.tick() => {
+                    if authenticated {
+                        write.send(Message::Ping(vec![].into())).await?;
+                        pong_deadline = Some(time::Instant::now() + Duration::from_secs(PONG_TIMEOUT_SECS));
+                        info!("WebSocketManager: Ping sent, waiting for pong...");
+                    }
+                }
+
+                // Check for pong timeout
+                _ = async {
+                    if let Some(deadline) = pong_deadline {
+                        time::sleep_until(deadline).await;
+                    } else {
+                        // If no deadline, wait forever (this branch won't be selected)
+                        std::future::pending::<()>().await;
+                    }
+                }, if pong_deadline.is_some() => {
+                    error!("WebSocketManager: Pong timeout - connection appears dead");
+                    return Err(anyhow::anyhow!("Pong timeout"));
                 }
 
                 // Handle subscription update commands
@@ -322,7 +392,7 @@ impl AlpacaWebSocketManager {
                         }
                         SubscriptionCommand::Shutdown => {
                             info!("WebSocketManager: Shutdown command received");
-                            return Ok(());
+                            return Ok(authenticated);
                         }
                     }
                 }

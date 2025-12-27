@@ -14,6 +14,7 @@ use tokio::sync::{
 // use tokio::time;
 use tracing::info;
 
+#[derive(Clone)]
 pub struct MockMarketDataService {
     subscribers: Arc<RwLock<Vec<Sender<MarketEvent>>>>,
 }
@@ -36,14 +37,33 @@ impl MockMarketDataService {
 
     pub async fn publish(&self, event: MarketEvent) {
         let mut subs = self.subscribers.write().await;
+        
+        if subs.is_empty() {
+            // info!("MockMarketDataService: No subscribers for event: {:?}", event);
+            return;
+        }
+        
         // retain only active subscribers
         let mut active_subs = Vec::new();
+        let mut sent_count = 0;
         for tx in subs.iter() {
             if tx.send(event.clone()).await.is_ok() {
                 active_subs.push(tx.clone());
+                sent_count += 1;
             }
         }
         *subs = active_subs;
+        
+        // Log every 10th event to avoid spam
+        if matches!(event, MarketEvent::Quote { symbol, .. } if symbol.contains("BTC")) {
+            static mut COUNTER: u32 = 0;
+            unsafe {
+                COUNTER += 1;
+                if COUNTER % 10 == 0 {
+                    info!("MockMarketDataService: Published {} events to {} subscribers", COUNTER, sent_count);
+                }
+            }
+        }
     }
 }
 
@@ -55,32 +75,63 @@ impl MarketDataService for MockMarketDataService {
         // Add to subscribers
         self.subscribers.write().await.push(tx.clone());
 
-        let symbols = symbols.clone();
+        let symbols_clone = symbols.clone();
+        let service_clone = self.clone();
 
-        // OPTIONAL: Keep the random walk for "demo" mode if needed,
-        // but for E2E we might want to silence it or control it.
-        // For now, let's DISABLE the automatic random walk to allow full manual control in E2E.
-        // If we want random walk, we should explicitly start it or have a flag.
-        // Assuming the user runs in Mock mode for "demo" they might expect traffic.
-        // Let's spawn a weak random walk ONLY if we are NOT in a test (hard to detect).
-        // OR: Add a method `start_random_walk`.
-        // Let's keep it simple: No random walk by default. The sentinel will just wait.
-        // If we want "demo" behavior, we can implement a `RunMode` in config.
-
-        // RE-ENABLING Random Walk for now because `main.rs` runs in Mock mode
-        // and we barely have a way to inject data from outside in normal run.
-        // BUT: For E2E tests, we want deterministic data.
-
-        // Compromise: We spawn a task but it waits for a signal?
-        // Or we just rely on `publish` for tests.
-        // I will COMMENT OUT the random walk to ensure E2E is stable.
-        // Users can inject data via a separate "Scenario Runner" or just by modifying this.
-        /*
+        // Spawn random walk simulation for demo/testing
         tokio::spawn(async move {
+            use std::time::Duration;
+            use tokio::time;
+            use chrono::Utc;
+            
+            let mut prices: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+            let mut iteration = 0u64;
+            
+            // Initialize prices
+            for symbol in &symbols_clone {
+                let base_price = if symbol.contains("BTC") {
+                    96000.0
+                } else if symbol.contains("ETH") {
+                    3400.0
+                } else if symbol.contains("AVAX") {
+                    40.0
+                } else {
+                    150.0
+                };
+                prices.insert(symbol.clone(), base_price);
+            }
+            
+            info!("MockMarketDataService: Starting price simulation for {:?}", symbols_clone);
+            
             let mut interval = time::interval(Duration::from_millis(500));
-            // ...
+            
+            loop {
+                interval.tick().await;
+                iteration += 1;
+                
+                for (idx, symbol) in symbols_clone.iter().enumerate() {
+                    let current_price = prices.get(symbol).copied().unwrap_or(100.0);
+                    
+                    // Simple pseudo-random using iteration and timestamp
+                    // This creates -0.5% to +0.5% variance
+                    let seed = (iteration + idx as u64) * 1103515245 + 12345;
+                    let random_val = (((seed / 65536) % 1000) as f64 / 1000.0) - 0.5; // -0.5 to +0.5
+                    let change_pct = random_val * 0.01;
+                    let new_price = current_price * (1.0 + change_pct);
+                    
+                    prices.insert(symbol.clone(), new_price);
+                    
+                    let event = MarketEvent::Quote {
+                        symbol: symbol.clone(),
+                        price: Decimal::from_f64(new_price).unwrap_or(Decimal::ZERO),
+                        timestamp: Utc::now().timestamp_millis(),
+                    };
+                    
+                    service_clone.publish(event).await;
+                }
+            }
         });
-        */
+
         info!("MockMarketDataService: Subscribed to {:?}", symbols);
 
         Ok(rx)

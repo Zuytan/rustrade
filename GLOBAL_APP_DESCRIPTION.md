@@ -23,6 +23,9 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
     - Maintenir les WebSockets (Mock ou Alpaca).
     - Pousser les ticks de prix vers l'Analyst via `mpsc::channel`.
     - **Re-configuration Dynamique** : Capable de changer sa "Watchlist" en temps réel sur ordre du Market Scanner.
+    - **Reconnexion Automatique Rapide** : En cas de perte de connexion WebSocket, reconnexion immédiate (0s) avec backoff exponentiel (1s, 2s, 4s, 8s, 16s, cap à 30s).
+    - **Heartbeat Proactif** : Envoi de pings toutes les 20 secondes pour détecter rapidement les connexions mortes (timeout pong de 5 secondes).
+    - **Restauration Automatique des Souscriptions** : Après reconnexion, les symboles sont automatiquement re-souscrits sans intervention manuelle.
 
 ### 2. L'Agent "Market Scanner" (Discovery)
 - **Rôle**: L'éclaireur.
@@ -55,6 +58,14 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
 - **Responsabilités**:
     - Transmission des ordres via API REST Alpaca ou Mock.
     - Mise à jour du Portfolio interne.
+    - **Persistance des Transactions**: Sauvegarde asynchrone de chaque ordre exécuté (succès ou échec) dans une base SQL locale.
+
+## Couche de Persistance (Persistence Layer)
+Le bot intègre désormais une base de données **SQLite** locale (`rustrade.db`) pour garantir l'historisation et l'auditabilité :
+
+- **Transactions (`trades`)**: Stockage immuable de tous les ordres exécutés (ID, Symbole, Prix, Quantité, Side, Timestamp).
+- **Bougies Consolidez (`candles`)**: Historisation des bougies 1-minute générées par le `CandleAggregator` pour analyse post-mortem et replay.
+- **Performance**: Utilisation du journal WAL (Write-Ahead Logging) et exécution asynchrone (non-bloquante) via `tokio::spawn`.
 
 ## Gestion de l'État du Portefeuille (State Management)
 Pour garantir l'intégrité des fonds, le bot maintient une Source de Vérité locale synchronisée avec le courtier.
