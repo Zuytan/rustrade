@@ -1,8 +1,9 @@
 use crate::application::candle_aggregator::CandleAggregator;
 use crate::application::strategies::{AnalysisContext, TradingStrategy};
+use crate::application::strategy_factory::StrategyFactory;
 use crate::application::trailing_stops::StopState;
 use crate::domain::ports::ExecutionService;
-use crate::domain::repositories::CandleRepository;
+use crate::domain::repositories::{CandleRepository, StrategyRepository};
 use crate::domain::types::{MarketEvent, OrderSide, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -16,7 +17,7 @@ use ta::Next;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::info;
 
-pub struct SymbolContext {
+pub struct TechnicalAnalysisState {
     pub fast_sma: SimpleMovingAverage,
     pub slow_sma: SimpleMovingAverage,
     pub trend_sma: SimpleMovingAverage,
@@ -29,19 +30,16 @@ pub struct SymbolContext {
     pub last_macd_value: Option<f64>,
     pub last_macd_signal: Option<f64>,
     pub last_macd_histogram: Option<f64>,
-    pub last_was_above: Option<bool>,
-    pub last_signal_time: i64,
+    pub last_was_above: Option<bool>, // Used for inline crossover check
     pub atr: AverageTrueRange,
     pub last_atr: Option<f64>,
     pub bb: BollingerBands,
     pub last_bb_lower: Option<f64>,
     pub last_bb_upper: Option<f64>,
     pub last_bb_middle: Option<f64>,
-    pub trailing_stop: StopState, // State machine replacing entry_price/peak_price/trailing_stop_price
-    pub pending_order: Option<OrderSide>, // Track in-flight orders
 }
 
-impl SymbolContext {
+impl TechnicalAnalysisState {
     pub fn new(config: &AnalystConfig) -> Self {
         Self {
             fast_sma: SimpleMovingAverage::new(config.fast_sma_period).unwrap(),
@@ -62,15 +60,12 @@ impl SymbolContext {
             last_macd_signal: None,
             last_macd_histogram: None,
             last_was_above: None,
-            last_signal_time: 0,
             atr: AverageTrueRange::new(config.atr_period).unwrap(),
             last_atr: None,
             bb: BollingerBands::new(config.mean_reversion_bb_period, 2.0).unwrap(),
             last_bb_lower: None,
             last_bb_upper: None,
             last_bb_middle: None,
-            trailing_stop: StopState::NoPosition,
-            pending_order: None,
         }
     }
 
@@ -94,6 +89,22 @@ impl SymbolContext {
         self.last_bb_lower = Some(current_bb.lower);
         self.last_bb_upper = Some(current_bb.upper);
         self.last_bb_middle = Some(current_bb.average);
+    }
+}
+
+pub struct PositionManagementState {
+    pub trailing_stop: StopState,
+    pub pending_order: Option<OrderSide>,
+    pub last_signal_time: i64,
+}
+
+impl PositionManagementState {
+    pub fn new() -> Self {
+        Self {
+            trailing_stop: StopState::NoPosition,
+            pending_order: None,
+            last_signal_time: 0,
+        }
     }
 
     pub fn ack_pending_orders(&mut self, has_position: bool, symbol: &str) {
@@ -121,6 +132,33 @@ impl SymbolContext {
             }
         }
     }
+}
+
+pub struct SymbolContext {
+    pub technical: TechnicalAnalysisState,
+    pub management: PositionManagementState,
+    pub strategy: Arc<dyn TradingStrategy>, // Per-symbol strategy
+    pub config: AnalystConfig,              // Per-symbol config
+}
+
+impl SymbolContext {
+    pub fn new(config: AnalystConfig, strategy: Arc<dyn TradingStrategy>) -> Self {
+        Self {
+            technical: TechnicalAnalysisState::new(&config),
+            management: PositionManagementState::new(),
+            strategy,
+            config,
+        }
+    }
+
+    // Proxy method to keep update API similar
+    pub fn update(&mut self, price: f64) {
+        self.technical.update(price);
+    }
+
+    pub fn ack_pending_orders(&mut self, has_position: bool, symbol: &str) {
+        self.management.ack_pending_orders(has_position, symbol);
+    }
 
     pub fn check_trailing_stop(
         &mut self,
@@ -128,13 +166,13 @@ impl SymbolContext {
         config: &AnalystConfig,
         symbol: &str,
     ) -> Option<OrderSide> {
-        if self.pending_order == Some(OrderSide::Sell) {
+        if self.management.pending_order == Some(OrderSide::Sell) {
             return None;
         }
 
-        if let Some(atr) = self.last_atr {
+        if let Some(atr) = self.technical.last_atr {
             if atr > 0.0 {
-                if let Some(trigger) = self.trailing_stop.on_price_update(
+                if let Some(trigger) = self.management.trailing_stop.on_price_update(
                     price,
                     atr,
                     config.trailing_stop_atr_multiplier,
@@ -152,11 +190,11 @@ impl SymbolContext {
 
     pub fn check_strategy_signals(
         &mut self,
-        strategy: &Arc<dyn TradingStrategy>,
+        // strategy: &Arc<dyn TradingStrategy>, // Now inside context
         symbol: &str,
         price: Decimal,
         timestamp: i64,
-        config: &AnalystConfig,
+        // config: &AnalystConfig, // Now inside context
     ) -> Option<OrderSide> {
         let price_f64 = price.to_f64().unwrap_or(0.0);
 
@@ -168,11 +206,11 @@ impl SymbolContext {
             Some(current_rsi),
             Some(current_atr),
         ) = (
-            self.last_fast_sma,
-            self.last_slow_sma,
-            self.last_trend_sma,
-            self.last_rsi,
-            self.last_atr,
+            self.technical.last_fast_sma,
+            self.technical.last_slow_sma,
+            self.technical.last_trend_sma,
+            self.technical.last_rsi,
+            self.technical.last_atr,
         )
         else {
             return None;
@@ -180,28 +218,30 @@ impl SymbolContext {
 
         // Standard SMA Crossover Check (Pre-filter / DualSMA logic embedded here in original)
         // Refactored to reuse 'last_was_above' state management
-        let is_definitively_above = current_fast > current_slow * (1.0 + config.sma_threshold);
-        let is_definitively_below = current_fast < current_slow * (1.0 - config.sma_threshold);
+        // Standard SMA Crossover Check (Pre-filter / DualSMA logic embedded here in original)
+        // Refactored to reuse 'last_was_above' state management
+        let is_definitively_above = current_fast > current_slow * (1.0 + self.config.sma_threshold);
+        let is_definitively_below = current_fast < current_slow * (1.0 - self.config.sma_threshold);
 
         let mut signal = None;
 
-        match self.last_was_above {
+        match self.technical.last_was_above {
             None => {
                 if is_definitively_above {
-                    self.last_was_above = Some(true);
+                    self.technical.last_was_above = Some(true);
                 } else if is_definitively_below {
-                    self.last_was_above = Some(false);
+                    self.technical.last_was_above = Some(false);
                 }
             }
             Some(true) => {
                 if is_definitively_below {
-                    self.last_was_above = Some(false);
+                    self.technical.last_was_above = Some(false);
                     signal = Some(OrderSide::Sell);
                 }
             }
             Some(false) => {
                 if is_definitively_above {
-                    self.last_was_above = Some(true);
+                    self.technical.last_was_above = Some(true);
                     signal = Some(OrderSide::Buy);
                 }
             }
@@ -216,22 +256,22 @@ impl SymbolContext {
             slow_sma: current_slow,
             trend_sma: current_trend,
             rsi: current_rsi,
-            macd_value: self.last_macd_value.unwrap_or(0.0),
-            macd_signal: self.last_macd_signal.unwrap_or(0.0),
-            macd_histogram: self.last_macd_histogram.unwrap_or(0.0),
-            last_macd_histogram: self.last_macd_histogram,
+            macd_value: self.technical.last_macd_value.unwrap_or(0.0),
+            macd_signal: self.technical.last_macd_signal.unwrap_or(0.0),
+            macd_histogram: self.technical.last_macd_histogram.unwrap_or(0.0),
+            last_macd_histogram: self.technical.last_macd_histogram,
             atr: current_atr,
-            bb_lower: self.last_bb_lower.unwrap_or(0.0),
-            bb_upper: self.last_bb_upper.unwrap_or(0.0),
-            bb_middle: self.last_bb_middle.unwrap_or(0.0),
-            has_position: self.trailing_stop.is_active(),
+            bb_lower: self.technical.last_bb_lower.unwrap_or(0.0),
+            bb_upper: self.technical.last_bb_upper.unwrap_or(0.0),
+            bb_middle: self.technical.last_bb_middle.unwrap_or(0.0),
+            has_position: self.management.trailing_stop.is_active(),
             timestamp,
         };
 
-        if let Some(strategy_signal) = strategy.analyze(&analysis_ctx) {
+        if let Some(strategy_signal) = self.strategy.analyze(&analysis_ctx) {
             info!(
                 "Analyst [{}]: {} - {}",
-                strategy.name(),
+                self.strategy.name(),
                 symbol,
                 strategy_signal.reason
             );
@@ -251,7 +291,7 @@ pub struct AnalystConfig {
     pub sma_threshold: f64,
     pub order_cooldown_seconds: u64,
     pub risk_per_trade_percent: f64,
-    pub strategy_mode: crate::config::StrategyMode,
+    pub strategy_mode: crate::domain::strategy_config::StrategyMode,
     pub trend_sma_period: usize,
     pub rsi_period: usize,
     pub macd_fast_period: usize,
@@ -305,12 +345,14 @@ pub struct Analyst {
     market_rx: Receiver<MarketEvent>,
     proposal_tx: Sender<TradeProposal>,
     execution_service: Arc<dyn ExecutionService>,
-    strategy: Arc<dyn TradingStrategy>,
-    config: AnalystConfig,
+    // strategy: Arc<dyn TradingStrategy>, // Global strategy removed
+    default_strategy: Arc<dyn TradingStrategy>, // Fallback
+    config: AnalystConfig,                      // Default config
     // Per-symbol states
     symbol_states: HashMap<String, SymbolContext>,
     candle_aggregator: CandleAggregator,
-    fee_model: Box<dyn FeeModel>, // Added
+    fee_model: Box<dyn FeeModel>,
+    strategy_repository: Option<Arc<dyn StrategyRepository>>, // Added
 }
 
 impl Analyst {
@@ -318,9 +360,10 @@ impl Analyst {
         market_rx: Receiver<MarketEvent>,
         proposal_tx: Sender<TradeProposal>,
         execution_service: Arc<dyn ExecutionService>,
-        strategy: Arc<dyn TradingStrategy>,
+        strategy: Arc<dyn TradingStrategy>, // This becomes default strategy
         config: AnalystConfig,
         repository: Option<Arc<dyn CandleRepository>>,
+        strategy_repository: Option<Arc<dyn StrategyRepository>>,
     ) -> Self {
         // Initialize Fee Model
         let fee_config = FeeConfig {
@@ -334,11 +377,12 @@ impl Analyst {
             market_rx,
             proposal_tx,
             execution_service,
-            strategy,
+            default_strategy: strategy,
             config,
             symbol_states: HashMap::new(),
             candle_aggregator: CandleAggregator::new(repository),
             fee_model: Box::new(StandardFeeModel::new(fee_config)),
+            strategy_repository,
         }
     }
 
@@ -374,10 +418,14 @@ impl Analyst {
         let price_f64 = price.to_f64().unwrap_or(0.0);
 
         // 1. Get/Init Context
-        let context = self
-            .symbol_states
-            .entry(symbol.clone())
-            .or_insert_with(|| SymbolContext::new(&self.config));
+        if !self.symbol_states.contains_key(&symbol) {
+            // Factory Logic
+            let (strategy, config) = self.resolve_strategy(&symbol).await;
+            let context = SymbolContext::new(config, strategy);
+            self.symbol_states.insert(symbol.clone(), context);
+        }
+
+        let context = self.symbol_states.get_mut(&symbol).unwrap();
 
         // 2. Update Indicators
         context.update(price_f64);
@@ -397,7 +445,8 @@ impl Analyst {
         }
 
         // 4. Check Trailing Stop (Priority Exit)
-        let mut signal = context.check_trailing_stop(price_f64, &self.config, &symbol);
+        let config = context.config.clone();
+        let mut signal = context.check_trailing_stop(price_f64, &config, &symbol);
         let trailing_stop_triggered = signal.is_some();
 
         // 5. Strategy Check if no priority exit yet (or to override)
@@ -405,11 +454,9 @@ impl Analyst {
         // We still check strategy if we are NOT exiting, but if we are exiting, that's final.
         if !trailing_stop_triggered {
              let strategy_signal = context.check_strategy_signals(
-                 &self.strategy, 
                  &symbol, 
                  price, 
                  timestamp, 
-                 &self.config
              );
 
              // Resolve conflicts
@@ -424,7 +471,7 @@ impl Analyst {
 
              // Suppress SMA-cross sell if Trailing Stop is active (prefer trailing stop exit)
              if let Some(OrderSide::Sell) = signal {
-                 if context.trailing_stop.is_active() && !trailing_stop_triggered {
+                 if context.management.trailing_stop.is_active() && !trailing_stop_triggered {
                      info!("Analyst: Sell signal SUPPRESSED for {} - Using trailing stop instead", symbol);
                      signal = None;
                  }
@@ -450,7 +497,7 @@ impl Analyst {
              }
 
              // Pending Order Check
-             if let Some(pending) = context.pending_order {
+             if let Some(pending) = context.management.pending_order {
                  if pending == side {
                      info!("Analyst: Signal {:?} for {} BLOCKED - Pending Order exists", side, symbol);
                      return;
@@ -458,14 +505,14 @@ impl Analyst {
              }
 
              // Cooldown Check
-             let cooldown_ms = self.config.order_cooldown_seconds * 1000;
-             if timestamp - context.last_signal_time < cooldown_ms as i64 {
+             let cooldown_ms = context.config.order_cooldown_seconds * 1000;
+             if timestamp - context.management.last_signal_time < cooldown_ms as i64 {
                  return; 
              }
 
              // 7. Execution
-             context.last_signal_time = timestamp;
-             let quantity = Self::calculate_trade_quantity(&self.config, &self.execution_service, &symbol, price).await;
+             context.management.last_signal_time = timestamp;
+             let quantity = Self::calculate_trade_quantity(&context.config, &self.execution_service, &symbol, price).await;
              
              if quantity > Decimal::ZERO {
                  // Axe 2: Cost-Aware Logic
@@ -473,7 +520,7 @@ impl Analyst {
                  
                  // Estimate Profit: Use ATR * 2.0 as expected move (approximate)
                  // If ATR is not available, assume 1% move?
-                 let expected_move = if let Some(atr) = context.last_atr {
+                 let expected_move = if let Some(atr) = context.technical.last_atr {
                       // Use ATR if available (volatility based)
                       Decimal::from_f64_retain(atr * 2.0).unwrap_or(price * Decimal::from_f64_retain(0.01).unwrap())
                  } else {
@@ -512,19 +559,19 @@ impl Analyst {
                  };
 
                  if let Ok(_) = self.proposal_tx.send(proposal).await {
-                     context.pending_order = Some(side);
+                     context.management.pending_order = Some(side);
                      
                      // Optimistic State Update for trailing stops
                      match side {
                          OrderSide::Buy => {
-                             if let Some(atr) = context.last_atr {
-                                 if atr > 0.0 && !context.trailing_stop.is_active() {
-                                     context.trailing_stop = StopState::on_buy(price_f64, atr, self.config.trailing_stop_atr_multiplier);
+                             if let Some(atr) = context.technical.last_atr {
+                                 if atr > 0.0 && !context.management.trailing_stop.is_active() {
+                                     context.management.trailing_stop = StopState::on_buy(price_f64, atr, context.config.trailing_stop_atr_multiplier);
                                  }
                              }
                          }
                          OrderSide::Sell => {
-                             context.trailing_stop.on_sell();
+                             context.management.trailing_stop.on_sell();
                          }
                      }
                  }
@@ -631,6 +678,28 @@ impl Analyst {
 
         quantity
     }
+    async fn resolve_strategy(&self, symbol: &str) -> (Arc<dyn TradingStrategy>, AnalystConfig) {
+        if let Some(repo) = &self.strategy_repository {
+            if let Ok(Some(def)) = repo.find_by_symbol(symbol).await {
+                let mut config = self.config.clone();
+                
+                if let Ok(parsed_config) = serde_json::from_str::<AnalystConfig>(&def.config_json) {
+                     config = parsed_config;
+                     info!("Analyst: Loaded custom config for {}", symbol);
+                } else {
+                     info!("Analyst: Failed to parse full config for {}, using default with custom strategy", symbol);
+                }
+                
+                config.strategy_mode = def.mode;
+
+                let strategy = StrategyFactory::create(def.mode, &config);
+                return (strategy, config);
+            }
+        }
+        
+        // Default
+        (self.default_strategy.clone(), self.config.clone())
+    }
 }
 
 #[cfg(test)]
@@ -695,7 +764,7 @@ mod tests {
             config.sma_threshold,
         ));
         let mut analyst =
-            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -713,7 +782,7 @@ mod tests {
                 high: Decimal::from_f64_retain(*p).unwrap(),
                 low: Decimal::from_f64_retain(*p).unwrap(),
                 close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100,
+                volume: 100.0,
                 timestamp: i as i64,
             };
             let event = MarketEvent::Candle(candle);
@@ -768,7 +837,7 @@ mod tests {
             config.sma_threshold,
         ));
         let mut analyst =
-            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -787,7 +856,7 @@ mod tests {
                 high: Decimal::from_f64_retain(*p).unwrap(),
                 low: Decimal::from_f64_retain(*p).unwrap(),
                 close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100,
+                volume: 100.0,
                 timestamp: i as i64,
             };
             let event = MarketEvent::Candle(candle);
@@ -861,7 +930,7 @@ mod tests {
             config.sma_threshold,
         ));
         let mut analyst =
-            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -876,7 +945,7 @@ mod tests {
                 high: Decimal::from_f64_retain(*p).unwrap(),
                 low: Decimal::from_f64_retain(*p).unwrap(),
                 close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100,
+                volume: 100.0,
                 timestamp: i as i64,
             };
             let event = MarketEvent::Candle(candle);
@@ -944,7 +1013,7 @@ mod tests {
             config.sma_threshold,
         ));
         let mut analyst =
-            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -962,7 +1031,7 @@ mod tests {
                 high: Decimal::from_f64_retain(*p).unwrap(),
                 low: Decimal::from_f64_retain(*p).unwrap(),
                 close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100,
+                volume: 100.0,
                 timestamp: i as i64,
             };
             let event = MarketEvent::Candle(candle);
@@ -1033,7 +1102,7 @@ mod tests {
             config.sma_threshold,
         ));
         let mut analyst =
-            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1062,7 +1131,7 @@ mod tests {
                 high: Decimal::from_f64_retain(*p).unwrap(),
                 low: Decimal::from_f64_retain(*p).unwrap(),
                 close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100,
+                volume: 100.0,
                 timestamp: i as i64,
             };
             let event = MarketEvent::Candle(candle);
@@ -1132,7 +1201,7 @@ mod tests {
             config.sma_threshold,
         ));
         let mut analyst =
-            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1149,7 +1218,7 @@ mod tests {
                 high: Decimal::from_f64_retain(*p).unwrap(),
                 low: Decimal::from_f64_retain(*p).unwrap(),
                 close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100,
+                volume: 100.0,
                 timestamp: i as i64,
             };
             let event = MarketEvent::Candle(candle);
@@ -1169,7 +1238,7 @@ mod tests {
                 high: Decimal::from_f64_retain(*p).unwrap(),
                 low: Decimal::from_f64_retain(*p).unwrap(),
                 close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100,
+                volume: 100.0,
                 timestamp: (i + 10) as i64,
             };
             let event = MarketEvent::Candle(candle);
@@ -1234,7 +1303,7 @@ mod tests {
             config.sma_threshold,
         ));
         let mut analyst =
-            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1258,7 +1327,7 @@ mod tests {
                 high: Decimal::from_f64_retain(*p).unwrap(),
                 low: Decimal::from_f64_retain(*p).unwrap(),
                 close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 1000000,
+                volume: 1000000.0,
                 timestamp: (i * 1000) as i64,
             };
             let event = MarketEvent::Candle(candle);

@@ -1,4 +1,5 @@
 use crate::domain::risk_appetite::RiskAppetite;
+pub use crate::domain::strategy_config::StrategyMode;
 use anyhow::{Context, Result};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -11,32 +12,7 @@ pub enum Mode {
     Alpaca,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum StrategyMode {
-    Standard,
-    Advanced,
-    Dynamic,
-    TrendRiding,
-    MeanReversion,
-}
 
-impl std::str::FromStr for StrategyMode {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "standard" => Ok(StrategyMode::Standard),
-            "advanced" => Ok(StrategyMode::Advanced),
-            "dynamic" => Ok(StrategyMode::Dynamic),
-            "trendriding" => Ok(StrategyMode::TrendRiding),
-            "meanreversion" => Ok(StrategyMode::MeanReversion),
-            _ => anyhow::bail!(
-                "Invalid STRATEGY_MODE: {}. Must be 'standard', 'advanced', 'dynamic', 'trendriding', or 'meanreversion'",
-                s
-            ),
-        }
-    }
-}
 
 impl std::str::FromStr for Mode {
     type Err = anyhow::Error;
@@ -56,6 +32,7 @@ pub struct Config {
     pub alpaca_api_key: String,
     pub alpaca_secret_key: String,
     pub alpaca_base_url: String,
+    pub alpaca_data_url: String, // Added for Data API
     pub alpaca_ws_url: String,
     pub symbols: Vec<String>,
     pub max_positions: usize,
@@ -109,6 +86,8 @@ impl Config {
         let alpaca_secret_key = env::var("ALPACA_SECRET_KEY").unwrap_or_default();
         let alpaca_base_url = env::var("ALPACA_BASE_URL")
             .unwrap_or_else(|_| "https://paper-api.alpaca.markets".to_string());
+        let alpaca_data_url = env::var("ALPACA_DATA_URL")
+            .unwrap_or_else(|_| "https://data.alpaca.markets".to_string());
         let alpaca_ws_url = env::var("ALPACA_WS_URL")
             .unwrap_or_else(|_| "wss://stream.data.alpaca.markets/v2/iex".to_string());
 
@@ -324,6 +303,7 @@ impl Config {
             alpaca_api_key,
             alpaca_secret_key,
             alpaca_base_url,
+            alpaca_data_url,
             alpaca_ws_url,
             symbols,
             max_positions,

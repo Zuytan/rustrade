@@ -20,15 +20,36 @@ pub struct RiskConfig {
     pub sector_map: HashMap<String, String>, // Symbol -> Sector mapping
 }
 
+impl RiskConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.max_position_size_pct <= 0.0 || self.max_position_size_pct > 1.0 {
+            return Err(format!("Invalid max_position_size_pct: {}", self.max_position_size_pct));
+        }
+        if self.max_daily_loss_pct <= 0.0 || self.max_daily_loss_pct > 0.5 {
+             return Err(format!("Invalid max_daily_loss_pct: {}", self.max_daily_loss_pct));
+        }
+        if self.max_drawdown_pct <= 0.0 || self.max_drawdown_pct > 1.0 {
+             return Err(format!("Invalid max_drawdown_pct: {}", self.max_drawdown_pct));
+        }
+        if self.consecutive_loss_limit == 0 {
+             return Err("consecutive_loss_limit must be > 0".to_string());
+        }
+        if self.max_sector_exposure_pct <= 0.0 || self.max_sector_exposure_pct > 1.0 {
+             return Err(format!("Invalid max_sector_exposure_pct: {}", self.max_sector_exposure_pct));
+        }
+        Ok(())
+    }
+}
+
 impl Default for RiskConfig {
     fn default() -> Self {
         Self {
-            max_position_size_pct: 0.25, // 25% max
-            max_daily_loss_pct: 0.02,    // 2% daily loss limit
-            max_drawdown_pct: 0.10,      // 10% max drawdown
-            consecutive_loss_limit: 3,   // 3 consecutive losses
-            valuation_interval_seconds: 60, // Default 60 seconds
-            max_sector_exposure_pct: 0.30, // 30% max sector exposure
+            max_position_size_pct: 0.10, // Reduced from 0.25 for safety
+            max_daily_loss_pct: 0.02,    // 2%
+            max_drawdown_pct: 0.05,      // Reduced from 0.10 for safety
+            consecutive_loss_limit: 3,
+            valuation_interval_seconds: 60,
+            max_sector_exposure_pct: 0.20, // Reduced from 0.30
             sector_map: HashMap::new(),
         }
     }
@@ -57,6 +78,9 @@ impl RiskManager {
         non_pdt_mode: bool,
         risk_config: RiskConfig,
     ) -> Self {
+        if let Err(e) = risk_config.validate() {
+            panic!("RiskManager Configuration Error: {}", e);
+        }
         Self {
             proposal_rx,
             order_tx,

@@ -88,3 +88,18 @@ pub trait CandleRepository: Send + Sync {
     /// Prune old candles
     async fn prune(&self, days_retention: i64) -> Result<u64>;
 }
+
+use crate::domain::strategy_config::StrategyDefinition;
+
+/// Repository for persisting and retrieving strategy configurations
+#[async_trait]
+pub trait StrategyRepository: Send + Sync {
+    /// Save a strategy configuration
+    async fn save(&self, config: &StrategyDefinition) -> Result<()>;
+
+    /// Get strategy configuration for a symbol
+    async fn find_by_symbol(&self, symbol: &str) -> Result<Option<StrategyDefinition>>;
+
+    /// Get all active strategies
+    async fn get_all_active(&self) -> Result<Vec<StrategyDefinition>>;
+}

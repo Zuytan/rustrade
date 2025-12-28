@@ -30,6 +30,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         alpaca_api_key: "".into(),
         alpaca_secret_key: "".into(),
         alpaca_base_url: "".into(),
+        alpaca_data_url: "".into(),
         alpaca_ws_url: "".into(),
         symbols: vec!["BTC/USD".to_string()],
         initial_cash: Decimal::from(100_000),

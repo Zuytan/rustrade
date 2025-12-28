@@ -15,12 +15,12 @@ use crate::application::{
 use crate::config::{Config, Mode};
 use crate::domain::portfolio::Portfolio;
 use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::domain::repositories::{CandleRepository, TradeRepository};
+use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
 use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::persistence::database::Database;
 use crate::infrastructure::persistence::repositories::{
-    SqliteCandleRepository, SqliteOrderRepository,
+    SqliteCandleRepository, SqliteOrderRepository, SqliteStrategyRepository,
 };
 
 pub struct Application {
@@ -30,6 +30,7 @@ pub struct Application {
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub order_repository: Option<Arc<dyn TradeRepository>>,
     pub candle_repository: Option<Arc<dyn CandleRepository>>,
+    pub strategy_repository: Option<Arc<dyn StrategyRepository>>,
 }
 
 impl Application {
@@ -65,6 +66,7 @@ impl Application {
                         config.alpaca_api_key.clone(),
                         config.alpaca_secret_key.clone(),
                         config.alpaca_ws_url.clone(),
+                        config.alpaca_data_url.clone(),
                     )),
                     Arc::new(AlpacaExecutionService::new(
                         config.alpaca_api_key.clone(),
@@ -88,6 +90,8 @@ impl Application {
             Arc::new(SqliteOrderRepository::new(db.pool.clone()));
         let candle_repo: Arc<dyn CandleRepository> =
             Arc::new(SqliteCandleRepository::new(db.pool.clone()));
+        let strategy_repo: Arc<dyn StrategyRepository> =
+            Arc::new(SqliteStrategyRepository::new(db.pool.clone()));
 
         // Log Risk Appetite configuration
         if let Some(ref appetite) = config.risk_appetite {
@@ -111,6 +115,7 @@ impl Application {
             portfolio,
             order_repository: Some(order_repo),
             candle_repository: Some(candle_repo),
+            strategy_repository: Some(strategy_repo),
         })
     }
 
@@ -169,19 +174,19 @@ impl Application {
 
         // Create strategy based on config
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
-            crate::config::StrategyMode::Standard => Arc::new(DualSMAStrategy::new(
+            crate::domain::strategy_config::StrategyMode::Standard => Arc::new(DualSMAStrategy::new(
                 self.config.fast_sma_period,
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
             )),
-            crate::config::StrategyMode::Advanced => Arc::new(AdvancedTripleFilterStrategy::new(
+            crate::domain::strategy_config::StrategyMode::Advanced => Arc::new(AdvancedTripleFilterStrategy::new(
                 self.config.fast_sma_period,
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
                 self.config.trend_sma_period,
                 self.config.rsi_threshold,
             )),
-            crate::config::StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(
+            crate::domain::strategy_config::StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(
                 self.config.fast_sma_period,
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
@@ -189,13 +194,13 @@ impl Application {
                 self.config.rsi_threshold,
                 self.config.trend_divergence_threshold,
             )),
-            crate::config::StrategyMode::TrendRiding => Arc::new(TrendRidingStrategy::new(
+            crate::domain::strategy_config::StrategyMode::TrendRiding => Arc::new(TrendRidingStrategy::new(
                 self.config.fast_sma_period,
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
                 self.config.trend_riding_exit_buffer_pct,
             )),
-            crate::config::StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
+            crate::domain::strategy_config::StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
                 self.config.mean_reversion_bb_period,
                 self.config.mean_reversion_rsi_exit,
             )),
@@ -209,6 +214,7 @@ impl Application {
             strategy,
             analyst_config,
             self.candle_repository.clone(),
+            self.strategy_repository.clone(),
         );
 
         let mut risk_manager = RiskManager::new(

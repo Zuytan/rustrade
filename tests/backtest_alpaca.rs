@@ -40,9 +40,11 @@ async fn test_backtest_strategy_on_historical_data() {
     };
     let ws_url = std::env::var("ALPACA_WS_URL")
         .unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
+    let data_url = std::env::var("ALPACA_DATA_URL")
+        .unwrap_or("https://data.alpaca.markets".to_string());
 
     // 3. Initialize Services
-    let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url));
+    let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url, data_url));
 
     let mut portfolio = Portfolio::new();
     portfolio.cash = Decimal::new(100000, 0);

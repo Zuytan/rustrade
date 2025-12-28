@@ -8,6 +8,9 @@ use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
 use tracing::info;
 
+pub mod strategy_repository;
+pub use strategy_repository::SqliteStrategyRepository;
+
 pub struct SqliteOrderRepository {
     pool: SqlitePool,
 }
@@ -137,7 +140,7 @@ impl CandleRepository for SqliteCandleRepository {
         .bind(candle.high.to_string())
         .bind(candle.low.to_string())
         .bind(candle.close.to_string())
-        .bind(candle.volume as i64)
+        .bind(candle.volume) // Bind as f64
         .execute(&self.pool)
         .await
         .context("Failed to save candle")?;
@@ -164,7 +167,7 @@ impl CandleRepository for SqliteCandleRepository {
                 high: Decimal::from_str(row.try_get("high")?).unwrap_or_default(),
                 low: Decimal::from_str(row.try_get("low")?).unwrap_or_default(),
                 close: Decimal::from_str(row.try_get("close")?).unwrap_or_default(),
-                volume: row.try_get::<i64, _>("volume")? as u64,
+                volume: row.try_get::<f64, _>("volume")?,
             });
         }
         Ok(candles)

@@ -147,7 +147,8 @@ async fn main() -> Result<()> {
     let api_secret = env::var("ALPACA_SECRET_KEY").expect("ALPACA_SECRET_KEY must be set");
     let ws_url =
         env::var("ALPACA_WS_URL").unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
-    let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url));
+    let data_url = env::var("ALPACA_DATA_URL").unwrap_or("https://data.alpaca.markets".to_string());
+    let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url, data_url));
 
     // Execution service factory - creates fresh portfolio for each run
     let execution_service_factory: Arc<

@@ -182,6 +182,7 @@ impl Simulator {
             strategy,
             sim_config,
             None,
+            None,
         );
 
         let analyst_handle = tokio::spawn(async move {

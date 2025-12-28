@@ -10,3 +10,4 @@ pub mod simulator;
 pub mod strategies;
 pub mod system;
 pub mod trailing_stops;
+pub mod strategy_factory;

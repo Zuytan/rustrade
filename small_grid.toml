@@ -1,0 +1,6 @@
+fast_sma = [5, 10, 20]
+slow_sma = [50, 100, 200]
+rsi_threshold = [60.0, 70.0, 80.0]
+trend_divergence_threshold = [0.005]
+trailing_stop_atr_multiplier = [2.0, 3.0]
+order_cooldown_seconds = [300]

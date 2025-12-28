@@ -13,7 +13,7 @@ struct CandleBuilder {
     high: Decimal,
     low: Decimal,
     close: Decimal,
-    volume: u64,
+    volume: f64,
     start_time: DateTime<Utc>,
 }
 
@@ -32,7 +32,7 @@ impl CandleBuilder {
             high: price,
             low: price,
             close: price,
-            volume: 0, // We rely on quotes, volume might be missing or aggregated later
+            volume: 0.0, // We rely on quotes, volume might be missing or aggregated later
             start_time,
         }
     }
@@ -45,7 +45,7 @@ impl CandleBuilder {
             self.low = price;
         }
         self.close = price;
-        self.volume += 1; // Count ticks as volume proxy for now
+        self.volume += 1.0; // Count ticks as volume proxy for now
     }
 
     fn build(&self) -> Candle {

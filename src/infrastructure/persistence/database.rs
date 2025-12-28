@@ -102,6 +102,22 @@ impl Database {
         .await
         .context("Failed to create candle index")?;
 
+        // 3. Symbol Strategies Table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS symbol_strategies (
+                symbol TEXT PRIMARY KEY,
+                strategy_mode TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT 1,
+                last_updated INTEGER
+            );
+            "#,
+        )
+        .execute(&mut *conn)
+        .await
+        .context("Failed to create symbol_strategies table")?;
+
         info!("Database schema initialized.");
         Ok(())
     }

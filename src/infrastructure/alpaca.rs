@@ -17,10 +17,12 @@ pub struct AlpacaMarketDataService {
     api_key: String,
     api_secret: String,
     ws_manager: Arc<AlpacaWebSocketManager>, // Singleton WebSocket manager
+    data_base_url: String,
+    bar_cache: std::sync::RwLock<std::collections::HashMap<String, Vec<AlpacaBar>>>,
 }
 
 impl AlpacaMarketDataService {
-    pub fn new(api_key: String, api_secret: String, ws_url: String) -> Self {
+    pub fn new(api_key: String, api_secret: String, ws_url: String, data_base_url: String) -> Self {
         // Configure client with connection pool limits
         let client = Client::builder()
             .pool_max_idle_per_host(5)
@@ -41,6 +43,8 @@ impl AlpacaMarketDataService {
             api_key,
             api_secret,
             ws_manager,
+            data_base_url,
+            bar_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
     }
 }
@@ -72,7 +76,7 @@ impl MarketDataService for AlpacaMarketDataService {
     async fn get_top_movers(&self) -> Result<Vec<String>> {
         // Alpaca Data v1beta1 Screener Movers endpoint
         // v2/stocks/movers is often not found or requires specific tier.
-        let url = "https://data.alpaca.markets/v1beta1/screener/stocks/movers";
+        let url = format!("{}/v1beta1/screener/stocks/movers", self.data_base_url);
 
         let mut response = self
             .client
@@ -91,7 +95,7 @@ impl MarketDataService for AlpacaMarketDataService {
             );
 
             // Fallback to V2 movers endpoint
-            let v2_url = "https://data.alpaca.markets/v2/stocks/movers";
+            let v2_url = format!("{}/v2/stocks/movers", self.data_base_url);
             response = self
                 .client
                 .get(v2_url)
@@ -183,7 +187,7 @@ impl MarketDataService for AlpacaMarketDataService {
             return Ok(std::collections::HashMap::new());
         }
 
-        let url = "https://data.alpaca.markets/v2/stocks/snapshots";
+        let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
         // Join symbols with comma
         let symbols_param = symbols.join(",");
 
@@ -254,9 +258,31 @@ impl AlpacaMarketDataService {
         end: chrono::DateTime<chrono::Utc>,
         timeframe: &str,
     ) -> Result<Vec<AlpacaBar>> {
-        let url = "https://data.alpaca.markets/v2/stocks/bars";
+        // 1. Check Cache
+        let cache_key =format!("{}:{}:{}:{}", symbol, start.timestamp(), end.timestamp(), timeframe);
+        
+        {
+            let cache = self.bar_cache.read().unwrap();
+            if let Some(bars) = cache.get(&cache_key) {
+                info!("AlpacaMarketDataService: Cache HIT for {}", cache_key);
+                return Ok(bars.clone());
+            }
+        }
+        
+        info!("AlpacaMarketDataService: Cache MISS for {}. Fetching from API...", cache_key);
+
+        // Determine endpoint based on symbol format (Crypto pairs usually have '/')
+        let is_crypto = symbol.contains('/');
+        let url = if is_crypto {
+             // For crypto, use v1beta3 endpoint
+             format!("{}/v1beta3/crypto/us/bars", self.data_base_url)
+        } else {
+             format!("{}/v2/stocks/bars", self.data_base_url)
+        };
+
         let mut all_bars = Vec::new();
         let mut page_token: Option<String> = None;
+        let mut _backoff = 1; // Unused but kept for structure
 
         loop {
             let mut query_params = vec![
@@ -266,20 +292,19 @@ impl AlpacaMarketDataService {
                 ("timeframe", timeframe.to_string()),
                 ("limit", "10000".to_string()),
             ];
-
             if let Some(token) = &page_token {
                 query_params.push(("page_token", token.clone()));
             }
 
             let response = self
                 .client
-                .get(url)
+                .get(&url)
                 .header("APCA-API-KEY-ID", &self.api_key)
                 .header("APCA-API-SECRET-KEY", &self.api_secret)
                 .query(&query_params)
                 .send()
                 .await
-                .context("Failed to fetch historical bars")?;
+                .map_err(|e| anyhow::anyhow!("Request failed: {}", e))?;
 
             if !response.status().is_success() {
                 let error_text = response.text().await.unwrap_or_default();
@@ -314,6 +339,13 @@ impl AlpacaMarketDataService {
         }
 
         info!("Fetched total {} bars for {}", all_bars.len(), symbol);
+        
+        // Save to cache
+        if !all_bars.is_empty() {
+            let mut cache = self.bar_cache.write().unwrap();
+            cache.insert(cache_key, all_bars.clone());
+        }
+        
         Ok(all_bars)
     }
 }
@@ -331,7 +363,7 @@ pub struct AlpacaBar {
     #[serde(rename = "c")]
     pub close: f64,
     #[serde(rename = "v")]
-    pub volume: u64,
+    pub volume: f64,
 }
 
 // ===== Execution Service (REST API) =====
