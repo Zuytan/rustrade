@@ -1,6 +1,11 @@
 # Rustrade - Historique des Versions
 
-## Version 0.21.0 (Janvier 2026) - Analyst Refactoring & Financial Precision
+
+## Version 0.22.0 (Janvier 2026) - Financial Hardening (Active Liquidation)
+- **Active Liquidation**: Le `RiskManager` déclenche désormais une **Vente Totale Immédiate** ("Panic Button") si les circuits breakers (Daily Loss ou Max Drawdown) sont atteints.
+  - Empêche de conserver des positions perdantes pendant un krach (Stop buying -> Stop buying AND sell everything).
+- **Hardened Testing**: Ajout de tests de régression critiques garantissant que le système liquide effectivement les positions en cas de crash simulé (-30%).
+- **PDT Override**: Les liquidations d'urgence contournent les règles anti-PDT pour prioriser la préservation du capital.
 - **Découplage de l'Analyste**: Extraction des responsabilités dans `FeatureEngineeringService`, `SignalGenerator`, et `PositionManager`. Réduction massive de la complexité de `analyst.rs`.
 - **Espérance de Gain Avancée**: Remplacement des heuristiques par un `ExpectancyEvaluator` utilisant le `MarketRegime`.
 - **Reward/Risk Ratio (1.5 min)**: Validation stricte de chaque signal basée sur le ratio gain/risque estimé dynamiquement.

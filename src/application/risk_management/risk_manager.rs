@@ -1,5 +1,5 @@
 use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
-use crate::domain::trading::types::{Order, OrderSide, TradeProposal};
+use crate::domain::trading::types::{Order, OrderSide, OrderType, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -87,6 +87,7 @@ pub struct RiskManager {
     portfolio: Arc<RwLock<Portfolio>>,
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     sector_cache: HashMap<String, String>,
+    halted: bool,
 }
 
 impl RiskManager {
@@ -117,6 +118,7 @@ impl RiskManager {
             current_prices: HashMap::new(),
             performance_monitor,
             sector_cache: HashMap::new(),
+            halted: false,
         }
     }
 
@@ -342,6 +344,32 @@ impl RiskManager {
         Ok(())
     }
 
+    async fn liquidate_portfolio(&mut self, reason: &str) {
+        let portfolio = self.portfolio.read().await;
+        
+        info!("RiskManager: EMERGENCY LIQUIDATION TRIGGERED - Reason: {}", reason);
+        
+        for (symbol, position) in &portfolio.positions {
+            if position.quantity > Decimal::ZERO {
+                let order = Order {
+                    id: Uuid::new_v4().to_string(),
+                    symbol: symbol.clone(),
+                    side: OrderSide::Sell,
+                    price: self.current_prices.get(symbol).cloned().unwrap_or(Decimal::ZERO), // Market order, price is indicative
+                    quantity: position.quantity,
+                    order_type: OrderType::Market,
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                };
+                
+                warn!("RiskManager: Placing EMERGENCY SELL for {} ({})", symbol, position.quantity);
+                
+                if let Err(e) = self.order_tx.send(order).await {
+                    error!("RiskManager: Failed to send liquidation order for {}: {}", symbol, e);
+                }
+            }
+        }
+    }
+
     pub async fn run(&mut self) {
         info!("RiskManager started with config: {:?}", self.risk_config);
 
@@ -361,8 +389,27 @@ impl RiskManager {
                             if let Err(e) = self.update_portfolio_valuation().await {
                                 error!("RiskManager: Valuation update error: {}", e);
                             }
+                            
+                            // Check circuit breaker logic on tick
+                            if !self.halted {
+                                let reason = {
+                                    let portfolio = self.portfolio.read().await;
+                                    let current_equity = portfolio.total_equity(&self.current_prices);
+                                    self.check_circuit_breaker(current_equity)
+                                };
+
+                                if let Some(r) = reason {
+                                    error!("RiskManager: CIRCUIT BREAKER TRIGGERED (Tick) - {}", r);
+                                    self.halted = true;
+                                    self.liquidate_portfolio(&r).await;
+                                }
+                            }
                         }
                         Some(proposal) = self.proposal_rx.recv() => {
+                            if self.halted {
+                                warn!("RiskManager: Trading HALTED. Rejecting proposal for {}", proposal.symbol);
+                                continue;
+                            }
                             info!("RiskManager: reviewing proposal {:?}", proposal);
 
                     // Update current price for this symbol
@@ -388,12 +435,14 @@ impl RiskManager {
 
                     // Check circuit breaker BEFORE other validations
                     if let Some(reason) = self.check_circuit_breaker(current_equity) {
-                        error!("RiskManager: CIRCUIT BREAKER TRIGGERED - {}", reason);
+                        error!("RiskManager: CIRCUIT BREAKER TRIGGERED (Proposal) - {}", reason);
                         error!(
                             "RiskManager: All trading halted. Current equity: {}",
                             current_equity
                         );
-                        continue; // Reject all orders
+                        self.halted = true;
+                        self.liquidate_portfolio(&reason).await;
+                        continue; // Reject current proposal
                     }
 
                     // Validate position size for buy orders
@@ -680,13 +729,18 @@ mod tests {
         };
         proposal_tx.send(proposal).await.unwrap();
 
-        // Expect rejection due to Circuit Breaker
-        // The order channel should NOT receive anything.
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        assert!(
-            order_rx.try_recv().is_err(),
-            "Order should be rejected due to circuit breaker"
-        );
+        // Expect Liquidation Order due to Circuit Breaker
+        let liquidation_order = tokio::time::timeout(std::time::Duration::from_millis(200), order_rx.recv())
+            .await
+            .expect("Should trigger liquidation")
+            .expect("Should receive liquidation order");
+            
+        assert_eq!(liquidation_order.symbol, "TSLA");
+        assert_eq!(liquidation_order.side, OrderSide::Sell);
+        assert_eq!(liquidation_order.order_type, OrderType::Market); // Panic sell
+        
+        // Ensure NO other orders (like the proposal) are processed
+        assert!(order_rx.try_recv().is_err(), "Should catch only liquidation order");
 
         // Note: verifying logs is hard here, but rejection confirms logic.
     }
@@ -809,6 +863,7 @@ mod tests {
         let (proposal_tx, proposal_rx) = mpsc::channel(1);
         let (order_tx, mut order_rx) = mpsc::channel(1);
         let mut port = Portfolio::new();
+        port.cash = Decimal::from(100000);
         port.positions.insert(
             "ABC".to_string(),
             Position {
@@ -940,5 +995,94 @@ mod tests {
         // Should be REJECTED
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(order_rx.try_recv().is_err(), "Should reject due to sector exposure");
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_triggers_liquidation() {
+        let (proposal_tx, proposal_rx) = mpsc::channel(1);
+        let (order_tx, mut order_rx) = mpsc::channel(10); // Buffer for liquidation orders
+
+        // Setup Portfolio: $10,000 Cash + 10 TSLA @ $1000 ($10,000 Value) = $20,000 Equity
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(10000);
+        port.positions.insert(
+            "TSLA".to_string(),
+            Position {
+                symbol: "TSLA".to_string(),
+                quantity: Decimal::from(10),
+                average_price: Decimal::from(1000),
+            },
+        );
+        let portfolio = Arc::new(RwLock::new(port));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+
+        // Setup Market
+        let market_data = Arc::new(ConfigurableMockMarketData::new());
+        market_data.set_price("TSLA", Decimal::from(1000));
+        let market_service = market_data.clone();
+
+        // Config: Max Daily Loss 10% ($2,000)
+        let config = RiskConfig {
+            max_daily_loss_pct: 0.10,
+            ..RiskConfig::default()
+        };
+
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            order_tx,
+            exec_service,
+            market_service,
+            portfolio, false,
+            config, None,
+        );
+
+        tokio::spawn(async move { rm.run().await });
+
+        // Initialize session (Equity = $20,000)
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // CRASH SCENARIO: TSLA Drops to $700 (-30%)
+        // Equity drops from $20k to $17k (-15%). This exceeds 10% limit.
+        // We trigger this by sending a proposal (which updates price cache)
+        let proposal = TradeProposal {
+            symbol: "TSLA".to_string(),
+            side: OrderSide::Buy,
+            price: Decimal::from(700),
+            quantity: Decimal::from(1),
+            order_type: OrderType::Market,
+            reason: "Trying to catch a falling knife".to_string(),
+            timestamp: 0,
+        };
+        proposal_tx.send(proposal).await.unwrap();
+
+        // Expect:
+        // 1. Proposal Rejected (implied by liquidation triggering)
+        // 2. Liquidation Order for TSLA (Market Sell 10 units)
+        
+        let liquidation_order = tokio::time::timeout(std::time::Duration::from_millis(200), order_rx.recv())
+            .await
+            .expect("Should return liquidation order")
+            .expect("Should have an order");
+
+        assert_eq!(liquidation_order.symbol, "TSLA");
+        assert_eq!(liquidation_order.side, OrderSide::Sell);
+        assert_eq!(liquidation_order.quantity, Decimal::from(10));
+        assert_eq!(liquidation_order.order_type, OrderType::Market);
+
+        // Verify subsequent proposals are rejected (Halted state)
+        let proposal2 = TradeProposal {
+            symbol: "AAPL".to_string(),
+            side: OrderSide::Buy,
+            price: Decimal::from(150),
+            quantity: Decimal::from(1),
+            order_type: OrderType::Market,
+            reason: "Safe trade".to_string(),
+            timestamp: 0,
+        };
+        proposal_tx.send(proposal2).await.unwrap();
+
+        // Should receive NO orders
+        let res = tokio::time::timeout(std::time::Duration::from_millis(100), order_rx.recv()).await;
+        assert!(res.is_err(), "Should timeout because trading is halted");
     }
 }

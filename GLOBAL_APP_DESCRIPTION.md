@@ -15,6 +15,8 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
 
 **Configuration** : Définir `RISK_APPETITE_SCORE=5` dans `.env`. Si non défini, les paramètres individuels sont utilisés (rétrocompatibilité).
 
+> 💡 **Évaluation** : Les performances de ces profils peuvent être évaluées via l'outil de benchmark en faisant varier le score de 1 à 9 pour observer l'impact sur le Drawdown et le Return.
+
 ## Durcissement Financier (Financial Hardening)
 
 Pour garantir la viabilité économique des stratégies, le bot intègre désormais des mécanismes avancés de protection du capital :
@@ -87,6 +89,7 @@ Le bot intègre désormais un système d'optimisation en boucle fermée qui ajus
     - **Gestion Sectorielle Dynamique (v0.18.0)** : Plus de `sector_map` manuel. Utilise un `SectorProvider` (via Alpaca Asset API) pour identifier le secteur de chaque actif en temps réel et garantir la diversification.
     - **Protection PDT**: Empêche le Day Trading pour les petits comptes.
     - **Valuation Temps Réel**: Surveillance continue de l'équité pour déclenchement immédiat des Circuit Breakers.
+    - **Active Liquidation (v0.22.0)**: Si un Circuit Breaker est déclenché, le Risk Manager envoie immédiatement des ordres de vente au marché pour TOUTES les positions, bypassant les protections PDT. Objectif: "Cash is King" pendant un krach.
 
 ### 4. L'Agent "Order Throttler" (Rate Limiting)
 - **Rôle**: Garde-fou technique.
