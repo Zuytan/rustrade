@@ -1,11 +1,11 @@
 use rust_decimal::Decimal;
-use rustrade::application::analyst::{Analyst, AnalystConfig};
-use rustrade::application::scanner::MarketScanner;
-use rustrade::application::sentinel::Sentinel;
+use rustrade::application::agents::analyst::{Analyst, AnalystConfig};
+use rustrade::application::agents::scanner::MarketScanner;
+use rustrade::application::agents::sentinel::Sentinel;
 use rustrade::application::strategies::DualSMAStrategy;
 use rustrade::config::StrategyMode;
-use rustrade::domain::portfolio::Portfolio;
-use rustrade::domain::types::{Candle, MarketEvent, OrderSide};
+use rustrade::domain::trading::portfolio::Portfolio;
+use rustrade::domain::trading::types::{Candle, MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -65,6 +65,11 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         slippage_pct: 0.0,
         commission_per_share: 0.0,
         max_position_size_pct: 0.2,
+        bb_period: 20,
+        bb_std_dev: 2.0,
+        macd_fast: 12,
+        macd_slow: 26,
+        macd_signal: 9,
     };
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));
     let mut analyst = Analyst::new(

@@ -1,10 +1,10 @@
 use chrono::{TimeZone, Utc};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
-use rustrade::application::analyst::AnalystConfig;
-use rustrade::application::simulator::Simulator;
+use rustrade::application::agents::analyst::AnalystConfig;
+use rustrade::application::optimization::simulator::Simulator;
 use rustrade::config::StrategyMode;
-use rustrade::domain::portfolio::Portfolio;
+use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
 use std::env;
@@ -171,21 +171,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let net_profit = result.final_equity - result.initial_equity;
 
                     // Convert Orders to Trades for metrics
-                    let mut trades: Vec<rustrade::domain::types::Trade> = Vec::new();
-                    let mut open_position: Option<&rustrade::domain::types::Order> = None;
+                    let mut trades: Vec<rustrade::domain::trading::types::Trade> = Vec::new();
+                    let mut open_position: Option<&rustrade::domain::trading::types::Order> = None;
 
                     for order in &result.trades {
                         match order.side {
-                            rustrade::domain::types::OrderSide::Buy => {
+                            rustrade::domain::trading::types::OrderSide::Buy => {
                                 open_position = Some(order);
                             }
-                            rustrade::domain::types::OrderSide::Sell => {
+                            rustrade::domain::trading::types::OrderSide::Sell => {
                                 if let Some(buy_order) = open_position {
                                     let pnl = (order.price - buy_order.price) * order.quantity;
-                                    trades.push(rustrade::domain::types::Trade {
+                                    trades.push(rustrade::domain::trading::types::Trade {
                                         id: order.id.clone(),
                                         symbol: order.symbol.clone(),
-                                        side: rustrade::domain::types::OrderSide::Buy,
+                                        side: rustrade::domain::trading::types::OrderSide::Buy,
                                         entry_price: buy_order.price,
                                         exit_price: Some(order.price),
                                         quantity: order.quantity,
@@ -200,7 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     // Calculate accurate metrics for this batch
-                    let metrics = rustrade::domain::metrics::PerformanceMetrics::calculate_time_series_metrics(
+                    let metrics = rustrade::domain::performance::metrics::PerformanceMetrics::calculate_time_series_metrics(
                         &trades,
                         &result.daily_closes,
                         result.initial_equity,
@@ -358,22 +358,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _period_days = (end - start).num_days() as f64;
 
         // Convert Orders to Trades by pairing Buy/Sell
-        let mut trades: Vec<rustrade::domain::types::Trade> = Vec::new();
-        let mut open_position: Option<&rustrade::domain::types::Order> = None;
+        let mut trades: Vec<rustrade::domain::trading::types::Trade> = Vec::new();
+        let mut open_position: Option<&rustrade::domain::trading::types::Order> = None;
 
         for order in &result.trades {
             match order.side {
-                rustrade::domain::types::OrderSide::Buy => {
+                rustrade::domain::trading::types::OrderSide::Buy => {
                     open_position = Some(order);
                 }
-                rustrade::domain::types::OrderSide::Sell => {
+                rustrade::domain::trading::types::OrderSide::Sell => {
                     if let Some(buy_order) = open_position {
                         // Create a Trade from the pair
                         let pnl = (order.price - buy_order.price) * order.quantity;
-                        trades.push(rustrade::domain::types::Trade {
+                        trades.push(rustrade::domain::trading::types::Trade {
                             id: order.id.clone(),
                             symbol: order.symbol.clone(),
-                            side: rustrade::domain::types::OrderSide::Buy,
+                            side: rustrade::domain::trading::types::OrderSide::Buy,
                             entry_price: buy_order.price,
                             exit_price: Some(order.price),
                             quantity: order.quantity,
@@ -388,7 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Calculate comprehensive metrics using daily data
-        let metrics = rustrade::domain::metrics::PerformanceMetrics::calculate_time_series_metrics(
+        let metrics = rustrade::domain::performance::metrics::PerformanceMetrics::calculate_time_series_metrics(
             &trades,
             &result.daily_closes,
             result.initial_equity,

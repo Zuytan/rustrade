@@ -1,4 +1,4 @@
-use crate::domain::market_regime::MarketRegimeType;
+use crate::domain::market::market_regime::MarketRegimeType;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

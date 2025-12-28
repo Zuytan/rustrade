@@ -1,4 +1,4 @@
-use crate::domain::types::OrderSide;
+use crate::domain::trading::types::OrderSide;
 use rust_decimal::Decimal;
 
 /// Context provided to trading strategies for analysis

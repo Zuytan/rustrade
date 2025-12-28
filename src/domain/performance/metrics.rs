@@ -1,4 +1,4 @@
-use crate::domain::types::Trade;
+use crate::domain::trading::types::Trade;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 
@@ -399,7 +399,7 @@ impl PerformanceMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::OrderSide;
+    use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
 
     #[test]

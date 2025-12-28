@@ -1,5 +1,5 @@
 use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::domain::types::{MarketEvent, Order};
+use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
 // use chrono::Utc;
@@ -187,13 +187,13 @@ impl MarketDataService for MockMarketDataService {
         _start: chrono::DateTime<chrono::Utc>,
         _end: chrono::DateTime<chrono::Utc>,
         _timeframe: &str,
-    ) -> Result<Vec<crate::domain::types::Candle>> {
+    ) -> Result<Vec<crate::domain::trading::types::Candle>> {
         // For now, return empty or mock data
         Ok(vec![])
     }
 }
 
-use crate::domain::portfolio::Portfolio;
+use crate::domain::trading::portfolio::Portfolio;
 
 pub struct MockExecutionService {
     portfolio: Arc<RwLock<Portfolio>>,
@@ -239,8 +239,8 @@ impl ExecutionService for MockExecutionService {
 
         // Apply slippage to execution price
         let slippage_multiplier = Decimal::from_f64(match order.side {
-            crate::domain::types::OrderSide::Buy => 1.0 + self.slippage_pct, // Buy higher
-            crate::domain::types::OrderSide::Sell => 1.0 - self.slippage_pct, // Sell lower
+            crate::domain::trading::types::OrderSide::Buy => 1.0 + self.slippage_pct, // Buy higher
+            crate::domain::trading::types::OrderSide::Sell => 1.0 - self.slippage_pct, // Sell lower
         })
         .unwrap_or(Decimal::ONE);
 
@@ -262,11 +262,11 @@ impl ExecutionService for MockExecutionService {
         }
 
         match order.side {
-            crate::domain::types::OrderSide::Buy => {
+            crate::domain::trading::types::OrderSide::Buy => {
                 // Deduct cost + commission from cash
                 port.cash -= cost + commission;
                 let pos = port.positions.entry(order.symbol.clone()).or_insert(
-                    crate::domain::portfolio::Position {
+                    crate::domain::trading::portfolio::Position {
                         symbol: order.symbol.clone(),
                         quantity: Decimal::ZERO,
                         average_price: Decimal::ZERO,
@@ -280,11 +280,11 @@ impl ExecutionService for MockExecutionService {
                 }
                 pos.quantity = total_qty;
             }
-            crate::domain::types::OrderSide::Sell => {
+            crate::domain::trading::types::OrderSide::Sell => {
                 // Add proceeds minus commission to cash
                 port.cash += cost - commission;
                 let pos = port.positions.entry(order.symbol.clone()).or_insert(
-                    crate::domain::portfolio::Position {
+                    crate::domain::trading::portfolio::Position {
                         symbol: order.symbol.clone(),
                         quantity: Decimal::ZERO,
                         average_price: Decimal::ZERO,
@@ -330,8 +330,8 @@ pub struct NullCandleRepository;
 
 #[async_trait]
 impl crate::domain::repositories::CandleRepository for NullCandleRepository {
-    async fn save(&self, _candle: &crate::domain::types::Candle) -> Result<()> { Ok(()) }
-    async fn get_range(&self, _symbol: &str, _start_ts: i64, _end_ts: i64) -> Result<Vec<crate::domain::types::Candle>> { Ok(vec![]) }
+    async fn save(&self, _candle: &crate::domain::trading::types::Candle) -> Result<()> { Ok(()) }
+    async fn get_range(&self, _symbol: &str, _start_ts: i64, _end_ts: i64) -> Result<Vec<crate::domain::trading::types::Candle>> { Ok(vec![]) }
     async fn prune(&self, _days_retention: i64) -> Result<u64> { Ok(0) }
 }
 
@@ -339,7 +339,7 @@ pub struct NullStrategyRepository;
 
 #[async_trait]
 impl crate::domain::repositories::StrategyRepository for NullStrategyRepository {
-    async fn save(&self, _config: &crate::domain::strategy_config::StrategyDefinition) -> Result<()> { Ok(()) }
-    async fn find_by_symbol(&self, _symbol: &str) -> Result<Option<crate::domain::strategy_config::StrategyDefinition>> { Ok(None) }
-    async fn get_all_active(&self) -> Result<Vec<crate::domain::strategy_config::StrategyDefinition>> { Ok(vec![]) }
+    async fn save(&self, _config: &crate::domain::market::strategy_config::StrategyDefinition) -> Result<()> { Ok(()) }
+    async fn find_by_symbol(&self, _symbol: &str) -> Result<Option<crate::domain::market::strategy_config::StrategyDefinition>> { Ok(None) }
+    async fn get_all_active(&self) -> Result<Vec<crate::domain::market::strategy_config::StrategyDefinition>> { Ok(vec![]) }
 }

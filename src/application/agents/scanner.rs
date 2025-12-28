@@ -95,9 +95,9 @@ impl MarketScanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::portfolio::{Portfolio, Position};
+    use crate::domain::trading::portfolio::{Portfolio, Position};
     use crate::domain::ports::{ExecutionService, MarketDataService};
-    use crate::domain::types::{MarketEvent, Order};
+    use crate::domain::trading::types::{MarketEvent, Order};
     use anyhow::Result;
     use async_trait::async_trait;
     use rust_decimal::Decimal;
@@ -134,7 +134,7 @@ mod tests {
             _start: chrono::DateTime<chrono::Utc>,
             _end: chrono::DateTime<chrono::Utc>,
             _timeframe: &str,
-        ) -> Result<Vec<crate::domain::types::Candle>> {
+        ) -> Result<Vec<crate::domain::trading::types::Candle>> {
             Ok(vec![])
         }
     }

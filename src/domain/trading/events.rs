@@ -1,4 +1,4 @@
-use crate::domain::types::{Order, OrderSide, TradeProposal};
+use crate::domain::trading::types::{Order, OrderSide, TradeProposal};
 use rust_decimal::Decimal;
 
 /// Trading events for observability and monitoring

@@ -1,5 +1,5 @@
-use crate::domain::risk_appetite::RiskAppetite;
-pub use crate::domain::strategy_config::StrategyMode;
+use crate::domain::risk::risk_appetite::RiskAppetite;
+pub use crate::domain::market::strategy_config::StrategyMode;
 use anyhow::{Context, Result};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;

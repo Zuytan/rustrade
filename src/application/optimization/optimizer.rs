@@ -1,5 +1,5 @@
-use crate::application::analyst::AnalystConfig;
-use crate::application::simulator::Simulator;
+use crate::application::agents::analyst::AnalystConfig;
+use crate::application::optimization::simulator::Simulator;
 use crate::config::StrategyMode;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use anyhow::Result;
@@ -157,21 +157,21 @@ impl GridSearchOptimizer {
         let result = simulator.run(symbol, start, end).await?;
 
         // Calculate metrics from trades
-        let mut trades: Vec<crate::domain::types::Trade> = Vec::new();
-        let mut open_position: Option<&crate::domain::types::Order> = None;
+        let mut trades: Vec<crate::domain::trading::types::Trade> = Vec::new();
+        let mut open_position: Option<&crate::domain::trading::types::Order> = None;
 
         for order in &result.trades {
             match order.side {
-                crate::domain::types::OrderSide::Buy => {
+                crate::domain::trading::types::OrderSide::Buy => {
                     open_position = Some(order);
                 }
-                crate::domain::types::OrderSide::Sell => {
+                crate::domain::trading::types::OrderSide::Sell => {
                     if let Some(buy_order) = open_position {
                         let pnl = (order.price - buy_order.price) * order.quantity;
-                        trades.push(crate::domain::types::Trade {
+                        trades.push(crate::domain::trading::types::Trade {
                             id: order.id.clone(),
                             symbol: order.symbol.clone(),
-                            side: crate::domain::types::OrderSide::Buy,
+                            side: crate::domain::trading::types::OrderSide::Buy,
                             entry_price: buy_order.price,
                             exit_price: Some(order.price),
                             quantity: order.quantity,
@@ -185,7 +185,7 @@ impl GridSearchOptimizer {
             }
         }
 
-        let metrics = crate::domain::metrics::PerformanceMetrics::calculate_time_series_metrics(
+        let metrics = crate::domain::performance::metrics::PerformanceMetrics::calculate_time_series_metrics(
             &trades,
             &result.daily_closes,
             result.initial_equity,

@@ -1,8 +1,8 @@
-use crate::application::analyst::{Analyst, AnalystConfig};
+use crate::application::agents::analyst::{Analyst, AnalystConfig};
 use crate::application::strategies::{AdvancedTripleFilterStrategy, TradingStrategy};
 use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::domain::types::MarketEvent;
-use crate::domain::types::{Candle, Order};
+use crate::domain::trading::types::MarketEvent;
+use crate::domain::trading::types::{Candle, Order};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
@@ -266,18 +266,18 @@ impl Simulator {
             let slippage =
                 Decimal::from_f64_retain(self.config.slippage_pct).unwrap_or(Decimal::ZERO);
             let execution_price = match prop.side {
-                crate::domain::types::OrderSide::Buy => prop.price * (Decimal::ONE + slippage),
-                crate::domain::types::OrderSide::Sell => prop.price * (Decimal::ONE - slippage),
+                crate::domain::trading::types::OrderSide::Buy => prop.price * (Decimal::ONE + slippage),
+                crate::domain::trading::types::OrderSide::Sell => prop.price * (Decimal::ONE - slippage),
             };
 
             // Execute Immediately to update Portfolio State for next Analyst check
-            let order = crate::domain::types::Order {
+            let order = crate::domain::trading::types::Order {
                 id: uuid::Uuid::new_v4().to_string(),
                 symbol: prop.symbol.clone(),
                 side: prop.side,
                 price: execution_price,
                 quantity: prop.quantity,
-                order_type: crate::domain::types::OrderType::Market,
+                order_type: crate::domain::trading::types::OrderType::Market,
                 timestamp: prop.timestamp,
             };
 

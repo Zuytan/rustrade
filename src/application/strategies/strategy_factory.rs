@@ -1,9 +1,9 @@
-use crate::application::analyst::AnalystConfig;
+use crate::application::agents::analyst::AnalystConfig;
 use crate::application::strategies::{
     AdvancedTripleFilterStrategy, DualSMAStrategy, DynamicRegimeStrategy, MeanReversionStrategy,
     TradingStrategy, TrendRidingStrategy,
 };
-use crate::domain::strategy_config::StrategyMode;
+use crate::domain::market::strategy_config::StrategyMode;
 use std::sync::Arc;
 
 pub struct StrategyFactory;

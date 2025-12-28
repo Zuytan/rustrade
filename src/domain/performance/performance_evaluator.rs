@@ -1,5 +1,5 @@
-use crate::domain::performance_snapshot::PerformanceSnapshot;
-use crate::domain::reoptimization_trigger::TriggerReason;
+use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
+use crate::domain::optimization::reoptimization_trigger::TriggerReason;
 
 /// Configuration thresholds for performance evaluation
 pub struct EvaluationThresholds {
@@ -53,7 +53,7 @@ impl PerformanceEvaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::market_regime::MarketRegimeType;
+    use crate::domain::market::market_regime::MarketRegimeType;
     use rust_decimal::Decimal;
 
     #[test]

@@ -32,8 +32,8 @@
 //! # };
 //! ```
 
-use crate::domain::portfolio::Portfolio;
-use crate::domain::types::Order;
+use crate::domain::trading::portfolio::Portfolio;
+use crate::domain::trading::types::Order;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -74,7 +74,7 @@ pub trait PortfolioRepository: Send + Sync {
     ) -> Result<Vec<(DateTime<Utc>, Decimal)>>;
 }
 
-use crate::domain::types::Candle;
+use crate::domain::trading::types::Candle;
 
 /// Repository for persisting and retrieving market data (candles)
 #[async_trait]
@@ -89,7 +89,7 @@ pub trait CandleRepository: Send + Sync {
     async fn prune(&self, days_retention: i64) -> Result<u64>;
 }
 
-use crate::domain::strategy_config::StrategyDefinition;
+use crate::domain::market::strategy_config::StrategyDefinition;
 
 /// Repository for persisting and retrieving strategy configurations
 #[async_trait]
@@ -104,9 +104,9 @@ pub trait StrategyRepository: Send + Sync {
     async fn get_all_active(&self) -> Result<Vec<StrategyDefinition>>;
 }
 
-use crate::domain::optimization_history::OptimizationHistory;
-use crate::domain::performance_snapshot::PerformanceSnapshot;
-use crate::domain::reoptimization_trigger::ReoptimizationTrigger;
+use crate::domain::optimization::optimization_history::OptimizationHistory;
+use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
+use crate::domain::optimization::reoptimization_trigger::ReoptimizationTrigger;
 
 /// Repository for optimization history
 #[async_trait]

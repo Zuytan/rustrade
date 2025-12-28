@@ -6,7 +6,7 @@ pub struct Portfolio {
     pub cash: Decimal,
     pub positions: HashMap<String, Position>,
     pub realized_pnl: Decimal, // Track total realized profit/loss
-    pub trade_history: Vec<crate::domain::types::Trade>, // Complete audit trail
+    pub trade_history: Vec<crate::domain::trading::types::Trade>, // Complete audit trail
     pub starting_cash: Decimal,
     pub max_equity: Decimal,
 }
@@ -71,7 +71,7 @@ impl Portfolio {
     }
 
     /// Record a completed trade and update realized P&L
-    pub fn record_trade(&mut self, trade: crate::domain::types::Trade) {
+    pub fn record_trade(&mut self, trade: crate::domain::trading::types::Trade) {
         self.realized_pnl += trade.pnl;
         self.trade_history.push(trade);
     }
@@ -156,10 +156,10 @@ mod tests {
     fn test_record_trade_updates_realized_pnl() {
         let mut portfolio = Portfolio::new();
 
-        let trade = crate::domain::types::Trade {
+        let trade = crate::domain::trading::types::Trade {
             id: "1".to_string(),
             symbol: "NVDA".to_string(),
-            side: crate::domain::types::OrderSide::Buy,
+            side: crate::domain::trading::types::OrderSide::Buy,
             entry_price: dec!(100),
             exit_price: Some(dec!(120)),
             quantity: dec!(10),

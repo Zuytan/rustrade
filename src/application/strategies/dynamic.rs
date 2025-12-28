@@ -104,7 +104,7 @@ impl TradingStrategy for DynamicRegimeStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::OrderSide;
+    use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
 
     fn create_test_context(

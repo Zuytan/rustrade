@@ -1,6 +1,6 @@
 use crate::domain::ports::FeatureEngineeringService;
-use crate::domain::types::FeatureSet;
-use crate::application::analyst::AnalystConfig;
+use crate::domain::trading::types::FeatureSet;
+use crate::application::agents::analyst::AnalystConfig;
 use ta::indicators::{
     AverageTrueRange, BollingerBands, MovingAverageConvergenceDivergence, RelativeStrengthIndex,
     SimpleMovingAverage,

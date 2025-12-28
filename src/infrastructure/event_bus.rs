@@ -1,4 +1,4 @@
-use crate::domain::events::{EventListener, TradingEvent};
+use crate::domain::trading::events::{EventListener, TradingEvent};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -51,8 +51,8 @@ impl Clone for EventBus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::events::LoggingListener;
-    use crate::domain::types::OrderSide;
+    use crate::domain::trading::events::LoggingListener;
+    use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

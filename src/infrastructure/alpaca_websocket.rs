@@ -32,7 +32,7 @@
 //! # }
 //! ```
 
-use crate::domain::types::MarketEvent;
+use crate::domain::trading::types::MarketEvent;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};

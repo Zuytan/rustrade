@@ -1,5 +1,5 @@
 use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
-use crate::domain::types::{Order, OrderSide, TradeProposal};
+use crate::domain::trading::types::{Order, OrderSide, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -9,8 +9,8 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 use tokio::sync::RwLock;
 
-use crate::domain::portfolio::Portfolio;
-use crate::application::performance_monitoring_service::PerformanceMonitoringService;
+use crate::domain::trading::portfolio::Portfolio;
+use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
 
 /// Risk management configuration
 #[derive(Clone)]
@@ -219,7 +219,7 @@ impl RiskManager {
     async fn validate_sector_exposure(
         &mut self,
         proposal: &TradeProposal,
-        portfolio: &crate::domain::portfolio::Portfolio,
+        portfolio: &crate::domain::trading::portfolio::Portfolio,
         current_equity: Decimal,
     ) -> bool {
         if current_equity <= Decimal::ZERO {
@@ -552,8 +552,8 @@ impl RiskManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::{OrderSide, OrderType};
-    use crate::domain::portfolio::{Portfolio, Position};
+    use crate::domain::trading::types::{OrderSide, OrderType};
+    use crate::domain::trading::portfolio::{Portfolio, Position};
     use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
     use chrono::Utc;
     use rust_decimal::Decimal;
@@ -582,7 +582,7 @@ mod tests {
         async fn subscribe(
             &self,
             _symbols: Vec<String>,
-        ) -> Result<mpsc::Receiver<crate::domain::types::MarketEvent>, anyhow::Error> {
+        ) -> Result<mpsc::Receiver<crate::domain::trading::types::MarketEvent>, anyhow::Error> {
             let (_, rx) = mpsc::channel(1);
             Ok(rx)
         }
@@ -608,7 +608,7 @@ mod tests {
             _start: chrono::DateTime<chrono::Utc>,
             _end: chrono::DateTime<chrono::Utc>,
             _timeframe: &str,
-        ) -> Result<Vec<crate::domain::types::Candle>, anyhow::Error> {
+        ) -> Result<Vec<crate::domain::trading::types::Candle>, anyhow::Error> {
             Ok(vec![])
         }
     }

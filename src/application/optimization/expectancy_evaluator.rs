@@ -1,5 +1,5 @@
 use crate::domain::ports::{Expectancy, ExpectancyEvaluator};
-use crate::domain::market_regime::{MarketRegime, MarketRegimeType};
+use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 

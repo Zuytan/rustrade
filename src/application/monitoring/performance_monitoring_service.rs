@@ -1,6 +1,6 @@
-use crate::domain::market_regime::MarketRegimeDetector;
-use crate::domain::performance_snapshot::PerformanceSnapshot;
-use crate::domain::portfolio::Portfolio;
+use crate::domain::market::market_regime::MarketRegimeDetector;
+use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
+use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::ports::MarketDataService;
 use crate::domain::repositories::{CandleRepository, PerformanceSnapshotRepository};
 use anyhow::Result;
@@ -81,7 +81,7 @@ impl PerformanceMonitoringService {
 
         self.snapshot_repository.save(&snapshot).await?;
         
-        if market_regime.regime_type != crate::domain::market_regime::MarketRegimeType::Unknown {
+        if market_regime.regime_type != crate::domain::market::market_regime::MarketRegimeType::Unknown {
              info!("Performance Snapshot captured for {}: Regime={}, Equity={}", 
                 symbol, market_regime.regime_type, equity);
         }

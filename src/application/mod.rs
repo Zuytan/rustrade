@@ -1,19 +1,20 @@
-pub mod adaptive_optimization_service;
-pub mod analyst;
-pub mod candle_aggregator;
-pub mod executor;
-pub mod optimizer;
-pub mod order_throttler;
-pub mod performance_monitoring_service;
-pub mod risk_manager;
-pub mod scanner;
-pub mod sentinel;
-pub mod simulator;
+// Agent modules - core decision-making agents
+pub mod agents;
+
+// Market data processing
+pub mod market_data;
+
+// Performance monitoring and analytics
+pub mod monitoring;
+
+// Strategy optimization and backtesting
+pub mod optimization;
+
+// Risk management and position control
+pub mod risk_management;
+
+// Trading strategies
 pub mod strategies;
+
+// System orchestrator
 pub mod system;
-pub mod trailing_stops;
-pub mod strategy_factory;
-pub mod feature_engineering_service;
-pub mod signal_generator;
-pub mod position_manager;
-pub mod expectancy_evaluator;

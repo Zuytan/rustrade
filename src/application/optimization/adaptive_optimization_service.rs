@@ -1,13 +1,13 @@
-use crate::application::optimizer::GridSearchOptimizer;
-use crate::domain::market_regime::{MarketRegimeType, MarketRegimeDetector};
-use crate::domain::optimization_history::OptimizationHistory;
-use crate::domain::performance_evaluator::PerformanceEvaluator;
-use crate::domain::reoptimization_trigger::{ReoptimizationTrigger, TriggerReason};
+use crate::application::optimization::optimizer::GridSearchOptimizer;
+use crate::domain::market::market_regime::{MarketRegimeType, MarketRegimeDetector};
+use crate::domain::optimization::optimization_history::OptimizationHistory;
+use crate::domain::performance::performance_evaluator::PerformanceEvaluator;
+use crate::domain::optimization::reoptimization_trigger::{ReoptimizationTrigger, TriggerReason};
 use crate::domain::repositories::{
     CandleRepository, OptimizationHistoryRepository, PerformanceSnapshotRepository, 
     ReoptimizationTriggerRepository, StrategyRepository
 };
-use crate::domain::strategy_config::{StrategyDefinition, StrategyMode};
+use crate::domain::market::strategy_config::{StrategyDefinition, StrategyMode};
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use std::sync::Arc;

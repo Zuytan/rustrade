@@ -1,4 +1,4 @@
-use crate::domain::types::Order;
+use crate::domain::trading::types::Order;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -139,7 +139,7 @@ impl OrderThrottler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::OrderSide;
+    use crate::domain::trading::types::OrderSide;
     use rust_decimal::Decimal;
     use tokio::sync::mpsc;
 
@@ -150,7 +150,7 @@ mod tests {
             side: OrderSide::Buy,
             price: Decimal::from(100),
             quantity: Decimal::from(1),
-            order_type: crate::domain::types::OrderType::Market,
+            order_type: crate::domain::trading::types::OrderType::Market,
             timestamp: 0,
         }
     }

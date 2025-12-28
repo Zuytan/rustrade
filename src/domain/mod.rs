@@ -1,14 +1,20 @@
-pub mod events;
-pub mod fees;
-pub mod market_regime;
-pub mod metrics;
-pub mod optimization_history;
-pub mod performance_evaluator;
-pub mod performance_snapshot;
-pub mod portfolio;
+// Market analysis domain
+pub mod market;
+
+// Optimization domain
+pub mod optimization;
+
+// Performance tracking domain
+pub mod performance;
+
+// Port interfaces
 pub mod ports;
-pub mod reoptimization_trigger;
+
+// Repository traits
 pub mod repositories;
-pub mod risk_appetite;
-pub mod strategy_config;
-pub mod types;
+
+// Risk management domain
+pub mod risk;
+
+// Core trading domain
+pub mod trading;

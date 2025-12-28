@@ -1,5 +1,5 @@
 use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::domain::types::{MarketEvent, Order, OrderSide};
+use crate::domain::trading::types::{MarketEvent, Order, OrderSide};
 use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -255,7 +255,7 @@ impl MarketDataService for AlpacaMarketDataService {
         start: chrono::DateTime<chrono::Utc>,
         end: chrono::DateTime<chrono::Utc>,
         timeframe: &str,
-    ) -> Result<Vec<crate::domain::types::Candle>> {
+    ) -> Result<Vec<crate::domain::trading::types::Candle>> {
         // Use the internal implementation
         let alpaca_bars = self.fetch_historical_bars_internal(symbol, start, end, timeframe).await?;
         
@@ -265,7 +265,7 @@ impl MarketDataService for AlpacaMarketDataService {
                 .unwrap_or_default()
                 .timestamp();
             
-            crate::domain::types::Candle {
+            crate::domain::trading::types::Candle {
                 symbol: symbol.to_string(),
                 open: Decimal::from_f64_retain(b.open).unwrap_or(Decimal::ZERO),
                 high: Decimal::from_f64_retain(b.high).unwrap_or(Decimal::ZERO),
@@ -480,10 +480,10 @@ impl ExecutionService for AlpacaExecutionService {
         let is_fractional = !order.quantity.fract().is_zero();
         
         let (type_str, limit_price, stop_price) = match order.order_type {
-             crate::domain::types::OrderType::Market => ("market".to_string(), None, None),
-             crate::domain::types::OrderType::Limit => ("limit".to_string(), Some(order.price.to_string()), None),
-             crate::domain::types::OrderType::Stop => ("stop".to_string(), None, Some(order.price.to_string())),
-             crate::domain::types::OrderType::StopLimit => ("stop_limit".to_string(), Some(order.price.to_string()), Some(order.price.to_string())), // Assuming stop and limit same for simplicity unless we add stop_price to order
+             crate::domain::trading::types::OrderType::Market => ("market".to_string(), None, None),
+             crate::domain::trading::types::OrderType::Limit => ("limit".to_string(), Some(order.price.to_string()), None),
+             crate::domain::trading::types::OrderType::Stop => ("stop".to_string(), None, Some(order.price.to_string())),
+             crate::domain::trading::types::OrderType::StopLimit => ("stop_limit".to_string(), Some(order.price.to_string()), Some(order.price.to_string())), // Assuming stop and limit same for simplicity unless we add stop_price to order
         };
         
         // Alpaca requires 'limit_price' and 'stop_price' fields if type is limit/stop
@@ -544,7 +544,7 @@ impl ExecutionService for AlpacaExecutionService {
         }
     }
 
-    async fn get_portfolio(&self) -> Result<crate::domain::portfolio::Portfolio> {
+    async fn get_portfolio(&self) -> Result<crate::domain::trading::portfolio::Portfolio> {
         let account_url = format!("{}/v2/account", self.base_url);
         let positions_url = format!("{}/v2/positions", self.base_url);
 
@@ -593,7 +593,7 @@ impl ExecutionService for AlpacaExecutionService {
                 )
             })?;
 
-        let mut portfolio = crate::domain::portfolio::Portfolio::new();
+        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
         // Use buying_power or cash? For crypto, buying_power is usually what we have available.
         // Actually, let's log both for debugging.
         let cash = account_resp
@@ -613,7 +613,7 @@ impl ExecutionService for AlpacaExecutionService {
             // We strip any / to be consistent if needed, or just keep it.
             // Let's try to match exactly first, but log if it's different.
             let alp_symbol = alp_pos.symbol.clone();
-            let pos = crate::domain::portfolio::Position {
+            let pos = crate::domain::trading::portfolio::Position {
                 symbol: alp_symbol.clone(),
                 quantity: alp_pos.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO),
                 average_price: alp_pos
@@ -684,7 +684,7 @@ impl ExecutionService for AlpacaExecutionService {
                 side,
                 price,
                 quantity: qty,
-                order_type: crate::domain::types::OrderType::Market, // Default to Market for history, or infer if possible
+                order_type: crate::domain::trading::types::OrderType::Market, // Default to Market for history, or infer if possible
                 timestamp: created_at,
             });
         }

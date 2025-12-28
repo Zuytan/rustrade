@@ -1,5 +1,5 @@
-use crate::domain::portfolio::Portfolio;
-use crate::domain::types::{MarketEvent, Order};
+use crate::domain::trading::portfolio::Portfolio;
+use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::mpsc::Receiver;
@@ -19,7 +19,7 @@ pub trait MarketDataService: Send + Sync {
         start: chrono::DateTime<chrono::Utc>,
         end: chrono::DateTime<chrono::Utc>,
         timeframe: &str,
-    ) -> Result<Vec<crate::domain::types::Candle>>;
+    ) -> Result<Vec<crate::domain::trading::types::Candle>>;
 }
 
 #[async_trait]
@@ -32,7 +32,7 @@ pub trait ExecutionService: Send + Sync {
 
 #[async_trait]
 pub trait FeatureEngineeringService: Send + Sync {
-    fn update(&mut self, price: f64) -> crate::domain::types::FeatureSet;
+    fn update(&mut self, price: f64) -> crate::domain::trading::types::FeatureSet;
 }
 
 #[async_trait]
@@ -52,6 +52,6 @@ pub trait ExpectancyEvaluator: Send + Sync {
         &self,
         symbol: &str,
         price: rust_decimal::Decimal,
-        regime: &crate::domain::market_regime::MarketRegime,
+        regime: &crate::domain::market::market_regime::MarketRegime,
     ) -> Expectancy;
 }

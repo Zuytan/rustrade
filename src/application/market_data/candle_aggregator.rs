@@ -1,5 +1,5 @@
 use crate::domain::repositories::CandleRepository;
-use crate::domain::types::Candle;
+use crate::domain::trading::types::Candle;
 use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use rust_decimal::Decimal;
 use std::collections::HashMap;

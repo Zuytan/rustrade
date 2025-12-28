@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
-use rustrade::application::optimizer::{GridSearchOptimizer, ParameterGrid};
+use rustrade::application::optimization::optimizer::{GridSearchOptimizer, ParameterGrid};
 use rustrade::config::StrategyMode;
-use rustrade::domain::portfolio::Portfolio;
+use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
 use std::env;

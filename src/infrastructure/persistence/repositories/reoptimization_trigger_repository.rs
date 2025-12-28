@@ -1,4 +1,4 @@
-use crate::domain::reoptimization_trigger::{ReoptimizationTrigger, TriggerReason};
+use crate::domain::optimization::reoptimization_trigger::{ReoptimizationTrigger, TriggerReason};
 use crate::domain::repositories::ReoptimizationTriggerRepository;
 use anyhow::{Context, Result};
 use async_trait::async_trait;

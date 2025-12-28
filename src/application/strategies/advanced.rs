@@ -1,6 +1,6 @@
 use super::dual_sma::DualSMAStrategy;
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
-use crate::domain::types::OrderSide;
+use crate::domain::trading::types::OrderSide;
 
 /// Advanced Triple Filter Strategy
 ///

@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use rustrade::application::system::Application;
 use rustrade::config::{Config, Mode};
 use rustrade::domain::ports::ExecutionService;
-use rustrade::domain::types::{MarketEvent, OrderSide};
+use rustrade::domain::trading::types::{MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::time::Duration;
 use tokio::time::sleep;
@@ -109,7 +109,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
 
     // We can just instantiate the services locally, then construct `Application` struct manually!
     let portfolio = std::sync::Arc::new(tokio::sync::RwLock::new(
-        rustrade::domain::portfolio::Portfolio::new(),
+        rustrade::domain::trading::portfolio::Portfolio::new(),
     ));
     portfolio.write().await.cash = config.initial_cash;
 

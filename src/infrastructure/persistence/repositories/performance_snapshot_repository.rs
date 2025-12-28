@@ -1,5 +1,5 @@
-use crate::domain::market_regime::MarketRegimeType;
-use crate::domain::performance_snapshot::PerformanceSnapshot;
+use crate::domain::market::market_regime::MarketRegimeType;
+use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
 use crate::domain::repositories::PerformanceSnapshotRepository;
 use anyhow::{Context, Result};
 use async_trait::async_trait;

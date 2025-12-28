@@ -1,9 +1,9 @@
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
-use rustrade::application::analyst::AnalystConfig;
-use rustrade::application::simulator::Simulator;
-use rustrade::domain::portfolio::Portfolio;
+use rustrade::application::agents::analyst::AnalystConfig;
+use rustrade::application::optimization::simulator::Simulator;
+use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
 use std::sync::Arc;
@@ -80,6 +80,11 @@ async fn test_backtest_strategy_on_historical_data() {
         slippage_pct: 0.0,
         commission_per_share: 0.0,
         max_position_size_pct: 0.1,
+        bb_period: 20,
+        bb_std_dev: 2.0,
+        macd_fast: 12,
+        macd_slow: 26,
+        macd_signal: 9,
     };
 
     let simulator = Simulator::new(market_service, execution_service, config);

@@ -1,7 +1,7 @@
-use crate::domain::portfolio::{Portfolio, Position};
+use crate::domain::trading::portfolio::{Portfolio, Position};
 use crate::domain::ports::ExecutionService;
 use crate::domain::repositories::TradeRepository;
-use crate::domain::types::{Order, OrderSide};
+use crate::domain::trading::types::{Order, OrderSide};
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
@@ -148,7 +148,7 @@ mod tests {
             side: OrderSide::Buy,
             price: Decimal::from(100),
             quantity: Decimal::from(2),
-            order_type: crate::domain::types::OrderType::Limit,
+            order_type: crate::domain::trading::types::OrderType::Limit,
             timestamp: 0,
         };
         tx.send(order).await.unwrap();
@@ -177,7 +177,7 @@ mod tests {
             side: OrderSide::Buy,
             price: Decimal::from(100),
             quantity: Decimal::from(2),
-            order_type: crate::domain::types::OrderType::Limit,
+            order_type: crate::domain::trading::types::OrderType::Limit,
             timestamp: 0,
         };
         tx.send(order).await.unwrap();

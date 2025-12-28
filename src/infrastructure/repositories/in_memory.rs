@@ -19,9 +19,9 @@
 //! For production persistence, implement `TradeRepository` and
 //! `PortfolioRepository` with PostgreSQL or similar.
 
-use crate::domain::portfolio::Portfolio;
+use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::repositories::{PortfolioRepository, TradeRepository};
-use crate::domain::types::Order;
+use crate::domain::trading::types::Order;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -131,7 +131,7 @@ impl PortfolioRepository for InMemoryPortfolioRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::OrderSide;
+    use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
 
     fn create_test_order(symbol: &str, side: OrderSide) -> Order {
@@ -141,7 +141,7 @@ mod tests {
             side,
             quantity: dec!(10),
             price: dec!(100),
-            order_type: crate::domain::types::OrderType::Market,
+            order_type: crate::domain::trading::types::OrderType::Market,
             timestamp: Utc::now().timestamp(),
         }
     }

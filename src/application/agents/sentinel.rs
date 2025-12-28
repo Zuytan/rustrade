@@ -1,5 +1,5 @@
 use crate::domain::ports::MarketDataService;
-use crate::domain::types::MarketEvent;
+use crate::domain::trading::types::MarketEvent;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info, warn};
@@ -103,7 +103,7 @@ impl Sentinel {
 mod tests {
     use super::*;
     use crate::domain::ports::MarketDataService;
-    use crate::domain::types::MarketEvent;
+    use crate::domain::trading::types::MarketEvent;
     use anyhow::Result;
     use async_trait::async_trait;
     use rust_decimal::Decimal;
@@ -140,7 +140,7 @@ mod tests {
             _start: chrono::DateTime<chrono::Utc>,
             _end: chrono::DateTime<chrono::Utc>,
             _timeframe: &str,
-        ) -> Result<Vec<crate::domain::types::Candle>> {
+        ) -> Result<Vec<crate::domain::trading::types::Candle>> {
             Ok(vec![])
         }
     }

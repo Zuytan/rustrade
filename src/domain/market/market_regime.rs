@@ -1,4 +1,4 @@
-use crate::domain::types::Candle;
+use crate::domain::trading::types::Candle;
 use anyhow::Result;
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -195,7 +195,7 @@ impl MarketRegimeDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::Candle;
+    use crate::domain::trading::types::Candle;
     use chrono::Utc;
     use rust_decimal::Decimal;
 

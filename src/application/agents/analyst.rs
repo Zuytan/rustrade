@@ -1,15 +1,15 @@
-use crate::application::expectancy_evaluator::MarketExpectancyEvaluator;
-use crate::application::feature_engineering_service::TechnicalFeatureEngineeringService;
-use crate::application::position_manager::PositionManager;
-use crate::application::signal_generator::SignalGenerator;
+use crate::application::optimization::expectancy_evaluator::MarketExpectancyEvaluator;
+use crate::application::monitoring::feature_engineering_service::TechnicalFeatureEngineeringService;
+use crate::application::risk_management::position_manager::PositionManager;
+use crate::application::market_data::signal_generator::SignalGenerator;
 use crate::application::strategies::{TradingStrategy, StrategyFactory};
-use crate::application::candle_aggregator::CandleAggregator;
-use crate::domain::market_regime::{MarketRegime, MarketRegimeDetector};
+use crate::application::market_data::candle_aggregator::CandleAggregator;
+use crate::domain::market::market_regime::{MarketRegime, MarketRegimeDetector};
 use crate::domain::ports::{ExecutionService, ExpectancyEvaluator, FeatureEngineeringService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
-use crate::domain::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
-use crate::application::trailing_stops::StopState;
-use crate::domain::fees::{FeeConfig, FeeModel, StandardFeeModel};
+use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
+use crate::application::risk_management::trailing_stops::StopState;
+use crate::domain::trading::fees::{FeeConfig, FeeModel, StandardFeeModel};
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -56,7 +56,7 @@ pub struct AnalystConfig {
     pub sma_threshold: f64,
     pub order_cooldown_seconds: u64,
     pub risk_per_trade_percent: f64,
-    pub strategy_mode: crate::domain::strategy_config::StrategyMode,
+    pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub trend_sma_period: usize,
     pub rsi_period: usize,
     pub macd_fast_period: usize,
@@ -186,7 +186,7 @@ impl Analyst {
         }
     }
 
-    async fn process_candle(&mut self, candle: crate::domain::types::Candle) {
+    async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
         let price = candle.close;
         let timestamp = candle.timestamp * 1000;
@@ -335,8 +335,8 @@ impl Analyst {
 
                   info!("Analyst: Sending Proposal {:?} for {} (EV: {:.2}, R/R: {:.2})", side, symbol, expectancy_value, risk_ratio);
                   let order_type = match side {
-                      OrderSide::Buy => crate::domain::types::OrderType::Limit,
-                      OrderSide::Sell => crate::domain::types::OrderType::Market,
+                      OrderSide::Buy => crate::domain::trading::types::OrderType::Limit,
+                      OrderSide::Sell => crate::domain::trading::types::OrderType::Market,
                   };
 
                   let proposal = TradeProposal {
@@ -489,7 +489,7 @@ impl Analyst {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::types::Candle;
+    use crate::domain::trading::types::Candle;
     use std::sync::Once;
     use tokio::sync::mpsc;
     use tokio::sync::RwLock;
@@ -511,7 +511,7 @@ mod tests {
         let (market_tx, market_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
         
-        use crate::domain::portfolio::Portfolio;
+        use crate::domain::trading::portfolio::Portfolio;
         let mut portfolio = Portfolio::new();
         portfolio.cash = Decimal::from(100000);
         let portfolio_lock = Arc::new(RwLock::new(portfolio));
@@ -527,7 +527,7 @@ mod tests {
             sma_threshold: 0.0,
             order_cooldown_seconds: 0,
             risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::strategy_config::StrategyMode::Standard,
+            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
             trend_sma_period: 100,
             rsi_period: 14,
             macd_fast_period: 12,
@@ -561,7 +561,7 @@ mod tests {
             analyst.run().await;
         });
 
-        use crate::domain::types::Candle;
+        use crate::domain::trading::types::Candle;
 
         // Dual SMA (2, 3)
         let prices = [100.0, 100.0, 100.0, 90.0, 110.0, 120.0];
@@ -591,7 +591,7 @@ mod tests {
         let (market_tx, market_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
         
-        use crate::domain::portfolio::Portfolio;
+        use crate::domain::trading::portfolio::Portfolio;
         let mut portfolio = Portfolio::new();
         portfolio.cash = Decimal::from(100000);
         let portfolio_lock = Arc::new(RwLock::new(portfolio));
@@ -607,7 +607,7 @@ mod tests {
             sma_threshold: 0.0,
             order_cooldown_seconds: 0,
             risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::strategy_config::StrategyMode::Standard,
+            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
             trend_sma_period: 100,
             rsi_period: 14,
             macd_fast_period: 12,
@@ -641,7 +641,7 @@ mod tests {
             analyst.run().await;
         });
 
-        use crate::domain::types::Candle;
+        use crate::domain::trading::types::Candle;
 
         // Simulating a Death Cross without holding the asset
         let prices = [100.0, 100.0, 100.0, 120.0, 70.0];
@@ -680,10 +680,10 @@ mod tests {
         let (market_tx, market_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
-        let mut portfolio = crate::domain::portfolio::Portfolio::new();
+        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
         portfolio.cash = Decimal::new(100000, 0);
         // Pre-load position so Sell matches verify logic
-        let pos = crate::domain::portfolio::Position {
+        let pos = crate::domain::trading::portfolio::Position {
             symbol: "BTC".to_string(),
             quantity: Decimal::from(10),
             average_price: Decimal::from(100),
@@ -703,7 +703,7 @@ mod tests {
             sma_threshold: 0.0,
             order_cooldown_seconds: 0,
             risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::strategy_config::StrategyMode::Standard,
+            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
             trend_sma_period: 100,
             rsi_period: 14,
             macd_fast_period: 12,
@@ -775,7 +775,7 @@ mod tests {
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
         // 100k account
-        let mut portfolio = crate::domain::portfolio::Portfolio::new();
+        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
         portfolio.cash = Decimal::new(100000, 0);
         let portfolio_lock = Arc::new(RwLock::new(portfolio));
         let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
@@ -791,7 +791,7 @@ mod tests {
             sma_threshold: 0.0,
             order_cooldown_seconds: 0,
             risk_per_trade_percent: 0.02,
-            strategy_mode: crate::domain::strategy_config::StrategyMode::Standard,
+            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
             trend_sma_period: 100,
             rsi_period: 14,
             macd_fast_period: 12,
@@ -860,11 +860,11 @@ mod tests {
         let (market_tx, market_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
-        let mut portfolio = crate::domain::portfolio::Portfolio::new();
+        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
         // Give explicit ETH position so Sell works
         portfolio.positions.insert(
             "ETH".to_string(),
-            crate::domain::portfolio::Position {
+            crate::domain::trading::portfolio::Position {
                 symbol: "ETH".to_string(),
                 quantity: Decimal::from(10),
                 average_price: Decimal::from(100),
@@ -885,7 +885,7 @@ mod tests {
             sma_threshold: 0.0,
             order_cooldown_seconds: 0,
             risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::strategy_config::StrategyMode::Standard,
+            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
             trend_sma_period: 100,
             rsi_period: 14,
             macd_fast_period: 12,
@@ -978,7 +978,7 @@ mod tests {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-        let portfolio = Arc::new(RwLock::new(crate::domain::portfolio::Portfolio::new()));
+        let portfolio = Arc::new(RwLock::new(crate::domain::trading::portfolio::Portfolio::new()));
         let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
             portfolio,
         ));
@@ -992,7 +992,7 @@ mod tests {
             sma_threshold: 0.0,
             order_cooldown_seconds: 0,
             risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::strategy_config::StrategyMode::Advanced,
+            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Advanced,
             trend_sma_period: 10, // Long trend
             rsi_period: 14,
             macd_fast_period: 12,
@@ -1082,7 +1082,7 @@ mod tests {
         let (market_tx, market_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
-        use crate::domain::portfolio::Portfolio;
+        use crate::domain::trading::portfolio::Portfolio;
         // Start with empty portfolio - this is the production issue scenario
         let mut portfolio = Portfolio::new();
         portfolio.cash = Decimal::from(100000); // $100,000 starting cash
@@ -1100,7 +1100,7 @@ mod tests {
             sma_threshold: 0.0005,
             order_cooldown_seconds: 0,
             risk_per_trade_percent: 0.01, // 1% of equity per trade
-            strategy_mode: crate::domain::strategy_config::StrategyMode::Dynamic,
+            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Dynamic,
             trend_sma_period: 200,
             rsi_period: 14,
             macd_fast_period: 12,

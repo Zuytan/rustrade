@@ -5,23 +5,29 @@ use tracing::{info, error};
 use chrono::Timelike;
 
 use crate::application::{
-    analyst::{Analyst, AnalystConfig},
-    executor::Executor,
-    order_throttler::OrderThrottler,
-    risk_manager::RiskManager,
-    scanner::MarketScanner,
-    sentinel::Sentinel,
+    agents::{
+        analyst::{Analyst, AnalystConfig},
+        executor::Executor,
+        scanner::MarketScanner,
+        sentinel::Sentinel,
+    },
+    risk_management::{
+        order_throttler::OrderThrottler,
+        risk_manager::RiskManager,
+    },
     strategies::*,
-    adaptive_optimization_service::AdaptiveOptimizationService,
-    performance_monitoring_service::PerformanceMonitoringService,
-    optimizer::{GridSearchOptimizer, ParameterGrid},
+    optimization::{
+        adaptive_optimization_service::AdaptiveOptimizationService,
+        optimizer::{GridSearchOptimizer, ParameterGrid},
+    },
+    monitoring::performance_monitoring_service::PerformanceMonitoringService,
 };
 use crate::config::{Config, Mode};
-use crate::domain::portfolio::Portfolio;
+use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::application::strategies::TradingStrategy;
 use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
-use crate::domain::performance_evaluator::{PerformanceEvaluator, EvaluationThresholds};
+use crate::domain::performance::performance_evaluator::{PerformanceEvaluator, EvaluationThresholds};
 use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService, AlpacaSectorProvider};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::persistence::database::Database;
@@ -222,19 +228,19 @@ impl Application {
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
-            crate::domain::strategy_config::StrategyMode::Standard => Arc::new(DualSMAStrategy::new(
+            crate::domain::market::strategy_config::StrategyMode::Standard => Arc::new(DualSMAStrategy::new(
                 self.config.fast_sma_period,
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
             )),
-            crate::domain::strategy_config::StrategyMode::Advanced => Arc::new(AdvancedTripleFilterStrategy::new(
+            crate::domain::market::strategy_config::StrategyMode::Advanced => Arc::new(AdvancedTripleFilterStrategy::new(
                 self.config.fast_sma_period,
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
                 self.config.trend_sma_period,
                 self.config.rsi_threshold,
             )),
-            crate::domain::strategy_config::StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(
+            crate::domain::market::strategy_config::StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(
                 self.config.fast_sma_period,
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
@@ -242,13 +248,13 @@ impl Application {
                 self.config.rsi_threshold,
                 self.config.trend_divergence_threshold,
             )),
-            crate::domain::strategy_config::StrategyMode::TrendRiding => Arc::new(TrendRidingStrategy::new(
+            crate::domain::market::strategy_config::StrategyMode::TrendRiding => Arc::new(TrendRidingStrategy::new(
                 self.config.fast_sma_period,
                 self.config.slow_sma_period,
                 self.config.sma_threshold,
                 self.config.trend_riding_exit_buffer_pct,
             )),
-            crate::domain::strategy_config::StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
+            crate::domain::market::strategy_config::StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
                 self.config.mean_reversion_bb_period,
                 self.config.mean_reversion_rsi_exit,
             )),
@@ -273,7 +279,7 @@ impl Application {
             Mode::Mock => None,
         };
 
-        let risk_config = crate::application::risk_manager::RiskConfig {
+        let risk_config = crate::application::risk_management::risk_manager::RiskConfig {
             max_position_size_pct: self.config.max_position_size_pct,
             max_daily_loss_pct: self.config.max_daily_loss_pct,
             max_drawdown_pct: self.config.max_drawdown_pct,

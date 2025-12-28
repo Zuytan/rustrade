@@ -1,5 +1,5 @@
-use crate::application::trailing_stops::StopState;
-use crate::domain::types::OrderSide;
+use crate::application::risk_management::trailing_stops::StopState;
+use crate::domain::trading::types::OrderSide;
 use tracing::info;
 
 pub struct PositionManager {

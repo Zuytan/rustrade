@@ -1,5 +1,5 @@
 use crate::application::strategies::{AnalysisContext, TradingStrategy};
-use crate::domain::types::{FeatureSet, OrderSide};
+use crate::domain::trading::types::{FeatureSet, OrderSide};
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use tracing::info;

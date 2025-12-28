@@ -1,5 +1,5 @@
 use crate::domain::repositories::{CandleRepository, TradeRepository};
-use crate::domain::types::{Candle, Order, OrderSide};
+use crate::domain::trading::types::{Candle, Order, OrderSide};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
@@ -103,10 +103,10 @@ impl SqliteOrderRepository {
             // Handle order_type with fallback for old records
             let type_str: String = row.try_get("order_type").unwrap_or_else(|_| "MARKET".to_string());
             let order_type = match type_str.to_uppercase().as_str() {
-                "LIMIT" => crate::domain::types::OrderType::Limit,
-                "STOP" => crate::domain::types::OrderType::Stop,
-                "STOP_LIMIT" => crate::domain::types::OrderType::StopLimit,
-                _ => crate::domain::types::OrderType::Market,
+                "LIMIT" => crate::domain::trading::types::OrderType::Limit,
+                "STOP" => crate::domain::trading::types::OrderType::Stop,
+                "STOP_LIMIT" => crate::domain::trading::types::OrderType::StopLimit,
+                _ => crate::domain::trading::types::OrderType::Market,
             };
 
             orders.push(Order {

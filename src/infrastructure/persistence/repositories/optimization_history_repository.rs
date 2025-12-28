@@ -1,5 +1,5 @@
-use crate::domain::market_regime::MarketRegimeType;
-use crate::domain::optimization_history::OptimizationHistory;
+use crate::domain::market::market_regime::MarketRegimeType;
+use crate::domain::optimization::optimization_history::OptimizationHistory;
 use crate::domain::repositories::OptimizationHistoryRepository;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
