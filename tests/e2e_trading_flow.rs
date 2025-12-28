@@ -65,6 +65,8 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         mean_reversion_rsi_exit: 50.0,
         mean_reversion_bb_period: 20,
         risk_appetite: None,
+        max_sector_exposure_pct: 0.3,
+        sector_map: std::collections::HashMap::new(),
     });
 
     config.mode = Mode::Mock;

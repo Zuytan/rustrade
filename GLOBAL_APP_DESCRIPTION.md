@@ -15,6 +15,25 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
 
 **Configuration** : Définir `RISK_APPETITE_SCORE=5` dans `.env`. Si non défini, les paramètres individuels sont utilisés (rétrocompatibilité).
 
+## Durcissement Financier (Financial Hardening)
+
+Pour garantir la viabilité économique des stratégies, le bot intègre désormais des mécanismes avancés de protection du capital :
+
+### 1. Exécution Intelligente (Smart Execution)
+- **Limit Orders pour les Entrées** : Contrairement aux ordres Market qui garantissent l'exécution mais pas le prix, le bot utilise désormais des ordres **Limit** pour toutes les entrées en position. Cela évite le "Slippage" (glissement) excessif lors de pics de volatilité.
+- **Market Orders pour les Sorties** : Les Stop-Loss et Take-Profit restent exécutés au marché pour garantir la sortie de position, la priorité étant la liquidation rapide plutôt que le prix parfait en cas de danger.
+
+### 2. Trading "Cost-Aware" (Conscience des Coûts)
+- Avant chaque trade, l'Analyste calcule une **Estimation des Coûts** incluant :
+    - **Commissions Broker** (ex: $0.005/share).
+    - **Slippage Estimé** (ex: 0.1%).
+    - **Spread** (écart achat-vente).
+- **Filtre de Profitabilité** : Un signal d'achat est rejeté si l'Espérance de Gain n'est pas au moins **2x supérieure** aux coûts estimés (Break-Even Ratio > 2.0).
+
+### 3. Diversification Sectorielle
+- **Gestion des Risques** : Le Risk Manager surveille l'exposition par secteur (Tech, Energy, Crypto, etc.).
+- **Plafond d'Exposition** : Si un secteur dépasse `MAX_SECTOR_EXPOSURE_PCT` (ex: 30% du portefeuille), tout nouvel achat dans ce secteur est bloqué, forçant la diversification vers d'autres opportunités.
+
 ## Architecture des Agents
 
 ### 1. L'Agent "Sentinel" (Data Ingestion)
@@ -42,10 +61,15 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
     - **Advanced Analyst** : Stratégie "Triple Confirmation" (Crossover + Trend + RSI + MACD) pour ne choisir que les meilleurs moments.
     - **Trend Riding** : Stratégie de suivi de tendance long-terme. Achète sur Golden Cross et maintient la position tant que le prix reste au-dessus de la tendance (avec buffer), ignorant les fluctuations mineures pour capturer les grands mouvements. 
     - **Long-Only Safety**: Par sécurité, l'Analyste vérifie systématiquement que le portefeuille détient l'actif avant d'émettre un signal de Vente, empêchant tout Short Selling involontaire.
+    - **Smart Execution**: Utilisation d'ordres `Limit` pour maîtriser les coûts à l'entrée.
 
 ### 3. Agent "Risk Manager" (Safety Gate)
 - **Rôle**: Contrôleur de conformité financier.
-- **Responsabilités**: Validation des propositions de trade via l' `ExecutionService`. Gère la normalisation des symboles (ex: `BTC/USD` vs `BTCUSD`) et ajuste automatiquement les quantités de vente en cas de positions fractionnaires. **Protection PDT (Non-Pattern Day Trader)** : Empêche la revente d'un actif acheté le jour même si l'option est activée. **Valuation Temps Réel** : Surveille activement la valeur du portefeuille (Polling 60s) pour déclencher les Circuit Breakers (Max Drawdown/Daily Loss) même en l'absence de nouvelle proposition de trade (Protection contre les Market Crashes).
+- **Responsabilités**: 
+    - **Validation des Risques**: Vérifie la taille de position, le drawdown max, et la perte journalière.
+    - **Contrôle Sectoriel**: Bloque les transactions si l'exposition à un secteur dépasse le seuil défini (`MAX_SECTOR_EXPOSURE_PCT`).
+    - **Protection PDT**: Empêche le Day Trading pour les petits comptes.
+    - **Valuation Temps Réel**: Surveillance continue de l'équité pour déclenchement immédiat des Circuit Breakers.
 
 ### 4. L'Agent "Order Throttler" (Rate Limiting)
 - **Rôle**: Garde-fou technique.

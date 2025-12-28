@@ -265,6 +265,7 @@ pub struct AnalystConfig {
     pub mean_reversion_rsi_exit: f64,
     pub mean_reversion_bb_period: usize,
     pub slippage_pct: f64,
+    pub commission_per_share: f64, // Added
     pub max_position_size_pct: f64,
 }
 
@@ -292,10 +293,13 @@ impl From<crate::config::Config> for AnalystConfig {
             mean_reversion_rsi_exit: config.mean_reversion_rsi_exit,
             mean_reversion_bb_period: config.mean_reversion_bb_period,
             slippage_pct: config.slippage_pct,
+            commission_per_share: config.commission_per_share, // Added
             max_position_size_pct: config.max_position_size_pct,
         }
     }
 }
+
+use crate::domain::fees::{FeeConfig, FeeModel, StandardFeeModel};
 
 pub struct Analyst {
     market_rx: Receiver<MarketEvent>,
@@ -306,6 +310,7 @@ pub struct Analyst {
     // Per-symbol states
     symbol_states: HashMap<String, SymbolContext>,
     candle_aggregator: CandleAggregator,
+    fee_model: Box<dyn FeeModel>, // Added
 }
 
 impl Analyst {
@@ -317,6 +322,14 @@ impl Analyst {
         config: AnalystConfig,
         repository: Option<Arc<dyn CandleRepository>>,
     ) -> Self {
+        // Initialize Fee Model
+        let fee_config = FeeConfig {
+            maker_fee: Decimal::from_f64_retain(0.001).unwrap(), // Default
+            taker_fee: Decimal::from_f64_retain(0.001).unwrap(), // Default
+            slippage_pct: Decimal::from_f64_retain(config.slippage_pct).unwrap(),
+            commission_fixed: Decimal::from_f64_retain(config.commission_per_share).unwrap(),
+        };
+
         Self {
             market_rx,
             proposal_tx,
@@ -325,6 +338,7 @@ impl Analyst {
             config,
             symbol_states: HashMap::new(),
             candle_aggregator: CandleAggregator::new(repository),
+            fee_model: Box::new(StandardFeeModel::new(fee_config)),
         }
     }
 
@@ -454,13 +468,45 @@ impl Analyst {
              let quantity = Self::calculate_trade_quantity(&self.config, &self.execution_service, &symbol, price).await;
              
              if quantity > Decimal::ZERO {
+                 // Axe 2: Cost-Aware Logic
+                 let estimated_cost = self.fee_model.estimate_total_cost(price, quantity);
+                 
+                 // Estimate Profit: Use ATR * 2.0 as expected move (approximate)
+                 // If ATR is not available, assume 1% move?
+                 let expected_move = if let Some(atr) = context.last_atr {
+                      // Use ATR if available (volatility based)
+                      Decimal::from_f64_retain(atr * 2.0).unwrap_or(price * Decimal::from_f64_retain(0.01).unwrap())
+                 } else {
+                      // Fallback to 1% move
+                      price * Decimal::from_f64_retain(0.01).unwrap()
+                 };
+                 
+                 let expected_profit = expected_move * quantity;
+                 
+                 // Threshold: Profit must be > 2x Cost
+                 let cost_threshold = estimated_cost * Decimal::from(2);
+                 
+                 if expected_profit < cost_threshold {
+                     info!(
+                         "Analyst: Signal IGNORED for {} - Low Expectancy. Cost=${:.4}, ExpProfit=${:.4} (ATR-based)", 
+                         symbol, estimated_cost, expected_profit
+                     );
+                     return;
+                 }
+
                  info!("Analyst: Sending Proposal {:?} for {}", side, symbol);
                  
+                 let order_type = match side {
+                     OrderSide::Buy => crate::domain::types::OrderType::Limit,
+                     OrderSide::Sell => crate::domain::types::OrderType::Market,
+                 };
+
                  let proposal = TradeProposal {
                      symbol: symbol.clone(),
                      side,
                      price,
                      quantity,
+                     order_type,
                      reason: format!("Strategy Signal (Context Refactored)"),
                      timestamp,
                  };
@@ -640,6 +686,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            commission_per_share: 0.0,
             max_position_size_pct: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
@@ -712,6 +759,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            commission_per_share: 0.0,
             max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
@@ -804,6 +852,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            commission_per_share: 0.0,
             max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
@@ -886,6 +935,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            commission_per_share: 0.0,
             max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
@@ -974,6 +1024,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            commission_per_share: 0.0,
             max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
@@ -1072,6 +1123,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.0,
+            commission_per_share: 0.0,
             max_position_size_pct: 0.1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
@@ -1173,6 +1225,7 @@ mod tests {
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
             slippage_pct: 0.001,
+            commission_per_share: 0.0,
             max_position_size_pct: 0.1, // 10% maximum position size
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(

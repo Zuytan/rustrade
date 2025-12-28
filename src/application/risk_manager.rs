@@ -16,6 +16,8 @@ pub struct RiskConfig {
     pub max_drawdown_pct: f64,      // Max % drawdown from high water mark (e.g., 0.10 = 10%)
     pub consecutive_loss_limit: usize, // Max consecutive losing trades before halt
     pub valuation_interval_seconds: u64, // Interval for portfolio valuation check
+    pub max_sector_exposure_pct: f64, // Max exposure per sector
+    pub sector_map: HashMap<String, String>, // Symbol -> Sector mapping
 }
 
 impl Default for RiskConfig {
@@ -26,6 +28,8 @@ impl Default for RiskConfig {
             max_drawdown_pct: 0.10,      // 10% max drawdown
             consecutive_loss_limit: 3,   // 3 consecutive losses
             valuation_interval_seconds: 60, // Default 60 seconds
+            max_sector_exposure_pct: 0.30, // 30% max sector exposure
+            sector_map: HashMap::new(),
         }
     }
 }
@@ -162,6 +166,69 @@ impl RiskManager {
         true
     }
 
+    /// Validate sector exposure limits
+    async fn validate_sector_exposure(
+        &self,
+        proposal: &TradeProposal,
+        portfolio: &crate::domain::portfolio::Portfolio,
+        current_equity: Decimal,
+    ) -> bool {
+        if current_equity <= Decimal::ZERO {
+            return true;
+        }
+
+        // Identify Sector
+        let sector = self
+            .risk_config
+            .sector_map
+            .get(&proposal.symbol)
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        // Skip check if sector is Unknown (or handle as 'Unclassified' quota?)
+        if sector == "Unknown" {
+            // For now, allow unknown sectors but maybe warn?
+            // Or treat implementation as "Symbol not in map -> check default limit?"
+            // Let's assume user configured meaningful sectors.
+            return true;
+        }
+
+        // Calculate Current Sector Exposure
+        let mut current_sector_value = Decimal::ZERO;
+
+        for (sym, position) in &portfolio.positions {
+            if let Some(s) = self.risk_config.sector_map.get(sym) {
+                if s == &sector {
+                    // Use current price if available, else average price (approximation)
+                    let price = self.current_prices.get(sym).cloned().unwrap_or(position.average_price);
+                    current_sector_value += price * position.quantity;
+                }
+            }
+        }
+
+        // Add Proposed Trade Value
+        let trade_value = proposal.price * proposal.quantity;
+        let new_sector_value = current_sector_value + trade_value;
+
+        // Calculate Percentage
+        let new_sector_pct = (new_sector_value / current_equity)
+            .to_f64()
+            .unwrap_or(0.0);
+
+        if new_sector_pct > self.risk_config.max_sector_exposure_pct {
+            warn!(
+                "RiskManager: Sector exposure limit exceeded for {}. Sector: {}, New Exposure: {:.2}% (Limit: {:.2}%)",
+                proposal.symbol,
+                sector,
+                new_sector_pct * 100.0,
+                self.risk_config.max_sector_exposure_pct * 100.0
+            );
+            return false;
+        }
+
+        true
+    }
+
     /// Fetch latest prices for all held positions and update valuation
     async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // 1. Get Portfolio to know what we hold
@@ -263,6 +330,19 @@ impl RiskManager {
                     {
                         warn!(
                             "RiskManager: Rejecting {:?} order for {} - Position size limit",
+                            proposal.side, proposal.symbol
+                        );
+                        continue;
+                    }
+
+                    // Validate Sector Exposure for buy orders
+                    if matches!(proposal.side, OrderSide::Buy)
+                        && !self
+                            .validate_sector_exposure(&proposal, &portfolio, current_equity)
+                            .await
+                    {
+                         warn!(
+                            "RiskManager: Rejecting {:?} order for {} - Sector exposure limit",
                             proposal.side, proposal.symbol
                         );
                         continue;
@@ -381,6 +461,7 @@ impl RiskManager {
                             side: proposal.side,
                             price: proposal.price,
                             quantity: final_qty,
+                            order_type: proposal.order_type,
                             timestamp: chrono::Utc::now().timestamp_millis(),
                         };
 
@@ -399,6 +480,7 @@ impl RiskManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::types::{OrderSide, OrderType};
     use crate::domain::portfolio::{Portfolio, Position};
     use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
     use chrono::Utc;
@@ -511,6 +593,7 @@ mod tests {
             side: OrderSide::Buy, // Buy more?
             price: Decimal::from(80),
             quantity: Decimal::from(10),
+            order_type: OrderType::Market,
             reason: "Buy the dip".to_string(),
             timestamp: 0,
         };
@@ -552,6 +635,7 @@ mod tests {
             side: OrderSide::Buy,
             price: Decimal::from(100),
             quantity: Decimal::from(1),
+            order_type: OrderType::Market,
             reason: "Test".to_string(),
             timestamp: 0,
         };
@@ -586,6 +670,7 @@ mod tests {
             side: OrderSide::Buy,
             price: Decimal::from(100),
             quantity: Decimal::from(1),
+            order_type: OrderType::Market,
             reason: "Test".to_string(),
             timestamp: 0,
         };
@@ -628,6 +713,7 @@ mod tests {
             side: OrderSide::Sell,
             price: Decimal::from(100),
             quantity: Decimal::from(5), // Sell 5
+            order_type: OrderType::Market,
             reason: "Test".to_string(),
             timestamp: 0,
         };
@@ -661,6 +747,7 @@ mod tests {
                 side: OrderSide::Buy,
                 price: Decimal::from(50),
                 quantity: Decimal::from(10),
+                order_type: OrderType::Limit,
                 timestamp: Utc::now().timestamp_millis(),
             })
             .await
@@ -683,6 +770,7 @@ mod tests {
             side: OrderSide::Sell,
             price: Decimal::from(60),
             quantity: Decimal::from(5),
+            order_type: OrderType::Market,
             reason: "Test PDT".to_string(),
             timestamp: Utc::now().timestamp_millis(),
         };
@@ -691,5 +779,68 @@ mod tests {
         // Should be REJECTED
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(order_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_sector_exposure_limit() {
+        let (proposal_tx, proposal_rx) = mpsc::channel(1);
+        let (order_tx, mut order_rx) = mpsc::channel(1);
+
+        // Portfolio: $100,000 Cash
+        // Position: AAPL (Tech) $25,000
+        // Total Equity: $125,000. Tech Exposure: 25,000 / 125,000 = 20%
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(100000);
+        port.positions.insert(
+            "AAPL".to_string(),
+            Position {
+                symbol: "AAPL".to_string(),
+                quantity: Decimal::from(250), // 250 * 100 = 25,000
+                average_price: Decimal::from(100),
+            },
+        );
+        let portfolio = Arc::new(RwLock::new(port));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let market_service = Arc::new(MockMarketDataService::new());
+
+        // Config: Max Sector Exposure 30%
+        let mut sector_map = HashMap::new();
+        sector_map.insert("AAPL".to_string(), "Tech".to_string());
+        sector_map.insert("MSFT".to_string(), "Tech".to_string());
+
+        let config = RiskConfig {
+            max_sector_exposure_pct: 0.30,
+            sector_map,
+            ..RiskConfig::default()
+        };
+
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            order_tx,
+            exec_service,
+            market_service,
+            false,
+            config,
+        );
+        tokio::spawn(async move { rm.run().await });
+
+        // Proposal: Buy MSFT (Tech) $20,000
+        // New Tech Exposure: $25,000 (AAPL) + $20,000 (MSFT) = $45,000
+        // New Equity (approx): $125,000
+        // Pct: 45,000 / 125,000 = 36% > 30% -> REJECT
+        let proposal = TradeProposal {
+            symbol: "MSFT".to_string(),
+            side: OrderSide::Buy,
+            price: Decimal::from(200),
+            quantity: Decimal::from(100), // 100 * 200 = 20,000
+            reason: "Sector Test".to_string(),
+            timestamp: 0,
+            order_type: OrderType::Market,
+        };
+        proposal_tx.send(proposal).await.unwrap();
+
+        // Should be REJECTED
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(order_rx.try_recv().is_err(), "Should reject due to sector exposure");
     }
 }

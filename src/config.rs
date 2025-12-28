@@ -82,20 +82,23 @@ pub struct Config {
     pub atr_period: usize,
     // Risk Management
     pub max_position_size_pct: f64,
+    pub max_sector_exposure_pct: f64, // Added
     pub max_daily_loss_pct: f64,
     pub max_drawdown_pct: f64,
     pub consecutive_loss_limit: usize,
     // Transaction Costs
     pub slippage_pct: f64,
     pub commission_per_share: f64,
-    // Trend Riding Strategy
     pub trend_riding_exit_buffer_pct: f64,
-    // Mean Reversion Strategy
     pub mean_reversion_rsi_exit: f64,
     pub mean_reversion_bb_period: usize,
-    // Risk Appetite (optional - if set, overrides individual risk params)
     pub risk_appetite: Option<RiskAppetite>,
+    // Metadata
+    pub sector_map: std::collections::HashMap<String, String>, // Added
 }
+
+
+
 
 impl Config {
     pub fn from_env() -> Result<Self> {
@@ -269,6 +272,20 @@ impl Config {
             .parse::<usize>()
             .context("Failed to parse MEAN_REVERSION_BB_PERIOD")?;
 
+        // Sector Config
+        let sectors_env = env::var("SECTORS").unwrap_or_default();
+        let mut sector_map = std::collections::HashMap::new();
+        for entry in sectors_env.split(',') {
+            if let Some((sym, sec)) = entry.split_once(':') {
+                sector_map.insert(sym.trim().to_string(), sec.trim().to_string());
+            }
+        }
+
+        let max_sector_exposure_pct = env::var("MAX_SECTOR_EXPOSURE_PCT")
+            .unwrap_or_else(|_| "0.30".to_string())
+            .parse::<f64>()
+            .context("Failed to parse MAX_SECTOR_EXPOSURE_PCT")?;
+
         // Risk Appetite Score (optional - overrides individual risk params if set)
         let risk_appetite = if let Ok(score_str) = env::var("RISK_APPETITE_SCORE") {
             let score = score_str
@@ -341,6 +358,8 @@ impl Config {
             mean_reversion_rsi_exit,
             mean_reversion_bb_period,
             risk_appetite,
+            max_sector_exposure_pct,
+            sector_map,
         })
     }
 }

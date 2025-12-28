@@ -148,6 +148,7 @@ mod tests {
             side: OrderSide::Buy,
             price: Decimal::from(100),
             quantity: Decimal::from(2),
+            order_type: crate::domain::types::OrderType::Limit,
             timestamp: 0,
         };
         tx.send(order).await.unwrap();
@@ -176,6 +177,7 @@ mod tests {
             side: OrderSide::Buy,
             price: Decimal::from(100),
             quantity: Decimal::from(2),
+            order_type: crate::domain::types::OrderType::Limit,
             timestamp: 0,
         };
         tx.send(order).await.unwrap();

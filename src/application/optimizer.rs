@@ -122,6 +122,7 @@ impl GridSearchOptimizer {
                                     mean_reversion_rsi_exit: 50.0,
                                     mean_reversion_bb_period: 20,
                                     slippage_pct: 0.001,
+                                    commission_per_share: 0.005,
                                     max_position_size_pct: 0.1,
                                 });
                             }
@@ -339,6 +340,7 @@ mod tests {
                 mean_reversion_rsi_exit: 50.0,
                 mean_reversion_bb_period: 20,
                 slippage_pct: 0.001,
+                commission_per_share: 0.005,
                 max_position_size_pct: 0.1,
             },
             sharpe_ratio: 2.0,

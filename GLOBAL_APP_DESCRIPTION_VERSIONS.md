@@ -1,5 +1,11 @@
 # Rustrade - Historique des Versions
 
+## Version 0.18.0 (Décembre 2025) - Financial Hardening (Cost-Aware & Diversification)
+- **Smart Order Execution**: Remplacement des ordres `Market` par des ordres `Limit` pour les entrées, éliminant le risque de slippage massif sur les actifs volatils.
+- **Cost-Aware Logic**: Intégration d'un `FeeModel` qui estime commissions et slippage. L'Analyste rejette désormais tout trade dont l'espérance de gain n'est pas supérieure à 2x les coûts d'entrée/sortie ("Don't trade clearly losing bets").
+- **Diversification Sectorielle**: Ajout d'une configuration `SECTORS` et monitoring de l'exposition par secteur dans le `RiskManager`. Plafond configurable (`MAX_SECTOR_EXPOSURE_PCT`) pour forcer la distribution du risque.
+- **Refactoring Infrastructure**: Mise à jour des `TradeProposal` et `Order` pour supporter explicitement les types d'ordres (`Limit`, `Market`, `StopLimit`).
+
 ## Version 0.17.0 (Décembre 2025) - DDD Persistence Refactoring
 - **Refactoring Architectural**: Transition complète vers le Domain-Driven Design (DDD) pour la couche de persistance.
 - **Inversion de Dépendance**: Les agents applicatifs (`Executor`, `Analyst`, `CandleAggregator`) dépendent désormais strictement de traits abstraits (`TradeRepository`, `CandleRepository`) définis dans le Domaine, brisant le couplage fort avec l'Infrastructure.

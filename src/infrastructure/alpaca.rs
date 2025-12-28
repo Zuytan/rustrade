@@ -370,6 +370,10 @@ struct AlpacaOrderRequest {
     #[serde(rename = "type")]
     order_type: String,
     time_in_force: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit_price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop_price: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -412,14 +416,39 @@ impl ExecutionService for AlpacaExecutionService {
         };
 
         let is_fractional = !order.quantity.fract().is_zero();
+        
+        let (type_str, limit_price, stop_price) = match order.order_type {
+             crate::domain::types::OrderType::Market => ("market".to_string(), None, None),
+             crate::domain::types::OrderType::Limit => ("limit".to_string(), Some(order.price.to_string()), None),
+             crate::domain::types::OrderType::Stop => ("stop".to_string(), None, Some(order.price.to_string())),
+             crate::domain::types::OrderType::StopLimit => ("stop_limit".to_string(), Some(order.price.to_string()), Some(order.price.to_string())), // Assuming stop and limit same for simplicity unless we add stop_price to order
+        };
+        
+        // Alpaca requires 'limit_price' and 'stop_price' fields if type is limit/stop
+        // Fractional orders must be market and day? Alpaca restrictions apply.
+        // For now, assume standard lots for limit orders or check fractional logic.
+        // Usually Limit orders cannot be fractional on Alpaca (requires whole shares? or checks).
+        // Safest: if fractional, force market.
+        
+        let (final_type, final_limit, final_stop) = if is_fractional && type_str != "market" {
+             info!("AlpacaExecution: Forcing MARKET order for fractional quantity {}", order.quantity);
+             ("market".to_string(), None, None)
+        } else {
+             (type_str, limit_price, stop_price)
+        };
+
         let tif = if is_fractional { "day" } else { "gtc" };
+
+        // Using outer AlpacaOrderRequest struct definition
 
         let order_request = AlpacaOrderRequest {
             symbol: order.symbol.clone(),
             qty: order.quantity.to_string(),
             side: side_str.to_string(),
-            order_type: "market".to_string(),
+            order_type: final_type,
             time_in_force: tif.to_string(),
+            limit_price: final_limit,
+            stop_price: final_stop,
         };
 
         let url = format!("{}/v2/orders", self.base_url);
@@ -569,7 +598,7 @@ impl ExecutionService for AlpacaExecutionService {
             .await
             .context("Failed to parse Alpaca orders")?;
 
-        let mut orders = Vec::new();
+        let mut orders = Vec::new(); // Fixed mutability
         for ao in alp_orders {
             let side = if ao.side == "buy" {
                 OrderSide::Buy
@@ -593,6 +622,7 @@ impl ExecutionService for AlpacaExecutionService {
                 side,
                 price,
                 quantity: qty,
+                order_type: crate::domain::types::OrderType::Market, // Default to Market for history, or infer if possible
                 timestamp: created_at,
             });
         }

@@ -162,6 +162,7 @@ impl Simulator {
             mean_reversion_rsi_exit: self.config.mean_reversion_rsi_exit,
             mean_reversion_bb_period: self.config.mean_reversion_bb_period,
             slippage_pct: self.config.slippage_pct,
+            commission_per_share: self.config.commission_per_share, // Added
             max_position_size_pct: self.config.max_position_size_pct,
         };
 
@@ -276,6 +277,7 @@ impl Simulator {
                 side: prop.side,
                 price: execution_price,
                 quantity: prop.quantity,
+                order_type: crate::domain::types::OrderType::Market,
                 timestamp: prop.timestamp,
             };
 

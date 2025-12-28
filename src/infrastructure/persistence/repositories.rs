@@ -23,8 +23,8 @@ impl TradeRepository for SqliteOrderRepository {
     async fn save(&self, order: &Order) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO orders (id, symbol, side, price, quantity, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO orders (id, symbol, side, price, quantity, order_type, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO NOTHING
             "#,
         )
@@ -33,6 +33,7 @@ impl TradeRepository for SqliteOrderRepository {
         .bind(format!("{}", order.side)) // Enum as string
         .bind(order.price.to_string())
         .bind(order.quantity.to_string())
+        .bind(format!("{}", order.order_type)) // Enum as string
         .bind(order.timestamp)
         .execute(&self.pool)
         .await
@@ -86,6 +87,15 @@ impl SqliteOrderRepository {
                 "Sell" => OrderSide::Sell,
                 _ => OrderSide::Buy,
             };
+            
+            // Handle order_type with fallback for old records
+            let type_str: String = row.try_get("order_type").unwrap_or_else(|_| "MARKET".to_string());
+            let order_type = match type_str.to_uppercase().as_str() {
+                "LIMIT" => crate::domain::types::OrderType::Limit,
+                "STOP" => crate::domain::types::OrderType::Stop,
+                "STOP_LIMIT" => crate::domain::types::OrderType::StopLimit,
+                _ => crate::domain::types::OrderType::Market,
+            };
 
             orders.push(Order {
                 id: row.try_get("id")?,
@@ -93,6 +103,7 @@ impl SqliteOrderRepository {
                 side,
                 price: Decimal::from_str(row.try_get("price")?).unwrap_or_default(),
                 quantity: Decimal::from_str(row.try_get("quantity")?).unwrap_or_default(),
+                order_type,
                 timestamp: row.try_get("timestamp")?,
             });
         }

@@ -63,6 +63,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         mean_reversion_rsi_exit: 50.0,
         mean_reversion_bb_period: 20,
         slippage_pct: 0.0,
+        commission_per_share: 0.0,
         max_position_size_pct: 0.2,
     };
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));

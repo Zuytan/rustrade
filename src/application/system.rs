@@ -163,6 +163,7 @@ impl Application {
             mean_reversion_rsi_exit: self.config.mean_reversion_rsi_exit,
             mean_reversion_bb_period: self.config.mean_reversion_bb_period,
             slippage_pct: self.config.slippage_pct,
+            commission_per_share: self.config.commission_per_share,
             max_position_size_pct: self.config.max_position_size_pct,
         };
 
@@ -222,6 +223,8 @@ impl Application {
                 max_drawdown_pct: self.config.max_drawdown_pct,
                 consecutive_loss_limit: self.config.consecutive_loss_limit,
                 valuation_interval_seconds: 60,
+                max_sector_exposure_pct: self.config.max_sector_exposure_pct,
+                sector_map: self.config.sector_map.clone(),
             },
         );
 

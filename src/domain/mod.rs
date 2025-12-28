@@ -1,4 +1,5 @@
 pub mod events;
+pub mod fees;
 pub mod metrics;
 pub mod portfolio;
 pub mod ports;

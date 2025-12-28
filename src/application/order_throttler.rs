@@ -150,6 +150,7 @@ mod tests {
             side: OrderSide::Buy,
             price: Decimal::from(100),
             quantity: Decimal::from(1),
+            order_type: crate::domain::types::OrderType::Market,
             timestamp: 0,
         }
     }

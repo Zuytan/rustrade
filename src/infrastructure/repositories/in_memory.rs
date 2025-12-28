@@ -141,6 +141,7 @@ mod tests {
             side,
             quantity: dec!(10),
             price: dec!(100),
+            order_type: crate::domain::types::OrderType::Market,
             timestamp: Utc::now().timestamp(),
         }
     }

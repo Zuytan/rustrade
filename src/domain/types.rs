@@ -38,6 +38,25 @@ pub enum MarketEvent {
     Candle(Candle),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OrderType {
+    Market,
+    Limit,
+    Stop,
+    StopLimit,
+}
+
+impl fmt::Display for OrderType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OrderType::Market => write!(f, "MARKET"),
+            OrderType::Limit => write!(f, "LIMIT"),
+            OrderType::Stop => write!(f, "STOP"),
+            OrderType::StopLimit => write!(f, "STOP_LIMIT"),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TradeProposal {
@@ -45,6 +64,7 @@ pub struct TradeProposal {
     pub side: OrderSide,
     pub price: Decimal,
     pub quantity: Decimal,
+    pub order_type: OrderType,
     pub reason: String,
     pub timestamp: i64,
 }
@@ -57,6 +77,7 @@ pub struct Order {
     pub side: OrderSide,
     pub price: Decimal,
     pub quantity: Decimal,
+    pub order_type: OrderType,
     pub timestamp: i64,
 }
 

@@ -57,6 +57,7 @@ impl Database {
                 side TEXT NOT NULL,
                 price TEXT NOT NULL,
                 quantity TEXT NOT NULL,
+                order_type TEXT DEFAULT 'MARKET',
                 timestamp INTEGER NOT NULL
             );
             "#,
@@ -64,6 +65,12 @@ impl Database {
         .execute(&mut *conn)
         .await
         .context("Failed to create orders table")?;
+
+        // Migration: Attempt to add order_type column if it doesn't exist (for existing DBs)
+        // We ignore error if column already exists (Generic error handling for now)
+        let _ = sqlx::query("ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'MARKET'")
+            .execute(&mut *conn)
+            .await;
 
         // 2. Candles Table
         sqlx::query(
