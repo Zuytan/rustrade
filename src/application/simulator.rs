@@ -162,6 +162,11 @@ impl Simulator {
             slippage_pct: self.config.slippage_pct,
             commission_per_share: self.config.commission_per_share, // Added
             max_position_size_pct: self.config.max_position_size_pct,
+            bb_period: self.config.mean_reversion_bb_period,
+            bb_std_dev: 2.0,
+            macd_fast: self.config.macd_fast_period,
+            macd_slow: self.config.macd_slow_period,
+            macd_signal: self.config.macd_signal_period,
         };
 
         // Use Advanced strategy for simulations

@@ -22,7 +22,7 @@ use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::application::strategies::TradingStrategy;
 use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
 use crate::domain::performance_evaluator::{PerformanceEvaluator, EvaluationThresholds};
-use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
+use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService, AlpacaSectorProvider};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::persistence::database::Database;
 use crate::infrastructure::persistence::repositories::{
@@ -30,6 +30,7 @@ use crate::infrastructure::persistence::repositories::{
     SqliteOptimizationHistoryRepository, SqlitePerformanceSnapshotRepository, 
     SqliteReoptimizationTriggerRepository
 };
+use crate::domain::ports::SectorProvider;
 
 pub struct Application {
     pub config: Config,
@@ -213,6 +214,11 @@ impl Application {
             slippage_pct: self.config.slippage_pct,
             commission_per_share: self.config.commission_per_share,
             max_position_size_pct: self.config.max_position_size_pct,
+            bb_period: self.config.mean_reversion_bb_period,
+            bb_std_dev: 2.0,
+            macd_fast: self.config.macd_fast_period,
+            macd_slow: self.config.macd_slow_period,
+            macd_signal: self.config.macd_signal_period,
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
@@ -258,6 +264,15 @@ impl Application {
             Some(self.strategy_repository.clone()),
         );
 
+        let sector_provider: Option<Arc<dyn SectorProvider>> = match self.config.mode {
+            Mode::Alpaca => Some(Arc::new(AlpacaSectorProvider::new(
+                self.config.alpaca_api_key.clone(),
+                self.config.alpaca_secret_key.clone(),
+                self.config.alpaca_base_url.clone(),
+            ))),
+            Mode::Mock => None,
+        };
+
         let risk_config = crate::application::risk_manager::RiskConfig {
             max_position_size_pct: self.config.max_position_size_pct,
             max_daily_loss_pct: self.config.max_daily_loss_pct,
@@ -265,7 +280,7 @@ impl Application {
             consecutive_loss_limit: self.config.consecutive_loss_limit,
             valuation_interval_seconds: 60,
             max_sector_exposure_pct: self.config.max_sector_exposure_pct,
-            sector_map: self.config.sector_map.clone(),
+            sector_provider,
         };
 
         let mut risk_manager = RiskManager::new(

@@ -28,3 +28,30 @@ pub trait ExecutionService: Send + Sync {
     async fn get_portfolio(&self) -> Result<Portfolio>;
     async fn get_today_orders(&self) -> Result<Vec<Order>>;
 }
+
+
+#[async_trait]
+pub trait FeatureEngineeringService: Send + Sync {
+    fn update(&mut self, price: f64) -> crate::domain::types::FeatureSet;
+}
+
+#[async_trait]
+pub trait SectorProvider: Send + Sync {
+    async fn get_sector(&self, symbol: &str) -> Result<String>;
+}
+
+pub struct Expectancy {
+    pub reward_risk_ratio: f64,
+    pub win_prob: f64,
+    pub expected_value: f64,
+}
+
+#[async_trait]
+pub trait ExpectancyEvaluator: Send + Sync {
+    fn evaluate(
+        &self,
+        symbol: &str,
+        price: rust_decimal::Decimal,
+        regime: &crate::domain::market_regime::MarketRegime,
+    ) -> Expectancy;
+}

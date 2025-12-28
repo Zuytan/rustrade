@@ -1,6 +1,13 @@
 # Rustrade - Historique des Versions
 
-## Version 0.20.0 (Décembre 2025) - Audit Architectural & Maturité logicielle
+## Version 0.21.0 (Janvier 2026) - Analyst Refactoring & Financial Precision
+- **Découplage de l'Analyste**: Extraction des responsabilités dans `FeatureEngineeringService`, `SignalGenerator`, et `PositionManager`. Réduction massive de la complexité de `analyst.rs`.
+- **Espérance de Gain Avancée**: Remplacement des heuristiques par un `ExpectancyEvaluator` utilisant le `MarketRegime`.
+- **Reward/Risk Ratio (1.5 min)**: Validation stricte de chaque signal basée sur le ratio gain/risque estimé dynamiquement.
+- **Gestion Sectorielle Dynamique**: Implémentation d'un `SectorProvider` via l'API Alpaca Assets, éliminant le besoin de mise à jour manuelle des secteurs.
+- **DDD & Clean Architecture**: Renforcement du découplage entre les couches application, domaine et infrastructure.
+
+## Version 0.20.0 (Janvier 2026) - Audit Architectural & Maturité logicielle
 - **Audit Complet**: Revue approfondie de l'architecture logicielle selon les principes DDD et Clean Architecture.
 - **Score d'Excellence**: Évaluation de **9.5/10** sur la structure, le découplage et la testabilité.
 - **Robustesse**: Confirmation de la viabilité des mécanismes de durcissement financier et d'optimisation adaptative.

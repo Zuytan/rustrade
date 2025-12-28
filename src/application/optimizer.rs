@@ -125,6 +125,11 @@ impl GridSearchOptimizer {
                                     slippage_pct: 0.001,
                                     commission_per_share: 0.005,
                                     max_position_size_pct: 0.1,
+                                    bb_period: 20,
+                                    bb_std_dev: 2.0,
+                                    macd_fast: 12,
+                                    macd_slow: 26,
+                                    macd_signal: 9,
                                 });
                             }
                         }
@@ -343,6 +348,11 @@ mod tests {
                 slippage_pct: 0.001,
                 commission_per_share: 0.005,
                 max_position_size_pct: 0.1,
+                bb_period: 20,
+                bb_std_dev: 2.0,
+                macd_fast: 12,
+                macd_slow: 26,
+                macd_signal: 9,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

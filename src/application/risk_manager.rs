@@ -1,4 +1,4 @@
-use crate::domain::ports::{ExecutionService, MarketDataService};
+use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
 use crate::domain::types::{Order, OrderSide, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -13,7 +13,7 @@ use crate::domain::portfolio::Portfolio;
 use crate::application::performance_monitoring_service::PerformanceMonitoringService;
 
 /// Risk management configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RiskConfig {
     pub max_position_size_pct: f64, // Max % of equity per position (e.g., 0.25 = 25%)
     pub max_daily_loss_pct: f64,    // Max % loss per day (e.g., 0.02 = 2%)
@@ -21,7 +21,20 @@ pub struct RiskConfig {
     pub consecutive_loss_limit: usize, // Max consecutive losing trades before halt
     pub valuation_interval_seconds: u64, // Interval for portfolio valuation check
     pub max_sector_exposure_pct: f64, // Max exposure per sector
-    pub sector_map: HashMap<String, String>, // Symbol -> Sector mapping
+    pub sector_provider: Option<Arc<dyn SectorProvider>>,
+}
+
+impl std::fmt::Debug for RiskConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RiskConfig")
+            .field("max_position_size_pct", &self.max_position_size_pct)
+            .field("max_daily_loss_pct", &self.max_daily_loss_pct)
+            .field("max_drawdown_pct", &self.max_drawdown_pct)
+            .field("consecutive_loss_limit", &self.consecutive_loss_limit)
+            .field("valuation_interval_seconds", &self.valuation_interval_seconds)
+            .field("max_sector_exposure_pct", &self.max_sector_exposure_pct)
+            .finish()
+    }
 }
 
 impl RiskConfig {
@@ -54,7 +67,7 @@ impl Default for RiskConfig {
             consecutive_loss_limit: 3,
             valuation_interval_seconds: 60,
             max_sector_exposure_pct: 0.20, // Reduced from 0.30
-            sector_map: HashMap::new(),
+            sector_provider: None,
         }
     }
 }
@@ -73,6 +86,7 @@ pub struct RiskManager {
     current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
     portfolio: Arc<RwLock<Portfolio>>,
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
+    sector_cache: HashMap<String, String>,
 }
 
 impl RiskManager {
@@ -102,6 +116,7 @@ impl RiskManager {
             consecutive_losses: 0,
             current_prices: HashMap::new(),
             performance_monitor,
+            sector_cache: HashMap::new(),
         }
     }
 
@@ -202,7 +217,7 @@ impl RiskManager {
 
     /// Validate sector exposure limits
     async fn validate_sector_exposure(
-        &self,
+        &mut self,
         proposal: &TradeProposal,
         portfolio: &crate::domain::portfolio::Portfolio,
         current_equity: Decimal,
@@ -212,18 +227,19 @@ impl RiskManager {
         }
 
         // Identify Sector
-        let sector = self
-            .risk_config
-            .sector_map
-            .get(&proposal.symbol)
-            .cloned()
-            .unwrap_or_else(|| "Unknown".to_string());
+        let sector = if let Some(provider) = &self.risk_config.sector_provider {
+             if let Some(s) = self.sector_cache.get(&proposal.symbol) {
+                 s.clone()
+             } else {
+                 let s = provider.get_sector(&proposal.symbol).await.unwrap_or_else(|_| "Unknown".to_string());
+                 self.sector_cache.insert(proposal.symbol.clone(), s.clone());
+                 s
+             }
+        } else {
+             "Unknown".to_string()
+        };
 
-        // Skip check if sector is Unknown (or handle as 'Unclassified' quota?)
         if sector == "Unknown" {
-            // For now, allow unknown sectors but maybe warn?
-            // Or treat implementation as "Symbol not in map -> check default limit?"
-            // Let's assume user configured meaningful sectors.
             return true;
         }
 
@@ -231,12 +247,21 @@ impl RiskManager {
         let mut current_sector_value = Decimal::ZERO;
 
         for (sym, position) in &portfolio.positions {
-            if let Some(s) = self.risk_config.sector_map.get(sym) {
-                if s == &sector {
-                    // Use current price if available, else average price (approximation)
-                    let price = self.current_prices.get(sym).cloned().unwrap_or(position.average_price);
-                    current_sector_value += price * position.quantity;
-                }
+            let pos_sector = if let Some(provider) = &self.risk_config.sector_provider {
+                 if let Some(s) = self.sector_cache.get(sym) {
+                     s.clone()
+                 } else {
+                     let s = provider.get_sector(sym).await.unwrap_or_else(|_| "Unknown".to_string());
+                     self.sector_cache.insert(sym.clone(), s.clone());
+                     s
+                 }
+            } else {
+                 "Unknown".to_string()
+            };
+
+            if pos_sector == sector {
+                let price = self.current_prices.get(sym).cloned().unwrap_or(position.average_price);
+                current_sector_value += price * position.quantity;
             }
         }
 
@@ -839,36 +864,51 @@ mod tests {
         assert!(order_rx.try_recv().is_err());
     }
 
+    struct MockSectorProvider {
+        sectors: HashMap<String, String>,
+    }
+
+    #[async_trait::async_trait]
+    impl SectorProvider for MockSectorProvider {
+        async fn get_sector(&self, symbol: &str) -> Result<String, anyhow::Error> {
+            Ok(self.sectors.get(symbol).cloned().unwrap_or_else(|| "Unknown".to_string()))
+        }
+    }
+
     #[tokio::test]
     async fn test_sector_exposure_limit() {
         let (proposal_tx, proposal_rx) = mpsc::channel(1);
         let (order_tx, mut order_rx) = mpsc::channel(1);
 
-        // Portfolio: $100,000 Cash
-        // Position: AAPL (Tech) $25,000
-        // Total Equity: $125,000. Tech Exposure: 25,000 / 125,000 = 20%
+        // Setup Portfolio: $100,000 Cash + $25,000 AAPL (Tech) = $125,000 Equity
         let mut port = Portfolio::new();
         port.cash = Decimal::from(100000);
         port.positions.insert(
             "AAPL".to_string(),
             Position {
                 symbol: "AAPL".to_string(),
-                quantity: Decimal::from(250), // 250 * 100 = 25,000
-                average_price: Decimal::from(100),
+                quantity: Decimal::from(100),
+                average_price: Decimal::from(250),
             },
         );
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
-        let market_service = Arc::new(MockMarketDataService::new());
 
-        // Config: Max Sector Exposure 30%
-        let mut sector_map = HashMap::new();
-        sector_map.insert("AAPL".to_string(), "Tech".to_string());
-        sector_map.insert("MSFT".to_string(), "Tech".to_string());
+        // Setup Market
+        let market_data = Arc::new(ConfigurableMockMarketData::new());
+        market_data.set_price("AAPL", Decimal::from(250));
+        market_data.set_price("MSFT", Decimal::from(200));
+        let market_service = market_data.clone();
+
+        // Setup Sector Provider
+        let mut sectors = HashMap::new();
+        sectors.insert("AAPL".to_string(), "Tech".to_string());
+        sectors.insert("MSFT".to_string(), "Tech".to_string());
+        let sector_provider = Arc::new(MockSectorProvider { sectors });
 
         let config = RiskConfig {
             max_sector_exposure_pct: 0.30,
-            sector_map,
+            sector_provider: Some(sector_provider),
             ..RiskConfig::default()
         };
 

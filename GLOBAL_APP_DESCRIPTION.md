@@ -74,21 +74,19 @@ Le bot intègre désormais un système d'optimisation en boucle fermée qui ajus
 ### 3. Agent "Analyst" (Strategy)
 - **Rôle**: Le cerveau décisionnel.
 - **Responsabilités**: Détecter les signaux via trois modes principaux :
-    - **Dual SMA Crossover** : Stratégie standard de croisement de moyennes mobiles.
-    - **Advanced Analyst** : Stratégie "Triple Confirmation" (Crossover + Trend + RSI + MACD) pour ne choisir que les meilleurs moments.
-    - **Trend Riding** : Stratégie de suivi de tendance long-terme. Achète sur Golden Cross et maintient la position tant que le prix reste au-dessus de la tendance (avec buffer), ignorant les fluctuations mineures pour capturer les grands mouvements. 
-    - **Long-Only Safety**: Par sécurité, l'Analyste vérifie systématiquement que le portefeuille détient l'actif avant d'émettre un signal de Vente, empêchant tout Short Selling involontaire.
+    - **Architecture Découplée (v0.18.0)** : L'Analyste est désormais modulaire, déléguant le calcul des indicateurs au `FeatureEngineeringService`, la gestion des signaux au `SignalGenerator` et la gestion des stops au `PositionManager`.
+    - **Espérance de Gain Dynamique (`ExpectancyEvaluator`)** : Utilise le régime de marché (`MarketRegime`) pour valider chaque trade. Un Reward/Risk Ratio minimum de 1.5 est désormais exigé pour toute nouvelle position.
+    - **Stratégies de Trading** : Supporte Advanced Analyst, Trend Riding, et Mean Reversion avec des paramètres auto-adaptatifs.
+    - **Long-Only Safety**: Vérifie systématiquement la possession de l'actif avant une vente.
     - **Smart Execution**: Utilisation d'ordres `Limit` pour maîtriser les coûts à l'entrée.
-    - **Optimisation Adaptative (v0.17.0)** : L'Analyste interroge périodiquement le `StrategyRepository` pour récupérer les paramètres optimisés pour le régime de marché actuel (Trending/Ranging/Volatile), permettant une réponse dynamique aux changements de conditions.
 
-### 3. Agent "Risk Manager" (Safety Gate)
+### 4. Agent "Risk Manager" (Safety Gate)
 - **Rôle**: Contrôleur de conformité financier.
 - **Responsabilités**: 
     - **Validation des Risques**: Vérifie la taille de position, le drawdown max, et la perte journalière.
-    - **Contrôle Sectoriel**: Bloque les transactions si l'exposition à un secteur dépasse le seuil défini (`MAX_SECTOR_EXPOSURE_PCT`).
+    - **Gestion Sectorielle Dynamique (v0.18.0)** : Plus de `sector_map` manuel. Utilise un `SectorProvider` (via Alpaca Asset API) pour identifier le secteur de chaque actif en temps réel et garantir la diversification.
     - **Protection PDT**: Empêche le Day Trading pour les petits comptes.
     - **Valuation Temps Réel**: Surveillance continue de l'équité pour déclenchement immédiat des Circuit Breakers.
-    - **Capture de Performance (v0.17.0)** : Collabore avec le `PerformanceMonitoringService` pour enregistrer des instantanés (Snapshots) de performance et de régime de marché lors de chaque mise à jour de valorisation.
 
 ### 4. L'Agent "Order Throttler" (Rate Limiting)
 - **Rôle**: Garde-fou technique.

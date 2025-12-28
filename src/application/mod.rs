@@ -13,3 +13,7 @@ pub mod strategies;
 pub mod system;
 pub mod trailing_stops;
 pub mod strategy_factory;
+pub mod feature_engineering_service;
+pub mod signal_generator;
+pub mod position_manager;
+pub mod expectancy_evaluator;

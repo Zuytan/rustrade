@@ -134,3 +134,19 @@ pub enum PositionLifecycle {
     /// Position has been closed
     Closed,
 }
+
+/// Technical indicators for a symbol
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FeatureSet {
+    pub rsi: Option<f64>,
+    pub macd_line: Option<f64>,
+    pub macd_signal: Option<f64>,
+    pub macd_hist: Option<f64>,
+    pub sma_20: Option<f64>,
+    pub sma_50: Option<f64>,
+    pub sma_200: Option<f64>,
+    pub bb_upper: Option<f64>,
+    pub bb_middle: Option<f64>,
+    pub bb_lower: Option<f64>,
+    pub atr: Option<f64>,
+}
