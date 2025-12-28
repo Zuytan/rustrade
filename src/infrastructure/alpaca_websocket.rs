@@ -186,7 +186,10 @@ impl AlpacaWebSocketManager {
                 if reconnect_attempts == 0 {
                     info!("WebSocketManager: Starting connection...");
                 } else {
-                    info!("WebSocketManager: Reconnection attempt #{}", reconnect_attempts);
+                    info!(
+                        "WebSocketManager: Reconnection attempt #{}",
+                        reconnect_attempts
+                    );
                 }
 
                 match Self::run_connection(
@@ -203,7 +206,6 @@ impl AlpacaWebSocketManager {
                     Ok(authenticated) => {
                         if authenticated {
                             info!("WebSocketManager: Connection ended cleanly after successful authentication");
-                            reconnect_attempts = 0; // Reset counter after successful connection
                         } else {
                             info!("WebSocketManager: Connection ended before authentication");
                         }
@@ -212,7 +214,7 @@ impl AlpacaWebSocketManager {
                     Err(e) => {
                         error!("WebSocketManager error: {}. Reconnecting...", e);
                         *state.write().await = ConnectionState::Disconnected;
-                        
+
                         // Exponential backoff: 0s, 1s, 2s, 4s, 8s, 16s, 30s (cap)
                         let delay_secs = if reconnect_attempts == 0 {
                             0
@@ -222,14 +224,17 @@ impl AlpacaWebSocketManager {
                                 MAX_RECONNECT_DELAY_SECS,
                             )
                         };
-                        
+
                         if delay_secs > 0 {
-                            info!("WebSocketManager: Waiting {} seconds before reconnecting...", delay_secs);
+                            info!(
+                                "WebSocketManager: Waiting {} seconds before reconnecting...",
+                                delay_secs
+                            );
                             time::sleep(Duration::from_secs(delay_secs)).await;
                         } else {
                             info!("WebSocketManager: Reconnecting immediately...");
                         }
-                        
+
                         reconnect_attempts += 1;
                     }
                 }
@@ -260,7 +265,7 @@ impl AlpacaWebSocketManager {
 
         let mut authenticated = false;
         let mut current_subscribed: Vec<String> = Vec::new();
-        
+
         // Heartbeat timers
         let mut ping_interval = time::interval(Duration::from_secs(PING_INTERVAL_SECS));
         ping_interval.tick().await; // First tick completes immediately

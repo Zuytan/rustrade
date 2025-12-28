@@ -73,3 +73,18 @@ pub trait PortfolioRepository: Send + Sync {
         start: DateTime<Utc>,
     ) -> Result<Vec<(DateTime<Utc>, Decimal)>>;
 }
+
+use crate::domain::types::Candle;
+
+/// Repository for persisting and retrieving market data (candles)
+#[async_trait]
+pub trait CandleRepository: Send + Sync {
+    /// Save a candle
+    async fn save(&self, candle: &Candle) -> Result<()>;
+
+    /// Get candles for a symbol within a time range
+    async fn get_range(&self, symbol: &str, start_ts: i64, end_ts: i64) -> Result<Vec<Candle>>;
+
+    /// Prune old candles
+    async fn prune(&self, days_retention: i64) -> Result<u64>;
+}

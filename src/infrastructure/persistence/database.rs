@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use futures_util::TryStreamExt;
+
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::path::Path;
 use std::str::FromStr;

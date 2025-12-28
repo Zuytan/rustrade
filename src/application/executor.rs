@@ -1,5 +1,6 @@
 use crate::domain::portfolio::{Portfolio, Position};
 use crate::domain::ports::ExecutionService;
+use crate::domain::repositories::TradeRepository;
 use crate::domain::types::{Order, OrderSide};
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
@@ -10,7 +11,7 @@ pub struct Executor {
     execution_service: Arc<dyn ExecutionService>,
     order_rx: Receiver<Order>,
     portfolio: Arc<RwLock<Portfolio>>,
-    repository: Option<Arc<crate::infrastructure::persistence::repositories::OrderRepository>>,
+    repository: Option<Arc<dyn TradeRepository>>,
 }
 
 impl Executor {
@@ -18,7 +19,7 @@ impl Executor {
         execution_service: Arc<dyn ExecutionService>,
         order_rx: Receiver<Order>,
         portfolio: Arc<RwLock<Portfolio>>,
-        repository: Option<Arc<crate::infrastructure::persistence::repositories::OrderRepository>>,
+        repository: Option<Arc<dyn TradeRepository>>,
     ) -> Self {
         Self {
             execution_service,

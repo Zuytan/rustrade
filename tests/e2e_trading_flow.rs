@@ -111,10 +111,12 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     let mock_execution = std::sync::Arc::new(MockExecutionService::new(portfolio.clone()));
 
     let app = Application {
-        config: config.clone(),
+        config,
         market_service: mock_market.clone(),
         execution_service: mock_execution.clone(),
         portfolio: portfolio.clone(),
+        order_repository: None,
+        candle_repository: None,
     };
 
     // 4. Run Application (BACKGROUND)
@@ -148,7 +150,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     // 2. Dip to trigger "Below" state (Fast < Slow)
     // 3. Rip to trigger "Above" state (Fast > Slow) -> BUY SIGNAL
 
-    let events = vec![
+    let events = [
         100.0, 100.0, 100.0, 100.0, 100.0, // Stable (Sma5 = 100)
         90.0,  // Dip! Fast(2)=(100+90)/2=95. Slow(5)=98. State -> BELOW.
         110.0, // Recover. Fast(2)=(90+110)/2=100. Slow(5)=(100,100,100,90,110)=100. Equal/Above?

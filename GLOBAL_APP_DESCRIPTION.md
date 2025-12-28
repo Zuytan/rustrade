@@ -61,7 +61,7 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
     - **Persistance des Transactions**: Sauvegarde asynchrone de chaque ordre exécuté (succès ou échec) dans une base SQL locale.
 
 ## Couche de Persistance (Persistence Layer)
-Le bot intègre désormais une base de données **SQLite** locale (`rustrade.db`) pour garantir l'historisation et l'auditabilité :
+Le bot intègre une architecture de persistance conforme au **Domain-Driven Design (DDD)**. Les agents interagissent uniquement avec des abstractions (`TradeRepository`, `CandleRepository`), tandis que l'implémentation concrète utilise **SQLite** (`rustrade.db`) :
 
 - **Transactions (`trades`)**: Stockage immuable de tous les ordres exécutés (ID, Symbole, Prix, Quantité, Side, Timestamp).
 - **Bougies Consolidez (`candles`)**: Historisation des bougies 1-minute générées par le `CandleAggregator` pour analyse post-mortem et replay.

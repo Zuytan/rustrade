@@ -6,8 +6,8 @@ use crate::infrastructure::alpaca::AlpacaMarketDataService;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -148,7 +148,7 @@ impl Simulator {
             sma_threshold: self.config.sma_threshold,
             order_cooldown_seconds: self.config.order_cooldown_seconds,
             risk_per_trade_percent: self.config.risk_per_trade_percent,
-            strategy_mode: self.config.strategy_mode.clone(),
+            strategy_mode: self.config.strategy_mode,
             trend_sma_period: self.config.trend_sma_period,
             rsi_period: self.config.rsi_period,
             macd_fast_period: self.config.macd_fast_period,
@@ -365,8 +365,7 @@ impl Simulator {
                 }
 
                 // Only calculate if we have matching returns
-                if strategy_returns.len() == benchmark_returns.len()
-                    && !strategy_returns.is_empty()
+                if strategy_returns.len() == benchmark_returns.len() && !strategy_returns.is_empty()
                 {
                     Self::calculate_alpha_beta(&strategy_returns, &benchmark_returns)
                 } else {
@@ -413,17 +412,26 @@ mod tests {
         // Expected: Beta ~= 2.0 (strategy is twice as volatile as benchmark)
         let strategy_returns = vec![0.01, 0.02, -0.01, 0.03];
         let benchmark_returns = vec![0.005, 0.01, -0.005, 0.015];
-        
-        let (alpha, beta, correlation) = Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
-        
+
+        let (alpha, beta, correlation) =
+            Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
+
         // Beta should be around 2.0 (strategy moves 2x benchmark)
-        assert!(beta > 1.5 && beta < 2.5, "Beta should be ~2.0, got {}", beta);
-        
+        assert!(
+            beta > 1.5 && beta < 2.5,
+            "Beta should be ~2.0, got {}",
+            beta
+        );
+
         // Alpha should be close to 0 (strategy follows benchmark proportionally)
         assert!(alpha.abs() < 0.01, "Alpha should be near 0, got {}", alpha);
-        
+
         // Correlation should be positive and high
-        assert!(correlation > 0.8, "Correlation should be high, got {}", correlation);
+        assert!(
+            correlation > 0.8,
+            "Correlation should be high, got {}",
+            correlation
+        );
     }
 
     #[test]
@@ -431,11 +439,16 @@ mod tests {
         // Strategy consistently beats benchmark
         let strategy_returns = vec![0.02, 0.03, 0.01, 0.04];
         let benchmark_returns = vec![0.01, 0.01, 0.01, 0.01];
-        
-        let (alpha, _beta, _correlation) = Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
-        
+
+        let (alpha, _beta, _correlation) =
+            Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
+
         // Positive alpha (strategy outperforms)
-        assert!(alpha > 0.0, "Alpha should be positive for outperformance, got {}", alpha);
+        assert!(
+            alpha > 0.0,
+            "Alpha should be positive for outperformance, got {}",
+            alpha
+        );
     }
 
     #[test]
@@ -443,17 +456,22 @@ mod tests {
         // Strategy moves opposite to benchmark
         let strategy_returns = vec![0.01, -0.01, 0.02, -0.02];
         let benchmark_returns = vec![-0.01, 0.01, -0.02, 0.02];
-        
-        let (_alpha, _beta, correlation) = Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
-        
+
+        let (_alpha, _beta, correlation) =
+            Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
+
         // Negative correlation
-        assert!(correlation < 0.0, "Correlation should be negative, got {}", correlation);
+        assert!(
+            correlation < 0.0,
+            "Correlation should be negative, got {}",
+            correlation
+        );
     }
 
     #[test]
     fn test_alpha_beta_empty_returns() {
         let (alpha, beta, correlation) = Simulator::calculate_alpha_beta(&[], &[]);
-        
+
         assert_eq!(alpha, 0.0);
         assert_eq!(beta, 0.0);
         assert_eq!(correlation, 0.0);

@@ -145,11 +145,7 @@ impl GridSearchOptimizer {
         // Create fresh execution service for this run
         let execution_service = (self.execution_service_factory)();
 
-        let simulator = Simulator::new(
-            self.market_data.clone(),
-            execution_service,
-            config.clone(),
-        );
+        let simulator = Simulator::new(self.market_data.clone(), execution_service, config.clone());
 
         let result = simulator.run(symbol, start, end).await?;
 
@@ -258,7 +254,11 @@ impl GridSearchOptimizer {
     }
 
     /// Rank and return top N results
-    pub fn rank_results(&self, results: Vec<OptimizationResult>, top_n: usize) -> Vec<OptimizationResult> {
+    pub fn rank_results(
+        &self,
+        results: Vec<OptimizationResult>,
+        top_n: usize,
+    ) -> Vec<OptimizationResult> {
         results.into_iter().take(top_n).collect()
     }
 }
@@ -280,7 +280,7 @@ mod tests {
 
         // Manually calculate expected combinations
         // 2 fast * 2 slow * 1 rsi * 1 trend * 1 atr * 1 cooldown = 4 combinations
-        let expected_combinations = 2 * 2 * 1 * 1 * 1 * 1;
+        let expected_combinations = 2 * 2;
 
         // Test generation logic by directly creating configs
         let mut combos = Vec::new();
@@ -305,7 +305,12 @@ mod tests {
 
         // Verify no invalid combinations (fast >= slow)
         for combo in &combos {
-            assert!(combo.0 < combo.1, "fast {} should be < slow {}", combo.0, combo.1);
+            assert!(
+                combo.0 < combo.1,
+                "fast {} should be < slow {}",
+                combo.0,
+                combo.1
+            );
         }
     }
 

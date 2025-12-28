@@ -35,7 +35,6 @@ impl Default for Portfolio {
 }
 
 impl Portfolio {
-
     /// Calculate total equity (cash + unrealized position value)
     pub fn total_equity(&self, current_prices: &HashMap<String, Decimal>) -> Decimal {
         let mut equity = self.cash;

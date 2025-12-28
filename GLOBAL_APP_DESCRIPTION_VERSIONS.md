@@ -1,5 +1,13 @@
 # Rustrade - Historique des Versions
 
+## Version 0.17.0 (Décembre 2025) - DDD Persistence Refactoring
+- **Refactoring Architectural**: Transition complète vers le Domain-Driven Design (DDD) pour la couche de persistance.
+- **Inversion de Dépendance**: Les agents applicatifs (`Executor`, `Analyst`, `CandleAggregator`) dépendent désormais strictement de traits abstraits (`TradeRepository`, `CandleRepository`) définis dans le Domaine, brisant le couplage fort avec l'Infrastructure.
+- **Repositories**:
+  - Renommage des implémentations concrètes en `SqliteOrderRepository` et `SqliteCandleRepository`.
+  - Implémentation complète des méthodes de recherche (`find_by_symbol`, `get_range`, `prune`) sur les traits.
+- **Dependency Injection**: Le constructeur `Application::build` injecte désormais les dépendances sous forme de `Arc<dyn Trait>`, facilitant les tests et le remplacement futur du backend de stockage.
+
 ## Version 0.16.0 (Décembre 2025) - Persistence Layer (SQLite)
 - **NOUVEAU: Base de Données Locale**: Intégration de **SQLite** via `sqlx` pour une persistance robuste et zéro-conf.
 - **Historisation des Transactions**: Chaque ordre exécuté est désormais sauvegardé durablement dans la table `trades` (auditabilité fiscale et performance).

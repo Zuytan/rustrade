@@ -87,7 +87,8 @@ async fn main() -> Result<()> {
         i += 1;
     }
 
-    let strategy_mode = StrategyMode::from_str(&strategy_mode_str).unwrap_or(StrategyMode::Advanced);
+    let strategy_mode =
+        StrategyMode::from_str(&strategy_mode_str).unwrap_or(StrategyMode::Advanced);
 
     println!("{}", "=".repeat(80));
     println!("🔍 GRID SEARCH PARAMETER OPTIMIZER");
@@ -111,9 +112,18 @@ async fn main() -> Result<()> {
     println!("  Fast SMA:       {:?}", parameter_grid.fast_sma);
     println!("  Slow SMA:       {:?}", parameter_grid.slow_sma);
     println!("  RSI Threshold:  {:?}", parameter_grid.rsi_threshold);
-    println!("  Trend Div:      {:?}", parameter_grid.trend_divergence_threshold);
-    println!("  ATR Mult:       {:?}", parameter_grid.trailing_stop_atr_multiplier);
-    println!("  Cooldown (s):   {:?}", parameter_grid.order_cooldown_seconds);
+    println!(
+        "  Trend Div:      {:?}",
+        parameter_grid.trend_divergence_threshold
+    );
+    println!(
+        "  ATR Mult:       {:?}",
+        parameter_grid.trailing_stop_atr_multiplier
+    );
+    println!(
+        "  Cooldown (s):   {:?}",
+        parameter_grid.order_cooldown_seconds
+    );
 
     // Calculate total combinations
     let total_combos = parameter_grid.fast_sma.len()
@@ -140,27 +150,28 @@ async fn main() -> Result<()> {
     let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url));
 
     // Execution service factory - creates fresh portfolio for each run
-    let execution_service_factory: Arc<dyn Fn() -> Arc<dyn rustrade::domain::ports::ExecutionService> + Send + Sync> =
-        Arc::new(move || {
-            let mut portfolio = Portfolio::new();
-            portfolio.cash = Decimal::new(100000, 0);
-            let portfolio_lock = Arc::new(RwLock::new(portfolio));
+    let execution_service_factory: Arc<
+        dyn Fn() -> Arc<dyn rustrade::domain::ports::ExecutionService> + Send + Sync,
+    > = Arc::new(move || {
+        let mut portfolio = Portfolio::new();
+        portfolio.cash = Decimal::new(100000, 0);
+        let portfolio_lock = Arc::new(RwLock::new(portfolio));
 
-            let slippage_pct = env::var("SLIPPAGE_PCT")
-                .unwrap_or_else(|_| "0.001".to_string())
-                .parse::<f64>()
-                .unwrap_or(0.001);
-            let commission_per_share = env::var("COMMISSION_PER_SHARE")
-                .unwrap_or_else(|_| "0.001".to_string())
-                .parse::<f64>()
-                .unwrap_or(0.001);
+        let slippage_pct = env::var("SLIPPAGE_PCT")
+            .unwrap_or_else(|_| "0.001".to_string())
+            .parse::<f64>()
+            .unwrap_or(0.001);
+        let commission_per_share = env::var("COMMISSION_PER_SHARE")
+            .unwrap_or_else(|_| "0.001".to_string())
+            .parse::<f64>()
+            .unwrap_or(0.001);
 
-            Arc::new(MockExecutionService::with_costs(
-                portfolio_lock,
-                slippage_pct,
-                commission_per_share,
-            ))
-        });
+        Arc::new(MockExecutionService::with_costs(
+            portfolio_lock,
+            slippage_pct,
+            commission_per_share,
+        ))
+    });
 
     // 7. Create optimizer
     let optimizer = GridSearchOptimizer::new(
@@ -210,8 +221,14 @@ async fn main() -> Result<()> {
         println!("  Fast SMA:         {}", best.params.fast_sma_period);
         println!("  Slow SMA:         {}", best.params.slow_sma_period);
         println!("  RSI Threshold:    {:.1}", best.params.rsi_threshold);
-        println!("  Trend Div:        {:.4}", best.params.trend_divergence_threshold);
-        println!("  ATR Multiplier:   {:.1}", best.params.trailing_stop_atr_multiplier);
+        println!(
+            "  Trend Div:        {:.4}",
+            best.params.trend_divergence_threshold
+        );
+        println!(
+            "  ATR Multiplier:   {:.1}",
+            best.params.trailing_stop_atr_multiplier
+        );
         println!("  Cooldown (s):     {}", best.params.order_cooldown_seconds);
         println!("\n  Sharpe Ratio:     {:.2}", best.sharpe_ratio);
         println!("  Total Return:     {:.2}%", best.total_return);
@@ -260,4 +277,3 @@ fn print_help() {
     println!("    --grid-config grid.toml \\");
     println!("    --output nvda_optimization.json");
 }
-

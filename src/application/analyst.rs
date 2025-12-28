@@ -2,6 +2,7 @@ use crate::application::candle_aggregator::CandleAggregator;
 use crate::application::strategies::{AnalysisContext, TradingStrategy};
 use crate::application::trailing_stops::StopState;
 use crate::domain::ports::ExecutionService;
+use crate::domain::repositories::CandleRepository;
 use crate::domain::types::{MarketEvent, OrderSide, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -113,7 +114,7 @@ impl Analyst {
         execution_service: Arc<dyn ExecutionService>,
         strategy: Arc<dyn TradingStrategy>,
         config: AnalystConfig,
-        repository: Option<Arc<crate::infrastructure::persistence::repositories::CandleRepository>>,
+        repository: Option<Arc<dyn CandleRepository>>,
     ) -> Self {
         Self {
             market_rx,
@@ -495,59 +496,7 @@ impl Analyst {
         }
     }
 
-    #[allow(dead_code)]
-    fn apply_advanced_filters(
-        signal: &mut Option<OrderSide>,
-        symbol: &str,
-        side: OrderSide,
-        price_f64: f64,
-        current_trend: f64,
-        current_rsi: f64,
-        macd_val: f64,
-        macd_hist: f64,
-        last_macd_histogram: Option<f64>,
-        rsi_threshold: f64,
-    ) {
-        match side {
-            OrderSide::Buy => {
-                // Filter: Price > Trend SMA AND RSI < 55 AND MACD Histogram > 0 and Rising
-                let trend_filter = price_f64 > current_trend;
-                // Use configurable threshold (e.g., 70.0 for momentum)
-                let rsi_filter = current_rsi < rsi_threshold;
 
-                let prev_hist = last_macd_histogram.unwrap_or(0.0);
-
-                let macd_filter = macd_hist > 0.0 && macd_hist > prev_hist;
-
-                if !trend_filter || !rsi_filter || !macd_filter {
-                    info!(
-                        "Analyst: Advanced Buy Signal for {} REJECTED by filters (Trend: {}, RSI: {:.2} (limit {:.1}), MACD: {:.4}, Hist: {:.4}, PrevHist: {:.4})",
-                        symbol,
-                        trend_filter,
-                        current_rsi,
-                        rsi_threshold,
-                        macd_val,
-                        macd_hist,
-                        prev_hist
-                    );
-                    *signal = None;
-                }
-            }
-            OrderSide::Sell => {
-                // Filter: Sell if trend breaks OR RSI overbought OR MACD turns negative
-                let rsi_overbought = current_rsi > 75.0;
-                let trend_break = price_f64 < current_trend;
-                let macd_negative = macd_hist < 0.0;
-
-                if rsi_overbought || trend_break || macd_negative {
-                    info!(
-                        "Analyst: Advanced Sell Signal for {} confirmed by RSI/Trend/MACD (RSI: {:.2}, TrendBreak: {}, MACDHist: {:.4})",
-                        symbol, current_rsi, trend_break, macd_hist
-                    );
-                }
-            }
-        }
-    }
 
     async fn calculate_trade_quantity(
         config: &AnalystConfig,
@@ -576,8 +525,10 @@ impl Analyst {
 
                 if total_equity > Decimal::ZERO && price > Decimal::ZERO {
                     // 1. Calculate the target amount to allocate based on risk_per_trade_percent
-                    let mut target_amt = total_equity * Decimal::from_f64_retain(config.risk_per_trade_percent).unwrap_or(Decimal::ZERO);
-                    
+                    let mut target_amt = total_equity
+                        * Decimal::from_f64_retain(config.risk_per_trade_percent)
+                            .unwrap_or(Decimal::ZERO);
+
                     info!(
                         "Analyst: Initial target amount for {} ({}% of equity): ${}",
                         symbol,
@@ -601,7 +552,9 @@ impl Analyst {
 
                     // Cap 2: Max Position Size % (acts as a hard cap, applied independently)
                     if config.max_position_size_pct > 0.0 {
-                        let max_pos_val = total_equity * Decimal::from_f64_retain(config.max_position_size_pct).unwrap_or(Decimal::ZERO);
+                        let max_pos_val = total_equity
+                            * Decimal::from_f64_retain(config.max_position_size_pct)
+                                .unwrap_or(Decimal::ZERO);
                         let before = target_amt;
                         target_amt = target_amt.min(max_pos_val);
                         if target_amt < before {
@@ -616,7 +569,7 @@ impl Analyst {
                     }
 
                     quantity = (target_amt / price).round_dp(4);
-                    
+
                     info!(
                         "Analyst: Final quantity for {}: {} shares (${} / ${} per share)",
                         symbol, quantity, target_amt, price
@@ -639,7 +592,7 @@ impl Analyst {
                 symbol, quantity
             );
         }
-        
+
         quantity
     }
 }
@@ -704,7 +657,8 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+        let mut analyst =
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -775,7 +729,8 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
+        let mut analyst =
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -866,7 +821,8 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
+        let mut analyst =
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -947,7 +903,8 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
+        let mut analyst =
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1034,7 +991,8 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
+        let mut analyst =
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1131,7 +1089,8 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
+        let mut analyst =
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1192,7 +1151,7 @@ mod tests {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-        
+
         // Start with empty portfolio - this is the production issue scenario
         let mut portfolio = crate::domain::portfolio::Portfolio::new();
         portfolio.cash = Decimal::new(100000, 0); // $100,000 starting cash
@@ -1231,7 +1190,8 @@ mod tests {
             config.slow_sma_period,
             config.sma_threshold,
         ));
-        let mut analyst = Analyst::new(market_rx, proposal_tx, exec_service, strategy, config);
+        let mut analyst =
+            Analyst::new(market_rx, proposal_tx, exec_service, strategy, config, None);
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1240,12 +1200,11 @@ mod tests {
         // Generate a golden cross scenario
         // Start low, then cross up
         let prices = vec![
-            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
-            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
-            102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0, 111.0,
-            112.0, 113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0, 120.0, 121.0,
-            122.0, 123.0, 124.0, 125.0, 126.0, 127.0, 128.0, 129.0, 130.0, 131.0,
-            132.0, 133.0, 134.0, 135.0, 136.0, 137.0, 138.0, 139.0, 140.0, 141.0,
+            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
+            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 102.0, 103.0, 104.0, 105.0,
+            106.0, 107.0, 108.0, 109.0, 110.0, 111.0, 112.0, 113.0, 114.0, 115.0, 116.0, 117.0,
+            118.0, 119.0, 120.0, 121.0, 122.0, 123.0, 124.0, 125.0, 126.0, 127.0, 128.0, 129.0,
+            130.0, 131.0, 132.0, 133.0, 134.0, 135.0, 136.0, 137.0, 138.0, 139.0, 140.0, 141.0,
             142.0, 143.0, 144.0, 145.0,
         ];
 
@@ -1264,16 +1223,18 @@ mod tests {
         }
 
         // Should receive at least one buy signal
-        let proposal = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            proposal_rx.recv()
-        )
-        .await
-        .expect("Should receive a proposal within timeout")
-        .expect("Should receive a buy signal");
+        let proposal =
+            tokio::time::timeout(std::time::Duration::from_millis(500), proposal_rx.recv())
+                .await
+                .expect("Should receive a proposal within timeout")
+                .expect("Should receive a buy signal");
 
-        assert_eq!(proposal.side, OrderSide::Buy, "Should generate a buy signal");
-        
+        assert_eq!(
+            proposal.side,
+            OrderSide::Buy,
+            "Should generate a buy signal"
+        );
+
         // Verify quantity is calculated based on risk, not static value
         // With $100,000 equity, 1% risk = $1,000
         // At price ~140, quantity should be around 1000/140 = ~7 shares

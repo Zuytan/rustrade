@@ -75,7 +75,6 @@ pub trait TradingStrategy: Send + Sync {
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_signal_creation() {
         let buy_signal = Signal::buy("Test reason");

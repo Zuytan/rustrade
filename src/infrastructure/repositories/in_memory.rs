@@ -81,9 +81,13 @@ impl TradeRepository for InMemoryTradeRepository {
 
 /// In-memory implementation of PortfolioRepository
 /// Stores portfolio state with equity history tracking
+type EquityHistory = Vec<(DateTime<Utc>, Decimal)>;
+
+/// In-memory implementation of PortfolioRepository
+/// Stores portfolio state with equity history tracking
 pub struct InMemoryPortfolioRepository {
     portfolio: Arc<RwLock<Portfolio>>,
-    history: Arc<RwLock<Vec<(DateTime<Utc>, Decimal)>>>,
+    history: Arc<RwLock<EquityHistory>>,
 }
 
 impl InMemoryPortfolioRepository {

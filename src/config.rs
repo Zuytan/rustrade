@@ -1,9 +1,9 @@
+use crate::domain::risk_appetite::RiskAppetite;
 use anyhow::{Context, Result};
-use std::str::FromStr;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::env;
-use crate::domain::risk_appetite::RiskAppetite;
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub enum Mode {
@@ -271,32 +271,36 @@ impl Config {
 
         // Risk Appetite Score (optional - overrides individual risk params if set)
         let risk_appetite = if let Ok(score_str) = env::var("RISK_APPETITE_SCORE") {
-            let score = score_str.parse::<u8>()
+            let score = score_str
+                .parse::<u8>()
                 .context("Failed to parse RISK_APPETITE_SCORE - must be integer 1-10")?;
-            Some(RiskAppetite::new(score)
-                .context("RISK_APPETITE_SCORE must be between 1 and 10")?)
+            Some(RiskAppetite::new(score).context("RISK_APPETITE_SCORE must be between 1 and 10")?)
         } else {
             None
         };
 
         // If risk_appetite is set, override the individual risk parameters
-        let (final_risk_per_trade, final_trailing_stop, final_rsi_threshold, final_max_position_size) = 
-            if let Some(ref appetite) = risk_appetite {
-                (
-                    appetite.calculate_risk_per_trade_percent(),
-                    appetite.calculate_trailing_stop_multiplier(),
-                    appetite.calculate_rsi_threshold(),
-                    appetite.calculate_max_position_size_pct(),
-                )
-            } else {
-                // Use individual env vars as before (backward compatibility)
-                (
-                    risk_per_trade_percent,
-                    trailing_stop_atr_multiplier,
-                    rsi_threshold,
-                    max_position_size_pct,
-                )
-            };
+        let (
+            final_risk_per_trade,
+            final_trailing_stop,
+            final_rsi_threshold,
+            final_max_position_size,
+        ) = if let Some(ref appetite) = risk_appetite {
+            (
+                appetite.calculate_risk_per_trade_percent(),
+                appetite.calculate_trailing_stop_multiplier(),
+                appetite.calculate_rsi_threshold(),
+                appetite.calculate_max_position_size_pct(),
+            )
+        } else {
+            // Use individual env vars as before (backward compatibility)
+            (
+                risk_per_trade_percent,
+                trailing_stop_atr_multiplier,
+                rsi_threshold,
+                max_position_size_pct,
+            )
+        };
 
         Ok(Config {
             mode,

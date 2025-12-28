@@ -34,15 +34,14 @@ impl Default for MockMarketDataService {
 }
 
 impl MockMarketDataService {
-
     pub async fn publish(&self, event: MarketEvent) {
         let mut subs = self.subscribers.write().await;
-        
+
         if subs.is_empty() {
             // info!("MockMarketDataService: No subscribers for event: {:?}", event);
             return;
         }
-        
+
         // retain only active subscribers
         let mut active_subs = Vec::new();
         let mut sent_count = 0;
@@ -53,15 +52,18 @@ impl MockMarketDataService {
             }
         }
         *subs = active_subs;
-        
+
         // Log every 10th event to avoid spam
         if matches!(event, MarketEvent::Quote { symbol, .. } if symbol.contains("BTC")) {
-            static mut COUNTER: u32 = 0;
-            unsafe {
-                COUNTER += 1;
-                if COUNTER % 10 == 0 {
-                    info!("MockMarketDataService: Published {} events to {} subscribers", COUNTER, sent_count);
-                }
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static COUNTER: AtomicUsize = AtomicUsize::new(0);
+            let count = COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
+            #[allow(clippy::manual_is_multiple_of)]
+            if count % 10 == 0 {
+                info!(
+                    "MockMarketDataService: Published {} events to {} subscribers",
+                    count, sent_count
+                );
             }
         }
     }
@@ -80,13 +82,14 @@ impl MarketDataService for MockMarketDataService {
 
         // Spawn random walk simulation for demo/testing
         tokio::spawn(async move {
+            use chrono::Utc;
             use std::time::Duration;
             use tokio::time;
-            use chrono::Utc;
-            
-            let mut prices: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+
+            let mut prices: std::collections::HashMap<String, f64> =
+                std::collections::HashMap::new();
             let mut iteration = 0u64;
-            
+
             // Initialize prices
             for symbol in &symbols_clone {
                 let base_price = if symbol.contains("BTC") {
@@ -100,33 +103,36 @@ impl MarketDataService for MockMarketDataService {
                 };
                 prices.insert(symbol.clone(), base_price);
             }
-            
-            info!("MockMarketDataService: Starting price simulation for {:?}", symbols_clone);
-            
+
+            info!(
+                "MockMarketDataService: Starting price simulation for {:?}",
+                symbols_clone
+            );
+
             let mut interval = time::interval(Duration::from_millis(500));
-            
+
             loop {
                 interval.tick().await;
                 iteration += 1;
-                
+
                 for (idx, symbol) in symbols_clone.iter().enumerate() {
                     let current_price = prices.get(symbol).copied().unwrap_or(100.0);
-                    
+
                     // Simple pseudo-random using iteration and timestamp
                     // This creates -0.5% to +0.5% variance
                     let seed = (iteration + idx as u64) * 1103515245 + 12345;
                     let random_val = (((seed / 65536) % 1000) as f64 / 1000.0) - 0.5; // -0.5 to +0.5
                     let change_pct = random_val * 0.01;
                     let new_price = current_price * (1.0 + change_pct);
-                    
+
                     prices.insert(symbol.clone(), new_price);
-                    
+
                     let event = MarketEvent::Quote {
                         symbol: symbol.clone(),
                         price: Decimal::from_f64(new_price).unwrap_or(Decimal::ZERO),
                         timestamp: Utc::now().timestamp_millis(),
                     };
-                    
+
                     service_clone.publish(event).await;
                 }
             }

@@ -254,14 +254,14 @@ impl RiskManager {
                     }
 
                     // Validate position size for buy orders
-                    if matches!(proposal.side, OrderSide::Buy) {
-                        if !self.validate_position_size(&proposal, current_equity) {
-                            warn!(
-                                "RiskManager: Rejecting {:?} order for {} - Position size limit",
-                                proposal.side, proposal.symbol
-                            );
-                            continue;
-                        }
+                    if matches!(proposal.side, OrderSide::Buy)
+                        && !self.validate_position_size(&proposal, current_equity)
+                    {
+                        warn!(
+                            "RiskManager: Rejecting {:?} order for {} - Position size limit",
+                            proposal.side, proposal.symbol
+                        );
+                        continue;
                     }
 
                     // Validation Logic

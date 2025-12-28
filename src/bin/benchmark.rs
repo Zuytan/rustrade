@@ -1,5 +1,4 @@
 use chrono::{TimeZone, Utc};
-use std::str::FromStr;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rustrade::application::analyst::AnalystConfig;
@@ -9,6 +8,7 @@ use rustrade::domain::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
 use std::env;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -100,9 +100,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load full config to respect Risk Appetite and other logic
     let mut app_config = rustrade::config::Config::from_env().expect("Failed to load config");
-    
+
     // Override config with CLI args if provided
-    if strategy_mode != rustrade::config::StrategyMode::Standard { 
+    if strategy_mode != rustrade::config::StrategyMode::Standard {
         // Only override if CLI specified a strategy (default parsing fallback logic in main needs refinement but this works for now)
         // Actually, main parsed strategy_mode from CLI, so we should use it.
         app_config.strategy_mode = strategy_mode;
@@ -410,9 +410,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("--------------------------------------------------");
         println!("📈 ALPHA/BETA vs S&P 500");
         println!("--------------------------------------------------");
-        println!("Alpha:              {:.4}% (annualized excess return)", result.alpha * 100.0);
-        println!("Beta:               {:.2} (market sensitivity)", result.beta);
-        println!("Correlation:        {:.2} (relationship strength)", result.benchmark_correlation);
+        println!(
+            "Alpha:              {:.4}% (annualized excess return)",
+            result.alpha * 100.0
+        );
+        println!(
+            "Beta:               {:.2} (market sensitivity)",
+            result.beta
+        );
+        println!(
+            "Correlation:        {:.2} (relationship strength)",
+            result.benchmark_correlation
+        );
         println!("--------------------------------------------------");
         println!(
             "Inputs: {} trades, {} daily data points",

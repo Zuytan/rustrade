@@ -85,8 +85,11 @@ impl MarketDataService for AlpacaMarketDataService {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            info!("Alpaca v1beta1 movers failed: {}. Falling back to v2/stocks/movers...", error_text);
-            
+            info!(
+                "Alpaca v1beta1 movers failed: {}. Falling back to v2/stocks/movers...",
+                error_text
+            );
+
             // Fallback to V2 movers endpoint
             let v2_url = "https://data.alpaca.markets/v2/stocks/movers";
             response = self
@@ -97,10 +100,13 @@ impl MarketDataService for AlpacaMarketDataService {
                 .send()
                 .await
                 .context("Failed to fetch top movers from Alpaca (v2 fallback)")?;
-                
+
             if !response.status().is_success() {
                 let error_text = response.text().await.unwrap_or_default();
-                anyhow::bail!("Alpaca movers fetch failed (both v1beta1 and v2): {}", error_text);
+                anyhow::bail!(
+                    "Alpaca movers fetch failed (both v1beta1 and v2): {}",
+                    error_text
+                );
             }
         }
 
@@ -110,19 +116,17 @@ impl MarketDataService for AlpacaMarketDataService {
             #[serde(default)]
             price: f64, // Optional in some V2 responses or might be named differently
         }
-        #[derive(Debug, Deserialize)]
-        struct MoversResponse {
-            #[serde(alias = "gainers")]
-            movers: Vec<Mover>,
-        }
 
         // V2 response format can differ, it sometimes returns a list directly or a different field.
-        // Actually Screener v1beta1 returns { gainers: [...] }. 
-        // V2 Movers returns [Mover, Mover, ...] or a struct? 
+        // Actually Screener v1beta1 returns { gainers: [...] }.
+        // V2 Movers returns [Mover, Mover, ...] or a struct?
         // Let's be smart about deserialization.
-        
-        let json_val: serde_json::Value = response.json().await.context("Failed to parse movers JSON")?;
-        
+
+        let json_val: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse movers JSON")?;
+
         // Detailed logging of the raw response for debugging
         // info!("Alpaca movers raw response: {}", json_val);
 
@@ -136,7 +140,10 @@ impl MarketDataService for AlpacaMarketDataService {
         } else if let Some(movers) = json_val.as_array() {
             serde_json::from_value(serde_json::Value::Array(movers.clone()))?
         } else {
-            info!("Alpaca movers: No 'gainers' or array found in response. JSON: {}", json_val);
+            info!(
+                "Alpaca movers: No 'gainers' or array found in response. JSON: {}",
+                json_val
+            );
             vec![]
         };
 
@@ -144,23 +151,26 @@ impl MarketDataService for AlpacaMarketDataService {
             info!("MarketScanner: No movers found in Alpaca response.");
         }
 
-        let symbols = movers.into_iter()
+        let symbols = movers
+            .into_iter()
             .filter(|m| {
                 // If price is 0.0 (missing in some V2 responses), we don't confirm it's a penny stock
                 let is_penny = m.price > 0.0 && m.price < 5.0;
                 let is_warrant = m.symbol.contains(".WS") || m.symbol.ends_with('W');
                 let is_unit = m.symbol.ends_with('U');
-                
+
                 let keep = !is_penny && !is_warrant && !is_unit;
                 if !keep {
-                    info!("MarketScanner: Filtering out {} (price: {:.2}, warrant: {}, unit: {})", 
-                        m.symbol, m.price, is_warrant, is_unit);
+                    info!(
+                        "MarketScanner: Filtering out {} (price: {:.2}, warrant: {}, unit: {})",
+                        m.symbol, m.price, is_warrant, is_unit
+                    );
                 }
                 keep
             })
             .map(|m| m.symbol)
             .collect();
-            
+
         info!("MarketScanner: Final filtered movers list: {:?}", symbols);
         Ok(symbols)
     }

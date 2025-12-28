@@ -430,7 +430,7 @@ mod tests {
         ];
 
         // Mock Daily Closes
-        let daily_closes = vec![
+        let daily_closes = [
             (0, dec!(100)),      // Start
             (86400, dec!(110)),  // Day 1
             (172800, dec!(120)), // Day 2

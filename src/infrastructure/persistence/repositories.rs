@@ -1,21 +1,26 @@
+use crate::domain::repositories::{CandleRepository, TradeRepository};
 use crate::domain::types::{Candle, Order, OrderSide};
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
-use tracing::{error, info};
+use tracing::info;
 
-pub struct OrderRepository {
+pub struct SqliteOrderRepository {
     pool: SqlitePool,
 }
 
-impl OrderRepository {
+impl SqliteOrderRepository {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
+}
 
-    pub async fn save(&self, order: &Order) -> Result<()> {
+#[async_trait]
+impl TradeRepository for SqliteOrderRepository {
+    async fn save(&self, order: &Order) -> Result<()> {
         sqlx::query(
             r#"
             INSERT INTO orders (id, symbol, side, price, quantity, timestamp)
@@ -37,18 +42,47 @@ impl OrderRepository {
         Ok(())
     }
 
-    pub async fn get_all(&self) -> Result<Vec<Order>> {
+    async fn get_all(&self) -> Result<Vec<Order>> {
         let rows = sqlx::query("SELECT * FROM orders ORDER BY timestamp DESC")
             .fetch_all(&self.pool)
             .await?;
+        self.map_rows_to_orders(rows)
+    }
 
+    async fn find_by_symbol(&self, symbol: &str) -> Result<Vec<Order>> {
+        let rows = sqlx::query("SELECT * FROM orders WHERE symbol = ? ORDER BY timestamp DESC")
+            .bind(symbol)
+            .fetch_all(&self.pool)
+            .await?;
+        self.map_rows_to_orders(rows)
+    }
+
+    async fn find_recent(&self, limit: usize) -> Result<Vec<Order>> {
+        let rows = sqlx::query("SELECT * FROM orders ORDER BY timestamp DESC LIMIT ?")
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+        self.map_rows_to_orders(rows)
+    }
+
+    async fn count(&self) -> Result<usize> {
+        let row = sqlx::query("SELECT COUNT(*) as count FROM orders")
+            .fetch_one(&self.pool)
+            .await?;
+        let count: i64 = row.try_get("count")?;
+        Ok(count as usize)
+    }
+}
+
+impl SqliteOrderRepository {
+    fn map_rows_to_orders(&self, rows: Vec<sqlx::sqlite::SqliteRow>) -> Result<Vec<Order>> {
         let mut orders = Vec::new();
         for row in rows {
             let side_str: String = row.try_get("side")?;
             let side = match side_str.as_str() {
-                "BUY" => OrderSide::Buy, // Note uppercase from Display trait if used, or define explicitly
+                "BUY" => OrderSide::Buy,
                 "SELL" => OrderSide::Sell,
-                "Buy" => OrderSide::Buy, // Handle potential variations
+                "Buy" => OrderSide::Buy,
                 "Sell" => OrderSide::Sell,
                 _ => OrderSide::Buy,
             };
@@ -62,21 +96,23 @@ impl OrderRepository {
                 timestamp: row.try_get("timestamp")?,
             });
         }
-
         Ok(orders)
     }
 }
 
-pub struct CandleRepository {
+pub struct SqliteCandleRepository {
     pool: SqlitePool,
 }
 
-impl CandleRepository {
+impl SqliteCandleRepository {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
+}
 
-    pub async fn save(&self, candle: &Candle) -> Result<()> {
+#[async_trait]
+impl CandleRepository for SqliteCandleRepository {
+    async fn save(&self, candle: &Candle) -> Result<()> {
         // Use UPSERT to avoid crashing on duplicates (if re-processing)
         sqlx::query(
             r#"
@@ -98,12 +134,7 @@ impl CandleRepository {
         Ok(())
     }
 
-    pub async fn get_range(
-        &self,
-        symbol: &str,
-        start_ts: i64,
-        end_ts: i64,
-    ) -> Result<Vec<Candle>> {
+    async fn get_range(&self, symbol: &str, start_ts: i64, end_ts: i64) -> Result<Vec<Candle>> {
         let rows = sqlx::query(
             "SELECT * FROM candles WHERE symbol = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC",
         )
@@ -127,16 +158,15 @@ impl CandleRepository {
         }
         Ok(candles)
     }
-    
-    /// Delete candles older than X days
-    pub async fn prune(&self, days_retention: i64) -> Result<u64> {
+
+    async fn prune(&self, days_retention: i64) -> Result<u64> {
         let cutoff_ts = Utc::now().timestamp() - (days_retention * 24 * 60 * 60);
-        
+
         let result = sqlx::query("DELETE FROM candles WHERE timestamp < ?")
             .bind(cutoff_ts)
             .execute(&self.pool)
             .await?;
-            
+
         Ok(result.rows_affected())
     }
 }

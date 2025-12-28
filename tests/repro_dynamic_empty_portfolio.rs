@@ -5,7 +5,7 @@ use rustrade::application::sentinel::Sentinel;
 use rustrade::application::strategies::DualSMAStrategy;
 use rustrade::config::StrategyMode;
 use rustrade::domain::portfolio::Portfolio;
-use rustrade::domain::types::{MarketEvent, OrderSide, Candle};
+use rustrade::domain::types::{Candle, MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -72,6 +72,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         execution_service.clone(),
         strategy,
         config,
+        None,
     );
 
     // Spawn agents
@@ -81,14 +82,14 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
 
     // 4. Wait for Scanner to pick up "Top Movers" from MockMarketDataService
     // MockMarketDataService::get_top_movers returns [AAPL, MSFT, NVDA, TSLA, GOOGL]
-    
+
     // 5. Inject candles for one of the moved symbols (e.g., "AAPL")
-    // We send candles but wait... if Sentinel ignored the new receiver, 
+    // We send candles but wait... if Sentinel ignored the new receiver,
     // it will ONLY receive if we publish to the OLD one.
     // In our MockMarketDataService, it publishes to ALL.
     // Let's modify the MockMarketDataService in the test to ONLY publish to the LATEST subscriber
     // to simulate a service where each subscribe() is a fresh stream.
-    
+
     // Wait for scanner to run at least once
     time::sleep(Duration::from_millis(200)).await;
 

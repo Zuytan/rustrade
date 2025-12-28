@@ -1,9 +1,10 @@
+use crate::domain::repositories::CandleRepository;
 use crate::domain::types::Candle;
 use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
-use tracing::{error, info};
 use std::sync::Arc;
+use tracing::{error, info};
 
 #[derive(Debug)]
 struct CandleBuilder {
@@ -64,11 +65,11 @@ pub struct CandleAggregator {
     // Map Symbol -> Current partial candle
     builders: HashMap<String, CandleBuilder>,
     _timeframe: Duration, // e.g., 1 minute
-    repository: Option<Arc<crate::infrastructure::persistence::repositories::CandleRepository>>,
+    repository: Option<Arc<dyn CandleRepository>>,
 }
 
 impl CandleAggregator {
-    pub fn new(repository: Option<Arc<crate::infrastructure::persistence::repositories::CandleRepository>>) -> Self {
+    pub fn new(repository: Option<Arc<dyn CandleRepository>>) -> Self {
         Self {
             builders: HashMap::new(),
             _timeframe: Duration::minutes(1),
@@ -91,11 +92,11 @@ impl CandleAggregator {
             if builder.start_time == current_minute {
                 // Same minute, update existing candle
                 builder.update(price, timestamp);
-                return None;
+                None
             } else {
                 // New minute! Finalize the old candle and start a new one
                 let completed_candle = builder.build();
-                
+
                 info!(
                     "CandleAggregator: {} candle completed → O:{} H:{} L:{} C:{} V:{}",
                     symbol,
@@ -113,22 +114,28 @@ impl CandleAggregator {
                     let candle_clone = completed_candle.clone();
                     let repo = repo.clone();
                     tokio::spawn(async move {
-                         if let Err(e) = repo.save(&candle_clone).await {
-                             error!("Failed to persist candle for {}: {}", candle_clone.symbol, e);
-                         }
+                        if let Err(e) = repo.save(&candle_clone).await {
+                            error!(
+                                "Failed to persist candle for {}: {}",
+                                candle_clone.symbol, e
+                            );
+                        }
                     });
                 }
 
-                return Some(completed_candle);
+                Some(completed_candle)
             }
         } else {
             // First tick for this symbol
-            info!("CandleAggregator: {} - First quote @ {}, starting aggregation", symbol, price);
+            info!(
+                "CandleAggregator: {} - First quote @ {}, starting aggregation",
+                symbol, price
+            );
             self.builders.insert(
                 symbol.to_string(),
                 CandleBuilder::new(symbol.to_string(), price, timestamp),
             );
-            return None;
+            None
         }
     }
 }
