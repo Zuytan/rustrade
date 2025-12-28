@@ -7,11 +7,11 @@ Développer un système multi-agents capable de surveiller le marché des action
 
 ## Score d'Appétit au Risque (Risk Appetite)
 
-Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 à 10, permettant d'ajuster automatiquement les paramètres de trading selon votre tolérance au risque :
+Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 à 9, permettant d'ajuster automatiquement les paramètres de trading selon votre tolérance au risque :
 
-- **Scores 1-3 (Conservateur)** : Préservation du capital, positions petites (5-10%), stops serrés (2.0-2.5x ATR), seuil RSI bas (30-45)
-- **Scores 4-7 (Équilibré)** : Approche modérée, positions moyennes (10-20%), stops modérés (2.5-3.5x ATR), seuil RSI médian (45-65)
-- **Scores 8-10 (Agressif)** : Recherche de rendement, positions larges (20-30%), stops lâches (3.5-5.0x ATR), seuil RSI élevé (65-75)
+- **Scores 1-3 (Conservateur)** : Préservation du capital, positions petites (5-10%), stops serrés (2.0-2.5x ATR).
+- **Scores 4-6 (Équilibré)** : Approche modérée, positions moyennes (10-20%), stops modérés (2.5-3.5x ATR). **Le score 5 est le centre exact.**
+- **Scores 7-9 (Agressif)** : Recherche de rendement, positions larges (20-30%), stops lâches (3.5-5.0x ATR).
 
 **Configuration** : Définir `RISK_APPETITE_SCORE=5` dans `.env`. Si non défini, les paramètres individuels sont utilisés (rétrocompatibilité).
 
@@ -33,6 +33,23 @@ Pour garantir la viabilité économique des stratégies, le bot intègre désorm
 ### 3. Diversification Sectorielle
 - **Gestion des Risques** : Le Risk Manager surveille l'exposition par secteur (Tech, Energy, Crypto, etc.).
 - **Plafond d'Exposition** : Si un secteur dépasse `MAX_SECTOR_EXPOSURE_PCT` (ex: 30% du portefeuille), tout nouvel achat dans ce secteur est bloqué, forçant la diversification vers d'autres opportunités.
+
+## Optimisation Adaptative (Adaptive Optimization)
+
+Le bot intègre désormais un système d'optimisation en boucle fermée qui ajuste dynamiquement les paramètres des stratégies en fonction de la performance réelle et du régime de marché :
+
+### 1. Surveillance de Performance (`PerformanceMonitoringService`)
+- Capture des instantanés quotidiens de l'équité, du drawdown et du Sharpe ratio.
+- **Détection de Régime** : Analyse les bougies récentes pour classifier le marché (Tendance haussière/baissière, Range, Volatile).
+
+### 2. Ré-optimisation Automatique (`AdaptiveOptimizationService`)
+- **Évaluation Quotidienne** : Analyse les performances par rapport à des seuils définis (`EVALUATION_THRESHOLDS`).
+- **Trigger de Ré-optimisation** : Si la performance se dégrade (ex: Sharpe < 1.0 ou Drawdown > 15%), un processus de re-calcul des paramètres est déclenché.
+- **Grid Search Intégré** : Utilise le simulateur pour tester des milliers de combinaisons de paramètres sur les données historiques récentes afin de trouver la configuration optimale pour le régime actuel.
+
+### 3. Transition de Paramètres
+- Les nouveaux paramètres sont sauvegardés dans le `StrategyRepository`.
+- L'Analyste bascule automatiquement sur les nouveaux paramètres sans redémarrage, assurant une continuité opérationnelle.
 
 ## Architecture des Agents
 
@@ -62,6 +79,7 @@ Pour garantir la viabilité économique des stratégies, le bot intègre désorm
     - **Trend Riding** : Stratégie de suivi de tendance long-terme. Achète sur Golden Cross et maintient la position tant que le prix reste au-dessus de la tendance (avec buffer), ignorant les fluctuations mineures pour capturer les grands mouvements. 
     - **Long-Only Safety**: Par sécurité, l'Analyste vérifie systématiquement que le portefeuille détient l'actif avant d'émettre un signal de Vente, empêchant tout Short Selling involontaire.
     - **Smart Execution**: Utilisation d'ordres `Limit` pour maîtriser les coûts à l'entrée.
+    - **Optimisation Adaptative (v0.17.0)** : L'Analyste interroge périodiquement le `StrategyRepository` pour récupérer les paramètres optimisés pour le régime de marché actuel (Trending/Ranging/Volatile), permettant une réponse dynamique aux changements de conditions.
 
 ### 3. Agent "Risk Manager" (Safety Gate)
 - **Rôle**: Contrôleur de conformité financier.
@@ -70,6 +88,7 @@ Pour garantir la viabilité économique des stratégies, le bot intègre désorm
     - **Contrôle Sectoriel**: Bloque les transactions si l'exposition à un secteur dépasse le seuil défini (`MAX_SECTOR_EXPOSURE_PCT`).
     - **Protection PDT**: Empêche le Day Trading pour les petits comptes.
     - **Valuation Temps Réel**: Surveillance continue de l'équité pour déclenchement immédiat des Circuit Breakers.
+    - **Capture de Performance (v0.17.0)** : Collabore avec le `PerformanceMonitoringService` pour enregistrer des instantanés (Snapshots) de performance et de régime de marché lors de chaque mise à jour de valorisation.
 
 ### 4. L'Agent "Order Throttler" (Rate Limiting)
 - **Rôle**: Garde-fou technique.

@@ -74,6 +74,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         strategy,
         config,
         None,
+        None,
     );
 
     // Spawn agents

@@ -248,10 +248,40 @@ impl MarketDataService for AlpacaMarketDataService {
 
         Ok(prices)
     }
+
+    async fn get_historical_bars(
+        &self,
+        symbol: &str,
+        start: chrono::DateTime<chrono::Utc>,
+        end: chrono::DateTime<chrono::Utc>,
+        timeframe: &str,
+    ) -> Result<Vec<crate::domain::types::Candle>> {
+        // Use the internal implementation
+        let alpaca_bars = self.fetch_historical_bars_internal(symbol, start, end, timeframe).await?;
+        
+        // Convert AlpacaBar -> Candle
+        let candles = alpaca_bars.into_iter().map(|b| {
+            let timestamp = chrono::DateTime::parse_from_rfc3339(&b.timestamp)
+                .unwrap_or_default()
+                .timestamp();
+            
+            crate::domain::types::Candle {
+                symbol: symbol.to_string(),
+                open: Decimal::from_f64_retain(b.open).unwrap_or(Decimal::ZERO),
+                high: Decimal::from_f64_retain(b.high).unwrap_or(Decimal::ZERO),
+                low: Decimal::from_f64_retain(b.low).unwrap_or(Decimal::ZERO),
+                close: Decimal::from_f64_retain(b.close).unwrap_or(Decimal::ZERO),
+                volume: b.volume,
+                timestamp,
+            }
+        }).collect();
+        
+        Ok(candles)
+    }
 }
 
 impl AlpacaMarketDataService {
-    pub async fn get_historical_bars(
+    async fn fetch_historical_bars_internal(
         &self,
         symbol: &str,
         start: chrono::DateTime<chrono::Utc>,

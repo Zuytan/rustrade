@@ -1,8 +1,7 @@
 use crate::application::analyst::AnalystConfig;
 use crate::application::simulator::Simulator;
 use crate::config::StrategyMode;
-use crate::domain::ports::ExecutionService;
-use crate::infrastructure::alpaca::AlpacaMarketDataService;
+use crate::domain::ports::{ExecutionService, MarketDataService};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -61,9 +60,11 @@ impl OptimizationResult {
     }
 }
 
+// use crate::domain::ports::MarketDataService;
+
 /// Grid search optimizer
 pub struct GridSearchOptimizer {
-    market_data: Arc<AlpacaMarketDataService>,
+    market_data: Arc<dyn MarketDataService>,
     execution_service_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync>,
     parameter_grid: ParameterGrid,
     strategy_mode: StrategyMode,
@@ -71,7 +72,7 @@ pub struct GridSearchOptimizer {
 
 impl GridSearchOptimizer {
     pub fn new(
-        market_data: Arc<AlpacaMarketDataService>,
+        market_data: Arc<dyn MarketDataService>,
         execution_service_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync>,
         parameter_grid: ParameterGrid,
         strategy_mode: StrategyMode,

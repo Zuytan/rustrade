@@ -1,8 +1,8 @@
 use crate::application::analyst::{Analyst, AnalystConfig};
 use crate::application::strategies::{AdvancedTripleFilterStrategy, TradingStrategy};
-use crate::domain::ports::ExecutionService;
+use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::types::MarketEvent;
-use crate::infrastructure::alpaca::AlpacaMarketDataService;
+use crate::domain::types::{Candle, Order};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
@@ -11,8 +11,6 @@ use rust_decimal::Decimal;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
-
-use crate::domain::types::{Candle, Order};
 
 pub struct BacktestResult {
     pub trades: Vec<Order>,
@@ -27,7 +25,7 @@ pub struct BacktestResult {
 }
 
 pub struct Simulator {
-    market_data: Arc<AlpacaMarketDataService>,
+    market_data: Arc<dyn MarketDataService>,
     execution_service: Arc<dyn ExecutionService>,
     config: AnalystConfig,
 }
@@ -87,7 +85,7 @@ impl Simulator {
         (alpha, beta, correlation)
     }
     pub fn new(
-        market_data: Arc<AlpacaMarketDataService>,
+        market_data: Arc<dyn MarketDataService>,
         execution_service: Arc<dyn ExecutionService>,
         config: AnalystConfig,
     ) -> Self {
@@ -123,11 +121,11 @@ impl Simulator {
             std::collections::BTreeMap::new();
 
         for bar in &bars {
-            let dt = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
+            let dt = chrono::DateTime::from_timestamp(bar.timestamp, 0)
                 .unwrap_or_default()
                 .with_timezone(&Utc);
             let date_key = dt.format("%Y-%m-%d").to_string();
-            let close = Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO);
+            let close = bar.close;
             daily_map.insert(date_key, (dt.timestamp_millis(), close));
         }
 
@@ -226,28 +224,24 @@ impl Simulator {
         // Pre-calculate prices for metrics before moving bars
         let start_price = bars
             .first()
-            .map(|b| Decimal::from_f64_retain(b.close).unwrap_or(Decimal::ZERO))
+            .map(|b| b.close)
             .unwrap_or(Decimal::ZERO);
         let last_close = bars
             .last()
-            .map(|b| Decimal::from_f64_retain(b.close).unwrap_or(Decimal::ZERO))
+            .map(|b| b.close)
             .unwrap_or(Decimal::ZERO);
 
         let symbol_clone = symbol.to_string();
         let feeder_handle = tokio::spawn(async move {
             for bar in bars {
-                let timestamp = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
-                    .unwrap_or_default()
-                    .timestamp(); // Seconds
-
                 let candle = Candle {
                     symbol: symbol_clone.clone(),
-                    open: Decimal::from_f64_retain(bar.open).unwrap_or(Decimal::ZERO),
-                    high: Decimal::from_f64_retain(bar.high).unwrap_or(Decimal::ZERO),
-                    low: Decimal::from_f64_retain(bar.low).unwrap_or(Decimal::ZERO),
-                    close: Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO),
+                    open: bar.open,
+                    high: bar.high,
+                    low: bar.low,
+                    close: bar.close,
                     volume: bar.volume,
-                    timestamp,
+                    timestamp: bar.timestamp,
                 };
 
                 let event = MarketEvent::Candle(candle);
@@ -337,11 +331,11 @@ impl Simulator {
                 let mut spy_daily_map: std::collections::BTreeMap<String, f64> =
                     std::collections::BTreeMap::new();
                 for bar in &spy_bars {
-                    let dt = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
+                    let dt = chrono::DateTime::from_timestamp(bar.timestamp, 0)
                         .unwrap_or_default()
                         .with_timezone(&Utc);
                     let date_key = dt.format("%Y-%m-%d").to_string();
-                    spy_daily_map.insert(date_key, bar.close);
+                    spy_daily_map.insert(date_key, bar.close.to_f64().unwrap_or(0.0));
                 }
 
                 // Calculate SPY daily returns aligned with strategy dates

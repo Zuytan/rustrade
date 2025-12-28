@@ -11,6 +11,15 @@ use tracing::info;
 pub mod strategy_repository;
 pub use strategy_repository::SqliteStrategyRepository;
 
+pub mod optimization_history_repository;
+pub use optimization_history_repository::SqliteOptimizationHistoryRepository;
+
+pub mod performance_snapshot_repository;
+pub use performance_snapshot_repository::SqlitePerformanceSnapshotRepository;
+
+pub mod reoptimization_trigger_repository;
+pub use reoptimization_trigger_repository::SqliteReoptimizationTriggerRepository;
+
 pub struct SqliteOrderRepository {
     pool: SqlitePool,
 }

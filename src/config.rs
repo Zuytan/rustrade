@@ -72,6 +72,10 @@ pub struct Config {
     pub risk_appetite: Option<RiskAppetite>,
     // Metadata
     pub sector_map: std::collections::HashMap<String, String>, // Added
+    // Adaptive Optimization
+    pub adaptive_optimization_enabled: bool,
+    pub regime_detection_window: usize,
+    pub adaptive_evaluation_hour: u32,
 }
 
 
@@ -269,8 +273,8 @@ impl Config {
         let risk_appetite = if let Ok(score_str) = env::var("RISK_APPETITE_SCORE") {
             let score = score_str
                 .parse::<u8>()
-                .context("Failed to parse RISK_APPETITE_SCORE - must be integer 1-10")?;
-            Some(RiskAppetite::new(score).context("RISK_APPETITE_SCORE must be between 1 and 10")?)
+                .context("Failed to parse RISK_APPETITE_SCORE - must be integer 1-9")?;
+            Some(RiskAppetite::new(score).context("RISK_APPETITE_SCORE must be between 1 and 9")?)
         } else {
             None
         };
@@ -297,6 +301,19 @@ impl Config {
                 max_position_size_pct,
             )
         };
+
+        let adaptive_optimization_enabled = env::var("ADAPTIVE_OPTIMIZATION_ENABLED")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse::<bool>()
+            .unwrap_or(false);
+        let regime_detection_window = env::var("REGIME_DETECTION_WINDOW")
+            .unwrap_or_else(|_| "20".to_string())
+            .parse::<usize>()
+            .unwrap_or(20);
+        let adaptive_evaluation_hour = env::var("ADAPTIVE_EVALUATION_HOUR")
+            .unwrap_or_else(|_| "0".to_string())
+            .parse::<u32>()
+            .unwrap_or(0);
 
         Ok(Config {
             mode,
@@ -340,6 +357,9 @@ impl Config {
             risk_appetite,
             max_sector_exposure_pct,
             sector_map,
+            adaptive_optimization_enabled,
+            regime_detection_window,
+            adaptive_evaluation_hour,
         })
     }
 }

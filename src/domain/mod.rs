@@ -1,8 +1,13 @@
 pub mod events;
 pub mod fees;
+pub mod market_regime;
 pub mod metrics;
+pub mod optimization_history;
+pub mod performance_evaluator;
+pub mod performance_snapshot;
 pub mod portfolio;
 pub mod ports;
+pub mod reoptimization_trigger;
 pub mod repositories;
 pub mod risk_appetite;
 pub mod strategy_config;

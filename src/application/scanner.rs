@@ -127,6 +127,16 @@ mod tests {
         ) -> Result<std::collections::HashMap<String, Decimal>> {
             Ok(std::collections::HashMap::new())
         }
+
+        async fn get_historical_bars(
+            &self,
+            _symbol: &str,
+            _start: chrono::DateTime<chrono::Utc>,
+            _end: chrono::DateTime<chrono::Utc>,
+            _timeframe: &str,
+        ) -> Result<Vec<crate::domain::types::Candle>> {
+            Ok(vec![])
+        }
     }
 
     struct MockExecService {

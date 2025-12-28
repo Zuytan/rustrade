@@ -7,6 +7,10 @@ use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info, warn};
 use uuid::Uuid;
+use tokio::sync::RwLock;
+
+use crate::domain::portfolio::Portfolio;
+use crate::application::performance_monitoring_service::PerformanceMonitoringService;
 
 /// Risk management configuration
 #[derive(Debug, Clone)]
@@ -67,6 +71,8 @@ pub struct RiskManager {
     session_start_equity: Decimal,
     consecutive_losses: usize,
     current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
+    portfolio: Arc<RwLock<Portfolio>>,
+    performance_monitor: Option<Arc<PerformanceMonitoringService>>,
 }
 
 impl RiskManager {
@@ -75,8 +81,10 @@ impl RiskManager {
         order_tx: Sender<Order>,
         execution_service: Arc<dyn ExecutionService>,
         market_service: Arc<dyn MarketDataService>,
+        portfolio: Arc<RwLock<Portfolio>>,
         non_pdt_mode: bool,
         risk_config: RiskConfig,
+        performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     ) -> Self {
         if let Err(e) = risk_config.validate() {
             panic!("RiskManager Configuration Error: {}", e);
@@ -86,18 +94,20 @@ impl RiskManager {
             order_tx,
             execution_service,
             market_service,
+            portfolio,
             non_pdt_mode,
             risk_config,
             equity_high_water_mark: Decimal::ZERO,
             session_start_equity: Decimal::ZERO,
             consecutive_losses: 0,
             current_prices: HashMap::new(),
+            performance_monitor,
         }
     }
 
     /// Initialize session tracking with starting equity
     async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let portfolio = self.execution_service.get_portfolio().await?;
+        let portfolio = self.portfolio.read().await;
 
         // Fetch initial prices for accurate equity calculation
         let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
@@ -256,7 +266,7 @@ impl RiskManager {
     /// Fetch latest prices for all held positions and update valuation
     async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // 1. Get Portfolio to know what we hold
-        let portfolio = self.execution_service.get_portfolio().await?;
+        let portfolio = self.portfolio.read().await;
 
         // 2. Collect symbols
         let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
@@ -281,10 +291,23 @@ impl RiskManager {
                 }
 
                 // 6. Check Risks (Async check)
+                // 6. Check Risks (Async check)
                 if let Some(reason) = self.check_circuit_breaker(current_equity) {
-                    error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
+                    tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
                     // In a real system, we might want to shut down or cancel all orders here.
                     // For now, next proposal will be rejected.
+                }
+
+                // 7. Capture performance snapshot if monitor available
+                if let Some(monitor) = &self.performance_monitor {
+                    // RiskManager typically handles all active symbols or we pick a primary one?
+                    // For now, let's snapshot for a generic "PORTFOLIO" or iterate symbols.
+                    // The capture_snapshot method takes a symbol.
+                    // Let's use "TOTAL" as a convention for portfolio level if allowed, 
+                    // or snapshot for each position.
+                    for sym in self.current_prices.keys() {
+                         let _ = monitor.capture_snapshot(sym).await;
+                    }
                 }
             }
             Err(e) => {
@@ -554,6 +577,15 @@ mod tests {
             }
             Ok(result)
         }
+        async fn get_historical_bars(
+            &self,
+            _symbol: &str,
+            _start: chrono::DateTime<chrono::Utc>,
+            _end: chrono::DateTime<chrono::Utc>,
+            _timeframe: &str,
+        ) -> Result<Vec<crate::domain::types::Candle>, anyhow::Error> {
+            Ok(vec![])
+        }
     }
 
     #[tokio::test]
@@ -573,7 +605,7 @@ mod tests {
             },
         );
         let portfolio = Arc::new(RwLock::new(port));
-        let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
 
         // Setup Market: TSLA @ $100 Initially
         let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -591,8 +623,8 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            false,
-            config,
+            portfolio, false,
+            config, None,
         );
 
         // Run RiskManager in background
@@ -641,7 +673,7 @@ mod tests {
         let mut port = Portfolio::new();
         port.cash = Decimal::from(1000);
         let portfolio = Arc::new(RwLock::new(port));
-        let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
         let mut rm = RiskManager::new(
@@ -649,8 +681,8 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            false,
-            RiskConfig::default(),
+            portfolio, false,
+            RiskConfig::default(), None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -676,7 +708,7 @@ mod tests {
         let mut port = Portfolio::new();
         port.cash = Decimal::from(50); // Less than 100
         let portfolio = Arc::new(RwLock::new(port));
-        let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
         let mut rm = RiskManager::new(
@@ -684,8 +716,8 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            false,
-            RiskConfig::default(),
+            portfolio, false,
+            RiskConfig::default(), None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -719,7 +751,7 @@ mod tests {
             },
         );
         let portfolio = Arc::new(RwLock::new(port));
-        let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
         let mut rm = RiskManager::new(
@@ -727,8 +759,8 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            false,
-            RiskConfig::default(),
+            portfolio, false,
+            RiskConfig::default(), None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -761,7 +793,7 @@ mod tests {
             },
         );
         let portfolio = Arc::new(RwLock::new(port));
-        let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
 
         // Simulate a BUY today
         exec_service
@@ -784,8 +816,10 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
+            portfolio,
             true,
             RiskConfig::default(),
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -824,7 +858,7 @@ mod tests {
             },
         );
         let portfolio = Arc::new(RwLock::new(port));
-        let exec_service = Arc::new(MockExecutionService::new(portfolio));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
         // Config: Max Sector Exposure 30%
@@ -843,8 +877,8 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            false,
-            config,
+            portfolio, false,
+            config, None,
         );
         tokio::spawn(async move { rm.run().await });
 

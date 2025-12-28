@@ -1,7 +1,8 @@
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::info;
+use tracing::{info, error};
+use chrono::Timelike;
 
 use crate::application::{
     analyst::{Analyst, AnalystConfig},
@@ -11,16 +12,23 @@ use crate::application::{
     scanner::MarketScanner,
     sentinel::Sentinel,
     strategies::*,
+    adaptive_optimization_service::AdaptiveOptimizationService,
+    performance_monitoring_service::PerformanceMonitoringService,
+    optimizer::{GridSearchOptimizer, ParameterGrid},
 };
 use crate::config::{Config, Mode};
 use crate::domain::portfolio::Portfolio;
 use crate::domain::ports::{ExecutionService, MarketDataService};
+use crate::application::strategies::TradingStrategy;
 use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
+use crate::domain::performance_evaluator::{PerformanceEvaluator, EvaluationThresholds};
 use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::persistence::database::Database;
 use crate::infrastructure::persistence::repositories::{
     SqliteCandleRepository, SqliteOrderRepository, SqliteStrategyRepository,
+    SqliteOptimizationHistoryRepository, SqlitePerformanceSnapshotRepository, 
+    SqliteReoptimizationTriggerRepository
 };
 
 pub struct Application {
@@ -28,26 +36,23 @@ pub struct Application {
     pub market_service: Arc<dyn MarketDataService>,
     pub execution_service: Arc<dyn ExecutionService>,
     pub portfolio: Arc<RwLock<Portfolio>>,
-    pub order_repository: Option<Arc<dyn TradeRepository>>,
-    pub candle_repository: Option<Arc<dyn CandleRepository>>,
-    pub strategy_repository: Option<Arc<dyn StrategyRepository>>,
+    pub order_repository: Arc<dyn TradeRepository>,
+    pub candle_repository: Arc<dyn CandleRepository>,
+    pub strategy_repository: Arc<dyn StrategyRepository>,
+    pub adaptive_optimization_service: Option<Arc<AdaptiveOptimizationService>>,
+    pub performance_monitor: Option<Arc<PerformanceMonitoringService>>,
 }
 
 impl Application {
     pub async fn build(config: Config) -> Result<Self> {
-        // Setup Logging if not already set (optional, or handle in main)
-        // For tests we might want to suppress or redirect logs, but for now we'll assume main handles it
-        // or we do it here if it's the first time.
-        // A common pattern is to let the binary handle global logging setup.
-
         info!("Building Rustrade Application (Mode: {:?})...", config.mode);
 
-        // Initialize Shared State
+        // 1. Initialize Shared State
         let mut initial_portfolio = Portfolio::new();
         initial_portfolio.cash = config.initial_cash;
         let portfolio = Arc::new(RwLock::new(initial_portfolio));
 
-        // Initialize Infrastructure
+        // 2. Initialize Infrastructure
         let (market_service, execution_service): (
             Arc<dyn MarketDataService>,
             Arc<dyn ExecutionService>,
@@ -77,21 +82,61 @@ impl Application {
             }
         };
 
-        // Initialize Persistence
-        let db_url =
-            std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://rustrade.db".to_string());
+        // 3. Initialize Persistence
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://rustrade.db".to_string());
         info!("Initializing Database at {}", db_url);
 
-        let db = Database::new(&db_url)
-            .await
+        let db = Database::new(&db_url).await
             .map_err(|e| anyhow::anyhow!("Failed to initialize database: {}", e))?;
 
-        let order_repo: Arc<dyn TradeRepository> =
-            Arc::new(SqliteOrderRepository::new(db.pool.clone()));
-        let candle_repo: Arc<dyn CandleRepository> =
-            Arc::new(SqliteCandleRepository::new(db.pool.clone()));
-        let strategy_repo: Arc<dyn StrategyRepository> =
-            Arc::new(SqliteStrategyRepository::new(db.pool.clone()));
+        let order_repo = Arc::new(SqliteOrderRepository::new(db.pool.clone()));
+        let candle_repo = Arc::new(SqliteCandleRepository::new(db.pool.clone()));
+        let strategy_repo = Arc::new(SqliteStrategyRepository::new(db.pool.clone()));
+        
+        // 4. Initialize Adaptive Optimization Repositories
+        let opt_history_repo = Arc::new(SqliteOptimizationHistoryRepository::new(db.pool.clone()));
+        let snapshot_repo = Arc::new(SqlitePerformanceSnapshotRepository::new(db.pool.clone()));
+        let trigger_repo = Arc::new(SqliteReoptimizationTriggerRepository::new(db.pool.clone()));
+
+        // 5. Initialize Adaptive Optimization Services
+        let performance_monitor = if config.adaptive_optimization_enabled {
+            Some(Arc::new(PerformanceMonitoringService::new(
+                snapshot_repo.clone(),
+                candle_repo.clone(),
+                market_service.clone(),
+                portfolio.clone(),
+                config.regime_detection_window,
+            )))
+        } else {
+            None
+        };
+
+        let adaptive_optimization_service = if config.adaptive_optimization_enabled {
+            let es_clone = execution_service.clone();
+            let execution_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync> = 
+                Arc::new(move || es_clone.clone());
+
+            let optimizer = Arc::new(GridSearchOptimizer::new(
+                market_service.clone(),
+                execution_factory,
+                ParameterGrid::default(), // Load from file in real world
+                config.strategy_mode,
+            ));
+
+            Some(Arc::new(AdaptiveOptimizationService::new(
+                optimizer,
+                opt_history_repo,
+                snapshot_repo,
+                trigger_repo,
+                strategy_repo.clone(),
+                candle_repo.clone(),
+                PerformanceEvaluator::new(EvaluationThresholds::default()),
+                config.regime_detection_window,
+                true,
+            )))
+        } else {
+            None
+        };
 
         // Log Risk Appetite configuration
         if let Some(ref appetite) = config.risk_appetite {
@@ -104,8 +149,6 @@ impl Application {
                 config.rsi_threshold,
                 config.max_position_size_pct * 100.0
             );
-        } else {
-            info!("Using individual risk parameters from environment");
         }
 
         Ok(Self {
@@ -113,9 +156,11 @@ impl Application {
             market_service,
             execution_service,
             portfolio,
-            order_repository: Some(order_repo),
-            candle_repository: Some(candle_repo),
-            strategy_repository: Some(strategy_repo),
+            order_repository: order_repo,
+            candle_repository: candle_repo,
+            strategy_repository: strategy_repo,
+            adaptive_optimization_service,
+            performance_monitor,
         })
     }
 
@@ -135,9 +180,7 @@ impl Application {
             Some(sentinel_cmd_rx),
         );
 
-        // Scan internal in seconds for simpler config mapping if needed, or keep duration
-        let scanner_interval =
-            std::time::Duration::from_secs(self.config.dynamic_scan_interval_minutes * 60);
+        let scanner_interval = std::time::Duration::from_secs(self.config.dynamic_scan_interval_minutes * 60);
         let scanner = MarketScanner::new(
             self.market_service.clone(),
             self.execution_service.clone(),
@@ -172,7 +215,6 @@ impl Application {
             max_position_size_pct: self.config.max_position_size_pct,
         };
 
-        // Create strategy based on config
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
             crate::domain::strategy_config::StrategyMode::Standard => Arc::new(DualSMAStrategy::new(
                 self.config.fast_sma_period,
@@ -206,32 +248,35 @@ impl Application {
             )),
         };
 
-        info!("Using strategy: {}", strategy.name());
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
             self.execution_service.clone(),
             strategy,
             analyst_config,
-            self.candle_repository.clone(),
-            self.strategy_repository.clone(),
+            Some(self.candle_repository.clone()),
+            Some(self.strategy_repository.clone()),
         );
+
+        let risk_config = crate::application::risk_manager::RiskConfig {
+            max_position_size_pct: self.config.max_position_size_pct,
+            max_daily_loss_pct: self.config.max_daily_loss_pct,
+            max_drawdown_pct: self.config.max_drawdown_pct,
+            consecutive_loss_limit: self.config.consecutive_loss_limit,
+            valuation_interval_seconds: 60,
+            max_sector_exposure_pct: self.config.max_sector_exposure_pct,
+            sector_map: self.config.sector_map.clone(),
+        };
 
         let mut risk_manager = RiskManager::new(
             proposal_rx,
             order_tx,
             self.execution_service.clone(),
             self.market_service.clone(),
+            self.portfolio.clone(),
             self.config.non_pdt_mode,
-            crate::application::risk_manager::RiskConfig {
-                max_position_size_pct: self.config.max_position_size_pct,
-                max_daily_loss_pct: self.config.max_daily_loss_pct,
-                max_drawdown_pct: self.config.max_drawdown_pct,
-                consecutive_loss_limit: self.config.consecutive_loss_limit,
-                valuation_interval_seconds: 60,
-                max_sector_exposure_pct: self.config.max_sector_exposure_pct,
-                sector_map: self.config.sector_map.clone(),
-            },
+            risk_config,
+            self.performance_monitor.clone(),
         );
 
         let mut order_throttler = OrderThrottler::new(
@@ -244,32 +289,42 @@ impl Application {
             self.execution_service.clone(),
             throttled_order_rx,
             self.portfolio.clone(),
-            self.order_repository.clone(),
+            Some(self.order_repository.clone()),
         );
 
-        // Spawn Tasks
-        let sentinel_handle = tokio::spawn(async move {
-            sentinel.run().await;
-        });
+        // Spawn Service Tasks
+        let sentinel_handle = tokio::spawn(async move { sentinel.run().await });
+        let scanner_handle = tokio::spawn(async move { scanner.run().await });
+        let analyst_handle = tokio::spawn(async move { analyst.run().await });
+        let risk_manager_handle = tokio::spawn(async move { risk_manager.run().await });
+        let throttler_handle = tokio::spawn(async move { order_throttler.run().await });
+        let executor_handle = tokio::spawn(async move { executor.run().await });
 
-        let scanner_handle = tokio::spawn(async move {
-            scanner.run().await;
-        });
-
-        let analyst_handle = tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        let risk_manager_handle = tokio::spawn(async move {
-            risk_manager.run().await;
-        });
-
-        let throttler_handle = tokio::spawn(async move {
-            order_throttler.run().await;
-        });
-
-        let executor_handle = tokio::spawn(async move {
-            executor.run().await;
+        // Spawn Adaptive Optimization Task
+        let adaptive_service = self.adaptive_optimization_service.clone();
+        let symbols = self.config.symbols.clone();
+        let eval_hour = self.config.adaptive_evaluation_hour;
+        
+        let adaptive_handle = tokio::spawn(async move {
+            if let Some(service) = adaptive_service {
+                info!("Starting Adaptive Optimization Service task (Evaluation hour: {:02}:00 UTC)", eval_hour);
+                loop {
+                    let now = chrono::Utc::now();
+                    if now.hour() == eval_hour {
+                        info!("Triggering daily adaptive evaluation for symbols: {:?}", symbols);
+                        for symbol in &symbols {
+                            if let Err(e) = service.run_daily_evaluation(symbol).await {
+                                error!("Adaptive Optimization failed for {}: {}", symbol, e);
+                            }
+                        }
+                        // Sleep for an hour and a bit to avoid re-triggering immediately
+                        tokio::time::sleep(tokio::time::Duration::from_secs(3660)).await;
+                    } else {
+                        // Check every 15 minutes
+                        tokio::time::sleep(tokio::time::Duration::from_secs(900)).await;
+                    }
+                }
+            }
         });
 
         let _ = tokio::join!(
@@ -278,7 +333,8 @@ impl Application {
             risk_manager_handle,
             throttler_handle,
             executor_handle,
-            scanner_handle
+            scanner_handle,
+            adaptive_handle
         );
 
         Ok(())

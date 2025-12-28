@@ -13,6 +13,13 @@ pub trait MarketDataService: Send + Sync {
         &self,
         symbols: Vec<String>,
     ) -> Result<std::collections::HashMap<String, rust_decimal::Decimal>>;
+    async fn get_historical_bars(
+        &self,
+        symbol: &str,
+        start: chrono::DateTime<chrono::Utc>,
+        end: chrono::DateTime<chrono::Utc>,
+        timeframe: &str,
+    ) -> Result<Vec<crate::domain::types::Candle>>;
 }
 
 #[async_trait]

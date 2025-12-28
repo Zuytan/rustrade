@@ -68,6 +68,9 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         risk_appetite: None,
         max_sector_exposure_pct: 0.3,
         sector_map: std::collections::HashMap::new(),
+        adaptive_optimization_enabled: false,
+        regime_detection_window: 20,
+        adaptive_evaluation_hour: 0,
     });
 
     config.mode = Mode::Mock;
@@ -112,14 +115,20 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
 
     let mock_market = std::sync::Arc::new(MockMarketDataService::new());
     let mock_execution = std::sync::Arc::new(MockExecutionService::new(portfolio.clone()));
+    let null_trade_repo = std::sync::Arc::new(rustrade::infrastructure::mock::NullTradeRepository);
+    let null_candle_repo = std::sync::Arc::new(rustrade::infrastructure::mock::NullCandleRepository);
+    let null_strategy_repo = std::sync::Arc::new(rustrade::infrastructure::mock::NullStrategyRepository);
 
     let app = Application {
         config,
         market_service: mock_market.clone(),
         execution_service: mock_execution.clone(),
         portfolio: portfolio.clone(),
-        order_repository: None,
-        candle_repository: None,
+        order_repository: null_trade_repo,
+        candle_repository: null_candle_repo,
+        strategy_repository: null_strategy_repo,
+        adaptive_optimization_service: None,
+        performance_monitor: None,
     };
 
     // 4. Run Application (BACKGROUND)

@@ -118,6 +118,72 @@ impl Database {
         .await
         .context("Failed to create symbol_strategies table")?;
 
+        // 4. Optimization History Table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS optimization_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                parameters_json TEXT NOT NULL,
+                performance_metrics_json TEXT NOT NULL,
+                market_regime TEXT,
+                sharpe_ratio REAL,
+                total_return REAL,
+                win_rate REAL,
+                is_active BOOLEAN DEFAULT 0,
+                created_at INTEGER DEFAULT (strftime('%s', 'now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_opt_history_symbol_active 
+            ON optimization_history (symbol, is_active);
+            "#,
+        )
+        .execute(&mut *conn)
+        .await
+        .context("Failed to create optimization_history table")?;
+
+        // 5. Performance Snapshots Table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS performance_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                equity REAL NOT NULL,
+                drawdown_pct REAL,
+                sharpe_rolling_30d REAL,
+                win_rate_rolling_30d REAL,
+                regime TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_perf_snapshot_symbol_time 
+            ON performance_snapshots (symbol, timestamp);
+            "#,
+        )
+        .execute(&mut *conn)
+        .await
+        .context("Failed to create performance_snapshots table")?;
+
+        // 6. Reoptimization Triggers Table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS reoptimization_triggers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                trigger_reason TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                result_json TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_reopt_trigger_status 
+            ON reoptimization_triggers (status, timestamp);
+            "#,
+        )
+        .execute(&mut *conn)
+        .await
+        .context("Failed to create reoptimization_triggers table")?;
+
         info!("Database schema initialized.");
         Ok(())
     }

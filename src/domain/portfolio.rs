@@ -7,6 +7,8 @@ pub struct Portfolio {
     pub positions: HashMap<String, Position>,
     pub realized_pnl: Decimal, // Track total realized profit/loss
     pub trade_history: Vec<crate::domain::types::Trade>, // Complete audit trail
+    pub starting_cash: Decimal,
+    pub max_equity: Decimal,
 }
 
 #[allow(dead_code)]
@@ -24,6 +26,8 @@ impl Portfolio {
             positions: HashMap::new(),
             realized_pnl: Decimal::ZERO,
             trade_history: Vec::new(),
+            starting_cash: Decimal::ZERO,
+            max_equity: Decimal::ZERO,
         }
     }
 }

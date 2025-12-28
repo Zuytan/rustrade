@@ -103,3 +103,32 @@ pub trait StrategyRepository: Send + Sync {
     /// Get all active strategies
     async fn get_all_active(&self) -> Result<Vec<StrategyDefinition>>;
 }
+
+use crate::domain::optimization_history::OptimizationHistory;
+use crate::domain::performance_snapshot::PerformanceSnapshot;
+use crate::domain::reoptimization_trigger::ReoptimizationTrigger;
+
+/// Repository for optimization history
+#[async_trait]
+pub trait OptimizationHistoryRepository: Send + Sync {
+    async fn save(&self, history: &OptimizationHistory) -> Result<()>;
+    async fn get_latest_active(&self, symbol: &str) -> Result<Option<OptimizationHistory>>;
+    async fn find_by_symbol(&self, symbol: &str, limit: usize) -> Result<Vec<OptimizationHistory>>;
+    async fn deactivate_old(&self, symbol: &str) -> Result<()>;
+}
+
+/// Repository for performance snapshots
+#[async_trait]
+pub trait PerformanceSnapshotRepository: Send + Sync {
+    async fn save(&self, snapshot: &PerformanceSnapshot) -> Result<()>;
+    async fn get_latest(&self, symbol: &str) -> Result<Option<PerformanceSnapshot>>;
+    async fn get_history(&self, symbol: &str, limit: usize) -> Result<Vec<PerformanceSnapshot>>;
+}
+
+/// Repository for re-optimization triggers
+#[async_trait]
+pub trait ReoptimizationTriggerRepository: Send + Sync {
+    async fn save(&self, trigger: &ReoptimizationTrigger) -> Result<()>;
+    async fn get_pending(&self) -> Result<Vec<ReoptimizationTrigger>>;
+    async fn update_status(&self, id: i64, status: &str, result: Option<String>) -> Result<()>;
+}
