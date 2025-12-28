@@ -103,7 +103,7 @@ fn test_invalid_risk_score_returns_error() {
     // Should fail with clear error message
     assert!(result.is_err());
     let err_msg = format!("{:?}", result.err().unwrap());
-    assert!(err_msg.contains("must be between 1 and 10"));
+    assert!(err_msg.contains("must be between 1 and 9"));
 
     // Cleanup
     env::remove_var("RISK_APPETITE_SCORE");
@@ -119,10 +119,10 @@ fn test_risk_score_boundary_values() {
     assert_eq!(config.risk_appetite.unwrap().score(), 1);
 
     // Test maximum score
-    env::set_var("RISK_APPETITE_SCORE", "10");
+    env::set_var("RISK_APPETITE_SCORE", "9");
     let config = Config::from_env().unwrap();
     assert!(config.risk_appetite.is_some());
-    assert_eq!(config.risk_appetite.unwrap().score(), 10);
+    assert_eq!(config.risk_appetite.unwrap().score(), 9);
 
     // Cleanup
     env::remove_var("RISK_APPETITE_SCORE");
