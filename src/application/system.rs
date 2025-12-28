@@ -221,6 +221,7 @@ impl Application {
                 max_daily_loss_pct: self.config.max_daily_loss_pct,
                 max_drawdown_pct: self.config.max_drawdown_pct,
                 consecutive_loss_limit: self.config.consecutive_loss_limit,
+                valuation_interval_seconds: 60,
             },
         );
 

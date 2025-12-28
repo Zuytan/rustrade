@@ -15,6 +15,7 @@ pub struct RiskConfig {
     pub max_daily_loss_pct: f64,    // Max % loss per day (e.g., 0.02 = 2%)
     pub max_drawdown_pct: f64,      // Max % drawdown from high water mark (e.g., 0.10 = 10%)
     pub consecutive_loss_limit: usize, // Max consecutive losing trades before halt
+    pub valuation_interval_seconds: u64, // Interval for portfolio valuation check
 }
 
 impl Default for RiskConfig {
@@ -24,6 +25,7 @@ impl Default for RiskConfig {
             max_daily_loss_pct: 0.02,    // 2% daily loss limit
             max_drawdown_pct: 0.10,      // 10% max drawdown
             consecutive_loss_limit: 3,   // 3 consecutive losses
+            valuation_interval_seconds: 60, // Default 60 seconds
         }
     }
 }
@@ -209,8 +211,10 @@ impl RiskManager {
             error!("RiskManager: Failed to initialize session: {}", e);
         }
 
-        // Ticker for periodic valuation (every 60s)
-        let mut valuation_interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+        // Ticker for periodic valuation
+        let mut valuation_interval = tokio::time::interval(tokio::time::Duration::from_secs(
+            self.risk_config.valuation_interval_seconds,
+        ));
 
         loop {
             tokio::select! {

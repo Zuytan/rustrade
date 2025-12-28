@@ -16,29 +16,230 @@ use ta::Next;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::info;
 
-struct SymbolState {
-    fast_sma: SimpleMovingAverage,
-    slow_sma: SimpleMovingAverage,
-    trend_sma: SimpleMovingAverage,
-    rsi: RelativeStrengthIndex,
-    macd: MovingAverageConvergenceDivergence,
-    last_fast_sma: Option<f64>,
-    last_slow_sma: Option<f64>,
-    last_trend_sma: Option<f64>,
-    last_rsi: Option<f64>,
-    last_macd_value: Option<f64>,
-    last_macd_signal: Option<f64>,
-    last_macd_histogram: Option<f64>,
-    last_was_above: Option<bool>,
-    last_signal_time: i64,
-    atr: AverageTrueRange,
-    last_atr: Option<f64>,
-    bb: BollingerBands,
-    last_bb_lower: Option<f64>,
-    last_bb_upper: Option<f64>,
-    last_bb_middle: Option<f64>,
-    trailing_stop: StopState, // State machine replacing entry_price/peak_price/trailing_stop_price
-    pending_order: Option<OrderSide>, // Track in-flight orders
+pub struct SymbolContext {
+    pub fast_sma: SimpleMovingAverage,
+    pub slow_sma: SimpleMovingAverage,
+    pub trend_sma: SimpleMovingAverage,
+    pub rsi: RelativeStrengthIndex,
+    pub macd: MovingAverageConvergenceDivergence,
+    pub last_fast_sma: Option<f64>,
+    pub last_slow_sma: Option<f64>,
+    pub last_trend_sma: Option<f64>,
+    pub last_rsi: Option<f64>,
+    pub last_macd_value: Option<f64>,
+    pub last_macd_signal: Option<f64>,
+    pub last_macd_histogram: Option<f64>,
+    pub last_was_above: Option<bool>,
+    pub last_signal_time: i64,
+    pub atr: AverageTrueRange,
+    pub last_atr: Option<f64>,
+    pub bb: BollingerBands,
+    pub last_bb_lower: Option<f64>,
+    pub last_bb_upper: Option<f64>,
+    pub last_bb_middle: Option<f64>,
+    pub trailing_stop: StopState, // State machine replacing entry_price/peak_price/trailing_stop_price
+    pub pending_order: Option<OrderSide>, // Track in-flight orders
+}
+
+impl SymbolContext {
+    pub fn new(config: &AnalystConfig) -> Self {
+        Self {
+            fast_sma: SimpleMovingAverage::new(config.fast_sma_period).unwrap(),
+            slow_sma: SimpleMovingAverage::new(config.slow_sma_period).unwrap(),
+            trend_sma: SimpleMovingAverage::new(config.trend_sma_period).unwrap(),
+            rsi: RelativeStrengthIndex::new(config.rsi_period).unwrap(),
+            macd: MovingAverageConvergenceDivergence::new(
+                config.macd_fast_period,
+                config.macd_slow_period,
+                config.macd_signal_period,
+            )
+            .unwrap(),
+            last_fast_sma: None,
+            last_slow_sma: None,
+            last_trend_sma: None,
+            last_rsi: None,
+            last_macd_value: None,
+            last_macd_signal: None,
+            last_macd_histogram: None,
+            last_was_above: None,
+            last_signal_time: 0,
+            atr: AverageTrueRange::new(config.atr_period).unwrap(),
+            last_atr: None,
+            bb: BollingerBands::new(config.mean_reversion_bb_period, 2.0).unwrap(),
+            last_bb_lower: None,
+            last_bb_upper: None,
+            last_bb_middle: None,
+            trailing_stop: StopState::NoPosition,
+            pending_order: None,
+        }
+    }
+
+    pub fn update(&mut self, price: f64) {
+        let current_fast = self.fast_sma.next(price);
+        let current_slow = self.slow_sma.next(price);
+        let current_trend = self.trend_sma.next(price);
+        let current_rsi = self.rsi.next(price);
+        let current_macd = self.macd.next(price);
+        let current_atr = self.atr.next(price);
+        let current_bb = self.bb.next(price);
+
+        self.last_fast_sma = Some(current_fast);
+        self.last_slow_sma = Some(current_slow);
+        self.last_trend_sma = Some(current_trend);
+        self.last_rsi = Some(current_rsi);
+        self.last_macd_value = Some(current_macd.macd);
+        self.last_macd_signal = Some(current_macd.signal);
+        self.last_macd_histogram = Some(current_macd.histogram);
+        self.last_atr = Some(current_atr);
+        self.last_bb_lower = Some(current_bb.lower);
+        self.last_bb_upper = Some(current_bb.upper);
+        self.last_bb_middle = Some(current_bb.average);
+    }
+
+    pub fn ack_pending_orders(&mut self, has_position: bool, symbol: &str) {
+        if let Some(pending) = self.pending_order {
+            match pending {
+                OrderSide::Buy => {
+                    if has_position {
+                        info!(
+                            "Analyst: Pending Buy for {} CONFIRMED. Clearing pending state.",
+                            symbol
+                        );
+                        self.pending_order = None;
+                    }
+                }
+                OrderSide::Sell => {
+                    if !has_position {
+                        info!(
+                            "Analyst: Pending Sell for {} CONFIRMED. Clearing pending state and stops.",
+                            symbol
+                        );
+                        self.pending_order = None;
+                        self.trailing_stop.on_sell();
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn check_trailing_stop(
+        &mut self,
+        price: f64,
+        config: &AnalystConfig,
+        symbol: &str,
+    ) -> Option<OrderSide> {
+        if self.pending_order == Some(OrderSide::Sell) {
+            return None;
+        }
+
+        if let Some(atr) = self.last_atr {
+            if atr > 0.0 {
+                if let Some(trigger) = self.trailing_stop.on_price_update(
+                    price,
+                    atr,
+                    config.trailing_stop_atr_multiplier,
+                ) {
+                    info!(
+                        "Analyst: Trailing stop HIT for {} at {:.2} (Stop: {:.2}, Entry: {:.2})",
+                        symbol, trigger.exit, trigger.stop, trigger.entry
+                    );
+                    return Some(OrderSide::Sell);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn check_strategy_signals(
+        &mut self,
+        strategy: &Arc<dyn TradingStrategy>,
+        symbol: &str,
+        price: Decimal,
+        timestamp: i64,
+        config: &AnalystConfig,
+    ) -> Option<OrderSide> {
+        let price_f64 = price.to_f64().unwrap_or(0.0);
+
+        // Required data check
+        let (
+            Some(current_fast),
+            Some(current_slow),
+            Some(current_trend),
+            Some(current_rsi),
+            Some(current_atr),
+        ) = (
+            self.last_fast_sma,
+            self.last_slow_sma,
+            self.last_trend_sma,
+            self.last_rsi,
+            self.last_atr,
+        )
+        else {
+            return None;
+        };
+
+        // Standard SMA Crossover Check (Pre-filter / DualSMA logic embedded here in original)
+        // Refactored to reuse 'last_was_above' state management
+        let is_definitively_above = current_fast > current_slow * (1.0 + config.sma_threshold);
+        let is_definitively_below = current_fast < current_slow * (1.0 - config.sma_threshold);
+
+        let mut signal = None;
+
+        match self.last_was_above {
+            None => {
+                if is_definitively_above {
+                    self.last_was_above = Some(true);
+                } else if is_definitively_below {
+                    self.last_was_above = Some(false);
+                }
+            }
+            Some(true) => {
+                if is_definitively_below {
+                    self.last_was_above = Some(false);
+                    signal = Some(OrderSide::Sell);
+                }
+            }
+            Some(false) => {
+                if is_definitively_above {
+                    self.last_was_above = Some(true);
+                    signal = Some(OrderSide::Buy);
+                }
+            }
+        }
+
+        // Strategy Pattern Check
+        let analysis_ctx = AnalysisContext {
+            symbol: symbol.to_string(),
+            current_price: price,
+            price_f64,
+            fast_sma: current_fast,
+            slow_sma: current_slow,
+            trend_sma: current_trend,
+            rsi: current_rsi,
+            macd_value: self.last_macd_value.unwrap_or(0.0),
+            macd_signal: self.last_macd_signal.unwrap_or(0.0),
+            macd_histogram: self.last_macd_histogram.unwrap_or(0.0),
+            last_macd_histogram: self.last_macd_histogram,
+            atr: current_atr,
+            bb_lower: self.last_bb_lower.unwrap_or(0.0),
+            bb_upper: self.last_bb_upper.unwrap_or(0.0),
+            bb_middle: self.last_bb_middle.unwrap_or(0.0),
+            has_position: self.trailing_stop.is_active(),
+            timestamp,
+        };
+
+        if let Some(strategy_signal) = strategy.analyze(&analysis_ctx) {
+            info!(
+                "Analyst [{}]: {} - {}",
+                strategy.name(),
+                symbol,
+                strategy_signal.reason
+            );
+            signal = Some(strategy_signal.side);
+        }
+
+        signal
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -103,7 +304,7 @@ pub struct Analyst {
     strategy: Arc<dyn TradingStrategy>,
     config: AnalystConfig,
     // Per-symbol states
-    symbol_states: HashMap<String, SymbolState>,
+    symbol_states: HashMap<String, SymbolContext>,
     candle_aggregator: CandleAggregator,
 }
 
@@ -155,345 +356,134 @@ impl Analyst {
     async fn process_candle(&mut self, candle: crate::domain::types::Candle) {
         let symbol = candle.symbol;
         let price = candle.close;
-        let timestamp = candle.timestamp * 1000; // Convert seconds to millis for compatibility with existing logic
-
+        let timestamp = candle.timestamp * 1000;
         let price_f64 = price.to_f64().unwrap_or(0.0);
 
-        // Get or initialize state for this symbol
-        let fast_period = self.config.fast_sma_period;
-        let slow_period = self.config.slow_sma_period;
-        let trend_period = self.config.trend_sma_period;
-        let rsi_period = self.config.rsi_period;
-
-        let state = self
+        // 1. Get/Init Context
+        let context = self
             .symbol_states
             .entry(symbol.clone())
-            .or_insert_with(|| SymbolState {
-                fast_sma: SimpleMovingAverage::new(fast_period).unwrap(),
-                slow_sma: SimpleMovingAverage::new(slow_period).unwrap(),
-                trend_sma: SimpleMovingAverage::new(trend_period).unwrap(),
-                rsi: RelativeStrengthIndex::new(rsi_period).unwrap(),
-                macd: MovingAverageConvergenceDivergence::new(
-                    self.config.macd_fast_period,
-                    self.config.macd_slow_period,
-                    self.config.macd_signal_period,
-                )
-                .unwrap(),
-                last_fast_sma: None,
-                last_slow_sma: None,
-                last_trend_sma: None,
-                last_rsi: None,
-                last_macd_value: None,
-                last_macd_signal: None,
-                last_macd_histogram: None,
-                last_was_above: None,
-                last_signal_time: 0,
-                atr: AverageTrueRange::new(self.config.atr_period).unwrap(),
-                last_atr: None,
-                bb: BollingerBands::new(self.config.mean_reversion_bb_period, 2.0).unwrap(),
-                last_bb_lower: None,
-                last_bb_upper: None,
-                last_bb_middle: None,
-                trailing_stop: StopState::NoPosition,
-                pending_order: None,
-            });
+            .or_insert_with(|| SymbolContext::new(&self.config));
 
-        let current_fast = state.fast_sma.next(price_f64);
-        let current_slow = state.slow_sma.next(price_f64);
-        let current_trend = state.trend_sma.next(price_f64);
-        let current_rsi = state.rsi.next(price_f64);
-        let current_macd = state.macd.next(price_f64);
-        let current_atr = state.atr.next(price_f64);
-        let current_bb = state.bb.next(price_f64);
+        // 2. Update Indicators
+        context.update(price_f64);
 
-        // --- Trailing Stop Check (Priority Exit) ---
-        // --- Pending Order Synchronization ---
-        // Check if pending orders are confirmed by portfolio update
-        // CRITICAL FIX: Check portfolio state BEFORE blocking signals
-        if let Ok(portfolio) = self.execution_service.get_portfolio().await {
-            let has_position = portfolio
+        // 3. Sync with Portfolio (Async Check)
+        let portfolio_res = self.execution_service.get_portfolio().await;
+        // Don't fail entire loop if portfolio fetch fails, just treat as no position or conservatively
+        let portfolio_data = portfolio_res.as_ref().ok();
+        
+        if let Some(portfolio) = portfolio_data {
+             let has_position = portfolio
                 .positions
                 .get(&symbol)
                 .map(|p| p.quantity > Decimal::ZERO)
                 .unwrap_or(false);
-
-            if let Some(pending) = state.pending_order {
-                match pending {
-                    OrderSide::Buy => {
-                        if has_position {
-                            info!(
-                                "Analyst: Pending Buy for {} CONFIRMED. Clearing pending state.",
-                                symbol
-                            );
-                            state.pending_order = None;
-                            // StopState will be activated by strategy signal
-                        }
-                    }
-                    OrderSide::Sell => {
-                        if !has_position {
-                            info!(
-                                "Analyst: Pending Sell for {} CONFIRMED. Clearing pending state and stops.",
-                                symbol
-                            );
-                            state.pending_order = None;
-                            state.trailing_stop.on_sell();
-                        }
-                    }
-                }
-            }
+             context.ack_pending_orders(has_position, &symbol);
         }
 
-        // --- Check Trailing Stop (Priority Exit) ---
-        let mut trailing_stop_triggered = false;
-        if state.pending_order != Some(OrderSide::Sell) {
-            if let Some(atr) = state.last_atr {
-                if atr > 0.0 {
-                    if let Some(trigger) = state.trailing_stop.on_price_update(
-                        price_f64,
-                        atr,
-                        self.config.trailing_stop_atr_multiplier,
-                    ) {
-                        trailing_stop_triggered = true;
-                        info!(
-                            "Analyst: Trailing stop HIT for {} at {:.2} (Stop: {:.2}, Entry: {:.2})",
-                            symbol, trigger.exit, trigger.stop, trigger.entry
-                        );
-                    }
-                }
-            }
+        // 4. Check Trailing Stop (Priority Exit)
+        let mut signal = context.check_trailing_stop(price_f64, &self.config, &symbol);
+        let trailing_stop_triggered = signal.is_some();
+
+        // 5. Strategy Check if no priority exit yet (or to override)
+        // If trailing stop triggered, we already have a Sell signal. 
+        // We still check strategy if we are NOT exiting, but if we are exiting, that's final.
+        if !trailing_stop_triggered {
+             let strategy_signal = context.check_strategy_signals(
+                 &self.strategy, 
+                 &symbol, 
+                 price, 
+                 timestamp, 
+                 &self.config
+             );
+
+             // Resolve conflicts
+             if let Some(strat_sig) = strategy_signal {
+                  if let Some(OrderSide::Sell) = signal {
+                      // Already selling due to stop? Keep selling.
+                  } else {
+                      // New signal
+                      signal = Some(strat_sig);
+                  }
+             }
+
+             // Suppress SMA-cross sell if Trailing Stop is active (prefer trailing stop exit)
+             if let Some(OrderSide::Sell) = signal {
+                 if context.trailing_stop.is_active() && !trailing_stop_triggered {
+                     info!("Analyst: Sell signal SUPPRESSED for {} - Using trailing stop instead", symbol);
+                     signal = None;
+                 }
+             }
         }
 
-        // Check for Crossover if we have previous SMA data
-        if let (Some(_prev_fast), Some(_prev_slow)) = (state.last_fast_sma, state.last_slow_sma) {
-            // Current state relative to threshold
-            let is_definitively_above =
-                current_fast > current_slow * (1.0 + self.config.sma_threshold);
-            let is_definitively_below =
-                current_fast < current_slow * (1.0 - self.config.sma_threshold);
+         // 6. Post-Signal Validation (Long-Only, Pending, Cooldown)
+         if let Some(side) = signal {
+             // Long-only constraints for Sell
+             if side == OrderSide::Sell {
+                 let mut can_sell = false;
+                 if let Some(portfolio) = portfolio_data {
+                     if let Some(pos) = portfolio.positions.get(&symbol) {
+                         if pos.quantity > Decimal::ZERO {
+                             can_sell = true;
+                         }
+                     }
+                 }
+                 if !can_sell {
+                      info!("Analyst: BLOCKING Sell for {} - No position (Long-Only)", symbol);
+                      return;
+                 }
+             }
 
-            let mut signal = None;
+             // Pending Order Check
+             if let Some(pending) = context.pending_order {
+                 if pending == side {
+                     info!("Analyst: Signal {:?} for {} BLOCKED - Pending Order exists", side, symbol);
+                     return;
+                 }
+             }
 
-            // Use stateful was_above
-            match state.last_was_above {
-                None => {
-                    // Warm up: initialize state on first definitive move SILENTLY
-                    if is_definitively_above {
-                        state.last_was_above = Some(true);
-                    } else if is_definitively_below {
-                        state.last_was_above = Some(false);
-                    }
-                }
-                Some(true) => {
-                    // We WERE above. Switch to false if definitively below.
-                    if is_definitively_below {
-                        state.last_was_above = Some(false);
-                        signal = Some(OrderSide::Sell);
-                    }
-                }
-                Some(false) => {
-                    // We WERE below. Switch to true if definitively above.
-                    if is_definitively_above {
-                        state.last_was_above = Some(true);
-                        signal = Some(OrderSide::Buy);
-                    }
-                }
-            }
+             // Cooldown Check
+             let cooldown_ms = self.config.order_cooldown_seconds * 1000;
+             if timestamp - context.last_signal_time < cooldown_ms as i64 {
+                 return; 
+             }
 
-            // --- Trailing Stop Override (Priority Exit) ---
-            // If trailing stop is triggered, force sell signal regardless of crossover
-            if trailing_stop_triggered {
-                signal = Some(OrderSide::Sell);
-            } else if let Some(OrderSide::Sell) = signal {
-                // If we have an active trailing stop, suppress SMA-cross sell signals
-                // Only exit on the trailing stop itself
-                if state.trailing_stop.is_active() {
-                    info!(
-                        "Analyst: SMA-cross sell signal SUPPRESSED for {} - Using trailing stop instead",
-                        symbol
-                    );
-                    signal = None;
-                }
-            }
+             // 7. Execution
+             context.last_signal_time = timestamp;
+             let quantity = Self::calculate_trade_quantity(&self.config, &self.execution_service, &symbol, price).await;
+             
+             if quantity > Decimal::ZERO {
+                 info!("Analyst: Sending Proposal {:?} for {}", side, symbol);
+                 
+                 let proposal = TradeProposal {
+                     symbol: symbol.clone(),
+                     side,
+                     price,
+                     quantity,
+                     reason: format!("Strategy Signal (Context Refactored)"),
+                     timestamp,
+                 };
 
-            // --- Use Injected Strategy (Strategy Pattern) ---
-            let analysis_ctx = AnalysisContext {
-                symbol: symbol.clone(),
-                current_price: price,
-                price_f64,
-                fast_sma: current_fast,
-                slow_sma: current_slow,
-                trend_sma: current_trend,
-                rsi: current_rsi,
-                macd_value: current_macd.macd,
-                macd_signal: current_macd.signal,
-                macd_histogram: current_macd.histogram,
-                last_macd_histogram: state.last_macd_histogram,
-                atr: current_atr,
-                bb_lower: current_bb.lower,
-                bb_upper: current_bb.upper,
-                bb_middle: current_bb.average,
-                has_position: state.trailing_stop.is_active(),
-                timestamp,
-            };
-
-            if let Some(strategy_signal) = self.strategy.analyze(&analysis_ctx) {
-                info!(
-                    "Analyst [{}]: {} - {}",
-                    self.strategy.name(),
-                    symbol,
-                    strategy_signal.reason
-                );
-                signal = Some(strategy_signal.side);
-            }
-
-            // --- Long-Only Constraint (Prevent Short Selling) ---
-            if let Some(OrderSide::Sell) = signal {
-                // We must check if we actually have a position to sell
-                if let Ok(portfolio) = self.execution_service.get_portfolio().await {
-                    let position = portfolio.positions.get(&symbol);
-
-                    match position {
-                        None => {
-                            info!(
-                                "Analyst: BLOCKING Sell signal for {} - No position held (preventing short selling)",
-                                symbol
-                            );
-                            signal = None;
-                        }
-                        Some(pos) if pos.quantity <= Decimal::ZERO => {
-                            info!(
-                                "Analyst: BLOCKING Sell signal for {} - Position quantity is zero or negative ({})",
-                                symbol, pos.quantity
-                            );
-                            signal = None;
-                        }
-                        Some(pos) => {
-                            info!(
-                                "Analyst: ALLOWING Sell signal for {} - Position exists with quantity {}",
-                                symbol, pos.quantity
-                            );
-                            // OK to sell - we own it
-                        }
-                    }
-                }
-            }
-
-            if let Some(side) = signal {
-                // Check pending state - only block if SAME direction
-                // Allow opposite direction (e.g., Buy can override pending Sell if conditions met)
-                if let Some(pending) = state.pending_order {
-                    if pending == side {
-                        info!(
-                            "Analyst: Signal {:?} for {} BLOCKED due to pending {:?} order.",
-                            side, symbol, pending
-                        );
-                        signal = None;
-                    }
-                }
-            }
-
-            if let Some(side) = signal {
-                // Enforce cooldown
-                let cooldown_ms = self.config.order_cooldown_seconds * 1000;
-                if timestamp - state.last_signal_time >= cooldown_ms as i64 {
-                    state.last_signal_time = timestamp;
-
-                    let quantity = Self::calculate_trade_quantity(
-                        &self.config,
-                        &self.execution_service,
-                        &symbol,
-                        price,
-                    )
-                    .await;
-
-                    if quantity == Decimal::ZERO {
-                        info!(
-                            "Analyst: Final quantity is zero for {}, skipping trade.",
-                            symbol
-                        );
-                    } else {
-                        info!(
-                            "Analyst: Signal Detected {:?} for {} (Dual SMA Portfolio Strategy)",
-                            side, symbol
-                        );
-
-                        let proposal = TradeProposal {
-                            symbol: symbol.clone(),
-                            side,
-                            price,
-                            quantity,
-                            reason: format!(
-                                "Portfolio Dual SMA Crossover: Fast {:.2} slow {:.2} | Allocated {:.2}% Equity",
-                                current_fast,
-                                current_slow,
-                                self.config.risk_per_trade_percent * 100.0
-                            ),
-                            timestamp,
-                        };
-
-                        if let Err(e) = self.proposal_tx.send(proposal).await {
-                            tracing::error!(
-                                "Analyst: Failed to send proposal for {}: {}",
-                                symbol,
-                                e
-                            );
-                        } else {
-                            // Successfully sent proposal -> Mark as pending
-                            state.pending_order = Some(side);
-                        }
-
-                        // Update trailing stop state based on signal type
-                        if let Some(state) = self.symbol_states.get_mut(&symbol) {
-                            match side {
-                                OrderSide::Buy => {
-                                    // Initialize trailing stop on buy (only if ATR is valid)
-                                    if let Some(atr) = state.last_atr {
-                                        if atr > 0.0 && !state.trailing_stop.is_active() {
-                                            state.trailing_stop = StopState::on_buy(
-                                                price_f64,
-                                                atr,
-                                                self.config.trailing_stop_atr_multiplier,
-                                            );
-                                            if let Some(stop_price) =
-                                                state.trailing_stop.get_stop_price()
-                                            {
-                                                info!(
-                                                    "Analyst: Trailing stop INITIALIZED for {} - Entry: {:.2}, Stop: {:.2} (ATR: {:.2})",
-                                                    symbol, price_f64, stop_price, atr
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                                OrderSide::Sell => {
-                                    // Clear trailing stop on sell
-                                    state.trailing_stop.on_sell();
-                                    info!(
-                                        "Analyst: Trailing stop CLEARED for {} after exit at {:.2}",
-                                        symbol, price_f64
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Update State
-        if let Some(state) = self.symbol_states.get_mut(&symbol) {
-            state.last_fast_sma = Some(current_fast);
-            state.last_slow_sma = Some(current_slow);
-            state.last_trend_sma = Some(current_trend);
-            state.last_rsi = Some(current_rsi);
-            state.last_macd_value = Some(current_macd.macd);
-            state.last_macd_signal = Some(current_macd.signal);
-            state.last_macd_histogram = Some(current_macd.histogram);
-            state.last_atr = Some(current_atr);
-            state.last_bb_lower = Some(current_bb.lower);
-            state.last_bb_upper = Some(current_bb.upper);
-            state.last_bb_middle = Some(current_bb.average);
-        }
+                 if let Ok(_) = self.proposal_tx.send(proposal).await {
+                     context.pending_order = Some(side);
+                     
+                     // Optimistic State Update for trailing stops
+                     match side {
+                         OrderSide::Buy => {
+                             if let Some(atr) = context.last_atr {
+                                 if atr > 0.0 && !context.trailing_stop.is_active() {
+                                     context.trailing_stop = StopState::on_buy(price_f64, atr, self.config.trailing_stop_atr_multiplier);
+                                 }
+                             }
+                         }
+                         OrderSide::Sell => {
+                             context.trailing_stop.on_sell();
+                         }
+                     }
+                 }
+             }
+         }
     }
 
 
