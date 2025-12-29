@@ -10,6 +10,7 @@ use std::str::FromStr;
 pub enum Mode {
     Mock,
     Alpaca,
+    Oanda,
 }
 
 
@@ -21,7 +22,8 @@ impl std::str::FromStr for Mode {
         match s.to_lowercase().as_str() {
             "mock" => Ok(Mode::Mock),
             "alpaca" => Ok(Mode::Alpaca),
-            _ => anyhow::bail!("Invalid MODE: {}. Must be 'mock' or 'alpaca'", s),
+            "oanda" => Ok(Mode::Oanda),
+            _ => anyhow::bail!("Invalid MODE: {}. Must be 'mock', 'alpaca' or 'oanda'", s),
         }
     }
 }
@@ -34,6 +36,11 @@ pub struct Config {
     pub alpaca_base_url: String,
     pub alpaca_data_url: String, // Added for Data API
     pub alpaca_ws_url: String,
+    // OANDA Config
+    pub oanda_api_base_url: String,
+    pub oanda_stream_base_url: String,
+    pub oanda_api_key: String,
+    pub oanda_account_id: String,
     pub symbols: Vec<String>,
     pub max_positions: usize,
     pub initial_cash: Decimal,
@@ -94,6 +101,13 @@ impl Config {
             .unwrap_or_else(|_| "https://data.alpaca.markets".to_string());
         let alpaca_ws_url = env::var("ALPACA_WS_URL")
             .unwrap_or_else(|_| "wss://stream.data.alpaca.markets/v2/iex".to_string());
+
+        let oanda_api_base_url = env::var("OANDA_API_BASE_URL")
+            .unwrap_or_else(|_| "https://api-fxpractice.oanda.com".to_string());
+        let oanda_stream_base_url = env::var("OANDA_STREAM_BASE_URL")
+            .unwrap_or_else(|_| "https://stream-fxpractice.oanda.com".to_string());
+        let oanda_api_key = env::var("OANDA_API_KEY").unwrap_or_default();
+        let oanda_account_id = env::var("OANDA_ACCOUNT_ID").unwrap_or_default();
 
         let symbols_str = env::var("SYMBOLS").unwrap_or_else(|_| "AAPL".to_string());
         let symbols: Vec<String> = symbols_str
@@ -322,6 +336,10 @@ impl Config {
             alpaca_base_url,
             alpaca_data_url,
             alpaca_ws_url,
+            oanda_api_base_url,
+            oanda_stream_base_url,
+            oanda_api_key,
+            oanda_account_id,
             symbols,
             max_positions,
             initial_cash: Decimal::from_f64(initial_cash).unwrap_or(Decimal::from(100000)),

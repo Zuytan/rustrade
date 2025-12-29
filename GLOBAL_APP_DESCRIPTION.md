@@ -1,7 +1,9 @@
 # RustTrade Agentic Bot 🦀
 
 ## Objectif du Projet
-Développer un système multi-agents capable de surveiller le marché des actions et ETF, d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
+Développer un système multi-agents capable de surveiller le marché des actions et ETF (via Alpaca) et Forex/CFDs (via OANDA), d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
+
+> 📘 **Nouveau (v0.23.0) :** Support expérimental **OANDA** pour le trading Forex et CFDs (ex: indices Japonais).
 
 > 📘 **Nouveau  :** Pour une explication simplifiée des stratégies, voir [Guide des Stratégies (Non-Spécialistes)](docs/guide_strategie_simplifie.md).
 

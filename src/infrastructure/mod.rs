@@ -1,7 +1,8 @@
 pub mod alpaca;
 pub mod alpaca_websocket;
-pub mod event_bus;
+pub mod oanda;
 pub mod mock;
+pub mod event_bus;
 pub mod repositories;
 
 pub use event_bus::EventBus;

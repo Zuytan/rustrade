@@ -1,6 +1,12 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.23.0 (Décembre 2025) - OANDA Integration
+- **NOUVEAU: Intégration OANDA**: Ajout du support pour le courtier OANDA, permettant le trading sur les marchés Forex et CFDs (y compris CFDs sur indices japonais comme Nikkei 225).
+  - Nouvelle implémentation `OandaMarketDataService` pour le streaming de prix via HTTP Chunked Encoding.
+  - Nouvelle implémentation `OandaExecutionService` pour l'exécution d'ordres REST.
+  - Configuration étendue via `.env` (`OANDA_API_KEY`, `OANDA_ACCOUNT_ID`, mode `oanda`).
+
 ## Version 0.22.0 (Janvier 2026) - Financial Hardening (Active Liquidation)
 - **Active Liquidation**: Le `RiskManager` déclenche désormais une **Vente Totale Immédiate** ("Panic Button") si les circuits breakers (Daily Loss ou Max Drawdown) sont atteints.
   - Empêche de conserver des positions perdantes pendant un krach (Stop buying -> Stop buying AND sell everything).

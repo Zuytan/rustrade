@@ -29,6 +29,7 @@ use crate::application::strategies::TradingStrategy;
 use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
 use crate::domain::performance::performance_evaluator::{PerformanceEvaluator, EvaluationThresholds};
 use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService, AlpacaSectorProvider};
+use crate::infrastructure::oanda::{OandaExecutionService, OandaMarketDataService, OandaSectorProvider};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::persistence::database::Database;
 use crate::infrastructure::persistence::repositories::{
@@ -84,6 +85,22 @@ impl Application {
                         config.alpaca_api_key.clone(),
                         config.alpaca_secret_key.clone(),
                         config.alpaca_base_url.clone(),
+                    )),
+                )
+            }
+            Mode::Oanda => {
+                info!("Using OANDA services ({})", config.oanda_api_base_url);
+                (
+                    Arc::new(OandaMarketDataService::new(
+                        config.oanda_api_key.clone(),
+                        config.oanda_stream_base_url.clone(),
+                        config.oanda_api_base_url.clone(),
+                        config.oanda_account_id.clone(),
+                    )),
+                    Arc::new(OandaExecutionService::new(
+                        config.oanda_api_key.clone(),
+                        config.oanda_api_base_url.clone(),
+                        config.oanda_account_id.clone(),
                     )),
                 )
             }
@@ -277,6 +294,7 @@ impl Application {
                 self.config.alpaca_base_url.clone(),
             ))),
             Mode::Mock => None,
+            Mode::Oanda => Some(Arc::new(OandaSectorProvider)),
         };
 
         let risk_config = crate::application::risk_management::risk_manager::RiskConfig {
