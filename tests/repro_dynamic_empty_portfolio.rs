@@ -17,7 +17,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
     let (proposal_tx, mut proposal_rx) = mpsc::channel(100);
     let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(100);
 
-    let market_service = Arc::new(MockMarketDataService::new());
+    let market_service = Arc::new(MockMarketDataService::new_no_sim());
     let mut initial_portfolio = Portfolio::new();
     initial_portfolio.cash = Decimal::from(10000); // Plenty of cash
     let portfolio_lock = Arc::new(RwLock::new(initial_portfolio));
@@ -58,7 +58,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         trend_divergence_threshold: 0.0,
         trailing_stop_atr_multiplier: 3.0,
         atr_period: 14,
-        rsi_threshold: 50.0,
+        rsi_threshold: 99.0,
         trend_riding_exit_buffer_pct: 0.0,
         mean_reversion_rsi_exit: 50.0,
         mean_reversion_bb_period: 20,

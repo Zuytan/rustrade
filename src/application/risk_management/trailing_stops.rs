@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use rustrade::application::trailing_stops::StopState;
+//! use rustrade::application::risk_management::trailing_stops::StopState;
 //!
 //! let mut stop = StopState::on_buy(100.0, 2.0, 3.0); // price=100, ATR=2, multiplier=3
 //!

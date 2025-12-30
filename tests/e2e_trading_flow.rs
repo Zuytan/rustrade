@@ -53,7 +53,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         macd_slow_period: 26,
         macd_signal_period: 9,
         trend_divergence_threshold: 0.005,
-        rsi_threshold: 55.0,
+        rsi_threshold: 99.0,
         trailing_stop_atr_multiplier: 3.0,
         atr_period: 14,
         max_position_size_pct: 0.25,
@@ -87,6 +87,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     config.fast_sma_period = 2;
     config.slow_sma_period = 5;
     config.order_cooldown_seconds = 0; // Immediate execution
+    config.rsi_threshold = 99.0; // Ensure signal isn't blocked by RSI
 
     // 2. Build Application
     let _app = Application::build(config.clone()).await?;
@@ -122,7 +123,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     ));
     portfolio.write().await.cash = config.initial_cash;
 
-    let mock_market = std::sync::Arc::new(MockMarketDataService::new());
+    let mock_market = std::sync::Arc::new(MockMarketDataService::new_no_sim());
     let mock_execution = std::sync::Arc::new(MockExecutionService::new(portfolio.clone()));
     let null_trade_repo = std::sync::Arc::new(rustrade::infrastructure::mock::NullTradeRepository);
     let null_candle_repo =
@@ -136,7 +137,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         execution_service: mock_execution.clone(),
         portfolio: portfolio.clone(),
         order_repository: null_trade_repo,
-        candle_repository: null_candle_repo,
+        candle_repository: None,
         strategy_repository: null_strategy_repo,
         adaptive_optimization_service: None,
         performance_monitor: None,

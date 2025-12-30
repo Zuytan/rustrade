@@ -48,7 +48,7 @@ pub struct Application {
     pub execution_service: Arc<dyn ExecutionService>,
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub order_repository: Arc<dyn TradeRepository>,
-    pub candle_repository: Arc<dyn CandleRepository>,
+    pub candle_repository: Option<Arc<dyn CandleRepository>>,
     pub strategy_repository: Arc<dyn StrategyRepository>,
     pub adaptive_optimization_service: Option<Arc<AdaptiveOptimizationService>>,
     pub performance_monitor: Option<Arc<PerformanceMonitoringService>>,
@@ -187,7 +187,7 @@ impl Application {
             execution_service,
             portfolio,
             order_repository: order_repo,
-            candle_repository: candle_repo,
+            candle_repository: Some(candle_repo),
             strategy_repository: strategy_repo,
             adaptive_optimization_service,
             performance_monitor,
@@ -303,7 +303,7 @@ impl Application {
             self.execution_service.clone(),
             strategy,
             analyst_config,
-            Some(self.candle_repository.clone()),
+            self.candle_repository.clone(),
             Some(self.strategy_repository.clone()),
         );
 

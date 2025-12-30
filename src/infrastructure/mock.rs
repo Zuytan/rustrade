@@ -17,12 +17,21 @@ use tracing::info;
 #[derive(Clone)]
 pub struct MockMarketDataService {
     subscribers: Arc<RwLock<Vec<Sender<MarketEvent>>>>,
+    pub simulation_enabled: bool,
 }
 
 impl MockMarketDataService {
     pub fn new() -> Self {
         Self {
             subscribers: Arc::new(RwLock::new(Vec::new())),
+            simulation_enabled: true,
+        }
+    }
+
+    pub fn new_no_sim() -> Self {
+        Self {
+            subscribers: Arc::new(RwLock::new(Vec::new())),
+            simulation_enabled: false,
         }
     }
 }
@@ -80,65 +89,69 @@ impl MarketDataService for MockMarketDataService {
         let symbols_clone = symbols.clone();
         let service_clone = self.clone();
 
-        // Spawn random walk simulation for demo/testing
-        tokio::spawn(async move {
-            use chrono::Utc;
-            use std::time::Duration;
-            use tokio::time;
+        if self.simulation_enabled {
+            // Spawn random walk simulation for demo/testing
+            tokio::spawn(async move {
+                use chrono::Utc;
+                use std::time::Duration;
+                use tokio::time;
 
-            let mut prices: std::collections::HashMap<String, f64> =
-                std::collections::HashMap::new();
-            let mut iteration = 0u64;
+                let mut prices: std::collections::HashMap<String, f64> =
+                    std::collections::HashMap::new();
+                let mut iteration = 0u64;
 
-            // Initialize prices
-            for symbol in &symbols_clone {
-                let base_price = if symbol.contains("BTC") {
-                    96000.0
-                } else if symbol.contains("ETH") {
-                    3400.0
-                } else if symbol.contains("AVAX") {
-                    40.0
-                } else {
-                    150.0
-                };
-                prices.insert(symbol.clone(), base_price);
-            }
-
-            info!(
-                "MockMarketDataService: Starting price simulation for {:?}",
-                symbols_clone
-            );
-
-            let mut interval = time::interval(Duration::from_millis(500));
-
-            loop {
-                interval.tick().await;
-                iteration += 1;
-
-                for (idx, symbol) in symbols_clone.iter().enumerate() {
-                    let current_price = prices.get(symbol).copied().unwrap_or(100.0);
-
-                    // Simple pseudo-random using iteration and timestamp
-                    // This creates -0.5% to +0.5% variance
-                    let seed = (iteration + idx as u64) * 1103515245 + 12345;
-                    let random_val = (((seed / 65536) % 1000) as f64 / 1000.0) - 0.5; // -0.5 to +0.5
-                    let change_pct = random_val * 0.01;
-                    let new_price = current_price * (1.0 + change_pct);
-
-                    prices.insert(symbol.clone(), new_price);
-
-                    let event = MarketEvent::Quote {
-                        symbol: symbol.clone(),
-                        price: Decimal::from_f64(new_price).unwrap_or(Decimal::ZERO),
-                        timestamp: Utc::now().timestamp_millis(),
+                // Initialize prices
+                for symbol in &symbols_clone {
+                    let base_price = if symbol.contains("BTC") {
+                        96000.0
+                    } else if symbol.contains("ETH") {
+                        3400.0
+                    } else if symbol.contains("AVAX") {
+                        40.0
+                    } else {
+                        150.0
                     };
-
-                    service_clone.publish(event).await;
+                    prices.insert(symbol.clone(), base_price);
                 }
-            }
-        });
 
-        info!("MockMarketDataService: Subscribed to {:?}", symbols);
+                info!(
+                    "MockMarketDataService: Starting price simulation for {:?}",
+                    symbols_clone
+                );
+
+                let mut interval = time::interval(Duration::from_millis(500));
+
+                loop {
+                    interval.tick().await;
+                    iteration += 1;
+
+                    for (idx, symbol) in symbols_clone.iter().enumerate() {
+                        let current_price = prices.get(symbol).copied().unwrap_or(100.0);
+
+                        // Simple pseudo-random using iteration and timestamp
+                        // This creates -0.5% to +0.5% variance
+                        let seed = (iteration + idx as u64) * 1103515245 + 12345;
+                        let random_val = (((seed / 65536) % 1000) as f64 / 1000.0) - 0.5; // -0.5 to +0.5
+                        let change_pct = random_val * 0.01;
+                        let new_price = current_price * (1.0 + change_pct);
+
+                        prices.insert(symbol.clone(), new_price);
+
+                        let event = MarketEvent::Quote {
+                            symbol: symbol.clone(),
+                            price: Decimal::from_f64(new_price).unwrap_or(Decimal::ZERO),
+                            timestamp: Utc::now().timestamp_millis(),
+                        };
+
+                        service_clone.publish(event).await;
+                    }
+                }
+            });
+
+            info!("MockMarketDataService: Subscribed to {:?} (Simulation Enabled)", symbols);
+        } else {
+            info!("MockMarketDataService: Subscribed to {:?} (Simulation Disabled)", symbols);
+        }
 
         Ok(rx)
     }
