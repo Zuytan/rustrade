@@ -3,7 +3,8 @@
 ## Objectif du Projet
 Développer un système multi-agents capable de surveiller le marché des actions et ETF (via Alpaca) et Forex/CFDs (via OANDA), d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
 
-> 📘 **Nouveau (v0.23.0) :** Support expérimental **OANDA** pour le trading Forex et CFDs (ex: indices Japonais).
+> 📘 **Nouveau (v0.24.0) :** Support expérimental **OANDA** pour le trading Forex et CFDs, et adaptation **Crypto 24/7**.
+> 📘 **Métaux Précieux** : Le trading de l'Or et de l'Argent est désormais possible via les ETFs **GLD** et **SLV** sur Alpaca (voir `metals.env`).
 
 > 📘 **Nouveau  :** Pour une explication simplifiée des stratégies, voir [Guide des Stratégies (Non-Spécialistes)](docs/guide_strategie_simplifie.md).
 
@@ -91,7 +92,9 @@ Le bot intègre désormais un système d'optimisation en boucle fermée qui ajus
     - **Gestion Sectorielle Dynamique (v0.18.0)** : Plus de `sector_map` manuel. Utilise un `SectorProvider` (via Alpaca Asset API) pour identifier le secteur de chaque actif en temps réel et garantir la diversification.
     - **Protection PDT**: Empêche le Day Trading pour les petits comptes.
     - **Valuation Temps Réel**: Surveillance continue de l'équité pour déclenchement immédiat des Circuit Breakers.
-    - **Active Liquidation (v0.22.0)**: Si un Circuit Breaker est déclenché, le Risk Manager envoie immédiatement des ordres de vente au marché pour TOUTES les positions, bypassant les protections PDT. Objectif: "Cash is King" pendant un krach.
+    - **Active Liquidation (v0.22.0)**: Si un Circuit Breaker est déclenché, le Risk Manager envoie immédiatement des ordres de vente pour TOUTES les positions, bypassant les protections PDT. Objectif: "Cash is King" pendant un krach.
+    - **Flash Crash Protection (v0.24.0)** : Utilisation d'ordres **Limit Marketables** (avec tolérance de slippage de 5%) lors des liquidations d'urgence pour éviter les exécutons à prix aberrant sur les carnets d'ordres vides.
+    - **Session Continue (Crypto)** : Gestion spécifique des actifs `Crypto` avec réinitialisation automatique des compteurs de perte journalière ("Daily Loss") à 00:00 UTC.
 
 ### 4. L'Agent "Order Throttler" (Rate Limiting)
 - **Rôle**: Garde-fou technique.

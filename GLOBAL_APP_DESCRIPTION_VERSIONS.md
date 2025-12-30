@@ -1,6 +1,18 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.24.1 (Janvier 2026) - Metal ETF Support
+- **Metal Trading (Alpaca)**: Support du trading de l'Or (GLD) et de l'Argent (SLV) via ETFs.
+  - Configuration dédiée `metals.env`.
+  - Pré-configuration des secteurs "Commodities" pour une gestion correcte des risques.
+
+## Version 0.24.0 (Janvier 2026) - Crypto Risk Adaptation
+- **Crypto 24/7 Support**: Adaptation du `RiskManager` pour les marchés continus.
+  - **Daily Reset**: Réinitialisation automatique de l'équité de référence (`session_start_equity`) à 00:00 UTC pour l'asset class `Crypto`, permettant un calcul correct du "Daily Loss Limit".
+- **Flash Crash Protection**: Sécurisation de la logique de liquidation d'urgence.
+  - Remplacement des ordres `Market` par des ordres `Limit` marketables (Prix * 0.95 pour vente).
+  - Protège contre le risque de liquidité extrême (slippage infini) lors des krachs soudains.
+- **Asset Class Config**: Nouvelle configuration `ASSET_CLASS` (Stock/Crypto) pour activer conditionnellement les logiques spécifiques.
 ## Version 0.23.0 (Décembre 2025) - OANDA Integration
 - **NOUVEAU: Intégration OANDA**: Ajout du support pour le courtier OANDA, permettant le trading sur les marchés Forex et CFDs (y compris CFDs sur indices japonais comme Nikkei 225).
   - Nouvelle implémentation `OandaMarketDataService` pour le streaming de prix via HTTP Chunked Encoding.

@@ -71,6 +71,11 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         adaptive_optimization_enabled: false,
         regime_detection_window: 20,
         adaptive_evaluation_hour: 0,
+        asset_class: rustrade::config::AssetClass::Stock,
+        oanda_api_key: "".to_string(),
+        oanda_account_id: "".to_string(),
+        oanda_api_base_url: "".to_string(),
+        oanda_stream_base_url: "".to_string(),
     });
 
     config.mode = Mode::Mock;

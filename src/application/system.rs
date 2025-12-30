@@ -314,6 +314,7 @@ impl Application {
             self.market_service.clone(),
             self.portfolio.clone(),
             self.config.non_pdt_mode,
+            self.config.asset_class,
             risk_config,
             self.performance_monitor.clone(),
         );

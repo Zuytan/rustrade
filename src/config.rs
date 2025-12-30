@@ -13,6 +13,24 @@ pub enum Mode {
     Oanda,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetClass {
+    Stock,
+    Crypto,
+}
+
+impl std::str::FromStr for AssetClass {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "stock" => Ok(AssetClass::Stock),
+            "crypto" => Ok(AssetClass::Crypto),
+            _ => anyhow::bail!("Invalid ASSET_CLASS: {}. Must be 'stock' or 'crypto'", s),
+        }
+    }
+}
+
 
 
 impl std::str::FromStr for Mode {
@@ -31,6 +49,7 @@ impl std::str::FromStr for Mode {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub mode: Mode,
+    pub asset_class: AssetClass,
     pub alpaca_api_key: String,
     pub alpaca_secret_key: String,
     pub alpaca_base_url: String,
@@ -92,6 +111,9 @@ impl Config {
     pub fn from_env() -> Result<Self> {
         let mode_str = env::var("MODE").unwrap_or_else(|_| "mock".to_string());
         let mode = Mode::from_str(&mode_str)?;
+
+        let asset_class_str = env::var("ASSET_CLASS").unwrap_or_else(|_| "stock".to_string());
+        let asset_class = AssetClass::from_str(&asset_class_str)?;
 
         let alpaca_api_key = env::var("ALPACA_API_KEY").unwrap_or_default();
         let alpaca_secret_key = env::var("ALPACA_SECRET_KEY").unwrap_or_default();
@@ -331,6 +353,7 @@ impl Config {
 
         Ok(Config {
             mode,
+            asset_class,
             alpaca_api_key,
             alpaca_secret_key,
             alpaca_base_url,

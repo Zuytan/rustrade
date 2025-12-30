@@ -1,22 +1,22 @@
-# Grid Search Parameter Configuration
-# Example configuration file for optimize CLI
+# Grid Search Configuration for Rustrade Optimizer
+# Regime: Bull Market Detection (AAPL Nov-Dec 2024)
 
-# Fast SMA periods to test
-fast_sma = [10, 20, 30]
+# Corrected Schema for ParameterGrid struct
 
-# Slow SMA periods to test  
-slow_sma = [50, 60, 100]
+# Fast SMA: Look for quicker entries (10-30) vs standard 20
+fast_sma = [10, 15, 20, 25, 30]
 
-# RSI threshold values (buy signal when RSI < threshold)
-rsi_threshold = [60.0, 65.0, 70.0]
+# Slow SMA: Trend filter.
+slow_sma = [100, 150, 200]
 
-# Trend divergence threshold (price vs long-term SMA)
-trend_divergence_threshold = [0.003, 0.005, 0.01]
+# RSI Threshold: Testing higher thresholds for bull market
+rsi_threshold = [60.0, 65.0, 70.0, 75.0]
 
-# ATR multiplier for trailing stops
-trailing_stop_atr_multiplier = [2.0, 3.0, 4.0]
+# Trend Divergence: How strict on trend alignment?
+trend_divergence_threshold = [0.002, 0.005, 0.010]
 
-# Order cooldown in seconds
-order_cooldown_seconds = [0, 300, 600]
+# Trailing Stop ATR Multiplier
+trailing_stop_atr_multiplier = [2.5, 3.0, 3.5, 4.0]
 
-# Total combinations: 3 * 3 * 3 * 3 * 3 * 3 = 729
+# Order Cooldown
+order_cooldown_seconds = [60, 300]
