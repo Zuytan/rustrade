@@ -295,8 +295,7 @@ mod tests {
         let risk9 = RiskAppetite::new(9).unwrap();
         assert!(risk7.calculate_max_position_size_pct() < risk9.calculate_max_position_size_pct());
         assert!(
-            risk7.calculate_trailing_stop_multiplier()
-                < risk9.calculate_trailing_stop_multiplier()
+            risk7.calculate_trailing_stop_multiplier() < risk9.calculate_trailing_stop_multiplier()
         );
     }
 

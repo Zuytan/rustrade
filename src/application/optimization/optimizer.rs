@@ -130,6 +130,9 @@ impl GridSearchOptimizer {
                                     macd_fast: 12,
                                     macd_slow: 26,
                                     macd_signal: 9,
+                                    ema_fast_period: 50,
+                                    ema_slow_period: 150,
+                                    take_profit_pct: 0.05,
                                 });
                             }
                         }
@@ -185,11 +188,12 @@ impl GridSearchOptimizer {
             }
         }
 
-        let metrics = crate::domain::performance::metrics::PerformanceMetrics::calculate_time_series_metrics(
-            &trades,
-            &result.daily_closes,
-            result.initial_equity,
-        );
+        let metrics =
+            crate::domain::performance::metrics::PerformanceMetrics::calculate_time_series_metrics(
+                &trades,
+                &result.daily_closes,
+                result.initial_equity,
+            );
 
         let mut opt_result = OptimizationResult {
             params: config,
@@ -353,6 +357,9 @@ mod tests {
                 macd_fast: 12,
                 macd_slow: 26,
                 macd_signal: 9,
+                ema_fast_period: 50,
+                ema_slow_period: 150,
+                take_profit_pct: 0.05,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

@@ -12,9 +12,9 @@ pub use mean_reversion::MeanReversionStrategy;
 pub use traits::{AnalysisContext, Signal, TradingStrategy};
 pub use trend_riding::TrendRidingStrategy;
 
-use std::sync::Arc;
-use crate::domain::market::strategy_config::StrategyMode;
 use crate::application::agents::analyst::AnalystConfig;
+use crate::domain::market::strategy_config::StrategyMode;
+use std::sync::Arc;
 
 pub struct StrategyFactory;
 

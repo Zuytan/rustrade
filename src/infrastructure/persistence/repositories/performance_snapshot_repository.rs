@@ -4,8 +4,8 @@ use crate::domain::repositories::PerformanceSnapshotRepository;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::Decimal;
 use sqlx::{Row, SqlitePool};
 
 pub struct SqlitePerformanceSnapshotRepository {
@@ -44,7 +44,7 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
 
     async fn get_latest(&self, symbol: &str) -> Result<Option<PerformanceSnapshot>> {
         let row = sqlx::query(
-            "SELECT * FROM performance_snapshots WHERE symbol = ? ORDER BY timestamp DESC LIMIT 1"
+            "SELECT * FROM performance_snapshots WHERE symbol = ? ORDER BY timestamp DESC LIMIT 1",
         )
         .bind(symbol)
         .fetch_optional(&self.pool)
@@ -79,7 +79,7 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
 
     async fn get_history(&self, symbol: &str, limit: usize) -> Result<Vec<PerformanceSnapshot>> {
         let rows = sqlx::query(
-            "SELECT * FROM performance_snapshots WHERE symbol = ? ORDER BY timestamp DESC LIMIT ?"
+            "SELECT * FROM performance_snapshots WHERE symbol = ? ORDER BY timestamp DESC LIMIT ?",
         )
         .bind(symbol)
         .bind(limit as i64)

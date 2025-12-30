@@ -3,12 +3,13 @@ use crate::domain::trading::types::{MarketEvent, Order, OrderSide};
 use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use chrono::NaiveDate;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver};
-use tracing::info;
+use tracing::{error, info};
 
 // ===== Market Data Service (WebSocket) =====
 
@@ -19,10 +20,17 @@ pub struct AlpacaMarketDataService {
     ws_manager: Arc<AlpacaWebSocketManager>, // Singleton WebSocket manager
     data_base_url: String,
     bar_cache: std::sync::RwLock<std::collections::HashMap<String, Vec<AlpacaBar>>>,
+    min_volume_threshold: f64,
 }
 
 impl AlpacaMarketDataService {
-    pub fn new(api_key: String, api_secret: String, ws_url: String, data_base_url: String) -> Self {
+    pub fn new(
+        api_key: String,
+        api_secret: String,
+        ws_url: String,
+        data_base_url: String,
+        min_volume_threshold: f64,
+    ) -> Self {
         // Configure client with connection pool limits
         let client = Client::builder()
             .pool_max_idle_per_host(5)
@@ -45,6 +53,7 @@ impl AlpacaMarketDataService {
             ws_manager,
             data_base_url,
             bar_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
+            min_volume_threshold,
         }
     }
 }
@@ -75,7 +84,6 @@ impl MarketDataService for AlpacaMarketDataService {
 
     async fn get_top_movers(&self) -> Result<Vec<String>> {
         // Alpaca Data v1beta1 Screener Movers endpoint
-        // v2/stocks/movers is often not found or requires specific tier.
         let url = format!("{}/v1beta1/screener/stocks/movers", self.data_base_url);
 
         let mut response = self
@@ -118,25 +126,17 @@ impl MarketDataService for AlpacaMarketDataService {
         struct Mover {
             symbol: String,
             #[serde(default)]
-            price: f64, // Optional in some V2 responses or might be named differently
+            #[allow(dead_code)]
+            price: f64,
         }
-
-        // V2 response format can differ, it sometimes returns a list directly or a different field.
-        // Actually Screener v1beta1 returns { gainers: [...] }.
-        // V2 Movers returns [Mover, Mover, ...] or a struct?
-        // Let's be smart about deserialization.
 
         let json_val: serde_json::Value = response
             .json()
             .await
             .context("Failed to parse movers JSON")?;
 
-        // Detailed logging of the raw response for debugging
-        // info!("Alpaca movers raw response: {}", json_val);
-
         let movers: Vec<Mover> = if let Some(gainers) = json_val.get("gainers") {
             if gainers.is_null() {
-                info!("Alpaca movers: 'gainers' field is null. No movers found.");
                 vec![]
             } else {
                 serde_json::from_value(gainers.clone())?
@@ -144,39 +144,117 @@ impl MarketDataService for AlpacaMarketDataService {
         } else if let Some(movers) = json_val.as_array() {
             serde_json::from_value(serde_json::Value::Array(movers.clone()))?
         } else {
-            info!(
-                "Alpaca movers: No 'gainers' or array found in response. JSON: {}",
-                json_val
-            );
             vec![]
         };
 
         if movers.is_empty() {
             info!("MarketScanner: No movers found in Alpaca response.");
+            return Ok(vec![]);
         }
 
-        let symbols = movers
+        // 1. Initial Filter (Structure)
+        let candidates: Vec<String> = movers
             .into_iter()
             .filter(|m| {
-                // If price is 0.0 (missing in some V2 responses), we don't confirm it's a penny stock
-                let is_penny = m.price > 0.0 && m.price < 5.0;
                 let is_warrant = m.symbol.contains(".WS") || m.symbol.ends_with('W');
                 let is_unit = m.symbol.ends_with('U');
-
-                let keep = !is_penny && !is_warrant && !is_unit;
-                if !keep {
-                    info!(
-                        "MarketScanner: Filtering out {} (price: {:.2}, warrant: {}, unit: {})",
-                        m.symbol, m.price, is_warrant, is_unit
-                    );
-                }
-                keep
+                !is_warrant && !is_unit
             })
             .map(|m| m.symbol)
             .collect();
 
-        info!("MarketScanner: Final filtered movers list: {:?}", symbols);
-        Ok(symbols)
+        if candidates.is_empty() {
+            return Ok(vec![]);
+        }
+
+        info!(
+            "MarketScanner: Validating {} candidates via Snapshots...",
+            candidates.len()
+        );
+
+        // 2. Fetch Snapshots for Volume Verification
+        // Reuse get_prices logic but we need access to Snapshot struct which was internal.
+        // We will just call the raw API here to avoid exposing internal logic or modifying get_prices return type too much.
+        let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
+        let symbols_param = candidates.join(",");
+
+        let response = self
+            .client
+            .get(&url)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .query(&[("symbols", &symbols_param)])
+            .send()
+            .await
+            .context("Failed to fetch snapshots for validation")?;
+
+        if !response.status().is_success() {
+            // If snapshot fails, fallback to just returning candidates but warn
+            let err = response.text().await.unwrap_or_default();
+            error!(
+                "MarketScanner: Snapshot validation failed: {}. Returning raw candidates.",
+                err
+            );
+            return Ok(candidates);
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct SnapshotTrade {
+            #[serde(rename = "p")]
+            price: f64,
+        }
+        #[derive(Debug, Deserialize)]
+        struct SnapshotDay {
+            #[serde(rename = "v")]
+            volume: f64,
+        }
+        #[derive(Debug, Deserialize)]
+        struct Snapshot {
+            #[serde(rename = "latestTrade")]
+            latest_trade: Option<SnapshotTrade>,
+            #[serde(rename = "dailyBar")]
+            daily_bar: Option<SnapshotDay>,
+            #[serde(rename = "prevDailyBar")]
+            prev_daily_bar: Option<SnapshotDay>, // Fallback for volume?
+        }
+
+        let snapshots: std::collections::HashMap<String, Snapshot> = response.json().await?;
+
+        let filtered_symbols: Vec<String> = candidates
+            .into_iter()
+            .filter(|sym| {
+                if let Some(snap) = snapshots.get(sym) {
+                    let price = snap.latest_trade.as_ref().map(|t| t.price).unwrap_or(0.0);
+
+                    // Check Volume: dailyBar or prevDailyBar
+                    let volume = snap
+                        .daily_bar
+                        .as_ref()
+                        .map(|b| b.volume)
+                        .or_else(|| snap.prev_daily_bar.as_ref().map(|b| b.volume))
+                        .unwrap_or(0.0);
+
+                    let is_penny = price < 5.0;
+                    let has_volume = volume >= self.min_volume_threshold;
+
+                    if !has_volume {
+                        // Debug log for exclusion
+                        // info!("Excluded {} - Volume: {} < {}", sym, volume, self.min_volume_threshold);
+                    }
+
+                    price > 0.0 && !is_penny && has_volume
+                } else {
+                    false
+                }
+            })
+            .collect();
+
+        info!(
+            "MarketScanner: Final filtered movers: {} (from {})",
+            filtered_symbols.len(),
+            snapshots.len()
+        );
+        Ok(filtered_symbols)
     }
 
     async fn get_prices(
@@ -257,25 +335,30 @@ impl MarketDataService for AlpacaMarketDataService {
         timeframe: &str,
     ) -> Result<Vec<crate::domain::trading::types::Candle>> {
         // Use the internal implementation
-        let alpaca_bars = self.fetch_historical_bars_internal(symbol, start, end, timeframe).await?;
-        
+        let alpaca_bars = self
+            .fetch_historical_bars_internal(symbol, start, end, timeframe)
+            .await?;
+
         // Convert AlpacaBar -> Candle
-        let candles = alpaca_bars.into_iter().map(|b| {
-            let timestamp = chrono::DateTime::parse_from_rfc3339(&b.timestamp)
-                .unwrap_or_default()
-                .timestamp();
-            
-            crate::domain::trading::types::Candle {
-                symbol: symbol.to_string(),
-                open: Decimal::from_f64_retain(b.open).unwrap_or(Decimal::ZERO),
-                high: Decimal::from_f64_retain(b.high).unwrap_or(Decimal::ZERO),
-                low: Decimal::from_f64_retain(b.low).unwrap_or(Decimal::ZERO),
-                close: Decimal::from_f64_retain(b.close).unwrap_or(Decimal::ZERO),
-                volume: b.volume,
-                timestamp,
-            }
-        }).collect();
-        
+        let candles = alpaca_bars
+            .into_iter()
+            .map(|b| {
+                let timestamp = chrono::DateTime::parse_from_rfc3339(&b.timestamp)
+                    .unwrap_or_default()
+                    .timestamp();
+
+                crate::domain::trading::types::Candle {
+                    symbol: symbol.to_string(),
+                    open: Decimal::from_f64_retain(b.open).unwrap_or(Decimal::ZERO),
+                    high: Decimal::from_f64_retain(b.high).unwrap_or(Decimal::ZERO),
+                    low: Decimal::from_f64_retain(b.low).unwrap_or(Decimal::ZERO),
+                    close: Decimal::from_f64_retain(b.close).unwrap_or(Decimal::ZERO),
+                    volume: b.volume,
+                    timestamp,
+                }
+            })
+            .collect();
+
         Ok(candles)
     }
 }
@@ -289,8 +372,14 @@ impl AlpacaMarketDataService {
         timeframe: &str,
     ) -> Result<Vec<AlpacaBar>> {
         // 1. Check Cache
-        let cache_key =format!("{}:{}:{}:{}", symbol, start.timestamp(), end.timestamp(), timeframe);
-        
+        let cache_key = format!(
+            "{}:{}:{}:{}",
+            symbol,
+            start.timestamp(),
+            end.timestamp(),
+            timeframe
+        );
+
         {
             let cache = self.bar_cache.read().unwrap();
             if let Some(bars) = cache.get(&cache_key) {
@@ -298,16 +387,19 @@ impl AlpacaMarketDataService {
                 return Ok(bars.clone());
             }
         }
-        
-        info!("AlpacaMarketDataService: Cache MISS for {}. Fetching from API...", cache_key);
+
+        info!(
+            "AlpacaMarketDataService: Cache MISS for {}. Fetching from API...",
+            cache_key
+        );
 
         // Determine endpoint based on symbol format (Crypto pairs usually have '/')
         let is_crypto = symbol.contains('/');
         let url = if is_crypto {
-             // For crypto, use v1beta3 endpoint
-             format!("{}/v1beta3/crypto/us/bars", self.data_base_url)
+            // For crypto, use v1beta3 endpoint
+            format!("{}/v1beta3/crypto/us/bars", self.data_base_url)
         } else {
-             format!("{}/v2/stocks/bars", self.data_base_url)
+            format!("{}/v2/stocks/bars", self.data_base_url)
         };
 
         let mut all_bars = Vec::new();
@@ -369,14 +461,96 @@ impl AlpacaMarketDataService {
         }
 
         info!("Fetched total {} bars for {}", all_bars.len(), symbol);
-        
+
         // Save to cache
         if !all_bars.is_empty() {
             let mut cache = self.bar_cache.write().unwrap();
             cache.insert(cache_key, all_bars.clone());
         }
-        
+
         Ok(all_bars)
+    }
+
+    pub async fn get_historical_movers(
+        &self,
+        date: NaiveDate,
+        universe: &[String],
+    ) -> Result<Vec<String>> {
+        info!(
+            "MarketScanner: Scanning {} symbols for historical movers on {}",
+            universe.len(),
+            date
+        );
+
+        let mut valid_movers = Vec::new();
+
+        for chunk in universe.chunks(50) {
+            let symbols_param = chunk.join(",");
+            let url = format!("{}/v2/stocks/bars", self.data_base_url);
+
+            let start_rfc = format!("{}T00:00:00Z", date);
+            let end_rfc = format!("{}T23:59:59Z", date);
+
+            let response = self
+                .client
+                .get(&url)
+                .header("APCA-API-KEY-ID", &self.api_key)
+                .header("APCA-API-SECRET-KEY", &self.api_secret)
+                .query(&[
+                    ("symbols", &symbols_param),
+                    ("timeframe", &"1Day".to_string()),
+                    ("start", &start_rfc),
+                    ("end", &end_rfc),
+                    ("limit", &"10".to_string()),
+                ])
+                .send()
+                .await
+                .context("Failed to fetch historical bars")?;
+
+            if !response.status().is_success() {
+                let err = response.text().await.unwrap_or_default();
+                error!("MarketScanner: Historical fetch failed: {}", err);
+                continue;
+            }
+
+            #[derive(Debug, Deserialize)]
+            struct MultiBarResponse {
+                bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
+            }
+
+            let data: MultiBarResponse =
+                response.json().await.unwrap_or_else(|_| MultiBarResponse {
+                    bars: std::collections::HashMap::new(),
+                });
+
+            for (symbol, bars) in data.bars {
+                if let Some(bar) = bars.first() {
+                    let change_pct = if bar.open != 0.0 {
+                        (bar.close - bar.open) / bar.open
+                    } else {
+                        0.0
+                    };
+                    let abs_change = change_pct.abs();
+
+                    let is_penny = bar.close < 5.0;
+                    let has_volume = bar.volume >= self.min_volume_threshold;
+
+                    if !is_penny && has_volume {
+                        valid_movers.push((symbol, abs_change, change_pct));
+                    }
+                }
+            }
+        }
+
+        valid_movers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let result: Vec<String> = valid_movers.into_iter().map(|(sym, _, _)| sym).collect();
+        info!(
+            "MarketScanner: Found {} valid historical movers.",
+            result.len()
+        );
+
+        Ok(result)
     }
 }
 
@@ -478,25 +652,36 @@ impl ExecutionService for AlpacaExecutionService {
         };
 
         let is_fractional = !order.quantity.fract().is_zero();
-        
+
         let (type_str, limit_price, stop_price) = match order.order_type {
-             crate::domain::trading::types::OrderType::Market => ("market".to_string(), None, None),
-             crate::domain::trading::types::OrderType::Limit => ("limit".to_string(), Some(order.price.to_string()), None),
-             crate::domain::trading::types::OrderType::Stop => ("stop".to_string(), None, Some(order.price.to_string())),
-             crate::domain::trading::types::OrderType::StopLimit => ("stop_limit".to_string(), Some(order.price.to_string()), Some(order.price.to_string())), // Assuming stop and limit same for simplicity unless we add stop_price to order
+            crate::domain::trading::types::OrderType::Market => ("market".to_string(), None, None),
+            crate::domain::trading::types::OrderType::Limit => {
+                ("limit".to_string(), Some(order.price.to_string()), None)
+            }
+            crate::domain::trading::types::OrderType::Stop => {
+                ("stop".to_string(), None, Some(order.price.to_string()))
+            }
+            crate::domain::trading::types::OrderType::StopLimit => (
+                "stop_limit".to_string(),
+                Some(order.price.to_string()),
+                Some(order.price.to_string()),
+            ), // Assuming stop and limit same for simplicity unless we add stop_price to order
         };
-        
+
         // Alpaca requires 'limit_price' and 'stop_price' fields if type is limit/stop
         // Fractional orders must be market and day? Alpaca restrictions apply.
         // For now, assume standard lots for limit orders or check fractional logic.
         // Usually Limit orders cannot be fractional on Alpaca (requires whole shares? or checks).
         // Safest: if fractional, force market.
-        
+
         let (final_type, final_limit, final_stop) = if is_fractional && type_str != "market" {
-             info!("AlpacaExecution: Forcing MARKET order for fractional quantity {}", order.quantity);
-             ("market".to_string(), None, None)
+            info!(
+                "AlpacaExecution: Forcing MARKET order for fractional quantity {}",
+                order.quantity
+            );
+            ("market".to_string(), None, None)
         } else {
-             (type_str, limit_price, stop_price)
+            (type_str, limit_price, stop_price)
         };
 
         let tif = if is_fractional { "day" } else { "gtc" };
@@ -695,6 +880,7 @@ impl ExecutionService for AlpacaExecutionService {
 
 #[derive(Debug, Deserialize)]
 struct AlpacaAsset {
+    #[allow(dead_code)]
     symbol: String,
     #[serde(default)]
     sector: String,

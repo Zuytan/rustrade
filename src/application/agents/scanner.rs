@@ -95,8 +95,8 @@ impl MarketScanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::trading::portfolio::{Portfolio, Position};
     use crate::domain::ports::{ExecutionService, MarketDataService};
+    use crate::domain::trading::portfolio::{Portfolio, Position};
     use crate::domain::trading::types::{MarketEvent, Order};
     use anyhow::Result;
     use async_trait::async_trait;

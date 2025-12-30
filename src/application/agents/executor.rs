@@ -1,6 +1,6 @@
-use crate::domain::trading::portfolio::{Portfolio, Position};
 use crate::domain::ports::ExecutionService;
 use crate::domain::repositories::TradeRepository;
+use crate::domain::trading::portfolio::{Portfolio, Position};
 use crate::domain::trading::types::{Order, OrderSide};
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;

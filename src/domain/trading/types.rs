@@ -149,4 +149,6 @@ pub struct FeatureSet {
     pub bb_middle: Option<f64>,
     pub bb_lower: Option<f64>,
     pub atr: Option<f64>,
+    pub ema_fast: Option<f64>,
+    pub ema_slow: Option<f64>,
 }

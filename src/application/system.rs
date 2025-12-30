@@ -1,9 +1,10 @@
 use anyhow::Result;
+use chrono::Timelike;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::{info, error};
-use chrono::Timelike;
+use tracing::{error, info};
 
+use crate::application::strategies::TradingStrategy;
 use crate::application::{
     agents::{
         analyst::{Analyst, AnalystConfig},
@@ -11,33 +12,35 @@ use crate::application::{
         scanner::MarketScanner,
         sentinel::Sentinel,
     },
-    risk_management::{
-        order_throttler::OrderThrottler,
-        risk_manager::RiskManager,
-    },
-    strategies::*,
+    monitoring::performance_monitoring_service::PerformanceMonitoringService,
     optimization::{
         adaptive_optimization_service::AdaptiveOptimizationService,
         optimizer::{GridSearchOptimizer, ParameterGrid},
     },
-    monitoring::performance_monitoring_service::PerformanceMonitoringService,
+    risk_management::{order_throttler::OrderThrottler, risk_manager::RiskManager},
+    strategies::*,
 };
 use crate::config::{Config, Mode};
-use crate::domain::trading::portfolio::Portfolio;
-use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::application::strategies::TradingStrategy;
-use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
-use crate::domain::performance::performance_evaluator::{PerformanceEvaluator, EvaluationThresholds};
-use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService, AlpacaSectorProvider};
-use crate::infrastructure::oanda::{OandaExecutionService, OandaMarketDataService, OandaSectorProvider};
-use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
-use crate::infrastructure::persistence::database::Database;
-use crate::infrastructure::persistence::repositories::{
-    SqliteCandleRepository, SqliteOrderRepository, SqliteStrategyRepository,
-    SqliteOptimizationHistoryRepository, SqlitePerformanceSnapshotRepository, 
-    SqliteReoptimizationTriggerRepository
+use crate::domain::performance::performance_evaluator::{
+    EvaluationThresholds, PerformanceEvaluator,
 };
 use crate::domain::ports::SectorProvider;
+use crate::domain::ports::{ExecutionService, MarketDataService};
+use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
+use crate::domain::trading::portfolio::Portfolio;
+use crate::infrastructure::alpaca::{
+    AlpacaExecutionService, AlpacaMarketDataService, AlpacaSectorProvider,
+};
+use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
+use crate::infrastructure::oanda::{
+    OandaExecutionService, OandaMarketDataService, OandaSectorProvider,
+};
+use crate::infrastructure::persistence::database::Database;
+use crate::infrastructure::persistence::repositories::{
+    SqliteCandleRepository, SqliteOptimizationHistoryRepository, SqliteOrderRepository,
+    SqlitePerformanceSnapshotRepository, SqliteReoptimizationTriggerRepository,
+    SqliteStrategyRepository,
+};
 
 pub struct Application {
     pub config: Config,
@@ -80,6 +83,7 @@ impl Application {
                         config.alpaca_secret_key.clone(),
                         config.alpaca_ws_url.clone(),
                         config.alpaca_data_url.clone(),
+                        config.min_volume_threshold,
                     )),
                     Arc::new(AlpacaExecutionService::new(
                         config.alpaca_api_key.clone(),
@@ -107,16 +111,18 @@ impl Application {
         };
 
         // 3. Initialize Persistence
-        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://rustrade.db".to_string());
+        let db_url =
+            std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://rustrade.db".to_string());
         info!("Initializing Database at {}", db_url);
 
-        let db = Database::new(&db_url).await
+        let db = Database::new(&db_url)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to initialize database: {}", e))?;
 
         let order_repo = Arc::new(SqliteOrderRepository::new(db.pool.clone()));
         let candle_repo = Arc::new(SqliteCandleRepository::new(db.pool.clone()));
         let strategy_repo = Arc::new(SqliteStrategyRepository::new(db.pool.clone()));
-        
+
         // 4. Initialize Adaptive Optimization Repositories
         let opt_history_repo = Arc::new(SqliteOptimizationHistoryRepository::new(db.pool.clone()));
         let snapshot_repo = Arc::new(SqlitePerformanceSnapshotRepository::new(db.pool.clone()));
@@ -137,7 +143,7 @@ impl Application {
 
         let adaptive_optimization_service = if config.adaptive_optimization_enabled {
             let es_clone = execution_service.clone();
-            let execution_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync> = 
+            let execution_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync> =
                 Arc::new(move || es_clone.clone());
 
             let optimizer = Arc::new(GridSearchOptimizer::new(
@@ -204,7 +210,8 @@ impl Application {
             Some(sentinel_cmd_rx),
         );
 
-        let scanner_interval = std::time::Duration::from_secs(self.config.dynamic_scan_interval_minutes * 60);
+        let scanner_interval =
+            std::time::Duration::from_secs(self.config.dynamic_scan_interval_minutes * 60);
         let scanner = MarketScanner::new(
             self.market_service.clone(),
             self.execution_service.clone(),
@@ -242,39 +249,52 @@ impl Application {
             macd_fast: self.config.macd_fast_period,
             macd_slow: self.config.macd_slow_period,
             macd_signal: self.config.macd_signal_period,
+            ema_fast_period: self.config.ema_fast_period,
+            ema_slow_period: self.config.ema_slow_period,
+            take_profit_pct: self.config.take_profit_pct,
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
-            crate::domain::market::strategy_config::StrategyMode::Standard => Arc::new(DualSMAStrategy::new(
-                self.config.fast_sma_period,
-                self.config.slow_sma_period,
-                self.config.sma_threshold,
-            )),
-            crate::domain::market::strategy_config::StrategyMode::Advanced => Arc::new(AdvancedTripleFilterStrategy::new(
-                self.config.fast_sma_period,
-                self.config.slow_sma_period,
-                self.config.sma_threshold,
-                self.config.trend_sma_period,
-                self.config.rsi_threshold,
-            )),
-            crate::domain::market::strategy_config::StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(
-                self.config.fast_sma_period,
-                self.config.slow_sma_period,
-                self.config.sma_threshold,
-                self.config.trend_sma_period,
-                self.config.rsi_threshold,
-                self.config.trend_divergence_threshold,
-            )),
-            crate::domain::market::strategy_config::StrategyMode::TrendRiding => Arc::new(TrendRidingStrategy::new(
-                self.config.fast_sma_period,
-                self.config.slow_sma_period,
-                self.config.sma_threshold,
-                self.config.trend_riding_exit_buffer_pct,
-            )),
-            crate::domain::market::strategy_config::StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
-                self.config.mean_reversion_bb_period,
-                self.config.mean_reversion_rsi_exit,
-            )),
+            crate::domain::market::strategy_config::StrategyMode::Standard => {
+                Arc::new(DualSMAStrategy::new(
+                    self.config.fast_sma_period,
+                    self.config.slow_sma_period,
+                    self.config.sma_threshold,
+                ))
+            }
+            crate::domain::market::strategy_config::StrategyMode::Advanced => {
+                Arc::new(AdvancedTripleFilterStrategy::new(
+                    self.config.fast_sma_period,
+                    self.config.slow_sma_period,
+                    self.config.sma_threshold,
+                    self.config.trend_sma_period,
+                    self.config.rsi_threshold,
+                ))
+            }
+            crate::domain::market::strategy_config::StrategyMode::Dynamic => {
+                Arc::new(DynamicRegimeStrategy::new(
+                    self.config.fast_sma_period,
+                    self.config.slow_sma_period,
+                    self.config.sma_threshold,
+                    self.config.trend_sma_period,
+                    self.config.rsi_threshold,
+                    self.config.trend_divergence_threshold,
+                ))
+            }
+            crate::domain::market::strategy_config::StrategyMode::TrendRiding => {
+                Arc::new(TrendRidingStrategy::new(
+                    self.config.fast_sma_period,
+                    self.config.slow_sma_period,
+                    self.config.sma_threshold,
+                    self.config.trend_riding_exit_buffer_pct,
+                ))
+            }
+            crate::domain::market::strategy_config::StrategyMode::MeanReversion => {
+                Arc::new(MeanReversionStrategy::new(
+                    self.config.mean_reversion_bb_period,
+                    self.config.mean_reversion_rsi_exit,
+                ))
+            }
         };
 
         let mut analyst = Analyst::new(
@@ -344,14 +364,20 @@ impl Application {
         let adaptive_service = self.adaptive_optimization_service.clone();
         let symbols = self.config.symbols.clone();
         let eval_hour = self.config.adaptive_evaluation_hour;
-        
+
         let adaptive_handle = tokio::spawn(async move {
             if let Some(service) = adaptive_service {
-                info!("Starting Adaptive Optimization Service task (Evaluation hour: {:02}:00 UTC)", eval_hour);
+                info!(
+                    "Starting Adaptive Optimization Service task (Evaluation hour: {:02}:00 UTC)",
+                    eval_hour
+                );
                 loop {
                     let now = chrono::Utc::now();
                     if now.hour() == eval_hour {
-                        info!("Triggering daily adaptive evaluation for symbols: {:?}", symbols);
+                        info!(
+                            "Triggering daily adaptive evaluation for symbols: {:?}",
+                            symbols
+                        );
                         for symbol in &symbols {
                             if let Err(e) = service.run_daily_evaluation(symbol).await {
                                 error!("Adaptive Optimization failed for {}: {}", symbol, e);

@@ -2,17 +2,17 @@ use rust_decimal::Decimal;
 
 #[derive(Debug, Clone)]
 pub struct FeeConfig {
-    pub maker_fee: Decimal,      // e.g., 0.001 (0.1%)
+    pub maker_fee: Decimal, // e.g., 0.001 (0.1%)
     pub taker_fee: Decimal,
-    pub slippage_pct: Decimal,   // e.g., 0.0005 (0.05%)
+    pub slippage_pct: Decimal,     // e.g., 0.0005 (0.05%)
     pub commission_fixed: Decimal, // e.g., 0.0 (for crypto) or 0.005 (for stocks per share)
 }
 
 impl Default for FeeConfig {
     fn default() -> Self {
         Self {
-            maker_fee: Decimal::new(1, 3), // 0.001
-            taker_fee: Decimal::new(1, 3), // 0.001
+            maker_fee: Decimal::new(1, 3),    // 0.001
+            taker_fee: Decimal::new(1, 3),    // 0.001
             slippage_pct: Decimal::new(5, 4), // 0.0005
             commission_fixed: Decimal::ZERO,
         }

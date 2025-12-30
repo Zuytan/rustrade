@@ -1,13 +1,13 @@
 use crate::application::optimization::optimizer::GridSearchOptimizer;
-use crate::domain::market::market_regime::{MarketRegimeType, MarketRegimeDetector};
-use crate::domain::optimization::optimization_history::OptimizationHistory;
-use crate::domain::performance::performance_evaluator::PerformanceEvaluator;
-use crate::domain::optimization::reoptimization_trigger::{ReoptimizationTrigger, TriggerReason};
-use crate::domain::repositories::{
-    CandleRepository, OptimizationHistoryRepository, PerformanceSnapshotRepository, 
-    ReoptimizationTriggerRepository, StrategyRepository
-};
+use crate::domain::market::market_regime::{MarketRegimeDetector, MarketRegimeType};
 use crate::domain::market::strategy_config::{StrategyDefinition, StrategyMode};
+use crate::domain::optimization::optimization_history::OptimizationHistory;
+use crate::domain::optimization::reoptimization_trigger::{ReoptimizationTrigger, TriggerReason};
+use crate::domain::performance::performance_evaluator::PerformanceEvaluator;
+use crate::domain::repositories::{
+    CandleRepository, OptimizationHistoryRepository, PerformanceSnapshotRepository,
+    ReoptimizationTriggerRepository, StrategyRepository,
+};
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use std::sync::Arc;
@@ -54,42 +54,57 @@ impl AdaptiveOptimizationService {
     /// Primary entry point: Run daily evaluation to see if we need to re-optimize
     pub async fn run_daily_evaluation(&self, symbol: &str) -> Result<()> {
         if !self.enabled {
-            info!("Adaptive optimization disabled, skipping evaluation for {}", symbol);
+            info!(
+                "Adaptive optimization disabled, skipping evaluation for {}",
+                symbol
+            );
             return Ok(());
         }
 
-        info!("Running daily adaptive optimization evaluation for {}", symbol);
+        info!(
+            "Running daily adaptive optimization evaluation for {}",
+            symbol
+        );
 
         // 1. Get latest performance snapshot
         let snapshot = self.snapshot_repo.get_latest(symbol).await?;
-        
+
         // 2. Evaluate performance
         if let Some(snap) = snapshot {
             if let Some(reason) = self.evaluator.evaluate(&snap) {
-                warn!("Triggering re-optimization for {} due to: {}", symbol, reason);
+                warn!(
+                    "Triggering re-optimization for {} due to: {}",
+                    symbol, reason
+                );
                 self.trigger_reoptimization(symbol, reason).await?;
             } else {
                 // Check for regime change even if performance is okay
                 // Fetch recent candles
                 let end_ts = Utc::now().timestamp();
-                let start_ts = end_ts - (30 * 24 * 60 * 60); 
+                let start_ts = end_ts - (30 * 24 * 60 * 60);
                 let candles = self.candle_repo.get_range(symbol, start_ts, end_ts).await?;
-                
+
                 let current_regime = self.regime_detector.detect(&candles)?;
                 let last_opt = self.history_repo.get_latest_active(symbol).await?;
 
                 if let Some(last) = last_opt {
-                    if last.market_regime != current_regime.regime_type 
-                       && current_regime.regime_type != MarketRegimeType::Unknown 
-                       && current_regime.confidence > 0.7 
+                    if last.market_regime != current_regime.regime_type
+                        && current_regime.regime_type != MarketRegimeType::Unknown
+                        && current_regime.confidence > 0.7
                     {
-                        warn!("Triggering re-optimization for {} due to Regime Change: {} -> {}", 
-                            symbol, last.market_regime, current_regime.regime_type);
-                        self.trigger_reoptimization(symbol, TriggerReason::RegimeChange).await?;
+                        warn!(
+                            "Triggering re-optimization for {} due to Regime Change: {} -> {}",
+                            symbol, last.market_regime, current_regime.regime_type
+                        );
+                        self.trigger_reoptimization(symbol, TriggerReason::RegimeChange)
+                            .await?;
                     }
                 } else {
-                     // No history, maybe first run?
-                     info!("No active optimization found for {}, considering initial optimization", symbol);
+                    // No history, maybe first run?
+                    info!(
+                        "No active optimization found for {}, considering initial optimization",
+                        symbol
+                    );
                 }
             }
         } else {
@@ -109,16 +124,20 @@ impl AdaptiveOptimizationService {
 
         let trigger = ReoptimizationTrigger::new(symbol.to_string(), reason);
         self.trigger_repo.save(&trigger).await?;
-        
+
         // Execute immediately for now (could be async job)
         self.execute_reoptimization(symbol, &trigger).await?;
 
         Ok(())
     }
 
-    async fn execute_reoptimization(&self, symbol: &str, _trigger: &ReoptimizationTrigger) -> Result<()> {
+    async fn execute_reoptimization(
+        &self,
+        symbol: &str,
+        _trigger: &ReoptimizationTrigger,
+    ) -> Result<()> {
         info!("Executing re-optimization for {}", symbol);
-        
+
         // Mark trigger running (if we had IDs returned from save, currently we re-query or assume)
         // For MVP we just run it.
 
@@ -126,24 +145,33 @@ impl AdaptiveOptimizationService {
         let start_date = end_date - Duration::days(90); // Optimize on last quarter
 
         // Run Grid Search
-        let results = self.optimizer.run_optimization(symbol, start_date, end_date).await?;
+        let results = self
+            .optimizer
+            .run_optimization(symbol, start_date, end_date)
+            .await?;
         let top_results = self.optimizer.rank_results(results, 1);
 
         if let Some(best) = top_results.first() {
-            info!("Found new optimal parameters for {}: Sharpe={}", symbol, best.sharpe_ratio);
+            info!(
+                "Found new optimal parameters for {}: Sharpe={}",
+                symbol, best.sharpe_ratio
+            );
 
             // Serialize config
             let config_json = serde_json::to_string(&best.params)?;
             let metrics_json = serde_json::to_string(&best)?;
 
             // Determine regime of the optimization period
-            let candles = self.candle_repo.get_range(symbol, start_date.timestamp(), end_date.timestamp()).await?;
+            let candles = self
+                .candle_repo
+                .get_range(symbol, start_date.timestamp(), end_date.timestamp())
+                .await?;
             let regime = self.regime_detector.detect(&candles)?;
 
             // Save History
             // Deactivate old
             self.history_repo.deactivate_old(symbol).await?;
-            
+
             let history = OptimizationHistory::new(
                 symbol.to_string(),
                 config_json.clone(),
@@ -163,7 +191,7 @@ impl AdaptiveOptimizationService {
                 is_active: true,
             };
             self.strategy_repo.save(&strategy_def).await?;
-            
+
             info!("Successfully applied new parameters for {}", symbol);
         } else {
             error!("Optimization failed to produce result for {}", symbol);

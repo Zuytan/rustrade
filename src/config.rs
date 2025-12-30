@@ -1,5 +1,5 @@
-use crate::domain::risk::risk_appetite::RiskAppetite;
 pub use crate::domain::market::strategy_config::StrategyMode;
+use crate::domain::risk::risk_appetite::RiskAppetite;
 use anyhow::{Context, Result};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -30,8 +30,6 @@ impl std::str::FromStr for AssetClass {
         }
     }
 }
-
-
 
 impl std::str::FromStr for Mode {
     type Err = anyhow::Error;
@@ -102,10 +100,11 @@ pub struct Config {
     pub adaptive_optimization_enabled: bool,
     pub regime_detection_window: usize,
     pub adaptive_evaluation_hour: u32,
+    pub min_volume_threshold: f64, // Added for symbol screening
+    pub ema_fast_period: usize,
+    pub ema_slow_period: usize,
+    pub take_profit_pct: f64,
 }
-
-
-
 
 impl Config {
     pub fn from_env() -> Result<Self> {
@@ -222,7 +221,7 @@ impl Config {
             .context("Failed to parse TREND_DIVERGENCE_THRESHOLD")?;
 
         let rsi_threshold = env::var("RSI_THRESHOLD")
-            .unwrap_or_else(|_| "65.0".to_string())
+            .unwrap_or_else(|_| "75.0".to_string())
             .parse::<f64>()
             .context("Failed to parse RSI_THRESHOLD")?;
 
@@ -237,7 +236,7 @@ impl Config {
             .context("Failed to parse DYNAMIC_SCAN_INTERVAL_MINUTES")?;
 
         let trailing_stop_atr_multiplier = env::var("TRAILING_STOP_ATR_MULTIPLIER")
-            .unwrap_or_else(|_| "3.0".to_string())
+            .unwrap_or_else(|_| "4.0".to_string())
             .parse::<f64>()
             .context("Failed to parse TRAILING_STOP_ATR_MULTIPLIER")?;
 
@@ -351,6 +350,26 @@ impl Config {
             .parse::<u32>()
             .unwrap_or(0);
 
+        let min_volume_threshold = env::var("MIN_VOLUME_THRESHOLD")
+            .unwrap_or_else(|_| "50000.0".to_string())
+            .parse::<f64>()
+            .unwrap_or(50000.0);
+
+        let ema_fast_period = env::var("EMA_FAST_PERIOD")
+            .unwrap_or_else(|_| "50".to_string())
+            .parse::<usize>()
+            .unwrap_or(50);
+
+        let ema_slow_period = env::var("EMA_SLOW_PERIOD")
+            .unwrap_or_else(|_| "150".to_string())
+            .parse::<usize>()
+            .unwrap_or(150);
+
+        let take_profit_pct = env::var("TAKE_PROFIT_PCT")
+            .unwrap_or_else(|_| "0.05".to_string())
+            .parse::<f64>()
+            .unwrap_or(0.05);
+
         Ok(Config {
             mode,
             asset_class,
@@ -401,6 +420,10 @@ impl Config {
             adaptive_optimization_enabled,
             regime_detection_window,
             adaptive_evaluation_hour,
+            min_volume_threshold,
+            ema_fast_period,
+            ema_slow_period,
+            take_profit_pct,
         })
     }
 }

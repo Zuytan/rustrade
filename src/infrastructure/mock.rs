@@ -319,27 +319,62 @@ pub struct NullTradeRepository;
 
 #[async_trait]
 impl crate::domain::repositories::TradeRepository for NullTradeRepository {
-    async fn save(&self, _trade: &Order) -> Result<()> { Ok(()) }
-    async fn find_by_symbol(&self, _symbol: &str) -> Result<Vec<Order>> { Ok(vec![]) }
-    async fn find_recent(&self, _limit: usize) -> Result<Vec<Order>> { Ok(vec![]) }
-    async fn get_all(&self) -> Result<Vec<Order>> { Ok(vec![]) }
-    async fn count(&self) -> Result<usize> { Ok(0) }
+    async fn save(&self, _trade: &Order) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_symbol(&self, _symbol: &str) -> Result<Vec<Order>> {
+        Ok(vec![])
+    }
+    async fn find_recent(&self, _limit: usize) -> Result<Vec<Order>> {
+        Ok(vec![])
+    }
+    async fn get_all(&self) -> Result<Vec<Order>> {
+        Ok(vec![])
+    }
+    async fn count(&self) -> Result<usize> {
+        Ok(0)
+    }
 }
 
 pub struct NullCandleRepository;
 
 #[async_trait]
 impl crate::domain::repositories::CandleRepository for NullCandleRepository {
-    async fn save(&self, _candle: &crate::domain::trading::types::Candle) -> Result<()> { Ok(()) }
-    async fn get_range(&self, _symbol: &str, _start_ts: i64, _end_ts: i64) -> Result<Vec<crate::domain::trading::types::Candle>> { Ok(vec![]) }
-    async fn prune(&self, _days_retention: i64) -> Result<u64> { Ok(0) }
+    async fn save(&self, _candle: &crate::domain::trading::types::Candle) -> Result<()> {
+        Ok(())
+    }
+    async fn get_range(
+        &self,
+        _symbol: &str,
+        _start_ts: i64,
+        _end_ts: i64,
+    ) -> Result<Vec<crate::domain::trading::types::Candle>> {
+        Ok(vec![])
+    }
+    async fn prune(&self, _days_retention: i64) -> Result<u64> {
+        Ok(0)
+    }
 }
 
 pub struct NullStrategyRepository;
 
 #[async_trait]
 impl crate::domain::repositories::StrategyRepository for NullStrategyRepository {
-    async fn save(&self, _config: &crate::domain::market::strategy_config::StrategyDefinition) -> Result<()> { Ok(()) }
-    async fn find_by_symbol(&self, _symbol: &str) -> Result<Option<crate::domain::market::strategy_config::StrategyDefinition>> { Ok(None) }
-    async fn get_all_active(&self) -> Result<Vec<crate::domain::market::strategy_config::StrategyDefinition>> { Ok(vec![]) }
+    async fn save(
+        &self,
+        _config: &crate::domain::market::strategy_config::StrategyDefinition,
+    ) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_symbol(
+        &self,
+        _symbol: &str,
+    ) -> Result<Option<crate::domain::market::strategy_config::StrategyDefinition>> {
+        Ok(None)
+    }
+    async fn get_all_active(
+        &self,
+    ) -> Result<Vec<crate::domain::market::strategy_config::StrategyDefinition>> {
+        Ok(vec![])
+    }
 }

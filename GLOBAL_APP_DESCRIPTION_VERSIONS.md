@@ -1,6 +1,16 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.25.0 (Janvier 2026) - Stratégie "Trend & Profit" (Swing Trading)
+- **Transition Stratégique**: Passage du "Noise Scalping" au **"Stable Swing Trading"**. L'objectif est de réduire le 'Churn' (sur-trading) et de capturer des tendances de plusieurs jours.
+  - **EMA 50/150**: Remplacement des SMA rapides (20/40) par des Moyennes Mobiles Exponentielles lentes (50/150) pour filtrer les faux signaux et le bruit intraday.
+  - **Stops Larges (4x ATR)**: Augmentation de la tolérance à la volatilité (de 2x à 4x ATR) pour éviter les sorties prématurées ("Whipsaws").
+  - **Prise de Profit Partielle**: Implémentation d'un mécanisme de "Take-Profit" qui liquide **50%** de la position dès qu'un gain de **+5%** est atteint. Le reste court avec le Trailing Stop.
+- **Résultats Validés (Benchmarks du Bull Run 2024)**:
+  - **Efficacité**: Réduction du volume de trades de ~80% (ex: AMZN 44 trades -> 9 trades).
+  - **Profitabilité**: Passage de pertes constantes (slippage/commissions) à une profitabilité nette sur les actifs en tendance (ADBE +$63 vs -$124).
+  - **Crash Proof**: Maintien de la sécurité totale lors des krachs (Pertes <0.05% lors du Flash Crash d'Août).
+
 ## Version 0.24.1 (Janvier 2026) - Metal ETF Support
 - **Metal Trading (Alpaca)**: Support du trading de l'Or (GLD) et de l'Argent (SLV) via ETFs.
   - Configuration dédiée `metals.env`.

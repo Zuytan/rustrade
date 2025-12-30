@@ -79,7 +79,7 @@ impl OptimizationHistoryRepository for SqliteOptimizationHistoryRepository {
 
     async fn find_by_symbol(&self, symbol: &str, limit: usize) -> Result<Vec<OptimizationHistory>> {
         let rows = sqlx::query(
-            "SELECT * FROM optimization_history WHERE symbol = ? ORDER BY timestamp DESC LIMIT ?"
+            "SELECT * FROM optimization_history WHERE symbol = ? ORDER BY timestamp DESC LIMIT ?",
         )
         .bind(symbol)
         .bind(limit as i64)

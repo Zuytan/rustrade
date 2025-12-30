@@ -40,11 +40,13 @@ async fn test_backtest_strategy_on_historical_data() {
     };
     let ws_url = std::env::var("ALPACA_WS_URL")
         .unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
-    let data_url = std::env::var("ALPACA_DATA_URL")
-        .unwrap_or("https://data.alpaca.markets".to_string());
+    let data_url =
+        std::env::var("ALPACA_DATA_URL").unwrap_or("https://data.alpaca.markets".to_string());
 
     // 3. Initialize Services
-    let market_service = Arc::new(AlpacaMarketDataService::new(api_key, api_secret, ws_url, data_url));
+    let market_service = Arc::new(AlpacaMarketDataService::new(
+        api_key, api_secret, ws_url, data_url, 10000.0
+    ));
 
     let mut portfolio = Portfolio::new();
     portfolio.cash = Decimal::new(100000, 0);
@@ -85,6 +87,9 @@ async fn test_backtest_strategy_on_historical_data() {
         macd_fast: 12,
         macd_slow: 26,
         macd_signal: 9,
+        ema_fast_period: 50,
+        ema_slow_period: 150,
+        take_profit_pct: 0.05,
     };
 
     let simulator = Simulator::new(market_service, execution_service, config);

@@ -39,7 +39,7 @@ impl ReoptimizationTriggerRepository for SqliteReoptimizationTriggerRepository {
 
     async fn get_pending(&self) -> Result<Vec<ReoptimizationTrigger>> {
         let rows = sqlx::query(
-            "SELECT * FROM reoptimization_triggers WHERE status = 'pending' ORDER BY timestamp ASC"
+            "SELECT * FROM reoptimization_triggers WHERE status = 'pending' ORDER BY timestamp ASC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -70,14 +70,16 @@ impl ReoptimizationTriggerRepository for SqliteReoptimizationTriggerRepository {
 
     async fn update_status(&self, id: i64, status: &str, result: Option<String>) -> Result<()> {
         if let Some(res) = result {
-             sqlx::query("UPDATE reoptimization_triggers SET status = ?, result_json = ? WHERE id = ?")
-                .bind(status)
-                .bind(res)
-                .bind(id)
-                .execute(&self.pool)
-                .await?;
+            sqlx::query(
+                "UPDATE reoptimization_triggers SET status = ?, result_json = ? WHERE id = ?",
+            )
+            .bind(status)
+            .bind(res)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         } else {
-             sqlx::query("UPDATE reoptimization_triggers SET status = ? WHERE id = ?")
+            sqlx::query("UPDATE reoptimization_triggers SET status = ? WHERE id = ?")
                 .bind(status)
                 .bind(id)
                 .execute(&self.pool)

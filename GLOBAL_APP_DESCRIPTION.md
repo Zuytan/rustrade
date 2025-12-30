@@ -3,6 +3,7 @@
 ## Objectif du Projet
 Développer un système multi-agents capable de surveiller le marché des actions et ETF (via Alpaca) et Forex/CFDs (via OANDA), d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
 
+> 📘 **Nouveau (v0.25.0) :** Stratégie **"Trend & Profit"** activée par défaut. Transition du Scalping vers le **Swing Trading** avec EMA 50/150, Stops Larges (4x ATR) et Prise de Profit Partielle (+5%).
 > 📘 **Nouveau (v0.24.0) :** Support expérimental **OANDA** pour le trading Forex et CFDs, et adaptation **Crypto 24/7**.
 > 📘 **Métaux Précieux** : Le trading de l'Or et de l'Argent est désormais possible via les ETFs **GLD** et **SLV** sur Alpaca (voir `metals.env`).
 

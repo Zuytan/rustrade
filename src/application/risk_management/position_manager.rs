@@ -8,6 +8,12 @@ pub struct PositionManager {
     pub last_signal_time: i64,
 }
 
+impl Default for PositionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PositionManager {
     pub fn new() -> Self {
         Self {

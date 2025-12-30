@@ -8,11 +8,20 @@ pub struct SignalGenerator {
     pub last_was_above: Option<bool>,
 }
 
+impl Default for SignalGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SignalGenerator {
     pub fn new() -> Self {
-        Self { last_was_above: None }
+        Self {
+            last_was_above: None,
+        }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn generate_signal(
         &mut self,
         symbol: &str,
@@ -63,8 +72,9 @@ impl SignalGenerator {
     }
 
     fn check_sma_crossover(&mut self, features: &FeatureSet, threshold: f64) -> Option<OrderSide> {
-        let fast = features.sma_20?;
-        let slow = features.sma_50?;
+        // Use EMA if available (Trend & Profit Tuning), fallback to SMA
+        let fast = features.ema_fast.or(features.sma_20)?;
+        let slow = features.ema_slow.or(features.sma_50)?;
 
         let is_definitively_above = fast > slow * (1.0 + threshold);
         let is_definitively_below = fast < slow * (1.0 - threshold);

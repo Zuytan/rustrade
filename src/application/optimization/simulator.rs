@@ -167,6 +167,9 @@ impl Simulator {
             macd_fast: self.config.macd_fast_period,
             macd_slow: self.config.macd_slow_period,
             macd_signal: self.config.macd_signal_period,
+            ema_fast_period: self.config.ema_fast_period,
+            ema_slow_period: self.config.ema_slow_period,
+            take_profit_pct: self.config.take_profit_pct,
         };
 
         // Use Advanced strategy for simulations
@@ -227,14 +230,8 @@ impl Simulator {
         // Execute them immediately.
 
         // Pre-calculate prices for metrics before moving bars
-        let start_price = bars
-            .first()
-            .map(|b| b.close)
-            .unwrap_or(Decimal::ZERO);
-        let last_close = bars
-            .last()
-            .map(|b| b.close)
-            .unwrap_or(Decimal::ZERO);
+        let start_price = bars.first().map(|b| b.close).unwrap_or(Decimal::ZERO);
+        let last_close = bars.last().map(|b| b.close).unwrap_or(Decimal::ZERO);
 
         let symbol_clone = symbol.to_string();
         let feeder_handle = tokio::spawn(async move {
@@ -266,8 +263,12 @@ impl Simulator {
             let slippage =
                 Decimal::from_f64_retain(self.config.slippage_pct).unwrap_or(Decimal::ZERO);
             let execution_price = match prop.side {
-                crate::domain::trading::types::OrderSide::Buy => prop.price * (Decimal::ONE + slippage),
-                crate::domain::trading::types::OrderSide::Sell => prop.price * (Decimal::ONE - slippage),
+                crate::domain::trading::types::OrderSide::Buy => {
+                    prop.price * (Decimal::ONE + slippage)
+                }
+                crate::domain::trading::types::OrderSide::Sell => {
+                    prop.price * (Decimal::ONE - slippage)
+                }
             };
 
             // Execute Immediately to update Portfolio State for next Analyst check

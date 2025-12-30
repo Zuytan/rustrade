@@ -19,8 +19,8 @@
 //! For production persistence, implement `TradeRepository` and
 //! `PortfolioRepository` with PostgreSQL or similar.
 
-use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::repositories::{PortfolioRepository, TradeRepository};
+use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Order;
 use anyhow::Result;
 use async_trait::async_trait;

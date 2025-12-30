@@ -1,5 +1,5 @@
-use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
 use crate::domain::optimization::reoptimization_trigger::TriggerReason;
+use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
 
 /// Configuration thresholds for performance evaluation
 pub struct EvaluationThresholds {
@@ -37,12 +37,16 @@ impl PerformanceEvaluator {
 
         // 2. Check Sharpe Ratio
         // Only evaluate if we have meaningful data (e.g. non-zero)
-        if snapshot.sharpe_rolling_30d != 0.0 && snapshot.sharpe_rolling_30d < self.thresholds.min_sharpe {
+        if snapshot.sharpe_rolling_30d != 0.0
+            && snapshot.sharpe_rolling_30d < self.thresholds.min_sharpe
+        {
             return Some(TriggerReason::PoorPerformance);
         }
 
         // 3. Check Win Rate
-        if snapshot.win_rate_rolling_30d != 0.0 && snapshot.win_rate_rolling_30d < self.thresholds.min_win_rate {
+        if snapshot.win_rate_rolling_30d != 0.0
+            && snapshot.win_rate_rolling_30d < self.thresholds.min_win_rate
+        {
             return Some(TriggerReason::PoorPerformance);
         }
 
@@ -73,13 +77,16 @@ mod tests {
             MarketRegimeType::TrendingUp,
         );
 
-        assert_eq!(evaluator.evaluate(&snapshot), Some(TriggerReason::DrawdownLimit));
+        assert_eq!(
+            evaluator.evaluate(&snapshot),
+            Some(TriggerReason::DrawdownLimit)
+        );
     }
 
     #[test]
     fn test_sharpe_trigger() {
         let thresholds = EvaluationThresholds {
-            min_sharpe: 1.0, 
+            min_sharpe: 1.0,
             ..Default::default()
         };
         let evaluator = PerformanceEvaluator::new(thresholds);
@@ -93,6 +100,9 @@ mod tests {
             MarketRegimeType::TrendingUp,
         );
 
-        assert_eq!(evaluator.evaluate(&snapshot), Some(TriggerReason::PoorPerformance));
+        assert_eq!(
+            evaluator.evaluate(&snapshot),
+            Some(TriggerReason::PoorPerformance)
+        );
     }
 }

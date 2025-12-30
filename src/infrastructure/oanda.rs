@@ -2,34 +2,34 @@
 // TODO: Fix OANDA implementation
 
 use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
-use crate::domain::trading::types::{MarketEvent, Order, OrderSide, OrderType};
 use crate::domain::trading::portfolio::Portfolio;
-use anyhow::{Context, Result};
+use crate::domain::trading::types::{MarketEvent, Order};
+use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
-use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver};
-use tracing::{info, error};
-use std::collections::HashMap;
 
 pub struct OandaMarketDataService {
-    api_key: String,
-    stream_base_url: String,
-    api_base_url: String,
-    account_id: String,
-    client: Client,
+    _api_key: String,
+    _stream_base_url: String,
+    _api_base_url: String,
+    _account_id: String,
+    _client: Client,
 }
 
 impl OandaMarketDataService {
-    pub fn new(api_key: String, stream_base_url: String, api_base_url: String, account_id: String) -> Self {
+    pub fn new(
+        api_key: String,
+        stream_base_url: String,
+        api_base_url: String,
+        account_id: String,
+    ) -> Self {
         Self {
-            api_key,
-            stream_base_url,
-            api_base_url,
-            account_id,
-            client: Client::new(),
+            _api_key: api_key,
+            _stream_base_url: stream_base_url,
+            _api_base_url: api_base_url,
+            _account_id: account_id,
+            _client: Client::new(),
         }
     }
 }
@@ -42,7 +42,15 @@ impl MarketDataService for OandaMarketDataService {
     }
 
     async fn get_top_movers(&self) -> Result<Vec<String>> {
-        Ok(vec![])
+        // OANDA doesn't have a "movers" endpoint like stock screeners.
+        // Return a fixed list of majors/minors for now.
+        Ok(vec![
+            "EUR_USD".to_string(),
+            "GBP_USD".to_string(),
+            "USD_JPY".to_string(),
+            "AUD_USD".to_string(),
+            "USD_CAD".to_string(),
+        ])
     }
 
     async fn get_prices(
@@ -64,19 +72,19 @@ impl MarketDataService for OandaMarketDataService {
 }
 
 pub struct OandaExecutionService {
-    api_key: String,
-    api_base_url: String,
-    account_id: String,
-    client: Client,
+    _api_key: String,
+    _api_base_url: String,
+    _account_id: String,
+    _client: Client,
 }
 
 impl OandaExecutionService {
     pub fn new(api_key: String, api_base_url: String, account_id: String) -> Self {
         Self {
-            api_key,
-            api_base_url,
-            account_id,
-            client: Client::new(),
+            _api_key: api_key,
+            _api_base_url: api_base_url,
+            _account_id: account_id,
+            _client: Client::new(),
         }
     }
 }

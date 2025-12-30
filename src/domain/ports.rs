@@ -29,7 +29,6 @@ pub trait ExecutionService: Send + Sync {
     async fn get_today_orders(&self) -> Result<Vec<Order>>;
 }
 
-
 #[async_trait]
 pub trait FeatureEngineeringService: Send + Sync {
     fn update(&mut self, price: f64) -> crate::domain::trading::types::FeatureSet;

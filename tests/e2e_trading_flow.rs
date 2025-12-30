@@ -76,6 +76,10 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         oanda_account_id: "".to_string(),
         oanda_api_base_url: "".to_string(),
         oanda_stream_base_url: "".to_string(),
+        min_volume_threshold: 10000.0,
+        ema_fast_period: 50,
+        ema_slow_period: 150,
+        take_profit_pct: 0.05,
     });
 
     config.mode = Mode::Mock;
@@ -121,8 +125,10 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     let mock_market = std::sync::Arc::new(MockMarketDataService::new());
     let mock_execution = std::sync::Arc::new(MockExecutionService::new(portfolio.clone()));
     let null_trade_repo = std::sync::Arc::new(rustrade::infrastructure::mock::NullTradeRepository);
-    let null_candle_repo = std::sync::Arc::new(rustrade::infrastructure::mock::NullCandleRepository);
-    let null_strategy_repo = std::sync::Arc::new(rustrade::infrastructure::mock::NullStrategyRepository);
+    let null_candle_repo =
+        std::sync::Arc::new(rustrade::infrastructure::mock::NullCandleRepository);
+    let null_strategy_repo =
+        std::sync::Arc::new(rustrade::infrastructure::mock::NullStrategyRepository);
 
     let app = Application {
         config,

@@ -99,9 +99,11 @@ impl SqliteOrderRepository {
                 "Sell" => OrderSide::Sell,
                 _ => OrderSide::Buy,
             };
-            
+
             // Handle order_type with fallback for old records
-            let type_str: String = row.try_get("order_type").unwrap_or_else(|_| "MARKET".to_string());
+            let type_str: String = row
+                .try_get("order_type")
+                .unwrap_or_else(|_| "MARKET".to_string());
             let order_type = match type_str.to_uppercase().as_str() {
                 "LIMIT" => crate::domain::trading::types::OrderType::Limit,
                 "STOP" => crate::domain::trading::types::OrderType::Stop,

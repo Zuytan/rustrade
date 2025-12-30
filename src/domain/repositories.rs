@@ -105,8 +105,8 @@ pub trait StrategyRepository: Send + Sync {
 }
 
 use crate::domain::optimization::optimization_history::OptimizationHistory;
-use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
 use crate::domain::optimization::reoptimization_trigger::ReoptimizationTrigger;
+use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
 
 /// Repository for optimization history
 #[async_trait]

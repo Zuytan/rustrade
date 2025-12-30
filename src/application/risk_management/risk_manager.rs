@@ -5,14 +5,14 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 use uuid::Uuid;
-use tokio::sync::RwLock;
 
-use crate::domain::trading::portfolio::Portfolio;
 use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
 use crate::config::AssetClass;
-use chrono::{Datelike, Utc};
+use crate::domain::trading::portfolio::Portfolio;
+use chrono::Utc;
 
 /// Risk management configuration
 #[derive(Clone)]
@@ -33,7 +33,10 @@ impl std::fmt::Debug for RiskConfig {
             .field("max_daily_loss_pct", &self.max_daily_loss_pct)
             .field("max_drawdown_pct", &self.max_drawdown_pct)
             .field("consecutive_loss_limit", &self.consecutive_loss_limit)
-            .field("valuation_interval_seconds", &self.valuation_interval_seconds)
+            .field(
+                "valuation_interval_seconds",
+                &self.valuation_interval_seconds,
+            )
             .field("max_sector_exposure_pct", &self.max_sector_exposure_pct)
             .finish()
     }
@@ -42,19 +45,31 @@ impl std::fmt::Debug for RiskConfig {
 impl RiskConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.max_position_size_pct <= 0.0 || self.max_position_size_pct > 1.0 {
-            return Err(format!("Invalid max_position_size_pct: {}", self.max_position_size_pct));
+            return Err(format!(
+                "Invalid max_position_size_pct: {}",
+                self.max_position_size_pct
+            ));
         }
         if self.max_daily_loss_pct <= 0.0 || self.max_daily_loss_pct > 0.5 {
-             return Err(format!("Invalid max_daily_loss_pct: {}", self.max_daily_loss_pct));
+            return Err(format!(
+                "Invalid max_daily_loss_pct: {}",
+                self.max_daily_loss_pct
+            ));
         }
         if self.max_drawdown_pct <= 0.0 || self.max_drawdown_pct > 1.0 {
-             return Err(format!("Invalid max_drawdown_pct: {}", self.max_drawdown_pct));
+            return Err(format!(
+                "Invalid max_drawdown_pct: {}",
+                self.max_drawdown_pct
+            ));
         }
         if self.consecutive_loss_limit == 0 {
-             return Err("consecutive_loss_limit must be > 0".to_string());
+            return Err("consecutive_loss_limit must be > 0".to_string());
         }
         if self.max_sector_exposure_pct <= 0.0 || self.max_sector_exposure_pct > 1.0 {
-             return Err(format!("Invalid max_sector_exposure_pct: {}", self.max_sector_exposure_pct));
+            return Err(format!(
+                "Invalid max_sector_exposure_pct: {}",
+                self.max_sector_exposure_pct
+            ));
         }
         Ok(())
     }
@@ -95,6 +110,7 @@ pub struct RiskManager {
 }
 
 impl RiskManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         proposal_rx: Receiver<TradeProposal>,
         order_tx: Sender<Order>,
@@ -237,15 +253,18 @@ impl RiskManager {
 
         // Identify Sector
         let sector = if let Some(provider) = &self.risk_config.sector_provider {
-             if let Some(s) = self.sector_cache.get(&proposal.symbol) {
-                 s.clone()
-             } else {
-                 let s = provider.get_sector(&proposal.symbol).await.unwrap_or_else(|_| "Unknown".to_string());
-                 self.sector_cache.insert(proposal.symbol.clone(), s.clone());
-                 s
-             }
+            if let Some(s) = self.sector_cache.get(&proposal.symbol) {
+                s.clone()
+            } else {
+                let s = provider
+                    .get_sector(&proposal.symbol)
+                    .await
+                    .unwrap_or_else(|_| "Unknown".to_string());
+                self.sector_cache.insert(proposal.symbol.clone(), s.clone());
+                s
+            }
         } else {
-             "Unknown".to_string()
+            "Unknown".to_string()
         };
 
         if sector == "Unknown" {
@@ -257,19 +276,26 @@ impl RiskManager {
 
         for (sym, position) in &portfolio.positions {
             let pos_sector = if let Some(provider) = &self.risk_config.sector_provider {
-                 if let Some(s) = self.sector_cache.get(sym) {
-                     s.clone()
-                 } else {
-                     let s = provider.get_sector(sym).await.unwrap_or_else(|_| "Unknown".to_string());
-                     self.sector_cache.insert(sym.clone(), s.clone());
-                     s
-                 }
+                if let Some(s) = self.sector_cache.get(sym) {
+                    s.clone()
+                } else {
+                    let s = provider
+                        .get_sector(sym)
+                        .await
+                        .unwrap_or_else(|_| "Unknown".to_string());
+                    self.sector_cache.insert(sym.clone(), s.clone());
+                    s
+                }
             } else {
-                 "Unknown".to_string()
+                "Unknown".to_string()
             };
 
             if pos_sector == sector {
-                let price = self.current_prices.get(sym).cloned().unwrap_or(position.average_price);
+                let price = self
+                    .current_prices
+                    .get(sym)
+                    .cloned()
+                    .unwrap_or(position.average_price);
                 current_sector_value += price * position.quantity;
             }
         }
@@ -279,9 +305,7 @@ impl RiskManager {
         let new_sector_value = current_sector_value + trade_value;
 
         // Calculate Percentage
-        let new_sector_pct = (new_sector_value / current_equity)
-            .to_f64()
-            .unwrap_or(0.0);
+        let new_sector_pct = (new_sector_value / current_equity).to_f64().unwrap_or(0.0);
 
         if new_sector_pct > self.risk_config.max_sector_exposure_pct {
             warn!(
@@ -337,10 +361,10 @@ impl RiskManager {
                     // RiskManager typically handles all active symbols or we pick a primary one?
                     // For now, let's snapshot for a generic "PORTFOLIO" or iterate symbols.
                     // The capture_snapshot method takes a symbol.
-                    // Let's use "TOTAL" as a convention for portfolio level if allowed, 
+                    // Let's use "TOTAL" as a convention for portfolio level if allowed,
                     // or snapshot for each position.
                     for sym in self.current_prices.keys() {
-                         let _ = monitor.capture_snapshot(sym).await;
+                        let _ = monitor.capture_snapshot(sym).await;
                     }
                 }
             }
@@ -353,13 +377,20 @@ impl RiskManager {
 
     async fn liquidate_portfolio(&mut self, reason: &str) {
         let portfolio = self.portfolio.read().await;
-        
-        info!("RiskManager: EMERGENCY LIQUIDATION TRIGGERED - Reason: {}", reason);
-        
+
+        info!(
+            "RiskManager: EMERGENCY LIQUIDATION TRIGGERED - Reason: {}",
+            reason
+        );
+
         for (symbol, position) in &portfolio.positions {
             if position.quantity > Decimal::ZERO {
-                let current_price = self.current_prices.get(symbol).cloned().unwrap_or(Decimal::ZERO);
-                
+                let current_price = self
+                    .current_prices
+                    .get(symbol)
+                    .cloned()
+                    .unwrap_or(Decimal::ZERO);
+
                 // Safe Liquidation: Use Marketable Limit Order
                 // For SELL: Limit Price = Price * 0.95 (5% slippage tolerance)
                 // If price is 0, we can't really set a limit, fallback to market or 0.
@@ -369,14 +400,17 @@ impl RiskManager {
                     Decimal::ZERO
                 };
 
-                // If limit price is 0 (missing price), fallback to Market to ensure exit? 
+                // If limit price is 0 (missing price), fallback to Market to ensure exit?
                 // Or risky? Existing was Market. Let's keep Limit logic but if 0, maybe Market is safer than stuck?
-                // Actually if price is 0, limit 0 is bad. 
+                // Actually if price is 0, limit 0 is bad.
                 let (order_type, price) = if limit_price > Decimal::ZERO {
                     (OrderType::Limit, limit_price)
                 } else {
-                     warn!("RiskManager: No price for {}, using Market for liquidation", symbol);
-                     (OrderType::Market, Decimal::ZERO)
+                    warn!(
+                        "RiskManager: No price for {}, using Market for liquidation",
+                        symbol
+                    );
+                    (OrderType::Market, Decimal::ZERO)
                 };
 
                 let order = Order {
@@ -388,11 +422,17 @@ impl RiskManager {
                     order_type,
                     timestamp: chrono::Utc::now().timestamp_millis(),
                 };
-                
-                warn!("RiskManager: Placing EMERGENCY SELL for {} (Qty: {}) @ {:?}", symbol, position.quantity, order_type);
-                
+
+                warn!(
+                    "RiskManager: Placing EMERGENCY SELL for {} (Qty: {}) @ {:?}",
+                    symbol, position.quantity, order_type
+                );
+
                 if let Err(e) = self.order_tx.send(order).await {
-                    error!("RiskManager: Failed to send liquidation order for {}: {}", symbol, e);
+                    error!(
+                        "RiskManager: Failed to send liquidation order for {}: {}",
+                        symbol, e
+                    );
                 }
             }
         }
@@ -408,7 +448,7 @@ impl RiskManager {
             );
             self.session_start_equity = current_equity;
             // self.daily_loss is calculated from session_start_equity, so it effectively resets.
-            // Consecutive losses might be preserved or reset? 
+            // Consecutive losses might be preserved or reset?
             // Usually "Daily Loss" is the main drift issue. Consecutive losses are trade-based.
             // I will NOT reset consecutive_losses as bad streaks can span days.
             self.last_reset_date = today;
@@ -434,7 +474,7 @@ impl RiskManager {
                             if let Err(e) = self.update_portfolio_valuation().await {
                                 error!("RiskManager: Valuation update error: {}", e);
                             }
-                            
+
                             // Check circuit breaker logic on tick
                             if !self.halted {
                                 let (reason, current_equity) = {
@@ -653,8 +693,8 @@ impl RiskManager {
 mod tests {
     use super::*;
     use crate::config::AssetClass;
-    use crate::domain::trading::types::{OrderSide, OrderType};
     use crate::domain::trading::portfolio::{Portfolio, Position};
+    use crate::domain::trading::types::{OrderSide, OrderType};
     use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
     use chrono::Utc;
     use rust_decimal::Decimal;
@@ -683,7 +723,8 @@ mod tests {
         async fn subscribe(
             &self,
             _symbols: Vec<String>,
-        ) -> Result<mpsc::Receiver<crate::domain::trading::types::MarketEvent>, anyhow::Error> {
+        ) -> Result<mpsc::Receiver<crate::domain::trading::types::MarketEvent>, anyhow::Error>
+        {
             let (_, rx) = mpsc::channel(1);
             Ok(rx)
         }
@@ -749,9 +790,11 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio, false,
+            portfolio,
+            false,
             AssetClass::Stock,
-            config, None,
+            config,
+            None,
         );
 
         // Run RiskManager in background
@@ -783,19 +826,23 @@ mod tests {
         proposal_tx.send(proposal).await.unwrap();
 
         // Expect Liquidation Order due to Circuit Breaker
-        let liquidation_order = tokio::time::timeout(std::time::Duration::from_millis(200), order_rx.recv())
-            .await
-            .expect("Should trigger liquidation")
-            .expect("Should receive liquidation order");
-            
+        let liquidation_order =
+            tokio::time::timeout(std::time::Duration::from_millis(200), order_rx.recv())
+                .await
+                .expect("Should trigger liquidation")
+                .expect("Should receive liquidation order");
+
         assert_eq!(liquidation_order.symbol, "TSLA");
         assert_eq!(liquidation_order.side, OrderSide::Sell);
         assert_eq!(liquidation_order.order_type, OrderType::Limit); // Safe liquidation uses Limit
-        // Price should be 80 * 0.95 = 76
+                                                                    // Price should be 80 * 0.95 = 76
         assert_eq!(liquidation_order.price, Decimal::from(76));
-        
+
         // Ensure NO other orders (like the proposal) are processed
-        assert!(order_rx.try_recv().is_err(), "Should catch only liquidation order");
+        assert!(
+            order_rx.try_recv().is_err(),
+            "Should catch only liquidation order"
+        );
 
         // Note: verifying logs is hard here, but rejection confirms logic.
     }
@@ -815,9 +862,11 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio, false,
+            portfolio,
+            false,
             AssetClass::Stock,
-            RiskConfig::default(), None,
+            RiskConfig::default(),
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -851,9 +900,11 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio, false,
+            portfolio,
+            false,
             AssetClass::Stock,
-            RiskConfig::default(), None,
+            RiskConfig::default(),
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -895,9 +946,11 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio, false,
+            portfolio,
+            false,
             AssetClass::Stock,
-            RiskConfig::default(), None,
+            RiskConfig::default(),
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -985,7 +1038,11 @@ mod tests {
     #[async_trait::async_trait]
     impl SectorProvider for MockSectorProvider {
         async fn get_sector(&self, symbol: &str) -> Result<String, anyhow::Error> {
-            Ok(self.sectors.get(symbol).cloned().unwrap_or_else(|| "Unknown".to_string()))
+            Ok(self
+                .sectors
+                .get(symbol)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string()))
         }
     }
 
@@ -1031,9 +1088,11 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio, false,
+            portfolio,
+            false,
             AssetClass::Stock,
-            config, None,
+            config,
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -1054,7 +1113,10 @@ mod tests {
 
         // Should be REJECTED
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        assert!(order_rx.try_recv().is_err(), "Should reject due to sector exposure");
+        assert!(
+            order_rx.try_recv().is_err(),
+            "Should reject due to sector exposure"
+        );
     }
 
     #[tokio::test]
@@ -1092,12 +1154,12 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio, false,
+            portfolio,
+            false,
             AssetClass::Stock,
-            config, None,
+            config,
+            None,
         );
-
-
 
         tokio::spawn(async move { rm.run().await });
 
@@ -1121,17 +1183,18 @@ mod tests {
         // Expect:
         // 1. Proposal Rejected (implied by liquidation triggering)
         // 2. Liquidation Order for TSLA (Market Sell 10 units)
-        
-        let liquidation_order = tokio::time::timeout(std::time::Duration::from_millis(200), order_rx.recv())
-            .await
-            .expect("Should return liquidation order")
-            .expect("Should have an order");
+
+        let liquidation_order =
+            tokio::time::timeout(std::time::Duration::from_millis(200), order_rx.recv())
+                .await
+                .expect("Should return liquidation order")
+                .expect("Should have an order");
 
         assert_eq!(liquidation_order.symbol, "TSLA");
         assert_eq!(liquidation_order.side, OrderSide::Sell);
         assert_eq!(liquidation_order.quantity, Decimal::from(10));
         assert_eq!(liquidation_order.order_type, OrderType::Limit); // Safe liquidation uses Limit
-        // Price should be 700 * 0.95 = 665
+                                                                    // Price should be 700 * 0.95 = 665
         assert_eq!(liquidation_order.price, Decimal::from(665));
 
         // Verify subsequent proposals are rejected (Halted state)
@@ -1147,14 +1210,15 @@ mod tests {
         proposal_tx.send(proposal2).await.unwrap();
 
         // Should receive NO orders
-        let res = tokio::time::timeout(std::time::Duration::from_millis(100), order_rx.recv()).await;
+        let res =
+            tokio::time::timeout(std::time::Duration::from_millis(100), order_rx.recv()).await;
         assert!(res.is_err(), "Should timeout because trading is halted");
     }
 
     #[tokio::test]
     async fn test_crypto_daily_reset() {
         // Test that session start equity resets when day changes for Crypto
-        let (proposal_tx, proposal_rx) = mpsc::channel(1);
+        let (_proposal_tx, proposal_rx) = mpsc::channel(1);
         let (order_tx, _order_rx) = mpsc::channel(1);
         let mut port = Portfolio::new();
         port.cash = Decimal::from(10000);
@@ -1167,21 +1231,30 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio, false,
+            portfolio,
+            false,
             AssetClass::Crypto, // Enable Crypto mode
-            RiskConfig::default(), None,
+            RiskConfig::default(),
+            None,
         );
 
         // Manually manipulate last_reset_date to yesterday
         let yesterday = Utc::now().date_naive() - chrono::Duration::days(1);
         rm.last_reset_date = yesterday;
         rm.session_start_equity = Decimal::from(5000); // Old baseline
-        
+
         // Wait, current_equity argument needed.
         let current_equity = Decimal::from(10000);
         rm.check_daily_reset(current_equity);
 
-        assert_eq!(rm.session_start_equity, current_equity, "Should reset session equity to current");
-        assert_eq!(rm.last_reset_date, Utc::now().date_naive(), "Should update reset date to today");
+        assert_eq!(
+            rm.session_start_equity, current_equity,
+            "Should reset session equity to current"
+        );
+        assert_eq!(
+            rm.last_reset_date,
+            Utc::now().date_naive(),
+            "Should update reset date to today"
+        );
     }
 }
