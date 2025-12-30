@@ -28,6 +28,7 @@ impl DynamicRegimeStrategy {
                 sma_threshold,
                 trend_sma_period,
                 rsi_threshold,
+                1,  // signal_confirmation_bars: 1 for backward compatibility
             ),
             trend_divergence_threshold,
         }

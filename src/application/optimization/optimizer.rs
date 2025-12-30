@@ -133,6 +133,8 @@ impl GridSearchOptimizer {
                                     ema_fast_period: 50,
                                     ema_slow_period: 150,
                                     take_profit_pct: 0.05,
+                                    min_hold_time_minutes: 0,
+                    signal_confirmation_bars: 1,
                                 });
                             }
                         }
@@ -360,6 +362,8 @@ mod tests {
                 ema_fast_period: 50,
                 ema_slow_period: 150,
                 take_profit_pct: 0.05,
+                min_hold_time_minutes: 0,
+                    signal_confirmation_bars: 1,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

@@ -1,6 +1,7 @@
 use super::dual_sma::DualSMAStrategy;
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::trading::types::OrderSide;
+use std::collections::HashMap;
 
 /// Advanced Triple Filter Strategy
 ///
@@ -8,12 +9,15 @@ use crate::domain::trading::types::OrderSide;
 /// 1. Trend Filter: Price must be above/below trend SMA
 /// 2. RSI Filter: RSI must not be overbought (for buys)
 /// 3. MACD Filter: MACD histogram must be positive and rising
+/// 4. Signal Confirmation: Require N consecutive bars of same signal (Phase 2)
 #[derive(Debug, Clone)]
 pub struct AdvancedTripleFilterStrategy {
     sma_strategy: DualSMAStrategy,
     rsi_threshold: f64,
     #[allow(dead_code)]
     trend_sma_period: usize,
+    signal_confirmation_bars: usize,  // Phase 2: require N bars confirmation
+    last_signals: HashMap<String, (OrderSide, usize)>,  // Phase 2: track (signal, count)
 }
 
 impl AdvancedTripleFilterStrategy {
@@ -23,11 +27,14 @@ impl AdvancedTripleFilterStrategy {
         sma_threshold: f64,
         trend_sma_period: usize,
         rsi_threshold: f64,
+        signal_confirmation_bars: usize,  // Phase 2: new parameter
     ) -> Self {
         Self {
             sma_strategy: DualSMAStrategy::new(fast_period, slow_period, sma_threshold),
             rsi_threshold,
             trend_sma_period,
+            signal_confirmation_bars,
+            last_signals: HashMap::new(),
         }
     }
 
@@ -143,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_advanced_buy_all_filters_pass() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
         let ctx = create_test_context();
 
         let signal = strategy.analyze(&ctx);
@@ -156,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_advanced_buy_rejected_rsi_too_high() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
         let mut ctx = create_test_context();
         ctx.rsi = 80.0; // Overbought
 
@@ -167,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_advanced_buy_rejected_below_trend() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
         let mut ctx = create_test_context();
         ctx.price_f64 = 95.0; // Below trend SMA of 100
 
@@ -178,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_advanced_buy_rejected_macd_negative() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
         let mut ctx = create_test_context();
         ctx.macd_histogram = -0.1; // Negative
 
@@ -189,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_advanced_sell_signal() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
         let mut ctx = create_test_context();
         ctx.fast_sma = 98.0; // Below slow SMA
         ctx.slow_sma = 100.0;

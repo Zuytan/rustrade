@@ -101,6 +101,9 @@ pub struct Config {
     pub regime_detection_window: usize,
     pub adaptive_evaluation_hour: u32,
     pub min_volume_threshold: f64, // Added for symbol screening
+    pub max_position_value_usd: f64,  // New: cap on position value in USD
+    pub signal_confirmation_bars: usize,  // Phase 2: require N bars of confirmation
+    pub min_hold_time_minutes: i64,       // Phase 2: minimum hold time in minutes
     pub ema_fast_period: usize,
     pub ema_slow_period: usize,
     pub take_profit_pct: f64,
@@ -177,7 +180,7 @@ impl Config {
             .context("Failed to parse ORDER_COOLDOWN_SECONDS")?;
 
         let risk_per_trade_percent = env::var("RISK_PER_TRADE_PERCENT")
-            .unwrap_or_else(|_| "0.02".to_string())
+            .unwrap_or_else(|_| "0.015".to_string())  // Reduced from 0.02 to 1.5%
             .parse::<f64>()
             .context("Failed to parse RISK_PER_TRADE_PERCENT")?;
 
@@ -236,7 +239,7 @@ impl Config {
             .context("Failed to parse DYNAMIC_SCAN_INTERVAL_MINUTES")?;
 
         let trailing_stop_atr_multiplier = env::var("TRAILING_STOP_ATR_MULTIPLIER")
-            .unwrap_or_else(|_| "4.0".to_string())
+            .unwrap_or_else(|_| "5.0".to_string())  // Increased from 4.0 to 5.0
             .parse::<f64>()
             .context("Failed to parse TRAILING_STOP_ATR_MULTIPLIER")?;
 
@@ -249,6 +252,11 @@ impl Config {
             .unwrap_or_else(|_| "0.1".to_string())
             .parse::<f64>()
             .context("Failed to parse MAX_POSITION_SIZE_PCT")?;
+
+        let max_position_value_usd = env::var("MAX_POSITION_VALUE_USD")
+            .unwrap_or_else(|_| "5000.0".to_string())
+            .parse::<f64>()
+            .context("Failed to parse MAX_POSITION_VALUE_USD")?;
 
         let max_daily_loss_pct = env::var("MAX_DAILY_LOSS_PCT")
             .unwrap_or_else(|_| "0.02".to_string())
@@ -303,6 +311,17 @@ impl Config {
             .unwrap_or_else(|_| "0.30".to_string())
             .parse::<f64>()
             .context("Failed to parse MAX_SECTOR_EXPOSURE_PCT")?;
+
+        // Phase 2: Strategy Refinement Parameters
+        let signal_confirmation_bars = env::var("SIGNAL_CONFIRMATION_BARS")
+            .unwrap_or_else(|_| "2".to_string())
+            .parse::<usize>()
+            .context("Failed to parse SIGNAL_CONFIRMATION_BARS")?;
+
+        let min_hold_time_minutes = env::var("MIN_HOLD_TIME_MINUTES")
+            .unwrap_or_else(|_| "240".to_string())  // 4 hours default
+            .parse::<i64>()
+            .context("Failed to parse MIN_HOLD_TIME_MINUTES")?;
 
         // Risk Appetite Score (optional - overrides individual risk params if set)
         let risk_appetite = if let Ok(score_str) = env::var("RISK_APPETITE_SCORE") {
@@ -406,6 +425,7 @@ impl Config {
             trailing_stop_atr_multiplier: final_trailing_stop,
             atr_period,
             max_position_size_pct: final_max_position_size,
+            max_position_value_usd,
             max_daily_loss_pct,
             max_drawdown_pct,
             consecutive_loss_limit,
@@ -421,6 +441,8 @@ impl Config {
             regime_detection_window,
             adaptive_evaluation_hour,
             min_volume_threshold,
+            signal_confirmation_bars,
+            min_hold_time_minutes,
             ema_fast_period,
             ema_slow_period,
             take_profit_pct,

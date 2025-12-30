@@ -100,6 +100,8 @@ pub struct RiskManager {
     // Risk Tracking State
     equity_high_water_mark: Decimal,
     session_start_equity: Decimal,
+    daily_start_equity: Decimal,  // New: for daily loss tracking
+    daily_pnl: Decimal,            // New: current day's P/L
     last_reset_date: chrono::NaiveDate,
     consecutive_losses: usize,
     current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
@@ -136,6 +138,8 @@ impl RiskManager {
             risk_config,
             equity_high_water_mark: Decimal::ZERO,
             session_start_equity: Decimal::ZERO,
+            daily_start_equity: Decimal::ZERO,
+            daily_pnl: Decimal::ZERO,
             last_reset_date: Utc::now().date_naive(),
             consecutive_losses: 0,
             current_prices: HashMap::new(),
@@ -166,12 +170,35 @@ impl RiskManager {
 
         let initial_equity = portfolio.total_equity(&self.current_prices);
         self.session_start_equity = initial_equity;
+        self.daily_start_equity = initial_equity;  // Initialize daily tracking
         self.equity_high_water_mark = initial_equity;
         info!(
             "RiskManager: Session initialized with equity: {}",
             initial_equity
         );
         Ok(())
+    }
+
+    /// Check if daily loss limit has been breached
+    fn check_daily_loss_limit(&mut self, current_equity: Decimal) -> bool {
+        if self.daily_start_equity <= Decimal::ZERO {
+            return false; // Can't calculate, skip check
+        }
+
+        self.daily_pnl = current_equity - self.daily_start_equity;
+        let loss_pct = (self.daily_pnl / self.daily_start_equity)
+            .to_f64()
+            .unwrap_or(0.0);
+
+        if loss_pct < -self.risk_config.max_daily_loss_pct {
+            warn!(
+                "RiskManager: Daily loss limit breached: {:.2}% (limit: {:.2}%)",
+                loss_pct * 100.0,
+                self.risk_config.max_daily_loss_pct * 100.0
+            );
+            return true;
+        }
+        false
     }
 
     /// Check if circuit breaker should trigger
@@ -447,6 +474,8 @@ impl RiskManager {
                 current_equity, self.session_start_equity
             );
             self.session_start_equity = current_equity;
+            self.daily_start_equity = current_equity;  // Reset daily tracking
+            self.daily_pnl = Decimal::ZERO;
             // self.daily_loss is calculated from session_start_equity, so it effectively resets.
             // Consecutive losses might be preserved or reset?
             // Usually "Daily Loss" is the main drift issue. Consecutive losses are trade-based.
@@ -485,6 +514,18 @@ impl RiskManager {
 
                                 // Check for Daily Reset (Crypto)
                                 self.check_daily_reset(current_equity);
+
+                                // Check daily loss limit
+                                if self.check_daily_loss_limit(current_equity) {
+                                    let reason = format!(
+                                        "Daily loss limit breached: {:.2}% (P/L: ${})",
+                                        (self.daily_pnl / self.daily_start_equity).to_f64().unwrap_or(0.0) * 100.0,
+                                        self.daily_pnl
+                                    );
+                                    error!("RiskManager: DAILY LOSS LIMIT TRIGGERED - {}", reason);
+                                    self.halted = true;
+                                    self.liquidate_portfolio(&reason).await;
+                                }
 
                                 if let Some(r) = reason {
                                     error!("RiskManager: CIRCUIT BREAKER TRIGGERED (Tick) - {}", r);

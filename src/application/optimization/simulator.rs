@@ -170,6 +170,8 @@ impl Simulator {
             ema_fast_period: self.config.ema_fast_period,
             ema_slow_period: self.config.ema_slow_period,
             take_profit_pct: self.config.take_profit_pct,
+            min_hold_time_minutes: self.config.min_hold_time_minutes,
+            signal_confirmation_bars: self.config.signal_confirmation_bars,
         };
 
         // Use Advanced strategy for simulations
@@ -179,6 +181,7 @@ impl Simulator {
             sim_config.sma_threshold,
             sim_config.trend_sma_period,
             sim_config.rsi_threshold,
+            sim_config.signal_confirmation_bars,
         ));
 
         let mut analyst = Analyst::new(

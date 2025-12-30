@@ -27,10 +27,14 @@ pub struct SymbolContext {
     pub regime_detector: MarketRegimeDetector,
     pub expectancy_evaluator: Box<dyn ExpectancyEvaluator>,
     pub taken_profit: bool, // Track if partial profit has been taken for current position
+    pub last_entry_time: Option<i64>,  // Phase 2: track entry time for min hold
+    pub min_hold_time_ms: i64,          // Phase 2: minimum hold time in milliseconds
 }
 
 impl SymbolContext {
     pub fn new(config: AnalystConfig, strategy: Arc<dyn TradingStrategy>) -> Self {
+        let min_hold_time_ms = config.min_hold_time_minutes * 60 * 1000;
+        
         Self {
             feature_service: Box::new(TechnicalFeatureEngineeringService::new(&config)),
             signal_generator: SignalGenerator::new(),
@@ -41,6 +45,8 @@ impl SymbolContext {
             regime_detector: MarketRegimeDetector::new(20, 25.0, 2.0), // Default thresholds
             expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(1.5)),
             taken_profit: false,
+            last_entry_time: None,
+            min_hold_time_ms,
         }
     }
 
@@ -82,6 +88,8 @@ pub struct AnalystConfig {
     pub ema_fast_period: usize,
     pub ema_slow_period: usize,
     pub take_profit_pct: f64,
+    pub min_hold_time_minutes: i64,  // Phase 2: minimum hold time
+    pub signal_confirmation_bars: usize,  // Phase 2: signal confirmation
 }
 
 impl From<crate::config::Config> for AnalystConfig {
@@ -118,6 +126,8 @@ impl From<crate::config::Config> for AnalystConfig {
             ema_fast_period: config.ema_fast_period,
             ema_slow_period: config.ema_slow_period,
             take_profit_pct: config.take_profit_pct,
+            min_hold_time_minutes: config.min_hold_time_minutes,
+            signal_confirmation_bars: config.signal_confirmation_bars,
         }
     }
 }
@@ -447,6 +457,21 @@ impl Analyst {
                     }
                 }
 
+                // Phase 2: Check minimum hold time for sell signals
+                if side == OrderSide::Sell {
+                    if let Some(entry_time) = context.last_entry_time {
+                        let hold_duration_ms = timestamp - entry_time;
+                        if hold_duration_ms < context.min_hold_time_ms {
+                            let remaining_minutes = (context.min_hold_time_ms - hold_duration_ms) / 60000;
+                            info!(
+                                "Analyst: Sell signal BLOCKED for {} - Min hold time not met ({} min remaining)",
+                                symbol, remaining_minutes
+                            );
+                            return;
+                        }
+                    }
+                }
+
                 info!(
                     "Analyst: Sending Proposal {:?} for {} (EV: {:.2}, R/R: {:.2})",
                     side, symbol, expectancy_value, risk_ratio
@@ -468,6 +493,11 @@ impl Analyst {
 
                 if (self.proposal_tx.send(proposal).await).is_ok() {
                     context.position_manager.pending_order = Some(side);
+                    
+                    // Phase 2: Track entry time on buy signals
+                    if side == OrderSide::Buy {
+                        context.last_entry_time = Some(timestamp);
+                    }
                     if side == OrderSide::Buy {
                         if let Some(atr) = context.last_features.atr {
                             if atr > 0.0 {
@@ -670,6 +700,8 @@ mod tests {
             ema_fast_period: 50,
             ema_slow_period: 150,
             take_profit_pct: 0.05,
+            min_hold_time_minutes: 0,
+            signal_confirmation_bars: 1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -760,6 +792,8 @@ mod tests {
             ema_fast_period: 50,
             ema_slow_period: 150,
             take_profit_pct: 0.05,
+            min_hold_time_minutes: 0,
+            signal_confirmation_bars: 1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -866,6 +900,8 @@ mod tests {
             ema_fast_period: 50,
             ema_slow_period: 150,
             take_profit_pct: 0.05,
+            min_hold_time_minutes: 0,
+            signal_confirmation_bars: 1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -964,6 +1000,8 @@ mod tests {
             ema_fast_period: 50,
             ema_slow_period: 150,
             take_profit_pct: 0.05,
+            min_hold_time_minutes: 0,
+            signal_confirmation_bars: 1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1068,6 +1106,8 @@ mod tests {
             ema_fast_period: 50,
             ema_slow_period: 150,
             take_profit_pct: 0.05,
+            min_hold_time_minutes: 0,
+            signal_confirmation_bars: 1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1187,6 +1227,8 @@ mod tests {
             ema_fast_period: 50,
             ema_slow_period: 150,
             take_profit_pct: 0.05,
+            min_hold_time_minutes: 0,
+            signal_confirmation_bars: 1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1305,6 +1347,8 @@ mod tests {
             ema_fast_period: 50,
             ema_slow_period: 150,
             take_profit_pct: 0.05,
+            min_hold_time_minutes: 0,
+            signal_confirmation_bars: 1,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
