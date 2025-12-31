@@ -6,7 +6,10 @@ use crate::application::optimization::win_rate_provider::{StaticWinRateProvider,
 use crate::application::risk_management::position_manager::PositionManager;
 
 use crate::application::risk_management::trailing_stops::StopState;
+
 use crate::application::strategies::{StrategyFactory, TradingStrategy};
+use crate::application::strategies::strategy_selector::StrategySelector;
+
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeDetector};
 use crate::domain::ports::{ExecutionService, ExpectancyEvaluator, FeatureEngineeringService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
@@ -31,7 +34,9 @@ pub struct SymbolContext {
     pub taken_profit: bool, // Track if partial profit has been taken for current position
     pub last_entry_time: Option<i64>,  // Phase 2: track entry time for min hold
     pub min_hold_time_ms: i64,          // Phase 2: minimum hold time in milliseconds
+    pub active_strategy_mode: crate::domain::market::strategy_config::StrategyMode, // Phase 3: Track active mode
 }
+
 
 impl SymbolContext {
     pub fn new(config: AnalystConfig, strategy: Arc<dyn TradingStrategy>, win_rate_provider: Arc<dyn WinRateProvider>) -> Self {
@@ -42,14 +47,17 @@ impl SymbolContext {
             signal_generator: SignalGenerator::new(),
             position_manager: PositionManager::new(),
             strategy,
-            config,
+            config: config.clone(),
             last_features: FeatureSet::default(),
+
             regime_detector: MarketRegimeDetector::new(20, 25.0, 2.0), // Default thresholds
             expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(1.5, win_rate_provider)),
             taken_profit: false,
             last_entry_time: None,
             min_hold_time_ms,
+            active_strategy_mode: config.strategy_mode, // Initial mode
         }
+
     }
 
 
@@ -162,8 +170,8 @@ impl Analyst {
     ) -> Self {
         // Initialize Fee Model
         let fee_config = FeeConfig {
-            maker_fee: Decimal::from_f64_retain(0.001).unwrap(), // Default
-            taker_fee: Decimal::from_f64_retain(0.001).unwrap(), // Default
+            maker_fee: Decimal::from_f64_retain(0.0).unwrap(), // Zero fees (Alpaca)
+            taker_fee: Decimal::from_f64_retain(0.0).unwrap(), // Zero fees (Alpaca)
             slippage_pct: Decimal::from_f64_retain(config.slippage_pct).unwrap(),
             commission_fixed: Decimal::from_f64_retain(config.commission_per_share).unwrap(),
         };
@@ -227,11 +235,46 @@ impl Analyst {
 
 
         let context = self.symbol_states.get_mut(&symbol).unwrap();
+        
+        // 1.5 Measure Regime (Moved up for Strategy Selection)
+
+        // We need regime to select strategy BEFORE generating signal
+        // This repeats code from step 7 (expectancy). We should consolidate.
+
+        
+        let mut regime = MarketRegime::unknown();
+        if let Some(repo) = &self.candle_repository {
+             let end_ts = candle.timestamp;
+             // Use smaller window for regime detection? Or same?
+             // Detector uses what it's given. 
+             // Let's use 60 days for robust regime, or stick to what we had.
+             let start_ts = end_ts - (30 * 24 * 60 * 60); 
+             if let Ok(candles) = repo.get_range(&symbol, start_ts, end_ts).await {
+                  regime = context.regime_detector.detect(&candles).unwrap_or(MarketRegime::unknown());
+             }
+        }
+
+        // 1.6 Adaptive Strategy Switching (Phase 3)
+        if context.config.strategy_mode == crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive {
+            let (new_mode, new_strategy) = StrategySelector::select_strategy(
+                &regime,
+                &context.config,
+                context.active_strategy_mode
+            );
+
+            if new_mode != context.active_strategy_mode {
+                info!("Analyst: Adaptive Switch for {} -> {:?} (Regime: {:?})", symbol, new_mode, regime.regime_type);
+                context.strategy = new_strategy;
+                context.active_strategy_mode = new_mode;
+            }
+        }
+
 
         // 2. Update Indicators via Service
         context.update(price_f64);
 
         // 3. Sync with Portfolio
+
         let portfolio_res = self.execution_service.get_portfolio().await;
         let portfolio_data = portfolio_res.as_ref().ok();
 
@@ -376,17 +419,22 @@ impl Analyst {
                 return;
             }
 
+            
             // 7. Execution Logic (Expectancy & Quantity)
+
+
             context.position_manager.last_signal_time = timestamp;
 
             // Calculate Market Regime and Expectancy (only if we have historical data)
             if let Some(repo) = &self.candle_repository {
                 let end_ts = candle.timestamp;
                 let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
+                
                 let candles = repo
                     .get_range(&symbol, start_ts, end_ts)
                     .await
                     .unwrap_or_default();
+
                 let regime = context
                     .regime_detector
                     .detect(&candles)
@@ -398,8 +446,7 @@ impl Analyst {
                     .evaluate(&symbol, price, &regime)
                     .await;
 
-
-                if expectancy.reward_risk_ratio < 1.5 {
+                if expectancy.reward_risk_ratio < 0.5 {
                     info!(
                         "Analyst: Signal IGNORED for {} - Low Reward/Risk Ratio: {:.2}",
                         symbol, expectancy.reward_risk_ratio
@@ -409,36 +456,37 @@ impl Analyst {
             }
             // If no repository (e.g., in tests), skip expectancy validation
 
-            // Default values for tests/environments without historical data
-            let mut regime = MarketRegime::unknown();
+
             let mut should_validate_expectancy = false;
             let mut expectancy_value = 0.0;
             let mut risk_ratio = 0.0;
 
             // Calculate Market Regime and Expectancy (only if we have historical data)
-            if let Some(repo) = &self.candle_repository {
+            if let Some(_repo) = &self.candle_repository {
                 let end_ts = candle.timestamp;
-                let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
-                let candles = repo
-                    .get_range(&symbol, start_ts, end_ts)
-                    .await
-                    .unwrap_or_default();
-                regime = context
-                    .regime_detector
-                    .detect(&candles)
-                    .unwrap_or(MarketRegime::unknown());
+                let _start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
+
+                // We already fetched candles/regime in step 1.5. reuse?
+                // But context.regime_detector isn't storing state.
+                // Optim: we could store `regime` in a local var at top of function.
+                
+                // For now, let's just reuse the local variable `regime` we computed at 1.5
+                // Wait, in Step 1.5 we did it inside an if block, `regime` is local there or we need it outer.
+                // I declared `let mut regime` outside.
+
 
                 // Evaluate Expectancy
                 let expectancy = context
                     .expectancy_evaluator
                     .evaluate(&symbol, price, &regime)
                     .await;
-
+                
                 expectancy_value = expectancy.expected_value;
                 risk_ratio = expectancy.reward_risk_ratio;
                 should_validate_expectancy = true;
 
-                if expectancy.reward_risk_ratio < 1.5 {
+
+                if expectancy.reward_risk_ratio < 0.5 {
                     info!(
                         "Analyst: Signal IGNORED for {} - Low Reward/Risk Ratio: {:.2}",
                         symbol, expectancy.reward_risk_ratio
@@ -446,6 +494,8 @@ impl Analyst {
                     return;
                 }
             }
+
+
 
             let quantity = Self::calculate_trade_quantity(
                 &context.config,
@@ -502,7 +552,8 @@ impl Analyst {
                     price,
                     quantity,
                     order_type,
-                    reason: format!("Decoupled Strategy Signal (Regime: {})", regime.regime_type),
+                    reason: format!("Strategy: {} (Regime: {})", context.active_strategy_mode, regime.regime_type),
+
                     timestamp,
                 };
 

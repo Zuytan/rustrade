@@ -98,14 +98,14 @@ impl MarketRegimeDetector {
         let is_uptrend = self.is_uptrend(recent_candles);
 
         // 3. Determine Regime
-        let regime_type = if volatility_score > self.volatility_threshold {
-            MarketRegimeType::Volatile
-        } else if trend_strength > self.adx_threshold {
+        let regime_type = if trend_strength > self.adx_threshold {
             if is_uptrend {
                 MarketRegimeType::TrendingUp
             } else {
                 MarketRegimeType::TrendingDown
             }
+        } else if volatility_score > self.volatility_threshold {
+            MarketRegimeType::Volatile
         } else {
             MarketRegimeType::Ranging
         };
