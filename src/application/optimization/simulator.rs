@@ -192,7 +192,9 @@ impl Simulator {
             sim_config,
             None,
             None,
+            None,
         );
+
 
         let analyst_handle = tokio::spawn(async move {
             analyst.run().await;

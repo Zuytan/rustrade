@@ -3,7 +3,8 @@
 ## Objectif du Projet
 Développer un système multi-agents capable de surveiller le marché des actions et ETF (via Alpaca) et Forex/CFDs (via OANDA), d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
 
-> 📘 **Nouveau (v0.26.0) :** **Durcissement Financier**. Protection PDT stricte, suivi des ordres en temps réel via WebSocket, et correction des attaques de timing sur le Circuit Breaker.
+> 📘 **Nouveau (v0.26.0) :** **Durcissement Architectural & Financier**. Protection contre les Deadlocks (Timeouts), Calcul Empirique de l'Espérance de Gain (Historical Win Rate), Protection PDT stricte, et suivi des ordres en temps réel.
+
 > 📘 **Nouveau (v0.25.0) :** Stratégie **"Trend & Profit"** activée par défaut. Transition du Scalping vers le **Swing Trading** avec EMA 50/150, Stops Larges (4x ATR) et Prise de Profit Partielle (+5%).
 > 📘 **Nouveau (v0.24.0) :** Support expérimental **OANDA** pour le trading Forex et CFDs, et adaptation **Crypto 24/7**.
 > 📘 **Métaux Précieux** : Le trading de l'Or et de l'Argent est désormais possible via les ETFs **GLD** et **SLV** sur Alpaca (voir `metals.env`).
@@ -26,23 +27,36 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
 
 Pour garantir la viabilité économique des stratégies, le bot intègre désormais des mécanismes avancés de protection du capital :
 
-### 1. Suivi des Ordres Temps Réel (v0.26.0)
+
+### 1. Prévention des Deadlocks (Architectural Hardening)
+- **Timeouts sur Locks** : Tous les verrous critiques (`RwLock` sur Portfolio / Orders) sont désormais protégés par des timeouts (2s).
+- **Fail-Fast** : Le système échoue rapidement avec une erreur explicite plutôt que de geler indéfiniment en cas de contention extrême.
+
+### 2. Espérance de Gain Empirique (Empirical Models)
+- **WinRateProvider** : Remplacement des hypothèses codées en dur (ex: "60% win rate") par une analyse réelle de l'historique des trades.
+- **Historical Back-fill** : Utilise les 30 derniers jours de trading pour calculer la probabilité de gain réelle par symbole avant d'engager du capital.
+
+### 3. Suivi des Ordres Temps Réel (v0.26.0)
+
 - **Flux WebSocket Dédié** : Connexion permanente au flux `trade_updates` d'Alpaca.
 - **Réconciliation Instantanée** : Les positions internes sont mises à jour à la milliseconde près lors des exécutions partielles ou totales.
 - **Timing Attack Prevention** : Les ordres en attente ("Pending") sont comptabilisés dans l'exposition projetée, empêchant le contournement des limites par saturation d'ordres.
 
-### 2. Exécution Intelligente (Smart Execution)
+### 4. Exécution Intelligente (Smart Execution)
+
 - **Limit Orders pour les Entrées** : Contrairement aux ordres Market qui garantissent l'exécution mais pas le prix, le bot utilise désormais des ordres **Limit** pour toutes les entrées en position. Cela évite le "Slippage" (glissement) excessif lors de pics de volatilité.
 - **Market Orders pour les Sorties** : Les Stop-Loss et Take-Profit restent exécutés au marché pour garantir la sortie de position, la priorité étant la liquidation rapide plutôt que le prix parfait en cas de danger.
 
-### 2. Trading "Cost-Aware" (Conscience des Coûts)
+### 5. Trading "Cost-Aware" (Conscience des Coûts)
+
 - Avant chaque trade, l'Analyste calcule une **Estimation des Coûts** incluant :
     - **Commissions Broker** (ex: $0.005/share).
     - **Slippage Estimé** (ex: 0.1%).
     - **Spread** (écart achat-vente).
 - **Filtre de Profitabilité** : Un signal d'achat est rejeté si l'Espérance de Gain n'est pas au moins **2x supérieure** aux coûts estimés (Break-Even Ratio > 2.0).
 
-### 3. Diversification Sectorielle
+### 6. Diversification Sectorielle
+
 - **Gestion des Risques** : Le Risk Manager surveille l'exposition par secteur (Tech, Energy, Crypto, etc.).
 - **Plafond d'Exposition** : Si un secteur dépasse `MAX_SECTOR_EXPOSURE_PCT` (ex: 30% du portefeuille), tout nouvel achat dans ce secteur est bloqué, forçant la diversification vers d'autres opportunités.
 

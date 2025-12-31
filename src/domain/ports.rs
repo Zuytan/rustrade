@@ -61,10 +61,11 @@ pub struct Expectancy {
 
 #[async_trait]
 pub trait ExpectancyEvaluator: Send + Sync {
-    fn evaluate(
+    async fn evaluate(
         &self,
         symbol: &str,
         price: rust_decimal::Decimal,
         regime: &crate::domain::market::market_regime::MarketRegime,
     ) -> Expectancy;
+
 }

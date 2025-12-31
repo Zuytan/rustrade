@@ -2,7 +2,9 @@ use crate::application::market_data::candle_aggregator::CandleAggregator;
 use crate::application::market_data::signal_generator::SignalGenerator;
 use crate::application::monitoring::feature_engineering_service::TechnicalFeatureEngineeringService;
 use crate::application::optimization::expectancy_evaluator::MarketExpectancyEvaluator;
+use crate::application::optimization::win_rate_provider::{StaticWinRateProvider, WinRateProvider};
 use crate::application::risk_management::position_manager::PositionManager;
+
 use crate::application::risk_management::trailing_stops::StopState;
 use crate::application::strategies::{StrategyFactory, TradingStrategy};
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeDetector};
@@ -32,7 +34,7 @@ pub struct SymbolContext {
 }
 
 impl SymbolContext {
-    pub fn new(config: AnalystConfig, strategy: Arc<dyn TradingStrategy>) -> Self {
+    pub fn new(config: AnalystConfig, strategy: Arc<dyn TradingStrategy>, win_rate_provider: Arc<dyn WinRateProvider>) -> Self {
         let min_hold_time_ms = config.min_hold_time_minutes * 60 * 1000;
         
         Self {
@@ -43,12 +45,13 @@ impl SymbolContext {
             config,
             last_features: FeatureSet::default(),
             regime_detector: MarketRegimeDetector::new(20, 25.0, 2.0), // Default thresholds
-            expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(1.5)),
+            expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(1.5, win_rate_provider)),
             taken_profit: false,
             last_entry_time: None,
             min_hold_time_ms,
         }
     }
+
 
     pub fn update(&mut self, price: f64) {
         self.last_features = self.feature_service.update(price);
@@ -143,6 +146,7 @@ pub struct Analyst {
     fee_model: Box<dyn FeeModel>,
     candle_repository: Option<Arc<dyn CandleRepository>>,
     strategy_repository: Option<Arc<dyn StrategyRepository>>, // Added
+    win_rate_provider: Arc<dyn WinRateProvider>, // Added
 }
 
 impl Analyst {
@@ -154,6 +158,7 @@ impl Analyst {
         config: AnalystConfig,
         repository: Option<Arc<dyn CandleRepository>>,
         strategy_repository: Option<Arc<dyn StrategyRepository>>,
+        win_rate_provider: Option<Arc<dyn WinRateProvider>>, // Optional injection
     ) -> Self {
         // Initialize Fee Model
         let fee_config = FeeConfig {
@@ -162,6 +167,9 @@ impl Analyst {
             slippage_pct: Decimal::from_f64_retain(config.slippage_pct).unwrap(),
             commission_fixed: Decimal::from_f64_retain(config.commission_per_share).unwrap(),
         };
+        
+        // Default to Static 50% if not provided (Conservative baseline)
+        let win_rate_provider = win_rate_provider.unwrap_or_else(|| Arc::new(StaticWinRateProvider::new(0.50)));
 
         Self {
             market_rx,
@@ -174,8 +182,10 @@ impl Analyst {
             fee_model: Box::new(StandardFeeModel::new(fee_config)),
             candle_repository: repository,
             strategy_repository,
+            win_rate_provider,
         }
     }
+
 
     pub async fn run(&mut self) {
         info!(
@@ -211,9 +221,10 @@ impl Analyst {
         // 1. Get/Init Context
         if !self.symbol_states.contains_key(&symbol) {
             let (strategy, config) = self.resolve_strategy(&symbol).await;
-            let context = SymbolContext::new(config, strategy);
+            let context = SymbolContext::new(config, strategy, self.win_rate_provider.clone());
             self.symbol_states.insert(symbol.clone(), context);
         }
+
 
         let context = self.symbol_states.get_mut(&symbol).unwrap();
 
@@ -384,7 +395,9 @@ impl Analyst {
                 // Evaluate Expectancy
                 let expectancy = context
                     .expectancy_evaluator
-                    .evaluate(&symbol, price, &regime);
+                    .evaluate(&symbol, price, &regime)
+                    .await;
+
 
                 if expectancy.reward_risk_ratio < 1.5 {
                     info!(
@@ -418,7 +431,9 @@ impl Analyst {
                 // Evaluate Expectancy
                 let expectancy = context
                     .expectancy_evaluator
-                    .evaluate(&symbol, price, &regime);
+                    .evaluate(&symbol, price, &regime)
+                    .await;
+
                 expectancy_value = expectancy.expected_value;
                 risk_ratio = expectancy.reward_risk_ratio;
                 should_validate_expectancy = true;
@@ -716,7 +731,9 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
+
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -808,7 +825,9 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
+
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -916,7 +935,9 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
+
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1016,7 +1037,9 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
+
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1122,7 +1145,9 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
+
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1243,7 +1268,9 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
+
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1363,7 +1390,9 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
+
 
         tokio::spawn(async move {
             analyst.run().await;

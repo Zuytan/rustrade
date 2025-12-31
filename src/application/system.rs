@@ -20,7 +20,9 @@ use crate::application::{
     risk_management::{order_throttler::OrderThrottler, risk_manager::RiskManager},
     strategies::*,
 };
+use crate::application::optimization::win_rate_provider::HistoricalWinRateProvider;
 use crate::config::{Config, Mode};
+
 use crate::domain::performance::performance_evaluator::{
     EvaluationThresholds, PerformanceEvaluator,
 };
@@ -300,7 +302,15 @@ impl Application {
             }
         };
 
+
+        let win_rate_provider = Arc::new(HistoricalWinRateProvider::new(
+            self.order_repository.clone(),
+            0.50, // Default conservative win rate
+            10,   // Minimum 10 trades to switch to empirical data
+        ));
+
         let mut analyst = Analyst::new(
+
             market_rx,
             proposal_tx,
             self.execution_service.clone(),
@@ -308,7 +318,9 @@ impl Application {
             analyst_config,
             self.candle_repository.clone(),
             Some(self.strategy_repository.clone()),
+            Some(win_rate_provider),
         );
+
 
         let sector_provider: Option<Arc<dyn SectorProvider>> = match self.config.mode {
             Mode::Alpaca => Some(Arc::new(AlpacaSectorProvider::new(

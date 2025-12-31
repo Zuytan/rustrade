@@ -1,8 +1,15 @@
 # Rustrade - Historique des Versions
 
 
-## Version 0.26.0 (Janvier 2026) - Financial Safeguards (Order Fills & PDT)
-- **Order Fill Tracking (CRITICAL)**: Implémentation d'un flux WebSocket (`trade_updates`) dédié pour capter les exécutions d'ordres en temps réel.
+## Version 0.26.0 (Janvier 2026) - Architectural Hardening & Concurrency
+- **Deadlock Prevention (CRITICAL)**: Remplacement systématique des appels bloquants `read().await` / `write().await` par des versions avec `timeout` (2 secondes).
+  - Empêche le gel complet du système en cas de contention sur le `Portfolio` ou les `Orders`.
+  - Fail-Safe: Le système retourne une erreur et continue de fonctionner (mode dégradé) plutôt que de freezer.
+- **Validations Empiriques (Expectancy Model)**:
+  - **WinRateProvider**: Introduction d'un trait capable de calculer le taux de réussite réel des stratégies basée sur l'historique.
+  - **Historical Data**: L'Analyste utilise désormais le taux de réussite historique réel (si > 10 trades) pour calculer l'espérance de gain, rendant le trading plus prudent après une série de pertes.
+- **Financial Safeguards (Order Fills & PDT)**:
+
   - **Suivi Atomique**: Chaque ordre "Pending" est suivi individuellement avec sa quantité remplie vs demandée.
   - **Reconciliation**: Mise à jour instantanée du portefeuille interne dès réception d'un fill partiel ou total.
 - **PDT Protection (Pattern Day Trader)**:
