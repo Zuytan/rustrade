@@ -20,6 +20,7 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
 - **Scores 7-9 (Agressif)** : Recherche de rendement, positions larges (20-30%), stops lâches (3.5-5.0x ATR).
 
 **Configuration** : Définir `RISK_APPETITE_SCORE=5` dans `.env`. Si non défini, les paramètres individuels sont utilisés (rétrocompatibilité).
+> ℹ️ **Note** : Pour une liste exhaustive de tous les paramètres de configuration, voir la section [Configuration du README](../README.md#⚙️-configuration).
 
 > 💡 **Évaluation** : Les performances de ces profils peuvent être évaluées via l'outil de benchmark en faisant varier le score de 1 à 9 pour observer l'impact sur le Drawdown et le Return.
 
