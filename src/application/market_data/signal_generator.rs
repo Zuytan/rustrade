@@ -31,6 +31,7 @@ impl SignalGenerator {
         strategy: &Arc<dyn TradingStrategy>,
         _sma_threshold: f64, // Unused
         has_position: bool,
+        previous_macd_histogram: Option<f64>, // Previous MACD histogram for rising/falling detection
     ) -> Option<OrderSide> {
         let price_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&price).unwrap_or(0.0);
 
@@ -46,7 +47,7 @@ impl SignalGenerator {
             macd_value: features.macd_line.unwrap_or(0.0),
             macd_signal: features.macd_signal.unwrap_or(0.0),
             macd_histogram: features.macd_hist.unwrap_or(0.0),
-            last_macd_histogram: Some(features.macd_hist.unwrap_or(0.0)),
+            last_macd_histogram: previous_macd_histogram, // Use tracked previous value
             atr: features.atr.unwrap_or(0.0),
             bb_lower: features.bb_lower.unwrap_or(0.0),
             bb_upper: features.bb_upper.unwrap_or(0.0),

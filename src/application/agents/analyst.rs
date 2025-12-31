@@ -35,6 +35,7 @@ pub struct SymbolContext {
     pub last_entry_time: Option<i64>,  // Phase 2: track entry time for min hold
     pub min_hold_time_ms: i64,          // Phase 2: minimum hold time in milliseconds
     pub active_strategy_mode: crate::domain::market::strategy_config::StrategyMode, // Phase 3: Track active mode
+    pub last_macd_histogram: Option<f64>, // Track previous MACD histogram for rising/falling detection
 }
 
 
@@ -56,12 +57,15 @@ impl SymbolContext {
             last_entry_time: None,
             min_hold_time_ms,
             active_strategy_mode: config.strategy_mode, // Initial mode
+            last_macd_histogram: None,
         }
 
     }
 
 
     pub fn update(&mut self, price: f64) {
+        // Store previous MACD histogram before updating features
+        self.last_macd_histogram = self.last_features.macd_hist;
         self.last_features = self.feature_service.update(price);
     }
 }
@@ -361,6 +365,7 @@ impl Analyst {
                 &context.strategy,
                 context.config.sma_threshold,
                 has_position,
+                context.last_macd_histogram, // Pass tracked previous value
             );
 
             if let Some(strat_sig) = strategy_signal {

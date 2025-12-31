@@ -46,7 +46,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         non_pdt_mode: false,
         dynamic_symbol_mode: false,
         dynamic_scan_interval_minutes: 60,
-        strategy_mode: rustrade::config::StrategyMode::Standard,
+        strategy_mode: rustrade::config::StrategyMode::Dynamic,
         trend_sma_period: 50,
         rsi_period: 14,
         macd_fast_period: 12,
@@ -179,11 +179,13 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     // 2. Dip to trigger "Below" state (Fast < Slow)
     // 3. Rip to trigger "Above" state (Fast > Slow) -> BUY SIGNAL
 
+    // Scenario: Smooth uptrend to ensure MACD histogram rises consistently
+    // Start flat, then gradual acceleration to trigger golden cross with rising MACD
     let events = [
-        100.0, 100.0, 100.0, 100.0, 100.0, // Stable (Sma5 = 100)
-        90.0,  // Dip! Fast(2)=(100+90)/2=95. Slow(5)=98. State -> BELOW.
-        110.0, // Recover. Fast(2)=(90+110)/2=100. Slow(5)=(100,100,100,90,110)=100. Equal/Above?
-        120.0, // Breakout! Fast(2)=115. Slow(5)=(100,100,90,110,120)=104. Cross UP! -> BUY.
+        100.0, 100.0, 100.0, 100.0, 100.0, // Stable baseline
+        100.0, 100.5, // Very slow start
+        101.0, 102.0, 104.0, // Gradual acceleration
+        107.0, 111.0, // Stronger momentum -> Golden cross + MACD rising
     ];
 
     let start_time = chrono::Utc::now();
@@ -208,7 +210,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     mock_market
         .publish(MarketEvent::Quote {
             symbol: symbol.clone(),
-            price: Decimal::from(120),
+            price: Decimal::from(111),
             timestamp: flush_timestamp.timestamp_millis(),
         })
         .await;
