@@ -135,6 +135,8 @@ impl GridSearchOptimizer {
                                     take_profit_pct: 0.05,
                                     min_hold_time_minutes: 0,
                     signal_confirmation_bars: 1,
+                                    spread_bps: 5.0,
+                                    min_profit_ratio: 2.0,
                                 });
                             }
                         }
@@ -364,6 +366,8 @@ mod tests {
                 take_profit_pct: 0.05,
                 min_hold_time_minutes: 0,
                     signal_confirmation_bars: 1,
+                spread_bps: 5.0,
+                min_profit_ratio: 2.0,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

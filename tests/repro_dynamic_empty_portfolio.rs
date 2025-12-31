@@ -75,6 +75,8 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         take_profit_pct: 0.05,
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
+        spread_bps: 5.0,
+        min_profit_ratio: 2.0,
     };
 
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));

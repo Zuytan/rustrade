@@ -123,6 +123,8 @@ async fn test_adaptive_strategy_switching() {
         take_profit_pct: 0.05,
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
+        spread_bps: 5.0,
+        min_profit_ratio: 2.0,
     };
 
     // Default strategy (initial) - usually Standard or DualSMA if factory defaults

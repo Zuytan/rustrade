@@ -90,12 +90,15 @@ pub struct Config {
     // Transaction Costs
     pub slippage_pct: f64,
     pub commission_per_share: f64,
+    pub spread_bps: f64,              // New: spread in basis points (e.g., 5.0 = 5 bps)
+    pub min_profit_ratio: f64,        // New: minimum profit/cost ratio (e.g., 2.0 = 2x)
     pub trend_riding_exit_buffer_pct: f64,
     pub mean_reversion_rsi_exit: f64,
     pub mean_reversion_bb_period: usize,
     pub risk_appetite: Option<RiskAppetite>,
     // Metadata
     pub sector_map: std::collections::HashMap<String, String>, // Added
+    pub portfolio_staleness_ms: u64,
     // Adaptive Optimization
     pub adaptive_optimization_enabled: bool,
     pub regime_detection_window: usize,
@@ -389,6 +392,21 @@ impl Config {
             .parse::<f64>()
             .unwrap_or(0.05);
 
+        let spread_bps = env::var("SPREAD_BPS")
+            .unwrap_or_else(|_| "5.0".to_string())
+            .parse::<f64>()
+            .unwrap_or(5.0);
+
+        let min_profit_ratio = env::var("MIN_PROFIT_RATIO")
+            .unwrap_or_else(|_| "2.0".to_string())
+            .parse::<f64>()
+            .unwrap_or(2.0);
+
+        let portfolio_staleness_ms = env::var("PORTFOLIO_STALENESS_MS")
+            .unwrap_or_else(|_| "5000".to_string())
+            .parse::<u64>()
+            .unwrap_or(5000);
+
         Ok(Config {
             mode,
             asset_class,
@@ -446,6 +464,9 @@ impl Config {
             ema_fast_period,
             ema_slow_period,
             take_profit_pct,
+            spread_bps,
+            min_profit_ratio,
+            portfolio_staleness_ms,
         })
     }
 }

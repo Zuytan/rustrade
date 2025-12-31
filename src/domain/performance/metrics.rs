@@ -2,8 +2,11 @@ use crate::domain::trading::types::Trade;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 
-/// Comprehensive performance metrics for trading strategies
-#[derive(Debug, Clone)]
+/// Comprehensive performance metrics for a trading strategy
+///
+/// Includes standard metrics like Sharpe ratio, win rate, and drawdowns.
+/// Typically calculated from a series of trades over a backtest or live period.
+#[derive(Debug, Clone, Default)]
 pub struct PerformanceMetrics {
     // Returns
     pub total_return: Decimal,

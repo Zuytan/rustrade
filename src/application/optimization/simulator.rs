@@ -172,6 +172,8 @@ impl Simulator {
             take_profit_pct: self.config.take_profit_pct,
             min_hold_time_minutes: self.config.min_hold_time_minutes,
             signal_confirmation_bars: self.config.signal_confirmation_bars,
+            spread_bps: self.config.spread_bps,
+            min_profit_ratio: self.config.min_profit_ratio,
         };
 
         // Use Advanced strategy for simulations

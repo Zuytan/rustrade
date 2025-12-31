@@ -256,6 +256,8 @@ impl Application {
             take_profit_pct: self.config.take_profit_pct,
             min_hold_time_minutes: self.config.min_hold_time_minutes,
             signal_confirmation_bars: self.config.signal_confirmation_bars,
+            spread_bps: self.config.spread_bps,
+            min_profit_ratio: self.config.min_profit_ratio,
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
@@ -347,12 +349,21 @@ impl Application {
             allow_pdt_risk: false,
         };
 
+        // Create portfolio state manager for versioned state access
+        let portfolio_state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                self.execution_service.clone(),
+                self.config.portfolio_staleness_ms.try_into().unwrap_or(5000), // Configurable staleness
+            ),
+        );
+
         let mut risk_manager = RiskManager::new(
             proposal_rx,
             order_tx,
             self.execution_service.clone(),
             self.market_service.clone(),
             self.portfolio.clone(),
+            portfolio_state_manager,
             self.config.non_pdt_mode,
             self.config.asset_class,
             risk_config,

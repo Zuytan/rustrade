@@ -10,6 +10,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
+use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use crate::config::AssetClass;
 use crate::domain::trading::portfolio::Portfolio;
 use chrono::Utc;
@@ -110,6 +111,7 @@ pub struct RiskManager {
     consecutive_losses: usize,
     current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
     portfolio: Arc<RwLock<Portfolio>>,
+    portfolio_state_manager: Arc<PortfolioStateManager>, // Versioned state with optimistic locking
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     sector_cache: HashMap<String, String>,
 
@@ -143,6 +145,7 @@ impl RiskManager {
         execution_service: Arc<dyn ExecutionService>,
         market_service: Arc<dyn MarketDataService>,
         portfolio: Arc<RwLock<Portfolio>>,
+        portfolio_state_manager: Arc<PortfolioStateManager>,
         non_pdt_mode: bool,
         asset_class: AssetClass,
         risk_config: RiskConfig,
@@ -157,6 +160,7 @@ impl RiskManager {
             execution_service,
             market_service,
             portfolio,
+            portfolio_state_manager,
             non_pdt_mode,
             asset_class,
             risk_config,
@@ -1009,12 +1013,15 @@ mod tests {
             ..RiskConfig::default()
         };
 
+        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
             market_service,
             portfolio,
+            state_manager,
             false,
             AssetClass::Stock,
             config,
@@ -1081,12 +1088,15 @@ mod tests {
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
+        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
             market_service,
             portfolio,
+            state_manager,
             false,
             AssetClass::Stock,
             RiskConfig::default(),
@@ -1119,12 +1129,15 @@ mod tests {
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
+        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
             market_service,
             portfolio,
+            state_manager,
             false,
             AssetClass::Stock,
             RiskConfig::default(),
@@ -1165,12 +1178,15 @@ mod tests {
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
+        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
             market_service,
             portfolio,
+            state_manager,
             false,
             AssetClass::Stock,
             RiskConfig::default(),
@@ -1226,12 +1242,15 @@ mod tests {
 
         // New RiskManager with NON_PDT_MODE = true
         let market_service = Arc::new(MockMarketDataService::new());
+        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
             market_service,
             portfolio,
+            state_manager,
             true,
             AssetClass::Stock,
             RiskConfig::default(),
@@ -1307,12 +1326,15 @@ mod tests {
             ..RiskConfig::default()
         };
 
+        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
             market_service,
             portfolio,
+            state_manager,
             false,
             AssetClass::Stock,
             config,
@@ -1373,12 +1395,15 @@ mod tests {
             ..RiskConfig::default()
         };
 
+        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
             market_service,
             portfolio,
+            state_manager,
             false,
             AssetClass::Stock,
             config,
@@ -1449,6 +1474,7 @@ mod tests {
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
+        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1456,6 +1482,7 @@ mod tests {
             exec_service,
             market_service,
             portfolio,
+            state_manager,
             false,
             AssetClass::Crypto, // Enable Crypto mode
             RiskConfig::default(),

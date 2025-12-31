@@ -1,5 +1,6 @@
 use crate::application::market_data::candle_aggregator::CandleAggregator;
 use crate::application::market_data::signal_generator::SignalGenerator;
+use crate::application::monitoring::cost_evaluator::CostEvaluator;
 use crate::application::monitoring::feature_engineering_service::TechnicalFeatureEngineeringService;
 use crate::application::optimization::expectancy_evaluator::MarketExpectancyEvaluator;
 use crate::application::optimization::win_rate_provider::{StaticWinRateProvider, WinRateProvider};
@@ -20,7 +21,7 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::info;
+use tracing::{info, warn};
 
 pub struct SymbolContext {
     pub feature_service: Box<dyn FeatureEngineeringService>,
@@ -105,6 +106,8 @@ pub struct AnalystConfig {
     pub take_profit_pct: f64,
     pub min_hold_time_minutes: i64,  // Phase 2: minimum hold time
     pub signal_confirmation_bars: usize,  // Phase 2: signal confirmation
+    pub spread_bps: f64,              // Cost-aware trading: spread in basis points
+    pub min_profit_ratio: f64,        // Cost-aware trading: minimum profit/cost ratio
 }
 
 impl From<crate::config::Config> for AnalystConfig {
@@ -143,6 +146,8 @@ impl From<crate::config::Config> for AnalystConfig {
             take_profit_pct: config.take_profit_pct,
             min_hold_time_minutes: config.min_hold_time_minutes,
             signal_confirmation_bars: config.signal_confirmation_bars,
+            spread_bps: config.spread_bps,
+            min_profit_ratio: config.min_profit_ratio,
         }
     }
 }
@@ -159,6 +164,7 @@ pub struct Analyst {
     candle_repository: Option<Arc<dyn CandleRepository>>,
     strategy_repository: Option<Arc<dyn StrategyRepository>>, // Added
     win_rate_provider: Arc<dyn WinRateProvider>, // Added
+    cost_evaluator: CostEvaluator, // Cost-aware trading filter
 }
 
 impl Analyst {
@@ -183,6 +189,13 @@ impl Analyst {
         // Default to Static 50% if not provided (Conservative baseline)
         let win_rate_provider = win_rate_provider.unwrap_or_else(|| Arc::new(StaticWinRateProvider::new(0.50)));
 
+        // Initialize Cost Evaluator for profit-aware trading
+        let cost_evaluator = CostEvaluator::new(
+            config.commission_per_share,
+            config.slippage_pct,
+            config.spread_bps,
+        );
+
         Self {
             market_rx,
             proposal_tx,
@@ -195,6 +208,7 @@ impl Analyst {
             candle_repository: repository,
             strategy_repository,
             win_rate_provider,
+            cost_evaluator,
         }
     }
 
@@ -542,10 +556,6 @@ impl Analyst {
                     }
                 }
 
-                info!(
-                    "Analyst: Sending Proposal {:?} for {} (EV: {:.2}, R/R: {:.2})",
-                    side, symbol, expectancy_value, risk_ratio
-                );
                 let order_type = match side {
                     OrderSide::Buy => crate::domain::trading::types::OrderType::Limit,
                     OrderSide::Sell => crate::domain::trading::types::OrderType::Market,
@@ -561,6 +571,49 @@ impl Analyst {
 
                     timestamp,
                 };
+
+                // ============ COST-AWARE TRADING FILTER ============
+                // Calculate expected profit (conservative: 1.5x ATR)
+                let atr = context.last_features.atr.unwrap_or(0.0);
+                let expected_profit = self.cost_evaluator.calculate_expected_profit(
+                    &proposal,
+                    atr,
+                    1.5, // Conservative profit target multiplier
+                );
+
+                // Evaluate transaction costs
+                let costs = self.cost_evaluator.evaluate(&proposal);
+
+                // Check if trade is profitable after costs
+                if !self.cost_evaluator.is_profitable(&proposal, expected_profit, context.config.min_profit_ratio) {
+                    let ratio = self.cost_evaluator.get_profit_cost_ratio(&proposal, expected_profit);
+                    warn!(
+                        "Analyst [{}]: Trade REJECTED by cost filter - Profit/Cost ratio {:.2} < {:.2} threshold (Expected Profit: ${:.2}, Total Costs: ${:.2})",
+                        symbol,
+                        ratio,
+                        context.config.min_profit_ratio,
+                        expected_profit,
+                        costs.total_cost
+                    );
+                    return;
+                }
+
+                // Log successful cost approval
+                let ratio = self.cost_evaluator.get_profit_cost_ratio(&proposal, expected_profit);
+                info!(
+                    "Analyst [{}]: Cost Filter PASSED - Profit/Cost ratio {:.2}x (Expected: ${:.2}, Costs: ${:.2}, Net: ${:.2})",
+                    symbol,
+                    ratio,
+                    expected_profit,
+                    costs.total_cost,
+                    expected_profit - costs.total_cost
+                );
+                // ====================================================
+
+                info!(
+                    "Analyst: Sending Proposal {:?} for {} (EV: {:.2}, R/R: {:.2})",
+                    side, symbol, expectancy_value, risk_ratio
+                );
 
                 if (self.proposal_tx.send(proposal).await).is_ok() {
                     context.position_manager.pending_order = Some(side);
@@ -773,6 +826,8 @@ mod tests {
             take_profit_pct: 0.05,
             min_hold_time_minutes: 0,
             signal_confirmation_bars: 1,
+            spread_bps: 5.0,
+            min_profit_ratio: 2.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -867,6 +922,8 @@ mod tests {
             take_profit_pct: 0.05,
             min_hold_time_minutes: 0,
             signal_confirmation_bars: 1,
+            spread_bps: 5.0,
+            min_profit_ratio: 2.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -977,6 +1034,8 @@ mod tests {
             take_profit_pct: 0.05,
             min_hold_time_minutes: 0,
             signal_confirmation_bars: 1,
+            spread_bps: 5.0,
+            min_profit_ratio: 2.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1079,6 +1138,8 @@ mod tests {
             take_profit_pct: 0.05,
             min_hold_time_minutes: 0,
             signal_confirmation_bars: 1,
+            spread_bps: 5.0,
+            min_profit_ratio: 2.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1187,6 +1248,8 @@ mod tests {
             take_profit_pct: 0.05,
             min_hold_time_minutes: 0,
             signal_confirmation_bars: 1,
+            spread_bps: 5.0,
+            min_profit_ratio: 2.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1310,6 +1373,8 @@ mod tests {
             take_profit_pct: 0.05,
             min_hold_time_minutes: 0,
             signal_confirmation_bars: 1,
+            spread_bps: 5.0,
+            min_profit_ratio: 2.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1432,6 +1497,8 @@ mod tests {
             take_profit_pct: 0.05,
             min_hold_time_minutes: 0,
             signal_confirmation_bars: 1,
+            spread_bps: 5.0,
+            min_profit_ratio: 2.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,

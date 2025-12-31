@@ -92,6 +92,8 @@ async fn test_backtest_strategy_on_historical_data() {
         take_profit_pct: 0.05,
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
+        spread_bps: 5.0,
+        min_profit_ratio: 2.0,
     };
 
 
