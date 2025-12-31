@@ -250,7 +250,10 @@ impl ExecutionService for MockExecutionService {
         // time::sleep(Duration::from_millis(200)).await;
 
         // Simulate execution update on the "exchange" side
-        let mut port = self.portfolio.write().await;
+        let mut port = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write())
+            .await
+            .map_err(|_| anyhow::anyhow!("MockExecution: Deadlock detected acquiring Portfolio write lock"))?;
+
 
         // Apply slippage to execution price
         let slippage_multiplier = Decimal::from_f64(match order.side {
@@ -320,9 +323,12 @@ impl ExecutionService for MockExecutionService {
     }
 
     async fn get_portfolio(&self) -> Result<Portfolio> {
-        let port = self.portfolio.read().await;
+        let port = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.read())
+            .await
+            .map_err(|_| anyhow::anyhow!("MockExecution: Deadlock detected acquiring Portfolio read lock"))?;
         Ok(port.clone())
     }
+
 
     async fn get_today_orders(&self) -> Result<Vec<Order>> {
         let orders = self.orders.read().await;

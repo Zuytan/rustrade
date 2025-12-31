@@ -42,7 +42,14 @@ impl Executor {
             match self.execution_service.execute(order.clone()).await {
                 Ok(_) => {
                     // 2. Update Internal State (Optimistic)
-                    let mut portfolio = self.portfolio.write().await;
+                    let mut portfolio = match tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write()).await {
+                        Ok(guard) => guard,
+                        Err(_) => {
+                            error!("Executor: Deadlock detected acquiring Portfolio write lock");
+                            continue;
+                        }
+                    };
+
                     let cost = order.price * order.quantity;
 
                     match order.side {

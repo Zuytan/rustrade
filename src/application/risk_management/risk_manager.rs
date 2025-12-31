@@ -177,7 +177,10 @@ impl RiskManager {
 
     /// Initialize session tracking with starting equity
     async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let portfolio = self.portfolio.read().await;
+        let portfolio = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.read())
+            .await
+            .map_err(|_| "RiskManager: Deadlock detected acquiring Portfolio read lock (init)")?;
+
 
         // Fetch initial prices for accurate equity calculation
         let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
@@ -450,7 +453,10 @@ impl RiskManager {
     /// Fetch latest prices for all held positions and update valuation
     async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // 1. Get Portfolio to know what we hold
-        let portfolio = self.portfolio.read().await;
+        let portfolio = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.read())
+            .await
+            .map_err(|_| "RiskManager: Deadlock detected acquiring Portfolio read lock (valuation)")?;
+
 
         // 2. Collect symbols
         let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
@@ -502,7 +508,16 @@ impl RiskManager {
     }
 
     async fn liquidate_portfolio(&mut self, reason: &str) {
-        let portfolio = self.portfolio.read().await;
+        let portfolio_res = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.read()).await;
+        
+        let portfolio = match portfolio_res {
+            Ok(guard) => guard,
+            Err(_) => {
+                error!("RiskManager: Deadlock detected acquiring Portfolio read lock (liquidation)");
+                return;
+            }
+        };
+
 
         info!(
             "RiskManager: EMERGENCY LIQUIDATION TRIGGERED - Reason: {}",
@@ -625,10 +640,15 @@ impl RiskManager {
                             // Check circuit breaker logic on tick
                             if !self.halted {
                                 let (reason, current_equity) = {
-                                    let portfolio = self.portfolio.read().await;
-                                    let eq = portfolio.total_equity(&self.current_prices);
-                                    (self.check_circuit_breaker(eq), eq)
+                                    if let Ok(portfolio_lock) = tokio::time::timeout(std::time::Duration::from_secs(1), self.portfolio.read()).await {
+                                        let eq = portfolio_lock.total_equity(&self.current_prices);
+                                        (self.check_circuit_breaker(eq), eq)
+                                    } else {
+                                        error!("RiskManager: Deadlock detected acquiring Portfolio lock (tick check)");
+                                        (None, Decimal::ZERO)
+                                    }
                                 };
+
 
                                 // Check for Daily Reset (Crypto)
                                 self.check_daily_reset(current_equity);
