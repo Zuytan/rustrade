@@ -80,7 +80,11 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         ema_fast_period: 50,
         ema_slow_period: 150,
         take_profit_pct: 0.05,
+        max_position_value_usd: 5000.0,
+        min_hold_time_minutes: 0,
+        signal_confirmation_bars: 1,
     });
+
 
     config.mode = Mode::Mock;
     config.symbols = vec!["BTC/USD".to_string()];
@@ -126,8 +130,9 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     let mock_market = std::sync::Arc::new(MockMarketDataService::new_no_sim());
     let mock_execution = std::sync::Arc::new(MockExecutionService::new(portfolio.clone()));
     let null_trade_repo = std::sync::Arc::new(rustrade::infrastructure::mock::NullTradeRepository);
-    let null_candle_repo =
+    let _null_candle_repo =
         std::sync::Arc::new(rustrade::infrastructure::mock::NullCandleRepository);
+
     let null_strategy_repo =
         std::sync::Arc::new(rustrade::infrastructure::mock::NullStrategyRepository);
 

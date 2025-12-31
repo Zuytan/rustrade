@@ -73,7 +73,10 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         ema_fast_period: 50,
         ema_slow_period: 150,
         take_profit_pct: 0.05,
+        min_hold_time_minutes: 0,
+        signal_confirmation_bars: 1,
     };
+
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));
     let mut analyst = Analyst::new(
         market_rx,

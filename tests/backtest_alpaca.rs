@@ -90,7 +90,10 @@ async fn test_backtest_strategy_on_historical_data() {
         ema_fast_period: 50,
         ema_slow_period: 150,
         take_profit_pct: 0.05,
+        min_hold_time_minutes: 0,
+        signal_confirmation_bars: 1,
     };
+
 
     let simulator = Simulator::new(market_service, execution_service, config);
 
