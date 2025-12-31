@@ -28,6 +28,10 @@ impl TradingStrategy for DualSMAStrategy {
 
         // Golden Cross: Fast SMA crosses above Slow SMA
         if fast > slow * (1.0 + self.threshold) {
+            tracing::debug!(
+                "DualSMA [{}]: Golden Cross detected (fast={:.2}, slow={:.2}, threshold={:.4})",
+                ctx.symbol, fast, slow, self.threshold
+            );
             return Some(Signal::buy(format!(
                 "Golden Cross (Fast={:.2} > Slow={:.2})",
                 fast, slow
@@ -36,6 +40,10 @@ impl TradingStrategy for DualSMAStrategy {
 
         // Death Cross: Fast SMA crosses below Slow SMA
         if fast < slow * (1.0 - self.threshold) && ctx.has_position {
+            tracing::debug!(
+                "DualSMA [{}]: Death Cross detected (fast={:.2}, slow={:.2}, has_pos=true)",
+                ctx.symbol, fast, slow
+            );
             return Some(Signal::sell(format!(
                 "Death Cross (Fast={:.2} < Slow={:.2})",
                 fast, slow

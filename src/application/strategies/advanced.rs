@@ -86,14 +86,27 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
             OrderSide::Buy => {
                 // All filters must pass for buy signals
                 if !self.trend_filter(ctx, OrderSide::Buy) {
+                    tracing::info!(
+                        "AdvancedFilter [{}]: BUY BLOCKED - Trend Filter (price={:.2} <= trend_sma={:.2})",
+                        ctx.symbol, ctx.price_f64, ctx.trend_sma
+                    );
                     return None;
                 }
 
                 if !self.rsi_filter(ctx, OrderSide::Buy) {
+                    tracing::info!(
+                        "AdvancedFilter [{}]: BUY BLOCKED - RSI Filter (rsi={:.2} >= threshold={:.2})",
+                        ctx.symbol, ctx.rsi, self.rsi_threshold
+                    );
                     return None;
                 }
 
                 if !self.macd_filter(ctx) {
+                    tracing::info!(
+                        "AdvancedFilter [{}]: BUY BLOCKED - MACD Filter (hist={:.4}, rising={})",
+                        ctx.symbol, ctx.macd_histogram,
+                        ctx.last_macd_histogram.map(|prev| ctx.macd_histogram > prev).unwrap_or(false)
+                    );
                     return None;
                 }
 

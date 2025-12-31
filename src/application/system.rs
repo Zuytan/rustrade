@@ -294,12 +294,16 @@ impl Application {
                     self.config.trend_riding_exit_buffer_pct,
                 ))
             }
-            crate::domain::market::strategy_config::StrategyMode::MeanReversion => {
-                Arc::new(MeanReversionStrategy::new(
-                    self.config.mean_reversion_bb_period,
-                    self.config.mean_reversion_rsi_exit,
-                ))
-            }
+            crate::domain::market::strategy_config::StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
+                analyst_config.mean_reversion_bb_period,
+                analyst_config.mean_reversion_rsi_exit,
+            )),
+            crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive => Arc::new(crate::application::strategies::TrendRidingStrategy::new(
+                analyst_config.fast_sma_period,
+                analyst_config.slow_sma_period,
+                analyst_config.sma_threshold,
+                analyst_config.trend_riding_exit_buffer_pct,
+            )),
         };
 
 

@@ -29,15 +29,12 @@ impl SignalGenerator {
         timestamp: i64,
         features: &FeatureSet,
         strategy: &Arc<dyn TradingStrategy>,
-        sma_threshold: f64,
+        _sma_threshold: f64, // Unused
         has_position: bool,
     ) -> Option<OrderSide> {
         let price_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&price).unwrap_or(0.0);
 
-        // 1. SMA Crossover Logic (Legacy/Standard)
-        let mut signal = self.check_sma_crossover(features, sma_threshold);
-
-        // 2. Strategy Logic
+        // Strategy Logic (Authoritative)
         let analysis_ctx = AnalysisContext {
             symbol: symbol.to_string(),
             current_price: price,
@@ -65,14 +62,16 @@ impl SignalGenerator {
                 symbol,
                 strategy_signal.reason
             );
-            signal = Some(strategy_signal.side);
+            return Some(strategy_signal.side);
         }
 
-        signal
+        None
     }
 
+    // Legacy method removed/unused
+    #[allow(dead_code)]
     fn check_sma_crossover(&mut self, features: &FeatureSet, threshold: f64) -> Option<OrderSide> {
-        // Use EMA if available (Trend & Profit Tuning), fallback to SMA
+         // Keep code for now to avoid breaking other legacy refs if any, but unused here
         let fast = features.ema_fast.or(features.sma_20)?;
         let slow = features.ema_slow.or(features.sma_50)?;
 
@@ -106,4 +105,5 @@ impl SignalGenerator {
             }
         }
     }
+
 }

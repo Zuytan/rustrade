@@ -3,7 +3,8 @@ mod dual_sma;
 mod dynamic;
 mod mean_reversion;
 mod traits;
-mod trend_riding;
+pub mod trend_riding;
+pub mod strategy_selector;
 
 pub use advanced::AdvancedTripleFilterStrategy;
 pub use dual_sma::DualSMAStrategy;
@@ -52,6 +53,13 @@ impl StrategyFactory {
                 config.mean_reversion_bb_period,
                 config.mean_reversion_rsi_exit,
             )),
+            StrategyMode::RegimeAdaptive => Arc::new(TrendRidingStrategy::new(
+                 config.fast_sma_period,
+                 config.slow_sma_period,
+                 config.sma_threshold,
+                 config.trend_riding_exit_buffer_pct,
+            )),
+
         }
     }
 }
