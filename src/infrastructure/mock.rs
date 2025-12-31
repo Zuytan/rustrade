@@ -1,7 +1,9 @@
-use crate::domain::ports::{ExecutionService, MarketDataService};
+
+use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate}; // Added OrderUpdate
 use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
+use tokio::sync::broadcast; // Added broadcast
 // use chrono::Utc;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -325,6 +327,18 @@ impl ExecutionService for MockExecutionService {
     async fn get_today_orders(&self) -> Result<Vec<Order>> {
         let orders = self.orders.read().await;
         Ok(orders.clone())
+    }
+
+    async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
+        // Return a dummy channel for now
+        let (_tx, rx) = broadcast::channel(1);
+
+        // We drop tx so the stream won't yield anything, or we keep it?
+        // If we drop tx, receiver might close.
+        // Let's create a leak for now or just return immediate close.
+        // Better: Mock might want to send updates.
+        // But for now, just return a channel.
+        Ok(rx)
     }
 }
 

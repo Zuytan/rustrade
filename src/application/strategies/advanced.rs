@@ -16,8 +16,9 @@ pub struct AdvancedTripleFilterStrategy {
     rsi_threshold: f64,
     #[allow(dead_code)]
     trend_sma_period: usize,
-    signal_confirmation_bars: usize,  // Phase 2: require N bars confirmation
-    last_signals: HashMap<String, (OrderSide, usize)>,  // Phase 2: track (signal, count)
+    _signal_confirmation_bars: usize,  // Phase 2: require N bars confirmation
+    _last_signals: HashMap<String, (OrderSide, usize)>,  // Phase 2: track (signal, count)
+
 }
 
 impl AdvancedTripleFilterStrategy {
@@ -27,14 +28,14 @@ impl AdvancedTripleFilterStrategy {
         sma_threshold: f64,
         trend_sma_period: usize,
         rsi_threshold: f64,
-        signal_confirmation_bars: usize,  // Phase 2: new parameter
+        _signal_confirmation_bars: usize,  // Phase 2: new parameter
     ) -> Self {
         Self {
             sma_strategy: DualSMAStrategy::new(fast_period, slow_period, sma_threshold),
             rsi_threshold,
             trend_sma_period,
-            signal_confirmation_bars,
-            last_signals: HashMap::new(),
+            _signal_confirmation_bars: 3,
+            _last_signals: HashMap::new(),
         }
     }
 

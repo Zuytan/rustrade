@@ -1,8 +1,9 @@
 use crate::domain::trading::portfolio::Portfolio;
-use crate::domain::trading::types::{MarketEvent, Order};
+use crate::domain::trading::types::{MarketEvent, Order, OrderSide, OrderStatus};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::mpsc::Receiver;
+use rust_decimal::Decimal;
+use tokio::sync::{broadcast, mpsc::Receiver};
 
 // Need async_trait for async functions in traits
 #[async_trait]
@@ -27,6 +28,19 @@ pub trait ExecutionService: Send + Sync {
     async fn execute(&self, order: Order) -> Result<()>;
     async fn get_portfolio(&self) -> Result<Portfolio>;
     async fn get_today_orders(&self) -> Result<Vec<Order>>;
+    async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>>;
+}
+
+#[derive(Debug, Clone)]
+pub struct OrderUpdate {
+    pub order_id: String,
+    pub client_order_id: String,
+    pub symbol: String,
+    pub side: OrderSide,
+    pub status: OrderStatus,
+    pub filled_qty: Decimal,
+    pub filled_avg_price: Option<Decimal>,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
 #[async_trait]

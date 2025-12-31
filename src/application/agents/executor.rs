@@ -98,8 +98,9 @@ impl Executor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ports::ExecutionService;
+    use crate::domain::ports::{ExecutionService, OrderUpdate};
     use anyhow::Result;
+
     use async_trait::async_trait;
     use rust_decimal::Decimal;
     use tokio::sync::mpsc;
@@ -116,7 +117,13 @@ mod tests {
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
             Ok(Vec::new())
         }
+        async fn subscribe_order_updates(&self) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+            let (_tx, rx) = tokio::sync::broadcast::channel(1);
+
+            Ok(rx)
+        }
     }
+
 
     struct FailExecService;
     #[async_trait]
@@ -130,7 +137,11 @@ mod tests {
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
+        async fn subscribe_order_updates(&self) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+            Err(anyhow::anyhow!("Simulated Failure"))
+        }
     }
+
 
     #[tokio::test]
     async fn test_buy_updates_portfolio() {

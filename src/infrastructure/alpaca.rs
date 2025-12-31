@@ -1,5 +1,6 @@
+use crate::domain::ports::OrderUpdate; // Added
 use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::domain::trading::types::{MarketEvent, Order, OrderSide};
+use crate::infrastructure::alpaca_trading_stream::AlpacaTradingStream; // Added
 use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -8,8 +9,11 @@ use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, Receiver};
-use tracing::{error, info};
+use tokio::sync::{broadcast, mpsc::{self, Receiver}}; // Added broadcast
+use crate::domain::trading::types::{MarketEvent, Order, OrderSide}; 
+use tracing::{error, info}; // Restored imports
+
+
 
 // ===== Market Data Service (WebSocket) =====
 
@@ -577,6 +581,7 @@ pub struct AlpacaExecutionService {
     api_key: String,
     api_secret: String,
     base_url: String,
+    trading_stream: Arc<AlpacaTradingStream>, // Added
 }
 
 impl AlpacaExecutionService {
@@ -589,11 +594,19 @@ impl AlpacaExecutionService {
             .build()
             .unwrap_or_else(|_| Client::new());
 
+        // Initialize Trading Stream
+        let trading_stream = Arc::new(AlpacaTradingStream::new(
+            api_key.clone(),
+            api_secret.clone(),
+            base_url.clone(),
+        ));
+
         Self {
             client,
             api_key,
             api_secret,
             base_url,
+            trading_stream,
         }
     }
 }
@@ -622,6 +635,8 @@ struct AlpacaOrderResponse {
 struct AlpacaAccount {
     cash: String,
     buying_power: String,
+    #[serde(default)]
+    daytrade_count: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -790,14 +805,17 @@ impl ExecutionService for AlpacaExecutionService {
             .parse::<Decimal>()
             .unwrap_or(Decimal::ZERO);
 
-        info!("Alpaca Account: Cash={}, BuyingPower={}", cash, bp);
+        info!("Alpaca Account: Cash={}, BuyingPower={}, DayTrades={}", cash, bp, account_resp.daytrade_count);
         portfolio.cash = cash; // Using cash for now as it's what the validator expects
+        portfolio.day_trades_count = account_resp.daytrade_count as u64;
 
         for alp_pos in positions_resp {
             // Normalize symbol: Alpaca might return BTCUSD or BTC/USD.
             // We strip any / to be consistent if needed, or just keep it.
             // Let's try to match exactly first, but log if it's different.
-            let alp_symbol = alp_pos.symbol.clone();
+
+            let alp_symbol = alp_pos.symbol.clone(); // Define alp_symbol
+
             let pos = crate::domain::trading::portfolio::Position {
                 symbol: alp_symbol.clone(),
                 quantity: alp_pos.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO),
@@ -875,6 +893,10 @@ impl ExecutionService for AlpacaExecutionService {
         }
 
         Ok(orders)
+    }
+
+    async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
+        Ok(self.trading_stream.subscribe())
     }
 }
 

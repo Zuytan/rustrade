@@ -1,6 +1,18 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.26.0 (Janvier 2026) - Financial Safeguards (Order Fills & PDT)
+- **Order Fill Tracking (CRITICAL)**: Implémentation d'un flux WebSocket (`trade_updates`) dédié pour capter les exécutions d'ordres en temps réel.
+  - **Suivi Atomique**: Chaque ordre "Pending" est suivi individuellement avec sa quantité remplie vs demandée.
+  - **Reconciliation**: Mise à jour instantanée du portefeuille interne dès réception d'un fill partiel ou total.
+- **PDT Protection (Pattern Day Trader)**:
+  - **Blocage Strict**: Le `RiskManager` interdit l'ouverture de nouvelles positions si le compte (< $25k) a déjà consommé ses 3 day trades glissants.
+  - **Source de Vérité**: Utilisation du compteur `daytrade_count` officiel de l'API Alpaca Account.
+  - **PDT Safe Mode**: Option de configuration `allow_pdt_risk` (défaut: false) pour forcer le blocage.
+- **Circuit Breaker Timing Fix**:
+  - **Projections Précises**: Le calcul d'exposition inclut désormais les ordres "Pending" (non remplis) pour empêcher le contournement des limites par envoi massif d'ordres simultanés.
+  - **Validation Pré-Trade**: Vérification de l'impact projeté sur l'équité *avant* l'envoi de l'ordre.
+
 ## Version 0.25.0 (Janvier 2026) - Stratégie "Trend & Profit" (Swing Trading)
 - **Transition Stratégique**: Passage du "Noise Scalping" au **"Stable Swing Trading"**. L'objectif est de réduire le 'Churn' (sur-trading) et de capturer des tendances de plusieurs jours.
   - **EMA 50/150**: Remplacement des SMA rapides (20/40) par des Moyennes Mobiles Exponentielles lentes (50/150) pour filtrer les faux signaux et le bruit intraday.

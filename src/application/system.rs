@@ -328,6 +328,7 @@ impl Application {
             valuation_interval_seconds: 60,
             max_sector_exposure_pct: self.config.max_sector_exposure_pct,
             sector_provider,
+            allow_pdt_risk: false,
         };
 
         let mut risk_manager = RiskManager::new(

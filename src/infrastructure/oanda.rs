@@ -6,6 +6,8 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
+use crate::domain::ports::OrderUpdate;
+
 use reqwest::Client;
 use tokio::sync::mpsc::{self, Receiver};
 
@@ -100,7 +102,12 @@ impl ExecutionService for OandaExecutionService {
     }
 
     async fn get_today_orders(&self) -> Result<Vec<Order>> {
-        Ok(vec![])
+        // Not implemented for now
+        Ok(Vec::new())
+    }
+
+    async fn subscribe_order_updates(&self) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+        anyhow::bail!("Oanda order updates not implemented")
     }
 }
 

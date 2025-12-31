@@ -95,8 +95,9 @@ impl MarketScanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ports::{ExecutionService, MarketDataService};
+    use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
     use crate::domain::trading::portfolio::{Portfolio, Position};
+
     use crate::domain::trading::types::{MarketEvent, Order};
     use anyhow::Result;
     use async_trait::async_trait;
@@ -154,7 +155,13 @@ mod tests {
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
             unimplemented!()
         }
+        async fn subscribe_order_updates(&self) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+             let (_tx, rx) = tokio::sync::broadcast::channel(1);
+
+             Ok(rx)
+        }
     }
+
 
     #[tokio::test]
     async fn test_scanner_sends_update() {

@@ -17,6 +17,33 @@ impl fmt::Display for OrderSide {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OrderStatus {
+    New,
+    PartiallyFilled,
+    Filled,
+    DoneForDay,
+    Canceled,
+    Cancelled, // Alias for Canceled
+    Replaced,
+    PendingCancel,
+    Stopped,
+    Rejected,
+    Suspended,
+    PendingNew,
+    Calculated,
+    Expired,
+    Accepted,
+    PendingReplace,
+    Pending, // Added to match usage
+}
+
+impl fmt::Display for OrderStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Candle {
     pub symbol: String,

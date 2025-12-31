@@ -3,6 +3,7 @@
 ## Objectif du Projet
 Développer un système multi-agents capable de surveiller le marché des actions et ETF (via Alpaca) et Forex/CFDs (via OANDA), d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
 
+> 📘 **Nouveau (v0.26.0) :** **Durcissement Financier**. Protection PDT stricte, suivi des ordres en temps réel via WebSocket, et correction des attaques de timing sur le Circuit Breaker.
 > 📘 **Nouveau (v0.25.0) :** Stratégie **"Trend & Profit"** activée par défaut. Transition du Scalping vers le **Swing Trading** avec EMA 50/150, Stops Larges (4x ATR) et Prise de Profit Partielle (+5%).
 > 📘 **Nouveau (v0.24.0) :** Support expérimental **OANDA** pour le trading Forex et CFDs, et adaptation **Crypto 24/7**.
 > 📘 **Métaux Précieux** : Le trading de l'Or et de l'Argent est désormais possible via les ETFs **GLD** et **SLV** sur Alpaca (voir `metals.env`).
@@ -25,7 +26,12 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
 
 Pour garantir la viabilité économique des stratégies, le bot intègre désormais des mécanismes avancés de protection du capital :
 
-### 1. Exécution Intelligente (Smart Execution)
+### 1. Suivi des Ordres Temps Réel (v0.26.0)
+- **Flux WebSocket Dédié** : Connexion permanente au flux `trade_updates` d'Alpaca.
+- **Réconciliation Instantanée** : Les positions internes sont mises à jour à la milliseconde près lors des exécutions partielles ou totales.
+- **Timing Attack Prevention** : Les ordres en attente ("Pending") sont comptabilisés dans l'exposition projetée, empêchant le contournement des limites par saturation d'ordres.
+
+### 2. Exécution Intelligente (Smart Execution)
 - **Limit Orders pour les Entrées** : Contrairement aux ordres Market qui garantissent l'exécution mais pas le prix, le bot utilise désormais des ordres **Limit** pour toutes les entrées en position. Cela évite le "Slippage" (glissement) excessif lors de pics de volatilité.
 - **Market Orders pour les Sorties** : Les Stop-Loss et Take-Profit restent exécutés au marché pour garantir la sortie de position, la priorité étant la liquidation rapide plutôt que le prix parfait en cas de danger.
 
@@ -91,7 +97,7 @@ Le bot intègre désormais un système d'optimisation en boucle fermée qui ajus
 - **Responsabilités**: 
     - **Validation des Risques**: Vérifie la taille de position, le drawdown max, et la perte journalière.
     - **Gestion Sectorielle Dynamique (v0.18.0)** : Plus de `sector_map` manuel. Utilise un `SectorProvider` (via Alpaca Asset API) pour identifier le secteur de chaque actif en temps réel et garantir la diversification.
-    - **Protection PDT**: Empêche le Day Trading pour les petits comptes.
+    - **Protection PDT (v0.26.0)**: Blocage strict des ouvertures de positions si le compteur de Day Trades est saturé (>=3) sur un compte < $25k. Utilise la donnée officielle du courtier.
     - **Valuation Temps Réel**: Surveillance continue de l'équité pour déclenchement immédiat des Circuit Breakers.
     - **Active Liquidation (v0.22.0)**: Si un Circuit Breaker est déclenché, le Risk Manager envoie immédiatement des ordres de vente pour TOUTES les positions, bypassant les protections PDT. Objectif: "Cash is King" pendant un krach.
     - **Flash Crash Protection (v0.24.0)** : Utilisation d'ordres **Limit Marketables** (avec tolérance de slippage de 5%) lors des liquidations d'urgence pour éviter les exécutons à prix aberrant sur les carnets d'ordres vides.

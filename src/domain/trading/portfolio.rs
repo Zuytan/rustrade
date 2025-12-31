@@ -8,7 +8,9 @@ pub struct Portfolio {
     pub realized_pnl: Decimal, // Track total realized profit/loss
     pub trade_history: Vec<crate::domain::trading::types::Trade>, // Complete audit trail
     pub starting_cash: Decimal,
+
     pub max_equity: Decimal,
+    pub day_trades_count: u64, // Added for PDT tracking
 }
 
 #[allow(dead_code)]
@@ -27,7 +29,9 @@ impl Portfolio {
             realized_pnl: Decimal::ZERO,
             trade_history: Vec::new(),
             starting_cash: Decimal::ZERO,
+
             max_equity: Decimal::ZERO,
+            day_trades_count: 0,
         }
     }
 }

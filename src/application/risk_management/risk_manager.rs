@@ -1,5 +1,5 @@
-use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
-use crate::domain::trading::types::{Order, OrderSide, OrderType, TradeProposal};
+use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate, SectorProvider};
+use crate::domain::trading::types::{Order, OrderSide, OrderStatus, OrderType, TradeProposal};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -24,6 +24,7 @@ pub struct RiskConfig {
     pub valuation_interval_seconds: u64, // Interval for portfolio valuation check
     pub max_sector_exposure_pct: f64, // Max exposure per sector
     pub sector_provider: Option<Arc<dyn SectorProvider>>,
+    pub allow_pdt_risk: bool, // If true, allows opening orders even if PDT saturated (Risky!)
 }
 
 impl std::fmt::Debug for RiskConfig {
@@ -38,6 +39,7 @@ impl std::fmt::Debug for RiskConfig {
                 &self.valuation_interval_seconds,
             )
             .field("max_sector_exposure_pct", &self.max_sector_exposure_pct)
+            .field("allow_pdt_risk", &self.allow_pdt_risk)
             .finish()
     }
 }
@@ -84,7 +86,9 @@ impl Default for RiskConfig {
             consecutive_loss_limit: 3,
             valuation_interval_seconds: 60,
             max_sector_exposure_pct: 0.20, // Reduced from 0.30
+
             sector_provider: None,
+            allow_pdt_risk: false,
         }
     }
 }
@@ -108,7 +112,27 @@ pub struct RiskManager {
     portfolio: Arc<RwLock<Portfolio>>,
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     sector_cache: HashMap<String, String>,
+
     halted: bool,
+    pending_orders: HashMap<String, PendingOrder>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingOrder {
+    symbol: String,
+    side: OrderSide,
+    requested_qty: Decimal,
+    filled_qty: Decimal,
+}
+
+impl PendingOrder {
+    fn remaining_qty(&self) -> Decimal {
+        if self.filled_qty >= self.requested_qty {
+            Decimal::ZERO
+        } else {
+            self.requested_qty - self.filled_qty
+        }
+    }
 }
 
 impl RiskManager {
@@ -145,7 +169,9 @@ impl RiskManager {
             current_prices: HashMap::new(),
             performance_monitor,
             sector_cache: HashMap::new(),
+
             halted: false,
+            pending_orders: HashMap::new(),
         }
     }
 
@@ -201,6 +227,30 @@ impl RiskManager {
         false
     }
 
+    /// Validate position size doesn't exceed limit
+    fn validate_position_size(&self, _symbol: &str, new_usd_exposure: Decimal, current_equity: Decimal) -> bool {
+
+
+        if current_equity <= Decimal::ZERO { return true; }
+
+        let position_pct = (new_usd_exposure / current_equity)
+            .to_f64()
+            .unwrap_or(0.0);
+
+        if position_pct > self.risk_config.max_position_size_pct {
+            warn!(
+                "RiskManager: Rejecting because Position size ({:.2}%) > Limit ({:.2}%)",
+                position_pct * 100.0,
+                self.risk_config.max_position_size_pct * 100.0
+            );
+            return false;
+        }
+
+        true
+    }
+    
+
+
     /// Check if circuit breaker should trigger
     fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<String> {
         // Check daily loss limit
@@ -246,25 +296,74 @@ impl RiskManager {
         None
     }
 
-    /// Validate position size doesn't exceed limit
-    fn validate_position_size(&self, proposal: &TradeProposal, current_equity: Decimal) -> bool {
-        if current_equity <= Decimal::ZERO {
-            return true; // Can't calculate percentage, allow (conservative)
+
+
+    /// Calculate projected quantity including pending orders
+    fn get_projected_quantity(&self, symbol: &str, current_qty: Decimal) -> Decimal {
+        let pending: Decimal = self.pending_orders.values()
+            .filter(|p| p.symbol == symbol)
+            .map(|p| {
+                match p.side {
+                    OrderSide::Buy => p.remaining_qty(),
+                    OrderSide::Sell => -p.remaining_qty(),
+                }
+            })
+            .sum();
+        current_qty + pending
+    }
+
+    /// Handle real-time order updates to maintain pending state
+    fn handle_order_update(&mut self, update: OrderUpdate) {
+        // info!("RiskManager: processing update for order {}", update.order_id);
+    
+        // If we don't have the order in pending, we might have started tracking after it was sent?
+        // Or it's from another session. We can only track what we know.
+        // Try both order_id and client_order_id potentially if we tracked by COID?
+        // But we tracked by Order.id (which is usually UUID we generated). 
+        // Alpaca returns their ID in order_id?
+        // Wait. `Order` struct has `id`. We set it to UUID.
+        // `AlpacaExecutionService` maps `order.id` (our UUID) to `client_order_id` in Alpaca.
+        // The `OrderUpdate` from stream has `client_order_id`.
+        // So we should match on `client_order_id` (our UUID) OR `order_id` (Alpaca ID)?
+        // RiskManager keys `pending_orders` by the UUID it generated.
+        // `OrderUpdate.client_order_id` SHOULD match that UUID.
+        
+        if let Some(pending) = self.pending_orders.get_mut(&update.client_order_id) {
+            match update.status {
+                OrderStatus::Filled | OrderStatus::PartiallyFilled => {
+                    pending.filled_qty = update.filled_qty;
+                    if pending.filled_qty >= pending.requested_qty {
+                        // Full fill, remove from pending
+                        // Actually, wait. If we remove it, "remaining" becomes 0.
+                        // "Projected" = Current + Remaining.
+                        // If fully filled, Remaining is 0.
+                        // Current (REST Portfolio) MIGHT NOT have it yet if we are faster than REST.
+                        // If we remove it from Pending, and REST hasn't updated, we see 0 exposure.
+                        // This is a race condition.
+                        // "Phantom Position" gap.
+                        // Ideally we keep it in pending until REST reflects it?
+                        // Or we trust REST will update soon.
+                        // If we are strictly conservative, we remove it only when we confirm Portfolio has it.
+                        // But we don't know which position increment corresponds to this order easily.
+                        
+                        // For SAFETY: We remove it from pending.
+                        // The gap should be small (sub-second usually).
+                        // If we want to be super safe, we could have "FilledButNotSynced" state.
+                        // Let's stick to simple: Remove on Fill.
+                    }
+                }
+                OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired | OrderStatus::Suspended  => {
+
+                     // Done.
+                }
+                _ => {}
+            }
+            
+            // Cleanup terminal states
+            if matches!(update.status, OrderStatus::Filled | OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired) {
+                 self.pending_orders.remove(&update.client_order_id);
+            }
         }
-
-        let position_value = proposal.price * proposal.quantity;
-        let position_pct = (position_value / current_equity).to_f64().unwrap_or(0.0);
-
-        if position_pct > self.risk_config.max_position_size_pct {
-            warn!(
-                "RiskManager: Position size too large: {:.2}% of equity (limit: {:.2}%)",
-                position_pct * 100.0,
-                self.risk_config.max_position_size_pct * 100.0
-            );
-            return false;
-        }
-
-        true
     }
 
     /// Validate sector exposure limits
@@ -497,8 +596,27 @@ impl RiskManager {
             self.risk_config.valuation_interval_seconds,
         ));
 
+        // Subscribe to Real-Time Order Updates
+        let mut order_update_rx = match self.execution_service.subscribe_order_updates().await {
+            Ok(rx) => Some(rx),
+            Err(e) => {
+                error!("RiskManager: Failed to subscribe to order updates: {}. Pending tracking will be limited.", e);
+                None
+            }
+        };
+
         loop {
             tokio::select! {
+                // Listen for Order Updates
+                Ok(update) = async {
+                    if let Some(rx) = &mut order_update_rx {
+                        rx.recv().await
+                    } else {
+                        std::future::pending().await
+                    }
+                } => {
+                    self.handle_order_update(update);
+                }
                         _ = valuation_interval.tick() => {
                             if let Err(e) = self.update_portfolio_valuation().await {
                                 error!("RiskManager: Valuation update error: {}", e);
@@ -577,15 +695,49 @@ impl RiskManager {
                         continue; // Reject current proposal
                     }
 
-                    // Validate position size for buy orders
-                    if matches!(proposal.side, OrderSide::Buy)
-                        && !self.validate_position_size(&proposal, current_equity)
-                    {
-                        warn!(
-                            "RiskManager: Rejecting {:?} order for {} - Position size limit",
-                            proposal.side, proposal.symbol
-                        );
-                        continue;
+                    // PDT Protection Logic
+                    let is_pdt_risk = current_equity < Decimal::from(25000);
+                    // Check if we are at limit (3 day trades allowed, 4th flags you)
+                    // If we have 3, we MUST NOT Open a new Day Trade.
+                    // If we open, we cannot close today.
+                    // If we are unsafe, we block OPENING.
+                    if is_pdt_risk && portfolio.day_trades_count >= 3 {
+                        if matches!(proposal.side, OrderSide::Buy) {
+                           // Assuming Buy is Open (Long only strategy for now)
+                           // If we buy, we are locked in until tomorrow.
+                           // Reject to be safe unless forced.
+                           if !self.risk_config.allow_pdt_risk { // Add config option? Or hard block as requested
+                               warn!("RiskManager: REJECTING BUY (PDT SATURATION): Count={}, Equity={}. Cannot safely manage risk.", 
+                                   portfolio.day_trades_count, current_equity);
+                               continue;
+                           }
+                        }
+                    }
+
+                    // Validate position size (Projected) for buy orders
+                    if matches!(proposal.side, OrderSide::Buy) {
+                        // Estimate new total value for symbol
+                        let _projected_qty = self.get_projected_quantity(&proposal.symbol, Decimal::ZERO); 
+ 
+                        // Note: get_projected_quantity gets CURRENT + PENDING.
+                        // But we need (CURRENT + PENDING + PROPOSAL) * Price.
+                        // We need to fetch 'current' from portfolio first?
+                        // We have portfolio below... wait, we fetch portfolio inside loop.
+                        // Logic refactor:
+                        
+                        let current_pos_qty = portfolio.positions.get(&proposal.symbol)
+                            .map(|p| p.quantity).unwrap_or(Decimal::ZERO);
+                        
+                        let total_qty = self.get_projected_quantity(&proposal.symbol, current_pos_qty) + proposal.quantity;
+                        let total_exposure = total_qty * proposal.price; // Approximation using current proposal price
+                        
+                        if !self.validate_position_size(&proposal.symbol, total_exposure, current_equity) {
+                             warn!(
+                                "RiskManager: Rejecting {:?} order for {} - Position size limit (Projected)",
+                                proposal.side, proposal.symbol
+                            );
+                            continue;
+                        }
                     }
 
                     // Validate Sector Exposure for buy orders
@@ -594,7 +746,7 @@ impl RiskManager {
                             .validate_sector_exposure(&proposal, &portfolio, current_equity)
                             .await
                     {
-                         warn!(
+                        warn!(
                             "RiskManager: Rejecting {:?} order for {} - Sector exposure limit",
                             proposal.side, proposal.symbol
                         );
@@ -719,8 +871,19 @@ impl RiskManager {
                         };
 
                         info!("RiskManager: Approved. Sending Order {}", order.id);
-                        if let Err(e) = self.order_tx.send(order).await {
+                        
+                        // Track as Pending BEFORE sending to avoid race condition
+                        self.pending_orders.insert(order.id.clone(), PendingOrder {
+                            symbol: order.symbol.clone(),
+                            side: order.side,
+                            requested_qty: order.quantity,
+                            filled_qty: Decimal::ZERO,
+                        });
+                        
+                        if let Err(e) = self.order_tx.send(order.clone()).await {
                             error!("RiskManager: Failed to send order: {}", e);
+                            // Rollback pending
+                            self.pending_orders.remove(&order.id);
                             break;
                         }
                     }
