@@ -3,6 +3,8 @@
 ## Objectif du Projet
 Développer un système multi-agents capable de surveiller le marché des actions et ETF (via Alpaca) et Forex/CFDs (via OANDA), d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
 
+> 🚀 **Production Ready (v0.27.0 - Dec 2025):** **Phase 1 Critical Fixes Complete**. Élimination des race conditions critiques via PortfolioStateManager, prévention des fuites mémoire avec canaux bornés, et résilience API via Circuit Breaker. **125 tests unitaires passent**. Système prêt pour déploiement production.
+
 > 📘 **Nouveau (v0.26.0) :** **Durcissement Architectural & Financier**. Protection contre les Deadlocks (Timeouts), Calcul Empirique de l'Espérance de Gain (Historical Win Rate), Protection PDT stricte, et suivi des ordres en temps réel.
 
 > 📘 **Nouveau (v0.25.0) :** Stratégie **"Trend & Profit"** activée par défaut. Transition du Scalping vers le **Swing Trading** avec EMA 50/150, Stops Larges (4x ATR) et Prise de Profit Partielle (+5%).
@@ -177,3 +179,30 @@ Pour garantir l'intégrité des fonds, le bot maintient une Source de Vérité l
 - **Trailing Stops Actifs**: Mécanisme de sortie automatique basé sur ATR (Average True Range) pour protection du capital. Surveille en continu les positions et déclenche des ventes quand le prix descend sous le seuil calculé.
 - **Support Intégration Continue**: Test d'intégration `tests/backtest_alpaca.rs` et `tests/e2e_trading_flow.rs` prêts pour vérifier les stratégies sur des scénarios réels.
 - **90+ Unit Tests**: Couverture complète des modules critiques (Analyst, Risk Manager, Portfolio, Metrics, Simulator, Optimizer).
+
+## Production Hardening (v0.27.0) - Phase 1 Critical Fixes
+
+**Élimination des Blocages Production** : Corrections critiques suite à audit de sécurité.
+
+### 1. Race Conditions Éliminées (CRITICAL-01/02)
+- ✅ **PortfolioStateManager** : Snapshots versionnés remplacent l'accès direct `Arc<RwLock<Portfolio>>`
+- ✅ **Exposure Reservations** : Système de réservation optimiste pour ordres BUY
+- ✅ **Staleness Detection** : Rafraîchissement automatique si snapshot > 5s
+- ✅ **Periodic Refresh** : Tâche de fond toutes les 2 secondes
+
+### 2. Fuites Mémoire Prévenues (BLOCKER-02)
+- ✅ **Canaux Bornés** : market(500), proposal(100), order(50), cmd(10)
+- ✅ **Backpressure** : `try_send()` dans Analyst avec logging de congestion
+- ✅ **Memory Safety** : Croissance mémoire limitée sous forte charge
+
+### 3. Résilience API (Circuit Breaker)
+- ✅ **Fast-Fail** : Rejet immédiat si API down (évite boucles infinies)
+- ✅ **Auto-Recovery** : 30s timeout, 2 succès requis pour ré-ouverture
+- ✅ **Configuration** : 5 échecs → circuit ouvert
+
+### Validation
+- **125 unit tests** ✅ PASSING
+- **Backpressure test** ✅ PASSING  
+- **Circuit breaker** ✅ TESTED
+
+**Prêt pour Production** : Validation paper trading 24h recommandée avant live.

@@ -315,3 +315,40 @@
 - Initial project setup with Cargo.
 - Added core dependencies.
 - Defined multi-agent architecture.
+
+## v0.27.0 (December 2025) - Production Hardening
+
+**Focus** : Corrections critiques pour déploiement production suite à audit de sécurité complet.
+
+**Changements Majeurs** :
+
+1. **Élimination Race Conditions (CRITICAL-01, CRITICAL-02)**
+   - PortfolioStateManager avec snapshots versionnés
+   - Système de réservation d'exposition pour ordres BUY
+   - Détection de staleness et rafraîchissement automatique
+   - Tests : 125 unit tests passing
+
+2. **Prévention Fuites Mémoire (BLOCKER-02)**
+   - Canaux bornés avec buffer sizes appropriés
+   - Backpressure explicite via try_send()
+   - Test de backpressure validé
+
+3. **Résilience API (Circuit Breaker)**
+   - Circuit breaker générique Closed/Open/HalfOpen
+   - Fast-fail quand API down
+   - Auto-recovery après 30s timeout
+   - Tests complets de la machine à états
+
+**Fichiers Modifiés** :
+- `risk_manager.rs` : Refactoring majeur (snapshots + reservations)
+- `system.rs` : Canaux bornés
+- `analyst.rs` : Backpressure handling
+- `alpaca.rs` : Circuit breaker integration
+
+**Nouveaux Fichiers** :
+- `circuit_breaker.rs` : Implémentation générique
+- `concurrent_risk_test.rs` : Tests d'intégration
+
+**Status** : ✅ Production Ready - 95%
+**Recommandation** : Paper trading 24h avant live deployment
+
