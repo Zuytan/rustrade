@@ -1,4 +1,5 @@
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate, SectorProvider};
+use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, OrderSide, OrderStatus, OrderType, TradeProposal};
 use chrono::Utc;
 use rust_decimal::prelude::ToPrimitive;
@@ -589,6 +590,64 @@ impl RiskManager {
             self.last_reset_date = today;
         }
     }
+    
+    /// Cleanup tentative filled orders and release reservations
+    fn reconcile_pending_orders(&mut self, portfolio: &Portfolio) {
+        let ttl_ms = self.risk_config.pending_order_ttl_ms.unwrap_or(300_000);
+        
+        // We need to capture pending_reservations and portfolio_state_manager for the closure
+        // But we can't capture `self` fully if we borrow `pending_orders`.
+        // However, since `pending_reservations` is a separate field, split borrowing works.
+        // We might need to clone the manager outside or access safely.
+        
+        let pending_reservations = &mut self.pending_reservations;
+        let state_manager = self.portfolio_state_manager.clone();
+        
+        self.pending_orders.retain(|order_id, pending| {
+            if pending.filled_but_not_synced {
+                // Check TTL for stuck orders - cleanup if older than TTL
+                if let Some(filled_at) = pending.filled_at {
+                    let age_ms = chrono::Utc::now().timestamp_millis() - filled_at;
+                    if age_ms > ttl_ms {
+                        warn!(
+                            "RiskManager: Pending order {} TTL expired after {}ms. Forcing cleanup for {}",
+                            &order_id[..8], age_ms, pending.symbol
+                        );
+                        // Release reservation if exists
+                        if let Some(token) = pending_reservations.remove(order_id) {
+                            let mgr = state_manager.clone();
+                            tokio::spawn(async move { mgr.release_reservation(token).await; });
+                        }
+                        return false; // Remove from pending
+                    }
+                }
+
+                // Check if position exists in portfolio for this symbol
+                let normalized_symbol = pending.symbol.replace("/", "").replace(" ", "");
+                let in_portfolio = portfolio.positions.iter().any(|(sym, pos)| {
+                    let normalized_sym = sym.replace("/", "").replace(" ", "");
+                    normalized_sym == normalized_symbol && pos.quantity > Decimal::ZERO
+                });
+
+                if in_portfolio {
+                    // Portfolio synced! Remove pending and release reservation
+                    info!(
+                        "RiskManager: Reconciled order {} - {} now confirmed in portfolio",
+                        &order_id[..8], pending.symbol
+                    );
+
+                    if let Some(token) = pending_reservations.remove(order_id) {
+                        let mgr = state_manager.clone();
+                        tokio::spawn(async move {
+                            mgr.release_reservation(token).await;
+                        });
+                    }
+                    return false; // Remove from pending
+                }
+            }
+            true // Keep in pending
+        });
+    }
 
     pub async fn run(&mut self) {
         info!("RiskManager started with config: {:?}", self.risk_config);
@@ -664,6 +723,10 @@ impl RiskManager {
                                     self.halted = true;
                                     self.liquidate_portfolio(&r).await;
                                 }
+                                
+                                // PERIODIC RECONCILIATION
+                                // Ensure we clean up stale pending orders even if no new proposals arrive
+                                self.reconcile_pending_orders(&snapshot.portfolio);
                             }
                         }
                         Some(proposal) = self.proposal_rx.recv() => {
@@ -693,55 +756,10 @@ impl RiskManager {
 
                     let portfolio = &snapshot.portfolio;
 
+                    let portfolio = &snapshot.portfolio;
+
                     // === RECONCILIATION: Cleanup tentative filled orders ===
-                    // Remove pending orders marked as filled_but_not_synced if they now appear in portfolio
-                    // This closes the "phantom position" race condition window safely
-                    let ttl_ms = self.risk_config.pending_order_ttl_ms.unwrap_or(300_000);
-
-                    self.pending_orders.retain(|order_id, pending| {
-                        if pending.filled_but_not_synced {
-                            // Check TTL for stuck orders - cleanup if older than TTL
-                            if let Some(filled_at) = pending.filled_at {
-                                let age_ms = chrono::Utc::now().timestamp_millis() - filled_at;
-                                if age_ms > ttl_ms {
-                                    warn!(
-                                        "RiskManager: Pending order {} TTL expired after {}ms. Forcing cleanup for {}",
-                                        &order_id[..8], age_ms, pending.symbol
-                                    );
-                                    // Release reservation if exists
-                                    if let Some(token) = self.pending_reservations.remove(order_id) {
-                                        let mgr = self.portfolio_state_manager.clone();
-                                        tokio::spawn(async move { mgr.release_reservation(token).await; });
-                                    }
-                                    return false; // Remove from pending
-                                }
-                            }
-
-                            // Check if position exists in portfolio for this symbol
-                            let normalized_symbol = pending.symbol.replace("/", "").replace(" ", "");
-                            let in_portfolio = portfolio.positions.iter().any(|(sym, pos)| {
-                                let normalized_sym = sym.replace("/", "").replace(" ", "");
-                                normalized_sym == normalized_symbol && pos.quantity > Decimal::ZERO
-                            });
-
-                            if in_portfolio {
-                                // Portfolio synced! Remove pending and release reservation
-                                info!(
-                                    "RiskManager: Reconciled order {} - {} now confirmed in portfolio",
-                                    &order_id[..8], pending.symbol
-                                );
-
-                                if let Some(token) = self.pending_reservations.remove(order_id) {
-                                    let mgr = self.portfolio_state_manager.clone();
-                                    tokio::spawn(async move {
-                                        mgr.release_reservation(token).await;
-                                    });
-                                }
-                                return false; // Remove from pending
-                            }
-                        }
-                        true // Keep in pending
-                    });
+                    self.reconcile_pending_orders(portfolio);
 
                     // Calculate current equity
                     let current_equity = portfolio.total_equity(&self.current_prices);
