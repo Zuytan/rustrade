@@ -6,7 +6,7 @@ mod traits;
 pub mod trend_riding;
 pub mod strategy_selector;
 
-pub use advanced::AdvancedTripleFilterStrategy;
+pub use advanced::{AdvancedTripleFilterStrategy, AdvancedTripleFilterConfig};
 pub use dual_sma::DualSMAStrategy;
 pub use dynamic::DynamicRegimeStrategy;
 pub use mean_reversion::MeanReversionStrategy;
@@ -28,15 +28,17 @@ impl StrategyFactory {
                 config.sma_threshold,
             )),
             StrategyMode::Advanced => Arc::new(AdvancedTripleFilterStrategy::new(
-                config.fast_sma_period,
-                config.slow_sma_period,
-                config.sma_threshold,
-                config.trend_sma_period,
-                config.rsi_threshold,
-                config.signal_confirmation_bars,
-                    config.macd_requires_rising,
-                    config.trend_tolerance_pct,
-                    config.macd_min_threshold,
+                AdvancedTripleFilterConfig {
+                    fast_period: config.fast_sma_period,
+                    slow_period: config.slow_sma_period,
+                    sma_threshold: config.sma_threshold,
+                    trend_sma_period: config.trend_sma_period,
+                    rsi_threshold: config.rsi_threshold,
+                    signal_confirmation_bars: config.signal_confirmation_bars,
+                    macd_requires_rising: config.macd_requires_rising,
+                    trend_tolerance_pct: config.trend_tolerance_pct,
+                    macd_min_threshold: config.macd_min_threshold,
+                },
             )),
             StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(
                 config.fast_sma_period,

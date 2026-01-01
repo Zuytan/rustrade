@@ -159,6 +159,15 @@ impl From<crate::config::Config> for AnalystConfig {
     }
 }
 
+
+pub struct AnalystDependencies {
+    pub execution_service: Arc<dyn ExecutionService>,
+    pub market_service: Arc<dyn MarketDataService>,
+    pub candle_repository: Option<Arc<dyn CandleRepository>>,
+    pub strategy_repository: Option<Arc<dyn StrategyRepository>>,
+    pub win_rate_provider: Option<Arc<dyn WinRateProvider>>,
+}
+
 pub struct Analyst {
     market_rx: Receiver<MarketEvent>,
     proposal_tx: Sender<TradeProposal>,
@@ -179,13 +188,9 @@ impl Analyst {
     pub fn new(
         market_rx: Receiver<MarketEvent>,
         proposal_tx: Sender<TradeProposal>,
-        execution_service: Arc<dyn ExecutionService>,
-        market_service: Arc<dyn MarketDataService>,
-        strategy: Arc<dyn TradingStrategy>, // This becomes default strategy
         config: AnalystConfig,
-        repository: Option<Arc<dyn CandleRepository>>,
-        strategy_repository: Option<Arc<dyn StrategyRepository>>,
-        win_rate_provider: Option<Arc<dyn WinRateProvider>>, // Optional injection
+        default_strategy: Arc<dyn TradingStrategy>,
+        dependencies: AnalystDependencies,
     ) -> Self {
         // Initialize Fee Model
         let fee_config = FeeConfig {
@@ -196,7 +201,7 @@ impl Analyst {
         };
         
         // Default to Static 50% if not provided (Conservative baseline)
-        let win_rate_provider = win_rate_provider.unwrap_or_else(|| Arc::new(StaticWinRateProvider::new(0.50)));
+        let win_rate_provider = dependencies.win_rate_provider.unwrap_or_else(|| Arc::new(StaticWinRateProvider::new(0.50)));
 
         // Initialize Cost Evaluator for profit-aware trading
         let cost_evaluator = CostEvaluator::new(
@@ -208,15 +213,15 @@ impl Analyst {
         Self {
             market_rx,
             proposal_tx,
-            execution_service,
-            market_service,
-            default_strategy: strategy,
+            execution_service: dependencies.execution_service,
+            market_service: dependencies.market_service,
+            default_strategy,
             config,
             symbol_states: HashMap::new(),
-            candle_aggregator: CandleAggregator::new(repository.clone()),
+            candle_aggregator: CandleAggregator::new(dependencies.candle_repository.clone()),
             fee_model: Box::new(StandardFeeModel::new(fee_config)),
-            candle_repository: repository,
-            strategy_repository,
+            candle_repository: dependencies.candle_repository,
+            strategy_repository: dependencies.strategy_repository,
             win_rate_provider,
             cost_evaluator,
         }
@@ -667,7 +672,6 @@ impl Analyst {
                     }
                     Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
                         error!("Analyst [{}]: Proposal channel CLOSED. Shutting down.", symbol);
-                        return;
                     }
                 }
             }
@@ -929,13 +933,15 @@ mod tests {
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
-            exec_service,
-            market_service,
-            strategy,
             config,
-            None,
-            None,
-            None,
+            strategy,
+            AnalystDependencies {
+                execution_service: exec_service,
+                market_service: market_service,
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+            },
         );
 
 
@@ -1033,13 +1039,15 @@ mod tests {
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
-            exec_service,
-            market_service,
-            strategy,
             config,
-            None,
-            None,
-            None,
+            strategy,
+            AnalystDependencies {
+                execution_service: exec_service,
+                market_service: market_service,
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+            },
         );
 
 
@@ -1153,13 +1161,15 @@ mod tests {
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
-            exec_service,
-            market_service,
-            strategy,
             config,
-            None,
-            None,
-            None,
+            strategy,
+            AnalystDependencies {
+                execution_service: exec_service,
+                market_service: market_service,
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+            },
         );
 
 
@@ -1265,13 +1275,15 @@ mod tests {
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
-            exec_service,
-            market_service,
-            strategy,
             config,
-            None,
-            None,
-            None,
+            strategy,
+            AnalystDependencies {
+                execution_service: exec_service,
+                market_service: market_service,
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+            },
         );
 
 
@@ -1383,13 +1395,15 @@ mod tests {
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
-            exec_service,
-            market_service,
-            strategy,
             config,
-            None,
-            None,
-            None,
+            strategy,
+            AnalystDependencies {
+                execution_service: exec_service,
+                market_service: market_service,
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+            },
         );
 
 
@@ -1516,13 +1530,15 @@ mod tests {
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
-            exec_service,
-            market_service,
-            strategy,
             config,
-            None,
-            None,
-            None,
+            strategy,
+            AnalystDependencies {
+                execution_service: exec_service,
+                market_service: market_service,
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+            },
         );
 
 
@@ -1648,13 +1664,15 @@ mod tests {
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
-            exec_service,
-            market_service,
-            strategy,
             config,
-            None,
-            None,
-            None,
+            strategy,
+            AnalystDependencies {
+                execution_service: exec_service,
+                market_service: market_service,
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+            },
         );
 
 

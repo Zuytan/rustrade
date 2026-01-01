@@ -7,7 +7,7 @@ use tracing::{error, info};
 use crate::application::strategies::TradingStrategy;
 use crate::application::{
     agents::{
-        analyst::{Analyst, AnalystConfig},
+        analyst::{Analyst, AnalystConfig, AnalystDependencies},
         executor::Executor,
         scanner::MarketScanner,
         sentinel::Sentinel,
@@ -273,17 +273,17 @@ impl Application {
                 ))
             }
             crate::domain::market::strategy_config::StrategyMode::Advanced => {
-                Arc::new(AdvancedTripleFilterStrategy::new(
-                    analyst_config.fast_sma_period,
-                    analyst_config.slow_sma_period,
-                    analyst_config.sma_threshold,
-                    analyst_config.trend_sma_period,
-                    analyst_config.rsi_threshold,
-                    analyst_config.signal_confirmation_bars,
-                    analyst_config.macd_requires_rising,
-                    analyst_config.trend_tolerance_pct,
-                    analyst_config.macd_min_threshold,
-                ))
+                Arc::new(AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
+                    fast_period: analyst_config.fast_sma_period,
+                    slow_period: analyst_config.slow_sma_period,
+                    sma_threshold: analyst_config.sma_threshold,
+                    trend_sma_period: analyst_config.trend_sma_period,
+                    rsi_threshold: analyst_config.rsi_threshold,
+                    signal_confirmation_bars: analyst_config.signal_confirmation_bars,
+                    macd_requires_rising: analyst_config.macd_requires_rising,
+                    trend_tolerance_pct: analyst_config.trend_tolerance_pct,
+                    macd_min_threshold: analyst_config.macd_min_threshold,
+                }))
             }
             crate::domain::market::strategy_config::StrategyMode::Dynamic => {
                 Arc::new(DynamicRegimeStrategy::new(
@@ -323,16 +323,17 @@ impl Application {
         ));
 
         let mut analyst = Analyst::new(
-
             market_rx,
             proposal_tx,
-            self.execution_service.clone(),
-            self.market_service.clone(),
-            strategy,
             analyst_config,
-            self.candle_repository.clone(),
-            Some(self.strategy_repository.clone()),
-            Some(win_rate_provider),
+            strategy,
+            AnalystDependencies {
+                execution_service: self.execution_service.clone(),
+                market_service: self.market_service.clone(),
+                candle_repository: self.candle_repository.clone(),
+                strategy_repository: Some(self.strategy_repository.clone()),
+                win_rate_provider: Some(win_rate_provider),
+            },
         );
 
 

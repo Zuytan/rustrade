@@ -77,20 +77,24 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         signal_confirmation_bars: 1,
         spread_bps: 5.0,
         min_profit_ratio: 2.0,
+        macd_requires_rising: true,
+        trend_tolerance_pct: 0.0,
+        macd_min_threshold: 0.0,
     };
 
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));
     let mut analyst = Analyst::new(
         market_rx,
         proposal_tx,
-        execution_service.clone(),
-        market_service.clone(), // Added
-        strategy,
         config,
-        None,
-        None,
-        None,
-
+        strategy,
+        rustrade::application::agents::analyst::AnalystDependencies {
+            execution_service: execution_service.clone(),
+            market_service: market_service.clone(),
+            candle_repository: None,
+            strategy_repository: None,
+            win_rate_provider: None,
+        },
     );
 
     // Spawn agents

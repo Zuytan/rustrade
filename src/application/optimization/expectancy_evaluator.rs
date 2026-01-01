@@ -37,7 +37,7 @@ impl MarketExpectancyEvaluator {
         };
 
         // Clamp between 0.1 and 0.9
-        (empirical_rate + regime_modifier).max(0.1).min(0.9)
+        (empirical_rate + regime_modifier).clamp(0.1, 0.9)
     }
 }
 

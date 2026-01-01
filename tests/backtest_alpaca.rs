@@ -94,6 +94,9 @@ async fn test_backtest_strategy_on_historical_data() {
         signal_confirmation_bars: 1,
         spread_bps: 5.0,
         min_profit_ratio: 2.0,
+        macd_requires_rising: true,
+        trend_tolerance_pct: 0.0,
+        macd_min_threshold: 0.0,
     };
 
 

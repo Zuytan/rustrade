@@ -5,7 +5,9 @@ Développer un système multi-agents capable de surveiller le marché des action
 
 > 🚀 **Production Ready (v0.27.0 - Dec 2025):** **Phase 1 Critical Fixes Complete**. Élimination des race conditions critiques via PortfolioStateManager, prévention des fuites mémoire avec canaux bornés, et résilience API via Circuit Breaker. **125 tests unitaires passent**. Système prêt pour déploiement production.
 
-> 📘 **Nouveau (v0.26.0) :** **Durcissement Architectural & Financier**. Protection contre les Deadlocks (Timeouts), Calcul Empirique de l'Espérance de Gain (Historical Win Rate), Protection PDT stricte, et suivi des ordres en temps réel.
+> 📘 **Nouveau (v0.28.0) :** **Refactoring & Clean Architecture**. Nettoyage complet de la codebase, adoption de structures de configuration pour l'Analyste et les Stratégies, et élimination de tous les warnings Clippy.
+>
+> 📘 **Précédent (v0.26.0) :** **Durcissement Architectural & Financier**. Protection contre les Deadlocks (Timeouts), Calcul Empirique de l'Espérance de Gain (Historical Win Rate), Protection PDT stricte, et suivi des ordres en temps réel.
 
 > 📘 **Nouveau (v0.25.0) :** Stratégie **"Trend & Profit"** activée par défaut. Transition du Scalping vers le **Swing Trading** avec EMA 50/150, Stops Larges (4x ATR) et Prise de Profit Partielle (+5%).
 > 📘 **Nouveau (v0.24.0) :** Support expérimental **OANDA** pour le trading Forex et CFDs, et adaptation **Crypto 24/7**.

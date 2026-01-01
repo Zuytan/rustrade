@@ -125,6 +125,9 @@ async fn test_adaptive_strategy_switching() {
         signal_confirmation_bars: 1,
         spread_bps: 5.0,
         min_profit_ratio: 2.0,
+        macd_requires_rising: true,
+        trend_tolerance_pct: 0.0,
+        macd_min_threshold: 0.0,
     };
 
     // Default strategy (initial) - usually Standard or DualSMA if factory defaults
@@ -134,13 +137,15 @@ async fn test_adaptive_strategy_switching() {
     let mut analyst = Analyst::new(
         market_rx,
         proposal_tx,
-        exec_service,
-        Arc::new(MockMarketDataService::new()), // Added
-        strategy,
         config.clone(),
-        Some(repo.clone()),
-        None,
-        None
+        strategy,
+        rustrade::application::agents::analyst::AnalystDependencies {
+            execution_service: exec_service,
+            market_service: Arc::new(MockMarketDataService::new()),
+            candle_repository: Some(repo.clone()),
+            strategy_repository: None,
+            win_rate_provider: None,
+        }
     );
 
     tokio::spawn(async move {

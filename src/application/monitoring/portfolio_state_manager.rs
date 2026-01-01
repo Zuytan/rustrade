@@ -99,7 +99,6 @@ impl ReservationToken {
 /// # Ok(())
 /// # }
 /// ```
-
 pub struct PortfolioStateManager {
     current_state: Arc<RwLock<VersionedPortfolio>>,
     execution_service: Arc<dyn ExecutionService>,

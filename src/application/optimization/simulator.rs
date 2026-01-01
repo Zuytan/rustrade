@@ -1,5 +1,5 @@
-use crate::application::agents::analyst::{Analyst, AnalystConfig};
-use crate::application::strategies::{AdvancedTripleFilterStrategy, TradingStrategy};
+use crate::application::agents::analyst::{Analyst, AnalystConfig, AnalystDependencies};
+use crate::application::strategies::{AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, TradingStrategy};
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::trading::types::MarketEvent;
 use crate::domain::trading::types::{Candle, Order};
@@ -181,27 +181,31 @@ impl Simulator {
 
         // Use Advanced strategy for simulations
         let strategy: Arc<dyn TradingStrategy> = Arc::new(AdvancedTripleFilterStrategy::new(
-            sim_config.fast_sma_period,
-            sim_config.slow_sma_period,
-            sim_config.sma_threshold,
-            sim_config.trend_sma_period,
-            sim_config.rsi_threshold,
-            sim_config.signal_confirmation_bars,
-            sim_config.macd_requires_rising,
-            sim_config.trend_tolerance_pct,
-            sim_config.macd_min_threshold,
+            AdvancedTripleFilterConfig {
+                fast_period: sim_config.fast_sma_period,
+                slow_period: sim_config.slow_sma_period,
+                sma_threshold: sim_config.sma_threshold,
+                trend_sma_period: sim_config.trend_sma_period,
+                rsi_threshold: sim_config.rsi_threshold,
+                signal_confirmation_bars: sim_config.signal_confirmation_bars,
+                macd_requires_rising: sim_config.macd_requires_rising,
+                trend_tolerance_pct: sim_config.trend_tolerance_pct,
+                macd_min_threshold: sim_config.macd_min_threshold,
+            },
         ));
 
         let mut analyst = Analyst::new(
             market_rx,
             proposal_tx,
-            self.execution_service.clone(),
-            self.market_data.clone(),
-            strategy,
             sim_config,
-            None,
-            None,
-            None,
+            strategy,
+            AnalystDependencies {
+                execution_service: self.execution_service.clone(),
+                market_service: self.market_data.clone(),
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+            },
         );
 
 

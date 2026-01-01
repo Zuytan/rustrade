@@ -64,24 +64,24 @@ impl CircuitBreaker {
         {
             let mut state = self.state.write().await;
             
-            match state.state {
-                CircuitState::Open => {
-                    // Check if timeout elapsed to transition to HalfOpen
-                    if let Some(last_failure) = state.last_failure_time {
-                        if last_failure.elapsed() > self.timeout {
-                            info!("CircuitBreaker [{}]: Transitioning Open -> HalfOpen (timeout elapsed)", self.name);
-                            state.state = CircuitState::HalfOpen;
-                            state.success_count = 0;
-                        } else {
-                            return Err(CircuitBreakerError::Open(format!(
-                                "Circuit breaker [{}] is open. Retry in {:?}",
-                                self.name,
-                                self.timeout - last_failure.elapsed()
-                            )));
-                        }
+            if state.state == CircuitState::Open {
+                // Check if timeout elapsed to transition to HalfOpen
+                if let Some(last_failure) = state.last_failure_time {
+                    if last_failure.elapsed() > self.timeout {
+                        info!(
+                            "CircuitBreaker [{}]: Transitioning Open -> HalfOpen (timeout elapsed)",
+                            self.name
+                        );
+                        state.state = CircuitState::HalfOpen;
+                        state.success_count = 0;
+                    } else {
+                        return Err(CircuitBreakerError::Open(format!(
+                            "Circuit breaker [{}] is open. Retry in {:?}",
+                            self.name,
+                            self.timeout - last_failure.elapsed()
+                        )));
                     }
                 }
-                _ => {}
             }
         }
         

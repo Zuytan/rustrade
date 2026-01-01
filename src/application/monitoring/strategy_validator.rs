@@ -101,7 +101,6 @@ pub struct StrategyMetrics {
 /// # Ok(())
 /// # }
 /// ```
-
 pub struct StrategyValidator {
     win_rate_provider: Arc<EmpiricalWinRateProvider>,
     thresholds: ValidationThresholds,

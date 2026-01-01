@@ -121,7 +121,7 @@ impl EmpiricalWinRateProvider {
                 for order in &all_orders {
                     symbol_groups
                         .entry(order.symbol.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(order);
                 }
 

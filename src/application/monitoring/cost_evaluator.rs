@@ -43,7 +43,6 @@ pub struct TradeCost {
 ///     // Reject trade - costs exceed expected profit
 /// }
 /// ```
-
 pub struct CostEvaluator {
     /// Commission per share (e.g., $0.005 per share)
     commission_per_share: Decimal,
@@ -138,7 +137,6 @@ impl CostEvaluator {
     /// let is_profitable = evaluator.is_profitable(&proposal, Decimal::from(5), 2.0);
     /// assert!(is_profitable);
     /// ```
-
     pub fn is_profitable(
         &self,
         proposal: &TradeProposal,

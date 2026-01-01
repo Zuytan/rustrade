@@ -502,9 +502,7 @@ impl RiskManager {
 
     async fn liquidate_portfolio(&mut self, reason: &str) {
         // Get current portfolio snapshot
-        let snapshot = match self.portfolio_state_manager.get_snapshot().await {
-            snapshot => snapshot,
-        };
+        let snapshot = self.portfolio_state_manager.get_snapshot().await;
 
         info!(
             "RiskManager: EMERGENCY LIQUIDATION TRIGGERED - Reason: {}",
@@ -753,17 +751,20 @@ impl RiskManager {
                     // If we have 3, we MUST NOT Open a new Day Trade.
                     // If we open, we cannot close today.
                     // If we are unsafe, we block OPENING.
-                    if is_pdt_risk && portfolio.day_trades_count >= 3 {
-                        if matches!(proposal.side, OrderSide::Buy) {
-                           // Assuming Buy is Open (Long only strategy for now)
-                           // If we buy, we are locked in until tomorrow.
-                           // Reject to be safe unless forced.
-                           if !self.risk_config.allow_pdt_risk { // Add config option? Or hard block as requested
-                               warn!("RiskManager: REJECTING BUY (PDT SATURATION): Count={}, Equity={}. Cannot safely manage risk.", 
-                                   portfolio.day_trades_count, current_equity);
-                               continue;
-                           }
-                        }
+                    if is_pdt_risk
+                        && portfolio.day_trades_count >= 3
+                        && matches!(proposal.side, OrderSide::Buy)
+                    {
+                        // Assuming Buy is Open (Long only strategy for now)
+                        // If we buy, we are locked in until tomorrow.
+                        // Reject to be safe unless forced.
+                        // The `allow_pdt_risk` config option is removed as per simplification,
+                        // implying a hard block when PDT rules are met.
+                        warn!(
+                            "RiskManager: REJECTING BUY (PDT SATURATION): Count={}, Equity={}. Cannot safely manage risk.",
+                            portfolio.day_trades_count, current_equity
+                        );
+                        continue; // Reject current proposal
                     }
 
                     // Validate position size (Projected) for buy orders
@@ -795,7 +796,7 @@ impl RiskManager {
                     // Validate Sector Exposure for buy orders
                     if matches!(proposal.side, OrderSide::Buy)
                         && !self
-                            .validate_sector_exposure(&proposal, &portfolio, current_equity)
+                            .validate_sector_exposure(&proposal, portfolio, current_equity)
                             .await
                     {
                         warn!(

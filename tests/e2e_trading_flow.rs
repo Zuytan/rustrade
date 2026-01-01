@@ -86,6 +86,10 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         spread_bps: 5.0,
         min_profit_ratio: 2.0,
         portfolio_staleness_ms: 3000,
+        portfolio_refresh_interval_ms: 60000,
+        macd_requires_rising: true,
+        trend_tolerance_pct: 0.0,
+        macd_min_threshold: 0.0,
     });
 
 

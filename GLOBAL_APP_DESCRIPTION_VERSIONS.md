@@ -1,5 +1,14 @@
 # Rustrade - Historique des Versions
 
+## Version 0.28.0 (Janvier 2026) - Code Cleanup & Refactoring
+- **Refactoring Majeur**: Nettoyage complet de la dette technique.
+  - **Constructeurs Modernes**: Refactoring des "God Constructors" (9+ args) via structures de configuration (`AnalystConfig`, `AnalystDependencies`, `AdvancedTripleFilterConfig`).
+  - **Dependencies Injection**: Meilleure gestion des dépendances (`ExecutionService`, `MarketDataService`) via structs dédiés.
+- **Maintenance**:
+  - **Zero Clippy Warnings**: Résolution systématique de tous les warnings (`clippy::pedantic` ready).
+  - **Cleanup**: Suppression du code mort et des imports inutilisés.
+- **Validation**: 130 tests unitaires passants + tests d'intégration (Backtest, E2E, Circuit Breaker).
+
 ## Version 0.27.1 (Décembre 2025) - Multi-Stock Benchmark Evaluation
 - **Évaluation Complète**: Test de performance sur **21 actions diversifiées** (7 secteurs) durant la période "Election Rally" (Nov 6 - Dec 6, 2024).
 - **Infrastructure Robuste**: 21/21 benchmarks complétés sans erreur, validation de l'infrastructure de test en production.
