@@ -17,13 +17,15 @@ use crate::domain::ports::{
 };
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
 use crate::domain::trading::fees::{FeeConfig, FeeModel, StandardFeeModel};
+use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct SymbolContext {
     pub feature_service: Box<dyn FeatureEngineeringService>,
@@ -39,6 +41,7 @@ pub struct SymbolContext {
     pub min_hold_time_ms: i64, // Phase 2: minimum hold time in milliseconds
     pub active_strategy_mode: crate::domain::market::strategy_config::StrategyMode, // Phase 3: Track active mode
     pub last_macd_histogram: Option<f64>, // Track previous MACD histogram for rising/falling detection
+    pub cached_reward_risk_ratio: f64,    // Calculated during warmup, used for trade filtering
 }
 
 impl SymbolContext {
@@ -64,6 +67,7 @@ impl SymbolContext {
             min_hold_time_ms,
             active_strategy_mode: config.strategy_mode, // Initial mode
             last_macd_histogram: None,
+            cached_reward_risk_ratio: 1.0, // Default safe value, will be updated during warmup
         }
     }
 
@@ -179,6 +183,7 @@ pub struct AnalystDependencies {
     pub candle_repository: Option<Arc<dyn CandleRepository>>,
     pub strategy_repository: Option<Arc<dyn StrategyRepository>>,
     pub win_rate_provider: Option<Arc<dyn WinRateProvider>>,
+    pub ui_candle_tx: Option<broadcast::Sender<Candle>>,
 }
 
 pub struct Analyst {
@@ -194,6 +199,7 @@ pub struct Analyst {
     candle_repository: Option<Arc<dyn CandleRepository>>,
     strategy_repository: Option<Arc<dyn StrategyRepository>>, // Added
     win_rate_provider: Arc<dyn WinRateProvider>,              // Added
+    ui_candle_tx: Option<broadcast::Sender<Candle>>,          // Added for UI streaming
 
     trade_filter: crate::application::trading::trade_filter::TradeFilter,
 }
@@ -242,6 +248,7 @@ impl Analyst {
             candle_repository: dependencies.candle_repository,
             strategy_repository: dependencies.strategy_repository,
             win_rate_provider,
+            ui_candle_tx: dependencies.ui_candle_tx,
             trade_filter,
         }
     }
@@ -276,6 +283,19 @@ impl Analyst {
         let price = candle.close;
         let timestamp = candle.timestamp * 1000;
         let price_f64 = price.to_f64().unwrap_or(0.0);
+
+        // Broadcast to UI
+        if let Some(tx) = &self.ui_candle_tx {
+            match tx.send(candle.clone()) {
+                Ok(_) => debug!(
+                    "Analyst: Broadcasted candle for {} (price: {}) to UI",
+                    symbol, price
+                ),
+                Err(e) => warn!("Analyst: Failed to broadcast candle to UI: {}", e),
+            }
+        } else {
+            warn!("Analyst: No UI candle broadcaster configured!");
+        }
 
         // 1. Get/Init Context
         if !self.symbol_states.contains_key(&symbol) {
@@ -734,7 +754,7 @@ impl Analyst {
                     bars_count, symbol
                 );
 
-                for candle in bars {
+                for candle in &bars {
                     // Update context (features + indicators)
                     context.update(candle.close.to_f64().unwrap_or(0.0));
                 }
@@ -743,6 +763,50 @@ impl Analyst {
                     "Analyst: Warmup complete for {}. Last Price: {:?}",
                     symbol, context.last_features.sma_50
                 );
+
+                // Calculate and cache reward/risk ratio for trade filtering
+                if !bars.is_empty() {
+                    let regime = context
+                        .regime_detector
+                        .detect(&bars)
+                        .unwrap_or(MarketRegime::unknown());
+                    let last_price_decimal = bars.last().unwrap().close;
+
+                    let expectancy = context
+                        .expectancy_evaluator
+                        .evaluate(symbol, last_price_decimal, &regime)
+                        .await;
+                    context.cached_reward_risk_ratio = expectancy.reward_risk_ratio;
+
+                    info!(
+                        "Analyst: Cached reward/risk ratio for {}: {:.2}",
+                        symbol, context.cached_reward_risk_ratio
+                    );
+                }
+
+                // Broadcast last 100 historical candles to UI for chart initialization
+                if let Some(tx) = &self.ui_candle_tx {
+                    let start_idx = bars.len().saturating_sub(100);
+                    let recent_bars = &bars[start_idx..];
+                    info!(
+                        "Analyst: Broadcasting {} historical candles for {} to UI",
+                        recent_bars.len(),
+                        symbol
+                    );
+
+                    for bar in recent_bars {
+                        let candle = crate::domain::trading::types::Candle {
+                            symbol: symbol.to_string(),
+                            open: bar.open,
+                            high: bar.high,
+                            low: bar.low,
+                            close: bar.close,
+                            volume: bar.volume,
+                            timestamp: bar.timestamp,
+                        };
+                        let _ = tx.send(candle);
+                    }
+                }
             }
             Err(e) => {
                 warn!("Analyst: Failed to warmup {}: {}", symbol, e);
@@ -844,6 +908,7 @@ mod tests {
                 candle_repository: None,
                 strategy_repository: None,
                 win_rate_provider: None,
+                ui_candle_tx: None,
             },
         );
 
@@ -949,6 +1014,7 @@ mod tests {
                 candle_repository: None,
                 strategy_repository: None,
                 win_rate_provider: None,
+                ui_candle_tx: None,
             },
         );
 
@@ -1070,6 +1136,7 @@ mod tests {
                 candle_repository: None,
                 strategy_repository: None,
                 win_rate_provider: None,
+                ui_candle_tx: None,
             },
         );
 
@@ -1183,6 +1250,7 @@ mod tests {
                 candle_repository: None,
                 strategy_repository: None,
                 win_rate_provider: None,
+                ui_candle_tx: None,
             },
         );
 
@@ -1302,6 +1370,7 @@ mod tests {
                 candle_repository: None,
                 strategy_repository: None,
                 win_rate_provider: None,
+                ui_candle_tx: None,
             },
         );
 
@@ -1436,6 +1505,7 @@ mod tests {
                 candle_repository: None,
                 strategy_repository: None,
                 win_rate_provider: None,
+                ui_candle_tx: None,
             },
         );
 
@@ -1569,6 +1639,7 @@ mod tests {
                 candle_repository: None,
                 strategy_repository: None,
                 win_rate_provider: None,
+                ui_candle_tx: None,
             },
         );
 

@@ -207,6 +207,7 @@ impl Simulator {
                 candle_repository: None,
                 strategy_repository: None,
                 win_rate_provider: None,
+                ui_candle_tx: None,
             },
         );
 

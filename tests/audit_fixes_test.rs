@@ -167,7 +167,7 @@ async fn test_pending_order_ttl_cleanup() {
         max_position_size_pct: 1.0,
         ..RiskConfig::default()
     };
-    
+
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
     let mut risk_manager = RiskManager::new(

@@ -42,7 +42,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{self, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 // WebSocket heartbeat and reconnection configuration
 const PING_INTERVAL_SECS: u64 = 20;
@@ -365,7 +365,7 @@ impl AlpacaWebSocketManager {
                     if authenticated {
                         write.send(Message::Ping(vec![].into())).await?;
                         pong_deadline = Some(time::Instant::now() + Duration::from_secs(PONG_TIMEOUT_SECS));
-                        info!("WebSocketManager: Ping sent, waiting for pong...");
+                        debug!("WebSocketManager: Ping sent, waiting for pong...");
                     }
                 }
 

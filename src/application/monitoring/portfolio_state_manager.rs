@@ -159,12 +159,12 @@ impl PortfolioStateManager {
         state.portfolio = portfolio;
         state.timestamp = chrono::Utc::now().timestamp_millis();
 
-        info!(
+        /*info!(
             "PortfolioStateManager: Refreshed to v{} (Cash: ${}, Positions: {})",
             state.version,
             state.portfolio.cash,
             state.portfolio.positions.len()
-        );
+        );*/
 
         Ok(state.clone())
     }

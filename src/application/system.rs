@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::Timelike;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{error, info};
 
 use crate::application::optimization::win_rate_provider::HistoricalWinRateProvider;
@@ -11,7 +11,7 @@ use crate::application::{
         analyst::{Analyst, AnalystConfig, AnalystDependencies},
         executor::Executor,
         scanner::MarketScanner,
-        sentinel::Sentinel,
+        sentinel::{Sentinel, SentinelCommand}, // Added SentinelCommand
     },
     monitoring::performance_monitoring_service::PerformanceMonitoringService,
     optimization::{
@@ -30,6 +30,8 @@ use crate::domain::ports::SectorProvider;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
 use crate::domain::trading::portfolio::Portfolio;
+use crate::domain::trading::types::Candle;
+use crate::domain::trading::types::TradeProposal; // Added TradeProposal import
 use crate::infrastructure::alpaca::{
     AlpacaExecutionService, AlpacaMarketDataService, AlpacaSectorProvider,
 };
@@ -43,6 +45,13 @@ use crate::infrastructure::persistence::repositories::{
     SqlitePerformanceSnapshotRepository, SqliteReoptimizationTriggerRepository,
     SqliteStrategyRepository,
 };
+
+pub struct SystemHandle {
+    pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
+    pub proposal_tx: mpsc::Sender<TradeProposal>,
+    pub portfolio: Arc<RwLock<Portfolio>>,
+    pub candle_rx: broadcast::Receiver<Candle>,
+}
 
 pub struct Application {
     pub config: Config,
@@ -198,8 +207,10 @@ impl Application {
         })
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn start(self) -> Result<SystemHandle> {
         info!("Starting Agents...");
+
+        let portfolio_handle = self.portfolio.clone();
 
         let (market_tx, market_rx) = mpsc::channel(500); // High throughput: market data events
         let (proposal_tx, proposal_rx) = mpsc::channel(100); // Moderate: trade proposals
@@ -207,8 +218,41 @@ impl Application {
         let (throttled_order_tx, throttled_order_rx) = mpsc::channel(50); // Low throughput: throttled orders
         let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(10); // Very low: control commands
 
+        // Broadcast channel for Candles (for UI)
+        let (candle_tx, candle_rx) = broadcast::channel(100);
+
+        // Create clones of Arc services for each task
+        let market_service_for_sentinel = self.market_service.clone();
+        let market_service_for_scanner = self.market_service.clone();
+        let execution_service_for_scanner = self.execution_service.clone();
+
+        let market_service_for_analyst = self.market_service.clone();
+        let execution_service_for_analyst = self.execution_service.clone();
+        let strategy_repo_for_analyst = self.strategy_repository.clone();
+        let order_repo_for_analyst = self.order_repository.clone();
+        // win_rate_provider needs manual creation below
+
+        let execution_service_for_state_manager = self.execution_service.clone();
+
+        let execution_service_for_risk = self.execution_service.clone();
+        let market_service_for_risk = self.market_service.clone();
+
+        let execution_service_for_executor = self.execution_service.clone();
+        let order_repo_for_executor = self.order_repository.clone();
+
+        let candle_repo = self.candle_repository.clone(); // Option<Arc<..>> impls Clone
+
+        // Return handle BEFORE moving self members, so we clone what we need.
+        let system_handle = SystemHandle {
+            sentinel_cmd_tx: sentinel_cmd_tx.clone(),
+            proposal_tx: proposal_tx.clone(),
+            portfolio: self.portfolio.clone(),
+            candle_rx, // Move the receiver to the handle
+        };
+
+        // Now use self members
         let mut sentinel = Sentinel::new(
-            self.market_service.clone(),
+            market_service_for_sentinel,
             market_tx,
             self.config.symbols.clone(),
             Some(sentinel_cmd_rx),
@@ -217,9 +261,9 @@ impl Application {
         let scanner_interval =
             std::time::Duration::from_secs(self.config.dynamic_scan_interval_minutes * 60);
         let scanner = MarketScanner::new(
-            self.market_service.clone(),
-            self.execution_service.clone(),
-            sentinel_cmd_tx,
+            market_service_for_scanner,
+            execution_service_for_scanner,
+            sentinel_cmd_tx, // Use original tx
             scanner_interval,
             self.config.dynamic_symbol_mode,
         );
@@ -332,11 +376,12 @@ impl Application {
             analyst_config,
             strategy,
             AnalystDependencies {
-                execution_service: self.execution_service.clone(),
-                market_service: self.market_service.clone(),
-                candle_repository: self.candle_repository.clone(),
-                strategy_repository: Some(self.strategy_repository.clone()),
+                execution_service: execution_service_for_analyst,
+                market_service: market_service_for_analyst,
+                candle_repository: candle_repo,
+                strategy_repository: Some(strategy_repo_for_analyst),
                 win_rate_provider: Some(win_rate_provider),
+                ui_candle_tx: Some(candle_tx),
             },
         );
 
@@ -365,7 +410,7 @@ impl Application {
         // Create portfolio state manager for versioned state access
         let portfolio_state_manager = Arc::new(
             crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
-                self.execution_service.clone(),
+                execution_service_for_state_manager,
                 self.config
                     .portfolio_staleness_ms
                     .try_into()
@@ -376,8 +421,8 @@ impl Application {
         let mut risk_manager = RiskManager::new(
             proposal_rx,
             order_tx,
-            self.execution_service.clone(),
-            self.market_service.clone(),
+            execution_service_for_risk,
+            market_service_for_risk,
             portfolio_state_manager,
             self.config.non_pdt_mode,
             self.config.asset_class,
@@ -392,26 +437,26 @@ impl Application {
         );
 
         let mut executor = Executor::new(
-            self.execution_service.clone(),
+            execution_service_for_executor,
             throttled_order_rx,
             self.portfolio.clone(),
-            Some(self.order_repository.clone()),
+            Some(order_repo_for_executor),
         );
 
         // Spawn Service Tasks
-        let sentinel_handle = tokio::spawn(async move { sentinel.run().await });
-        let scanner_handle = tokio::spawn(async move { scanner.run().await });
-        let analyst_handle = tokio::spawn(async move { analyst.run().await });
-        let risk_manager_handle = tokio::spawn(async move { risk_manager.run().await });
-        let throttler_handle = tokio::spawn(async move { order_throttler.run().await });
-        let executor_handle = tokio::spawn(async move { executor.run().await });
+        tokio::spawn(async move { sentinel.run().await });
+        tokio::spawn(async move { scanner.run().await });
+        tokio::spawn(async move { analyst.run().await });
+        tokio::spawn(async move { risk_manager.run().await });
+        tokio::spawn(async move { order_throttler.run().await });
+        tokio::spawn(async move { executor.run().await });
 
         // Spawn Adaptive Optimization Task
         let adaptive_service = self.adaptive_optimization_service.clone();
         let symbols = self.config.symbols.clone();
         let eval_hour = self.config.adaptive_evaluation_hour;
 
-        let adaptive_handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             if let Some(service) = adaptive_service {
                 info!(
                     "Starting Adaptive Optimization Service task (Evaluation hour: {:02}:00 UTC)",
@@ -439,16 +484,6 @@ impl Application {
             }
         });
 
-        let _ = tokio::join!(
-            sentinel_handle,
-            analyst_handle,
-            risk_manager_handle,
-            throttler_handle,
-            executor_handle,
-            scanner_handle,
-            adaptive_handle
-        );
-
-        Ok(())
+        Ok(system_handle)
     }
 }

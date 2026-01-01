@@ -1,3 +1,4 @@
+use crate::application::agents::sentinel::SentinelCommand;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -7,7 +8,7 @@ use tracing::{error, info};
 pub struct MarketScanner {
     market_service: Arc<dyn MarketDataService>,
     execution_service: Arc<dyn ExecutionService>,
-    sentinel_cmd_tx: Sender<Vec<String>>,
+    sentinel_cmd_tx: Sender<SentinelCommand>,
     scan_interval: Duration,
     is_enabled: bool,
 }
@@ -16,7 +17,7 @@ impl MarketScanner {
     pub fn new(
         market_service: Arc<dyn MarketDataService>,
         execution_service: Arc<dyn ExecutionService>,
-        sentinel_cmd_tx: Sender<Vec<String>>,
+        sentinel_cmd_tx: Sender<SentinelCommand>,
         scan_interval: Duration,
         is_enabled: bool,
     ) -> Self {
@@ -80,7 +81,11 @@ impl MarketScanner {
 
             // 3. Send Update
             if !symbols.is_empty() {
-                if let Err(e) = self.sentinel_cmd_tx.send(symbols).await {
+                if let Err(e) = self
+                    .sentinel_cmd_tx
+                    .send(SentinelCommand::UpdateSymbols(symbols))
+                    .await
+                {
                     error!("MarketScanner: Failed to update Sentinel: {}", e);
                     break;
                 }

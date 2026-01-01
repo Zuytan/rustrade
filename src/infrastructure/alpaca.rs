@@ -838,10 +838,10 @@ impl ExecutionService for AlpacaExecutionService {
                     .parse::<Decimal>()
                     .unwrap_or(Decimal::ZERO);
 
-                info!(
+                /*info!(
                     "Alpaca Account: Cash={}, BuyingPower={}, DayTrades={}",
                     cash, bp, account_resp.daytrade_count
-                );
+                );*/
                 portfolio.cash = cash; // Using cash for now as it's what the validator expects
                 portfolio.day_trades_count = account_resp.daytrade_count as u64;
 
@@ -862,7 +862,7 @@ impl ExecutionService for AlpacaExecutionService {
                     };
 
                     // Log positions for debugging
-                    info!("Alpaca Position: {} qty={}", alp_symbol, pos.quantity);
+                    // info!("Alpaca Position: {} qty={}", alp_symbol, pos.quantity);
 
                     // Store with and without slash to be safe?
                     // Better: use a normalized key in the map or normalize during lookup.

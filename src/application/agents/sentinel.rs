@@ -4,11 +4,17 @@ use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info, warn};
 
+#[derive(Debug, Clone)]
+pub enum SentinelCommand {
+    Shutdown,
+    UpdateSymbols(Vec<String>),
+}
+
 pub struct Sentinel {
     market_service: Arc<dyn MarketDataService>,
     market_tx: Sender<MarketEvent>,
     symbols: Vec<String>,
-    update_rx: Option<Receiver<Vec<String>>>,
+    cmd_rx: Option<Receiver<SentinelCommand>>,
 }
 
 impl Sentinel {
@@ -16,13 +22,13 @@ impl Sentinel {
         market_service: Arc<dyn MarketDataService>,
         market_tx: Sender<MarketEvent>,
         symbols: Vec<String>,
-        update_rx: Option<Receiver<Vec<String>>>,
+        cmd_rx: Option<Receiver<SentinelCommand>>,
     ) -> Self {
         Self {
             market_service,
             market_tx,
             symbols,
-            update_rx,
+            cmd_rx,
         }
     }
 
@@ -57,40 +63,48 @@ impl Sentinel {
                     }
                 }
 
-                // Only poll update_rx if it exists
-                maybe_update = async {
-                    if let Some(rx) = &mut self.update_rx {
+                // Only poll cmd_rx if it exists
+                maybe_cmd = async {
+                    if let Some(rx) = &mut self.cmd_rx {
                         rx.recv().await
                     } else {
                         std::future::pending().await
                     }
                 } => {
-                    match maybe_update {
-                        Some(new_symbols) => {
-                            // Skip if symbols haven't changed
-                            if new_symbols == current_symbols {
-                                info!("Sentinel: Symbols unchanged, skipping update");
-                                continue;
-                            }
-
-                            info!("Sentinel: Updating subscription to {:?}", new_symbols);
-
-                            // Update subscription WITHOUT creating new connection
-                            // The WebSocket manager handles this dynamically
-                            match self.market_service.subscribe(new_symbols.clone()).await {
-                                Ok(new_rx) => {
-                                    market_rx = new_rx;
-                                    current_symbols = new_symbols;
-                                    info!("Sentinel: Subscription updated and receiver replaced");
+                    match maybe_cmd {
+                        Some(cmd) => {
+                            match cmd {
+                                SentinelCommand::Shutdown => {
+                                    warn!("Sentinel received Shutdown command. Exiting loop.");
+                                    return;
                                 }
-                                Err(e) => {
-                                    error!("Sentinel: Failed to update subscription: {}", e);
+                                SentinelCommand::UpdateSymbols(new_symbols) => {
+                                    // Skip if symbols haven't changed
+                                    if new_symbols == current_symbols {
+                                        info!("Sentinel: Symbols unchanged, skipping update");
+                                        continue;
+                                    }
+
+                                    info!("Sentinel: Updating subscription to {:?}", new_symbols);
+
+                                    // Update subscription WITHOUT creating new connection
+                                    // The WebSocket manager handles this dynamically
+                                    match self.market_service.subscribe(new_symbols.clone()).await {
+                                        Ok(new_rx) => {
+                                            market_rx = new_rx;
+                                            current_symbols = new_symbols;
+                                            info!("Sentinel: Subscription updated and receiver replaced");
+                                        }
+                                        Err(e) => {
+                                            error!("Sentinel: Failed to update subscription: {}", e);
+                                        }
+                                    }
                                 }
                             }
                         }
                         None => {
-                            info!("Sentinel update channel closed.");
-                            self.update_rx = None;
+                            info!("Sentinel command channel closed.");
+                            self.cmd_rx = None;
                         }
                     }
                 }

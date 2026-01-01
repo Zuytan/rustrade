@@ -3,3 +3,4 @@ pub mod analyst;
 pub mod executor;
 pub mod scanner;
 pub mod sentinel;
+pub mod user_agent;

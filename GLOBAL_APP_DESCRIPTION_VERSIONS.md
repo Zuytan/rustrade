@@ -12,6 +12,10 @@
 - **Mock Infrastructure Upgrade**:
   - Amélioration significative du `MockExecutionService` pour supporter les événements asynchrones (`OrderUpdate`) et simuler fidèlement les délais de l'exchange.
 - **Validation**: 130+ tests passants incluant de nouveaux tests d'intégration dédiés aux failles auditées.
+- **Native User Interface (Agentic UI)**:
+  - **Desktop App**: Interface native (`eframe`/`egui`) pour une interaction sans latence.
+  - **User Agent**: Chat interactif pour commandes manuelles ("buy", "stop") et visualisation des logs temps réel.
+  - **Architecture Hybride**: UI (Main Thread) + Trading System (Background Thread) reliés par des canaux haute performance.
 
 ## Version 0.28.1 (Janvier 2026) - Strategic Refactoring & Safety Verification
 - **Decomposition Analyst Agent (Phase 3)**:

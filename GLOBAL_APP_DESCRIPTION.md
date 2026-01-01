@@ -5,7 +5,9 @@ Développer un système multi-agents capable de surveiller le marché des action
 
 > 🚀 **Production Ready (v0.27.0 - Dec 2025):** **Phase 1 Critical Fixes Complete**. Élimination des race conditions critiques via PortfolioStateManager, prévention des fuites mémoire avec canaux bornés, et résilience API via Circuit Breaker. **125 tests unitaires passent**. Système prêt pour déploiement production.
 
-> 📘 **Nouveau (v0.28.0) :** **Refactoring & Clean Architecture**. Nettoyage complet de la codebase, adoption de structures de configuration pour l'Analyste et les Stratégies, et élimination de tous les warnings Clippy.
+> 📘 **Nouveau (v0.29.0) :** **Interface Agentique Native**. Transformation en application Desktop interactive. Chat avec l'agent ("buy AAPL 10", "stop"), visualisation temps réel du portefeuille et logs système intégrés via `eframe` et `egui`.
+>
+> 📘 **Précédent (v0.28.0) :** **Refactoring & Clean Architecture**. Nettoyage complet de la codebase, adoption de structures de configuration pour l'Analyste et les Stratégies, et élimination de tous les warnings Clippy.
 >
 > 📘 **Précédent (v0.26.0) :** **Durcissement Architectural & Financier**. Protection contre les Deadlocks (Timeouts), Calcul Empirique de l'Espérance de Gain (Historical Win Rate), Protection PDT stricte, et suivi des ordres en temps réel.
 

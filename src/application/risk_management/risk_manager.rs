@@ -590,19 +590,19 @@ impl RiskManager {
             self.last_reset_date = today;
         }
     }
-    
+
     /// Cleanup tentative filled orders and release reservations
     fn reconcile_pending_orders(&mut self, portfolio: &Portfolio) {
         let ttl_ms = self.risk_config.pending_order_ttl_ms.unwrap_or(300_000);
-        
+
         // We need to capture pending_reservations and portfolio_state_manager for the closure
         // But we can't capture `self` fully if we borrow `pending_orders`.
         // However, since `pending_reservations` is a separate field, split borrowing works.
         // We might need to clone the manager outside or access safely.
-        
+
         let pending_reservations = &mut self.pending_reservations;
         let state_manager = self.portfolio_state_manager.clone();
-        
+
         self.pending_orders.retain(|order_id, pending| {
             if pending.filled_but_not_synced {
                 // Check TTL for stuck orders - cleanup if older than TTL
@@ -723,7 +723,7 @@ impl RiskManager {
                                     self.halted = true;
                                     self.liquidate_portfolio(&r).await;
                                 }
-                                
+
                                 // PERIODIC RECONCILIATION
                                 // Ensure we clean up stale pending orders even if no new proposals arrive
                                 self.reconcile_pending_orders(&snapshot.portfolio);
