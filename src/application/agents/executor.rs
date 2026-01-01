@@ -42,7 +42,12 @@ impl Executor {
             match self.execution_service.execute(order.clone()).await {
                 Ok(_) => {
                     // 2. Update Internal State (Optimistic)
-                    let mut portfolio = match tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write()).await {
+                    let mut portfolio = match tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        self.portfolio.write(),
+                    )
+                    .await
+                    {
                         Ok(guard) => guard,
                         Err(_) => {
                             error!("Executor: Deadlock detected acquiring Portfolio write lock");
@@ -124,13 +129,14 @@ mod tests {
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
             Ok(Vec::new())
         }
-        async fn subscribe_order_updates(&self) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+        async fn subscribe_order_updates(
+            &self,
+        ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
             let (_tx, rx) = tokio::sync::broadcast::channel(1);
 
             Ok(rx)
         }
     }
-
 
     struct FailExecService;
     #[async_trait]
@@ -144,11 +150,12 @@ mod tests {
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
-        async fn subscribe_order_updates(&self) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+        async fn subscribe_order_updates(
+            &self,
+        ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
     }
-
 
     #[tokio::test]
     async fn test_buy_updates_portfolio() {

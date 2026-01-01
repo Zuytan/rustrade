@@ -1,4 +1,3 @@
-
 use async_trait::async_trait;
 use rust_decimal::Decimal;
 use std::sync::Arc;
@@ -40,7 +39,11 @@ pub struct HistoricalWinRateProvider {
 }
 
 impl HistoricalWinRateProvider {
-    pub fn new(repository: Arc<dyn TradeRepository>, default_win_rate: f64, min_trades: usize) -> Self {
+    pub fn new(
+        repository: Arc<dyn TradeRepository>,
+        default_win_rate: f64,
+        min_trades: usize,
+    ) -> Self {
         Self {
             repository,
             default_win_rate,
@@ -72,13 +75,12 @@ impl HistoricalWinRateProvider {
     /// Iterate all orders for symbol. Sort by time.
     /// Replay history to calculate PnL of closed positions.
     fn calculate_win_rate_from_orders(orders: &[Order]) -> Option<(f64, usize)> {
-
         let mut wins = 0;
         let mut total_closed = 0;
 
         // Simple FIFO Replay
         let mut inventory: Vec<(Decimal, Decimal)> = Vec::new(); // (Price, Qty)
-        
+
         for order in orders {
             match order.side {
                 OrderSide::Buy => {
@@ -87,10 +89,10 @@ impl HistoricalWinRateProvider {
                 OrderSide::Sell => {
                     let mut qty_to_sell = order.quantity;
                     let mut realized_pnl = Decimal::ZERO;
-                    
+
                     while qty_to_sell > Decimal::ZERO && !inventory.is_empty() {
                         let (buy_price, buy_qty) = inventory.remove(0);
-                        
+
                         if buy_qty <= qty_to_sell {
                             // Sold entire lot
                             realized_pnl += (order.price - buy_price) * buy_qty;
@@ -103,13 +105,13 @@ impl HistoricalWinRateProvider {
                             qty_to_sell = Decimal::ZERO;
                         }
                     }
-                    
+
                     if qty_to_sell == Decimal::ZERO {
                         // We successfully closed some volume
-                         total_closed += 1;
-                         if realized_pnl > Decimal::ZERO {
-                             wins += 1;
-                         }
+                        total_closed += 1;
+                        if realized_pnl > Decimal::ZERO {
+                            wins += 1;
+                        }
                     }
                 }
             }
@@ -120,7 +122,6 @@ impl HistoricalWinRateProvider {
         }
 
         Some((wins as f64 / total_closed as f64, total_closed))
-
     }
 }
 
@@ -130,7 +131,10 @@ impl WinRateProvider for HistoricalWinRateProvider {
         let orders = match self.repository.find_by_symbol(symbol).await {
             Ok(o) => o,
             Err(e) => {
-                warn!("Failed to fetch history for {}: {}. Using default.", symbol, e);
+                warn!(
+                    "Failed to fetch history for {}: {}. Using default.",
+                    symbol, e
+                );
                 return self.default_win_rate;
             }
         };
@@ -140,22 +144,24 @@ impl WinRateProvider for HistoricalWinRateProvider {
         sorted_orders.sort_by_key(|o| o.timestamp);
 
         let calculated_rate = Self::calculate_win_rate_from_orders(&sorted_orders);
-        
+
         if let Some((rate, total_closed)) = calculated_rate {
-             if total_closed < self.min_trades {
-                 return self.default_win_rate;
-             }
+            if total_closed < self.min_trades {
+                return self.default_win_rate;
+            }
 
-             // Weighted blend with default if low sample size?
-             // Or just return it if we met min_trades threshold (sort of).
-             // `calculate_win_rate_from_orders` returns None if 0 trades.
-             
-             // Check if we have enough data points to strictly trust it?
-             // The logic inside `calculate_win_rate_from_orders` counts "Sell Events" as trades.
-             // Let's trust it for now as "Empirical".
-              info!("Empirical Win Rate for {}: {:.2} ({} trades)", symbol, rate, total_closed);
-              rate
+            // Weighted blend with default if low sample size?
+            // Or just return it if we met min_trades threshold (sort of).
+            // `calculate_win_rate_from_orders` returns None if 0 trades.
 
+            // Check if we have enough data points to strictly trust it?
+            // The logic inside `calculate_win_rate_from_orders` counts "Sell Events" as trades.
+            // Let's trust it for now as "Empirical".
+            info!(
+                "Empirical Win Rate for {}: {:.2} ({} trades)",
+                symbol, rate, total_closed
+            );
+            rate
         } else {
             self.default_win_rate
         }

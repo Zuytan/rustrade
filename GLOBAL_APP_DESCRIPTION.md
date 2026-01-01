@@ -110,6 +110,9 @@ Le bot intègre désormais un système d'optimisation en boucle fermée qui ajus
     - **Stratégies de Trading** : Supporte Advanced Analyst, Trend Riding, et Mean Reversion avec des paramètres auto-adaptatifs.
     - **Long-Only Safety**: Vérifie systématiquement la possession de l'actif avant une vente.
     - **Smart Execution**: Utilisation d'ordres `Limit` pour maîtriser les coûts à l'entrée.
+    - **Architecture Modulaire (v0.28.0)** : Décomposition en moteurs spécialisés :
+        - `SizingEngine` : Calcul isolé et testable de la taille des positions (Risk-Based).
+        - `TradeFilter` : Validation centralisée des signaux (Coûts, Espérance, Cooldowns).
 
 ### 4. Agent "Risk Manager" (Safety Gate)
 - **Rôle**: Contrôleur de conformité financier.

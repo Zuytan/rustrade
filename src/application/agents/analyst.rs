@@ -8,11 +8,13 @@ use crate::application::risk_management::position_manager::PositionManager;
 
 use crate::application::risk_management::trailing_stops::StopState;
 
-use crate::application::strategies::{StrategyFactory, TradingStrategy};
 use crate::application::strategies::strategy_selector::StrategySelector;
+use crate::application::strategies::{StrategyFactory, TradingStrategy};
 
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeDetector};
-use crate::domain::ports::{ExecutionService, ExpectancyEvaluator, FeatureEngineeringService, MarketDataService};
+use crate::domain::ports::{
+    ExecutionService, ExpectancyEvaluator, FeatureEngineeringService, MarketDataService,
+};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
 use crate::domain::trading::fees::{FeeConfig, FeeModel, StandardFeeModel};
 use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
@@ -33,17 +35,20 @@ pub struct SymbolContext {
     pub regime_detector: MarketRegimeDetector,
     pub expectancy_evaluator: Box<dyn ExpectancyEvaluator>,
     pub taken_profit: bool, // Track if partial profit has been taken for current position
-    pub last_entry_time: Option<i64>,  // Phase 2: track entry time for min hold
-    pub min_hold_time_ms: i64,          // Phase 2: minimum hold time in milliseconds
+    pub last_entry_time: Option<i64>, // Phase 2: track entry time for min hold
+    pub min_hold_time_ms: i64, // Phase 2: minimum hold time in milliseconds
     pub active_strategy_mode: crate::domain::market::strategy_config::StrategyMode, // Phase 3: Track active mode
     pub last_macd_histogram: Option<f64>, // Track previous MACD histogram for rising/falling detection
 }
 
-
 impl SymbolContext {
-    pub fn new(config: AnalystConfig, strategy: Arc<dyn TradingStrategy>, win_rate_provider: Arc<dyn WinRateProvider>) -> Self {
+    pub fn new(
+        config: AnalystConfig,
+        strategy: Arc<dyn TradingStrategy>,
+        win_rate_provider: Arc<dyn WinRateProvider>,
+    ) -> Self {
         let min_hold_time_ms = config.min_hold_time_minutes * 60 * 1000;
-        
+
         Self {
             feature_service: Box::new(TechnicalFeatureEngineeringService::new(&config)),
             signal_generator: SignalGenerator::new(),
@@ -60,9 +65,7 @@ impl SymbolContext {
             active_strategy_mode: config.strategy_mode, // Initial mode
             last_macd_histogram: None,
         }
-
     }
-
 
     pub fn update(&mut self, price: f64) {
         // Store previous MACD histogram before updating features
@@ -104,14 +107,14 @@ pub struct AnalystConfig {
     pub ema_fast_period: usize,
     pub ema_slow_period: usize,
     pub take_profit_pct: f64,
-    pub min_hold_time_minutes: i64,  // Phase 2: minimum hold time
-    pub signal_confirmation_bars: usize,  // Phase 2: signal confirmation
-    pub spread_bps: f64,              // Cost-aware trading: spread in basis points
-    pub min_profit_ratio: f64,        // Cost-aware trading: minimum profit/cost ratio
+    pub min_hold_time_minutes: i64,      // Phase 2: minimum hold time
+    pub signal_confirmation_bars: usize, // Phase 2: signal confirmation
+    pub spread_bps: f64,                 // Cost-aware trading: spread in basis points
+    pub min_profit_ratio: f64,           // Cost-aware trading: minimum profit/cost ratio
     // Risk-based adaptive filters
-    pub macd_requires_rising: bool,   // Whether MACD must be rising for buy signals
-    pub trend_tolerance_pct: f64,     // Percentage tolerance for trend filter
-    pub macd_min_threshold: f64,      // Minimum MACD histogram threshold
+    pub macd_requires_rising: bool, // Whether MACD must be rising for buy signals
+    pub trend_tolerance_pct: f64,   // Percentage tolerance for trend filter
+    pub macd_min_threshold: f64,    // Minimum MACD histogram threshold
 }
 
 impl From<crate::config::Config> for AnalystConfig {
@@ -159,6 +162,16 @@ impl From<crate::config::Config> for AnalystConfig {
     }
 }
 
+impl From<&AnalystConfig> for crate::application::risk_management::sizing_engine::SizingConfig {
+    fn from(config: &AnalystConfig) -> Self {
+        Self {
+            risk_per_trade_percent: config.risk_per_trade_percent,
+            max_positions: config.max_positions,
+            max_position_size_pct: config.max_position_size_pct,
+            static_trade_quantity: config.trade_quantity,
+        }
+    }
+}
 
 pub struct AnalystDependencies {
     pub execution_service: Arc<dyn ExecutionService>,
@@ -180,8 +193,9 @@ pub struct Analyst {
     fee_model: Box<dyn FeeModel>,
     candle_repository: Option<Arc<dyn CandleRepository>>,
     strategy_repository: Option<Arc<dyn StrategyRepository>>, // Added
-    win_rate_provider: Arc<dyn WinRateProvider>, // Added
-    cost_evaluator: CostEvaluator, // Cost-aware trading filter
+    win_rate_provider: Arc<dyn WinRateProvider>,              // Added
+
+    trade_filter: crate::application::trading::trade_filter::TradeFilter,
 }
 
 impl Analyst {
@@ -199,9 +213,11 @@ impl Analyst {
             slippage_pct: Decimal::from_f64_retain(config.slippage_pct).unwrap(),
             commission_fixed: Decimal::from_f64_retain(config.commission_per_share).unwrap(),
         };
-        
+
         // Default to Static 50% if not provided (Conservative baseline)
-        let win_rate_provider = dependencies.win_rate_provider.unwrap_or_else(|| Arc::new(StaticWinRateProvider::new(0.50)));
+        let win_rate_provider = dependencies
+            .win_rate_provider
+            .unwrap_or_else(|| Arc::new(StaticWinRateProvider::new(0.50)));
 
         // Initialize Cost Evaluator for profit-aware trading
         let cost_evaluator = CostEvaluator::new(
@@ -209,6 +225,9 @@ impl Analyst {
             config.slippage_pct,
             config.spread_bps,
         );
+
+        let trade_filter =
+            crate::application::trading::trade_filter::TradeFilter::new(cost_evaluator.clone());
 
         Self {
             market_rx,
@@ -223,10 +242,9 @@ impl Analyst {
             candle_repository: dependencies.candle_repository,
             strategy_repository: dependencies.strategy_repository,
             win_rate_provider,
-            cost_evaluator,
+            trade_filter,
         }
     }
-
 
     pub async fn run(&mut self) {
         info!(
@@ -263,49 +281,54 @@ impl Analyst {
         if !self.symbol_states.contains_key(&symbol) {
             let (strategy, config) = self.resolve_strategy(&symbol).await;
             let mut context = SymbolContext::new(config, strategy, self.win_rate_provider.clone());
-            
+
             // WARMUP: Fetch historical data to initialize indicators
             self.warmup_context(&mut context, &symbol).await;
 
             self.symbol_states.insert(symbol.clone(), context);
         }
 
-
         let context = self.symbol_states.get_mut(&symbol).unwrap();
-        
+
         // 1.5 Measure Regime (Moved up for Strategy Selection)
 
         // We need regime to select strategy BEFORE generating signal
         // This repeats code from step 7 (expectancy). We should consolidate.
 
-        
         let mut regime = MarketRegime::unknown();
         if let Some(repo) = &self.candle_repository {
-             let end_ts = candle.timestamp;
-             // Use smaller window for regime detection? Or same?
-             // Detector uses what it's given. 
-             // Let's use 60 days for robust regime, or stick to what we had.
-             let start_ts = end_ts - (30 * 24 * 60 * 60); 
-             if let Ok(candles) = repo.get_range(&symbol, start_ts, end_ts).await {
-                  regime = context.regime_detector.detect(&candles).unwrap_or(MarketRegime::unknown());
-             }
+            let end_ts = candle.timestamp;
+            // Use smaller window for regime detection? Or same?
+            // Detector uses what it's given.
+            // Let's use 60 days for robust regime, or stick to what we had.
+            let start_ts = end_ts - (30 * 24 * 60 * 60);
+            if let Ok(candles) = repo.get_range(&symbol, start_ts, end_ts).await {
+                regime = context
+                    .regime_detector
+                    .detect(&candles)
+                    .unwrap_or(MarketRegime::unknown());
+            }
         }
 
         // 1.6 Adaptive Strategy Switching (Phase 3)
-        if context.config.strategy_mode == crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive {
+        if context.config.strategy_mode
+            == crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive
+        {
             let (new_mode, new_strategy) = StrategySelector::select_strategy(
                 &regime,
                 &context.config,
-                context.active_strategy_mode
+                context.active_strategy_mode,
             );
 
             if new_mode != context.active_strategy_mode {
-                info!("Analyst: Adaptive Switch for {} -> {:?} (Regime: {:?})", symbol, new_mode, regime.regime_type);
+                info!(
+                    "Analyst: Adaptive Switch for {} -> {:?} (Regime: {:?})",
+                    symbol, new_mode, regime.regime_type
+                );
                 context.strategy = new_strategy;
                 context.active_strategy_mode = new_mode;
             }
         }
-
 
         // 2. Update Indicators via Service
         context.update(price_f64);
@@ -387,7 +410,10 @@ impl Analyst {
                                         return;
                                     }
                                     Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                        error!("Analyst [{}]: Proposal channel CLOSED. Shutting down.", symbol);
+                                        error!(
+                                            "Analyst [{}]: Proposal channel CLOSED. Shutting down.",
+                                            symbol
+                                        );
                                         return;
                                     }
                                 }
@@ -444,106 +470,56 @@ impl Analyst {
 
         // 6. Post-Signal Validation (Long-Only, Pending, Cooldown)
         if let Some(side) = signal {
-            if side == OrderSide::Sell && !has_position {
-                info!(
-                    "Analyst: BLOCKING Sell for {} - No position (Long-Only)",
-                    symbol
-                );
+            // DELEGATED TO TRADE FILTER
+            if !self.trade_filter.validate_signal(
+                side,
+                &symbol,
+                &context.position_manager,
+                &context.config,
+                timestamp,
+                has_position,
+            ) {
                 return;
             }
 
-            if let Some(pending) = context.position_manager.pending_order {
-                if pending == side {
-                    info!(
-                        "Analyst: Signal {:?} for {} BLOCKED - Pending Order exists",
-                        side, symbol
-                    );
-                    return;
-                }
-            }
-
-            let cooldown_ms = context.config.order_cooldown_seconds * 1000;
-            if timestamp - context.position_manager.last_signal_time < cooldown_ms as i64 {
-                return;
-            }
-
-            
             // 7. Execution Logic (Expectancy & Quantity)
-
-
             context.position_manager.last_signal_time = timestamp;
 
             // Calculate Market Regime and Expectancy (only if we have historical data)
+            // ... (Regime logic stays here as it requires repo access) ...
+
+            // Note: We already calculated regime in step 1.5, we could reuse it if we passed it down.
+            // But context.regime_detector doesn't store state.
+            // Re-calculating for now to keep refactor safe.
+            let mut expectancy_value = 0.0;
+            let mut risk_ratio = 0.0;
+            let mut should_validate_expectancy = false;
+
             if let Some(repo) = &self.candle_repository {
                 let end_ts = candle.timestamp;
-                let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
-                
+                let start_ts = end_ts - (30 * 24 * 60 * 60);
                 let candles = repo
                     .get_range(&symbol, start_ts, end_ts)
                     .await
                     .unwrap_or_default();
-
                 let regime = context
                     .regime_detector
                     .detect(&candles)
                     .unwrap_or(MarketRegime::unknown());
 
-                // Evaluate Expectancy
                 let expectancy = context
                     .expectancy_evaluator
                     .evaluate(&symbol, price, &regime)
                     .await;
-
-                if expectancy.reward_risk_ratio < 0.5 {
-                    info!(
-                        "Analyst: Signal IGNORED for {} - Low Reward/Risk Ratio: {:.2}",
-                        symbol, expectancy.reward_risk_ratio
-                    );
-                    return;
-                }
-            }
-            // If no repository (e.g., in tests), skip expectancy validation
-
-
-            let mut should_validate_expectancy = false;
-            let mut expectancy_value = 0.0;
-            let mut risk_ratio = 0.0;
-
-            // Calculate Market Regime and Expectancy (only if we have historical data)
-            if let Some(_repo) = &self.candle_repository {
-                let end_ts = candle.timestamp;
-                let _start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
-
-                // We already fetched candles/regime in step 1.5. reuse?
-                // But context.regime_detector isn't storing state.
-                // Optim: we could store `regime` in a local var at top of function.
-                
-                // For now, let's just reuse the local variable `regime` we computed at 1.5
-                // Wait, in Step 1.5 we did it inside an if block, `regime` is local there or we need it outer.
-                // I declared `let mut regime` outside.
-
-
-                // Evaluate Expectancy
-                let expectancy = context
-                    .expectancy_evaluator
-                    .evaluate(&symbol, price, &regime)
-                    .await;
-                
                 expectancy_value = expectancy.expected_value;
                 risk_ratio = expectancy.reward_risk_ratio;
                 should_validate_expectancy = true;
 
-
-                if expectancy.reward_risk_ratio < 0.5 {
-                    info!(
-                        "Analyst: Signal IGNORED for {} - Low Reward/Risk Ratio: {:.2}",
-                        symbol, expectancy.reward_risk_ratio
-                    );
+                // DELEGATED to TradeFilter
+                if !self.trade_filter.validate_expectancy(&symbol, risk_ratio) {
                     return;
                 }
             }
-
-
 
             let quantity = Self::calculate_trade_quantity(
                 &context.config,
@@ -554,35 +530,16 @@ impl Analyst {
             .await;
 
             if quantity > Decimal::ZERO {
-                // Only validate profitability if we have expectancy data
-                if should_validate_expectancy {
-                    let estimated_cost = self.fee_model.estimate_total_cost(price, quantity);
-                    let expected_profit = Decimal::from_f64_retain(expectancy_value)
-                        .unwrap_or(Decimal::ZERO)
-                        * quantity;
-
-                    if expected_profit < estimated_cost {
-                        info!(
-                            "Analyst: Signal IGNORED for {} - Negative Expectancy after costs",
-                            symbol
-                        );
-                        return;
-                    }
-                }
-
                 // Phase 2: Check minimum hold time for sell signals
-                if side == OrderSide::Sell {
-                    if let Some(entry_time) = context.last_entry_time {
-                        let hold_duration_ms = timestamp - entry_time;
-                        if hold_duration_ms < context.min_hold_time_ms {
-                            let remaining_minutes = (context.min_hold_time_ms - hold_duration_ms) / 60000;
-                            info!(
-                                "Analyst: Sell signal BLOCKED for {} - Min hold time not met ({} min remaining)",
-                                symbol, remaining_minutes
-                            );
-                            return;
-                        }
-                    }
+                // DELEGATED TO TRADE FILTER
+                if !self.trade_filter.validate_min_hold_time(
+                    side,
+                    &symbol,
+                    timestamp,
+                    context.last_entry_time,
+                    context.min_hold_time_ms,
+                ) {
+                    return;
                 }
 
                 let order_type = match side {
@@ -596,47 +553,41 @@ impl Analyst {
                     price,
                     quantity,
                     order_type,
-                    reason: format!("Strategy: {} (Regime: {})", context.active_strategy_mode, regime.regime_type),
-
+                    reason: format!(
+                        "Strategy: {} (Regime: {})",
+                        context.active_strategy_mode, regime.regime_type
+                    ),
                     timestamp,
                 };
 
                 // ============ COST-AWARE TRADING FILTER ============
-                // Calculate expected profit (conservative: 1.5x ATR)
+                // Only validate profitability if we have expectancy data (or should we always?)
+                // Original logic only checked if should_validate_expectancy was true AND checked specific logic
+                // Now we Delegate to TradeFilter.
+
+                // Calculate expected profit (using Helper)
                 let atr = context.last_features.atr.unwrap_or(0.0);
-                let expected_profit = self.cost_evaluator.calculate_expected_profit(
+                let expected_profit = if should_validate_expectancy {
+                    Decimal::from_f64_retain(expectancy_value).unwrap_or(Decimal::ZERO) * quantity
+                } else {
+                    // Fallback if no expectancy? OLD used to skip.
+                    // The cost filter uses ATR based profit.
+                    self.trade_filter
+                        .calculate_expected_profit(&proposal, atr, 1.5)
+                };
+
+                // Estimate cost (simple)
+                let estimated_cost = self.fee_model.estimate_total_cost(price, quantity);
+
+                if !self.trade_filter.validate_profitability(
                     &proposal,
-                    atr,
-                    1.5, // Conservative profit target multiplier
-                );
-
-                // Evaluate transaction costs
-                let costs = self.cost_evaluator.evaluate(&proposal);
-
-                // Check if trade is profitable after costs
-                if !self.cost_evaluator.is_profitable(&proposal, expected_profit, context.config.min_profit_ratio) {
-                    let ratio = self.cost_evaluator.get_profit_cost_ratio(&proposal, expected_profit);
-                    warn!(
-                        "Analyst [{}]: Trade REJECTED by cost filter - Profit/Cost ratio {:.2} < {:.2} threshold (Expected Profit: ${:.2}, Total Costs: ${:.2})",
-                        symbol,
-                        ratio,
-                        context.config.min_profit_ratio,
-                        expected_profit,
-                        costs.total_cost
-                    );
+                    expected_profit,
+                    estimated_cost,
+                    context.config.min_profit_ratio,
+                    &symbol,
+                ) {
                     return;
                 }
-
-                // Log successful cost approval
-                let ratio = self.cost_evaluator.get_profit_cost_ratio(&proposal, expected_profit);
-                info!(
-                    "Analyst [{}]: Cost Filter PASSED - Profit/Cost ratio {:.2}x (Expected: ${:.2}, Costs: ${:.2}, Net: ${:.2})",
-                    symbol,
-                    ratio,
-                    expected_profit,
-                    costs.total_cost,
-                    expected_profit - costs.total_cost
-                );
                 // ====================================================
 
                 info!(
@@ -647,7 +598,7 @@ impl Analyst {
                 match self.proposal_tx.try_send(proposal) {
                     Ok(_) => {
                         context.position_manager.pending_order = Some(side);
-                        
+
                         // Phase 2: Track entry time on buy signals
                         if side == OrderSide::Buy {
                             context.last_entry_time = Some(timestamp);
@@ -671,7 +622,10 @@ impl Analyst {
                         );
                     }
                     Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                        error!("Analyst [{}]: Proposal channel CLOSED. Shutting down.", symbol);
+                        error!(
+                            "Analyst [{}]: Proposal channel CLOSED. Shutting down.",
+                            symbol
+                        );
                     }
                 }
             }
@@ -684,96 +638,33 @@ impl Analyst {
         symbol: &str,
         price: Decimal,
     ) -> Decimal {
-        let mut quantity = config.trade_quantity;
+        // Get Total Equity from Portfolio
+        // If fail, we can only default to static if risk-sizing is NOT required
+        // But SizingEngine needs equity.
 
-        // Determine if we should use risk-based sizing
-        // We use risk-based sizing if risk_per_trade_percent is set
-        let use_risk_size = config.risk_per_trade_percent > 0.0;
+        let mut total_equity = Decimal::ZERO;
 
-        if use_risk_size {
+        if config.risk_per_trade_percent > 0.0 {
             let portfolio_result = execution_service.get_portfolio().await;
             if let Ok(portfolio) = portfolio_result {
-                let mut total_equity = portfolio.cash;
+                total_equity = portfolio.cash;
                 for pos in portfolio.positions.values() {
                     total_equity += pos.quantity * pos.average_price;
                 }
-
-                info!(
-                    "Analyst: Portfolio State for {}: Cash={}, TotalEquity={}, Price={}",
-                    symbol, portfolio.cash, total_equity, price
-                );
-
-                if total_equity > Decimal::ZERO && price > Decimal::ZERO {
-                    // 1. Calculate the target amount to allocate based on risk_per_trade_percent
-                    let mut target_amt = total_equity
-                        * Decimal::from_f64_retain(config.risk_per_trade_percent)
-                            .unwrap_or(Decimal::ZERO);
-
-                    info!(
-                        "Analyst: Initial target amount for {} ({}% of equity): ${}",
-                        symbol,
-                        config.risk_per_trade_percent * 100.0,
-                        target_amt
-                    );
-
-                    // 2. Apply Caps
-                    // Cap 1: Max Positions bucket (if max_positions > 0)
-                    if config.max_positions > 0 {
-                        let max_bucket = total_equity / Decimal::from(config.max_positions);
-                        let before = target_amt;
-                        target_amt = target_amt.min(max_bucket);
-                        if target_amt < before {
-                            info!(
-                                "Analyst: Capped {} by max_positions bucket: ${} -> ${}",
-                                symbol, before, target_amt
-                            );
-                        }
-                    }
-
-                    // Cap 2: Max Position Size % (acts as a hard cap, applied independently)
-                    if config.max_position_size_pct > 0.0 {
-                        let max_pos_val = total_equity
-                            * Decimal::from_f64_retain(config.max_position_size_pct)
-                                .unwrap_or(Decimal::ZERO);
-                        let before = target_amt;
-                        target_amt = target_amt.min(max_pos_val);
-                        if target_amt < before {
-                            info!(
-                                "Analyst: Capped {} by max_position_size_pct ({}%): ${} -> ${}",
-                                symbol,
-                                config.max_position_size_pct * 100.0,
-                                before,
-                                target_amt
-                            );
-                        }
-                    }
-
-                    quantity = (target_amt / price).round_dp(4);
-
-                    info!(
-                        "Analyst: Final quantity for {}: {} shares (${} / ${} per share)",
-                        symbol, quantity, target_amt, price
-                    );
-                } else {
-                    info!(
-                        "Analyst: Cannot calculate quantity for {} - TotalEquity={}, Price={}",
-                        symbol, total_equity, price
-                    );
-                }
             } else {
-                info!(
-                    "Analyst: Failed to get portfolio for {} quantity calculation",
-                    symbol
-                );
+                info!("Analyst: Failed to get portfolio for sizing. Defaulting to 0 equity (will result in 0 quantity if risk-sizing enabled).");
             }
-        } else {
-            info!(
-                "Analyst: Using static quantity for {}: {}",
-                symbol, quantity
-            );
         }
 
-        quantity
+        let sizing_config: crate::application::risk_management::sizing_engine::SizingConfig =
+            config.into();
+
+        crate::application::risk_management::sizing_engine::SizingEngine::calculate_quantity(
+            &sizing_config,
+            total_equity,
+            price,
+            symbol,
+        )
     }
     async fn resolve_strategy(&self, symbol: &str) -> (Arc<dyn TradingStrategy>, AnalystConfig) {
         if let Some(repo) = &self.strategy_repository {
@@ -816,30 +707,42 @@ impl Analyst {
 
         // Add 10% buffer
         let required_bars = (max_period as f64 * 1.1) as usize;
-        
-        info!("Analyst: Warming up {} with {} bars (Max Period: {})", symbol, required_bars, max_period);
+
+        info!(
+            "Analyst: Warming up {} with {} bars (Max Period: {})",
+            symbol, required_bars, max_period
+        );
 
         let end = chrono::Utc::now();
         // Assuming 1-minute bars.
-        // Market is open 6.5h a day ~ 390mins. 
+        // Market is open 6.5h a day ~ 390mins.
         // 2000 bars is ~5.1 trading days.
         // We fetch enough calendar days back to cover weekends/holidays (e.g., 2000 bars might need 10 days if over weekend).
         // Let's use a safe multiplier.
-        let days_back = (required_bars / (300)) + 3; 
+        let days_back = (required_bars / (300)) + 3;
         let start = end - chrono::Duration::days(days_back as i64);
 
-        match self.market_service.get_historical_bars(symbol, start, end, "1Min").await {
+        match self
+            .market_service
+            .get_historical_bars(symbol, start, end, "1Min")
+            .await
+        {
             Ok(bars) => {
                 let bars_count = bars.len();
-                info!("Analyst: Fetched {} historical bars for {}", bars_count, symbol);
-                
+                info!(
+                    "Analyst: Fetched {} historical bars for {}",
+                    bars_count, symbol
+                );
+
                 for candle in bars {
                     // Update context (features + indicators)
                     context.update(candle.close.to_f64().unwrap_or(0.0));
                 }
-                
-                info!("Analyst: Warmup complete for {}. Last Price: {:?}", 
-                      symbol, context.last_features.sma_50);
+
+                info!(
+                    "Analyst: Warmup complete for {}. Last Price: {:?}",
+                    symbol, context.last_features.sma_50
+                );
             }
             Err(e) => {
                 warn!("Analyst: Failed to warmup {}: {}", symbol, e);
@@ -943,7 +846,6 @@ mod tests {
                 win_rate_provider: None,
             },
         );
-
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1049,7 +951,6 @@ mod tests {
                 win_rate_provider: None,
             },
         );
-
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1172,7 +1073,6 @@ mod tests {
             },
         );
 
-
         tokio::spawn(async move {
             analyst.run().await;
         });
@@ -1285,7 +1185,6 @@ mod tests {
                 win_rate_provider: None,
             },
         );
-
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1405,7 +1304,6 @@ mod tests {
                 win_rate_provider: None,
             },
         );
-
 
         tokio::spawn(async move {
             analyst.run().await;
@@ -1541,7 +1439,6 @@ mod tests {
             },
         );
 
-
         tokio::spawn(async move {
             analyst.run().await;
         });
@@ -1674,7 +1571,6 @@ mod tests {
                 win_rate_provider: None,
             },
         );
-
 
         tokio::spawn(async move {
             analyst.run().await;

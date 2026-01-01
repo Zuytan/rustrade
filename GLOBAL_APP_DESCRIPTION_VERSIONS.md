@@ -1,5 +1,16 @@
 # Rustrade - Historique des Versions
 
+## Version 0.28.1 (Janvier 2026) - Strategic Refactoring & Safety Verification
+- **Decomposition Analyst Agent (Phase 3)**:
+  - **SizingEngine**: Extraction de la logique de calcul de taille de position dans un composant isolé et testable.
+  - **TradeFilter**: Centralisation de la validation des trades (R/R, Coûts, Cooldowns) hors de la boucle principale.
+  - **Analyst Orchestrator**: Simplification massive de l'agent principal qui orchestre désormais des moteurs spécialisés.
+- **Risk Safety Verification**:
+  - **Proof of Crash Safety**: Validation via `circuit_breaker_integration_test` que le bot liquide activement les positions en cas de krach (-15%).
+  - **Market Order Liquidation**: Passage aux ordres Market pour les liquidations d'urgence (garantie de sortie).
+- **Codebase Audit (Round 2)**:
+  - Identification de race conditions dans le simulateur et de heuristiques codées en dur pour la Phase 4.
+
 ## Version 0.28.0 (Janvier 2026) - Code Cleanup & Refactoring
 - **Refactoring Majeur**: Nettoyage complet de la dette technique.
   - **Constructeurs Modernes**: Refactoring des "God Constructors" (9+ args) via structures de configuration (`AnalystConfig`, `AnalystDependencies`, `AdvancedTripleFilterConfig`).

@@ -1,12 +1,12 @@
 // STUBBED OUT DUE TO COMPILATION ERRORS IN UNRELATED TASK
 // TODO: Fix OANDA implementation
 
+use crate::domain::ports::OrderUpdate;
 use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
-use crate::domain::ports::OrderUpdate;
 
 use reqwest::Client;
 use tokio::sync::mpsc::{self, Receiver};
@@ -106,7 +106,9 @@ impl ExecutionService for OandaExecutionService {
         Ok(Vec::new())
     }
 
-    async fn subscribe_order_updates(&self) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+    async fn subscribe_order_updates(
+        &self,
+    ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
         anyhow::bail!("Oanda order updates not implemented")
     }
 }

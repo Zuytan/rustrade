@@ -16,5 +16,7 @@ pub mod risk_management;
 // Trading strategies
 pub mod strategies;
 
+pub mod trading;
+
 // System orchestrator
 pub mod system;

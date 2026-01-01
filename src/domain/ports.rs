@@ -67,5 +67,4 @@ pub trait ExpectancyEvaluator: Send + Sync {
         price: rust_decimal::Decimal,
         regime: &crate::domain::market::market_regime::MarketRegime,
     ) -> Expectancy;
-
 }

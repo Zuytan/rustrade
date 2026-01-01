@@ -1,13 +1,13 @@
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate, SectorProvider};
 use crate::domain::trading::types::{Order, OrderSide, OrderStatus, OrderType, TradeProposal};
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use chrono::Utc;
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info, warn};
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
@@ -103,8 +103,8 @@ pub struct RiskManager {
     // Risk Tracking State
     equity_high_water_mark: Decimal,
     session_start_equity: Decimal,
-    daily_start_equity: Decimal,  // New: for daily loss tracking
-    daily_pnl: Decimal,            // New: current day's P/L
+    daily_start_equity: Decimal, // New: for daily loss tracking
+    daily_pnl: Decimal,          // New: current day's P/L
     last_reset_date: chrono::NaiveDate,
     consecutive_losses: usize,
     current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
@@ -114,7 +114,8 @@ pub struct RiskManager {
 
     halted: bool,
     pending_orders: HashMap<String, PendingOrder>,
-    pending_reservations: HashMap<String, crate::application::monitoring::portfolio_state_manager::ReservationToken>, // Exposure reservations
+    pending_reservations:
+        HashMap<String, crate::application::monitoring::portfolio_state_manager::ReservationToken>, // Exposure reservations
 }
 
 #[derive(Debug, Clone)]
@@ -199,7 +200,7 @@ impl RiskManager {
 
         let initial_equity = snapshot.portfolio.total_equity(&self.current_prices);
         self.session_start_equity = initial_equity;
-        self.daily_start_equity = initial_equity;  // Initialize daily tracking
+        self.daily_start_equity = initial_equity; // Initialize daily tracking
         self.equity_high_water_mark = initial_equity;
         info!(
             "RiskManager: Session initialized with equity: {} (portfolio v{})",
@@ -208,37 +209,18 @@ impl RiskManager {
         Ok(())
     }
 
-    /// Check if daily loss limit has been breached
-    fn check_daily_loss_limit(&mut self, current_equity: Decimal) -> bool {
-        if self.daily_start_equity <= Decimal::ZERO {
-            return false; // Can't calculate, skip check
-        }
-
-        self.daily_pnl = current_equity - self.daily_start_equity;
-        let loss_pct = (self.daily_pnl / self.daily_start_equity)
-            .to_f64()
-            .unwrap_or(0.0);
-
-        if loss_pct < -self.risk_config.max_daily_loss_pct {
-            warn!(
-                "RiskManager: Daily loss limit breached: {:.2}% (limit: {:.2}%)",
-                loss_pct * 100.0,
-                self.risk_config.max_daily_loss_pct * 100.0
-            );
+    /// Validate position size doesn't exceed limit
+    fn validate_position_size(
+        &self,
+        _symbol: &str,
+        new_usd_exposure: Decimal,
+        current_equity: Decimal,
+    ) -> bool {
+        if current_equity <= Decimal::ZERO {
             return true;
         }
-        false
-    }
 
-    /// Validate position size doesn't exceed limit
-    fn validate_position_size(&self, _symbol: &str, new_usd_exposure: Decimal, current_equity: Decimal) -> bool {
-
-
-        if current_equity <= Decimal::ZERO { return true; }
-
-        let position_pct = (new_usd_exposure / current_equity)
-            .to_f64()
-            .unwrap_or(0.0);
+        let position_pct = (new_usd_exposure / current_equity).to_f64().unwrap_or(0.0);
 
         if position_pct > self.risk_config.max_position_size_pct {
             warn!(
@@ -251,8 +233,6 @@ impl RiskManager {
 
         true
     }
-    
-
 
     /// Check if circuit breaker should trigger
     fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<String> {
@@ -299,17 +279,15 @@ impl RiskManager {
         None
     }
 
-
-
     /// Calculate projected quantity including pending orders
     fn get_projected_quantity(&self, symbol: &str, current_qty: Decimal) -> Decimal {
-        let pending: Decimal = self.pending_orders.values()
+        let pending: Decimal = self
+            .pending_orders
+            .values()
             .filter(|p| p.symbol == symbol)
-            .map(|p| {
-                match p.side {
-                    OrderSide::Buy => p.remaining_qty(),
-                    OrderSide::Sell => -p.remaining_qty(),
-                }
+            .map(|p| match p.side {
+                OrderSide::Buy => p.remaining_qty(),
+                OrderSide::Sell => -p.remaining_qty(),
             })
             .sum();
         current_qty + pending
@@ -318,11 +296,11 @@ impl RiskManager {
     /// Handle real-time order updates to maintain pending state
     fn handle_order_update(&mut self, update: OrderUpdate) {
         // info!("RiskManager: processing update for order {}", update.order_id);
-    
+
         // If we don't have the order in pending, we might have started tracking after it was sent?
         // Or it's from another session. We can only track what we know.
         // Try both order_id and client_order_id potentially if we tracked by COID?
-        // But we tracked by Order.id (which is usually UUID we generated). 
+        // But we tracked by Order.id (which is usually UUID we generated).
         // Alpaca returns their ID in order_id?
         // Wait. `Order` struct has `id`. We set it to UUID.
         // `AlpacaExecutionService` maps `order.id` (our UUID) to `client_order_id` in Alpaca.
@@ -330,7 +308,7 @@ impl RiskManager {
         // So we should match on `client_order_id` (our UUID) OR `order_id` (Alpaca ID)?
         // RiskManager keys `pending_orders` by the UUID it generated.
         // `OrderUpdate.client_order_id` SHOULD match that UUID.
-        
+
         if let Some(pending) = self.pending_orders.get_mut(&update.client_order_id) {
             match update.status {
                 OrderStatus::Filled | OrderStatus::PartiallyFilled => {
@@ -349,24 +327,30 @@ impl RiskManager {
                         );
                     }
                 }
-                OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired | OrderStatus::Suspended  => {
-                     // Terminal states that don't result in positions: remove immediately
+                OrderStatus::Cancelled
+                | OrderStatus::Rejected
+                | OrderStatus::Expired
+                | OrderStatus::Suspended => {
+                    // Terminal states that don't result in positions: remove immediately
                 }
                 _ => {}
             }
-            
+
             // Cleanup only non-fill terminal states (Cancelled/Rejected/Expired)
             // Filled orders stay in pending until portfolio confirms
-            if matches!(update.status, OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired) {
-                 self.pending_orders.remove(&update.client_order_id);
-                 
-                 // Release any exposure reservation
-                 if let Some(token) = self.pending_reservations.remove(&update.client_order_id) {
-                     let state_manager = self.portfolio_state_manager.clone();
-                     tokio::spawn(async move {
-                         state_manager.release_reservation(token).await;
-                     });
-                 }
+            if matches!(
+                update.status,
+                OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired
+            ) {
+                self.pending_orders.remove(&update.client_order_id);
+
+                // Release any exposure reservation
+                if let Some(token) = self.pending_reservations.remove(&update.client_order_id) {
+                    let state_manager = self.portfolio_state_manager.clone();
+                    tokio::spawn(async move {
+                        state_manager.release_reservation(token).await;
+                    });
+                }
             }
         }
     }
@@ -528,23 +512,22 @@ impl RiskManager {
                     continue;
                 }
 
-                // Aggressive Limit: 2% below market for immediate fill
-                // This protects against flash crash unbounded slippage
-                let limit_price = current_price * Decimal::from_f64(0.98).unwrap();
+                // CRITICAL SAFETY: Use Market orders for emergency liquidation to guarantee exit.
+                // "Get me out at any price" is safer than "Get me out if price > X" in a true crash.
 
                 let order = Order {
                     id: Uuid::new_v4().to_string(),
                     symbol: symbol.clone(),
                     side: OrderSide::Sell,
-                    price: limit_price,
+                    price: Decimal::ZERO, // Market order ignores price
                     quantity: position.quantity,
-                    order_type: OrderType::Limit,  // Always Limit for safety
+                    order_type: OrderType::Market,
                     timestamp: chrono::Utc::now().timestamp_millis(),
                 };
 
                 warn!(
-                    "RiskManager: Placing EMERGENCY LIMIT SELL for {} (Qty: {}) @ ${} (2% below market)",
-                    symbol, position.quantity, limit_price
+                    "RiskManager: Placing EMERGENCY MARKET SELL for {} (Qty: {})",
+                    symbol, position.quantity
                 );
 
                 if let Err(e) = self.order_tx.send(order).await {
@@ -555,7 +538,7 @@ impl RiskManager {
                 }
             }
         }
-        
+
         info!(
             "RiskManager: Emergency liquidation orders placed. Trading HALTED. Manual review required."
         );
@@ -570,7 +553,7 @@ impl RiskManager {
                 current_equity, self.session_start_equity
             );
             self.session_start_equity = current_equity;
-            self.daily_start_equity = current_equity;  // Reset daily tracking
+            self.daily_start_equity = current_equity; // Reset daily tracking
             self.daily_pnl = Decimal::ZERO;
             // self.daily_loss is calculated from session_start_equity, so it effectively resets.
             // Consecutive losses might be preserved or reset?
@@ -599,9 +582,8 @@ impl RiskManager {
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(2000);
-        let mut refresh_interval = tokio::time::interval(tokio::time::Duration::from_millis(
-            refresh_interval_ms,
-        ));
+        let mut refresh_interval =
+            tokio::time::interval(tokio::time::Duration::from_millis(refresh_interval_ms));
 
         // Subscribe to Real-Time Order Updates
         let mut order_update_rx = match self.execution_service.subscribe_order_updates().await {
@@ -645,17 +627,10 @@ impl RiskManager {
                                 // Check for Daily Reset (Crypto)
                                 self.check_daily_reset(current_equity);
 
-                                // Check daily loss limit
-                                if self.check_daily_loss_limit(current_equity) {
-                                    let reason = format!(
-                                        "Daily loss limit breached: {:.2}% (P/L: ${})",
-                                        (self.daily_pnl / self.daily_start_equity).to_f64().unwrap_or(0.0) * 100.0,
-                                        self.daily_pnl
-                                    );
-                                    error!("RiskManager: DAILY LOSS LIMIT TRIGGERED - {}", reason);
-                                    self.halted = true;
-                                    self.liquidate_portfolio(&reason).await;
-                                }
+                                // Check daily loss limit (Duplicate check removed - covered by check_circuit_breaker)
+                                // if self.check_daily_loss_limit(current_equity) {
+                                //     ...
+                                // }
 
                                 if let Some(r) = reason {
                                     error!("RiskManager: CIRCUIT BREAKER TRIGGERED (Tick) - {}", r);
@@ -677,7 +652,7 @@ impl RiskManager {
 
                     // Get portfolio snapshot (may be from cache)
                     let mut snapshot = self.portfolio_state_manager.get_snapshot().await;
-                    
+
                     // Check staleness and refresh if needed
                     if self.portfolio_state_manager.is_stale(&snapshot) {
                         snapshot = match self.portfolio_state_manager.refresh().await {
@@ -688,7 +663,7 @@ impl RiskManager {
                             }
                         };
                     }
-                    
+
                     let portfolio = &snapshot.portfolio;
 
                     // === RECONCILIATION: Cleanup tentative filled orders ===
@@ -702,14 +677,14 @@ impl RiskManager {
                                 let normalized_sym = sym.replace("/", "").replace(" ", "");
                                 normalized_sym == normalized_symbol && pos.quantity > Decimal::ZERO
                             });
-                            
+
                             if in_portfolio {
                                 // Portfolio synced! Remove pending and release reservation
                                 info!(
                                     "RiskManager: Reconciled order {} - {} now confirmed in portfolio",
                                     &order_id[..8], pending.symbol
                                 );
-                                
+
                                 if let Some(token) = self.pending_reservations.remove(order_id) {
                                     let mgr = self.portfolio_state_manager.clone();
                                     tokio::spawn(async move {
@@ -770,20 +745,20 @@ impl RiskManager {
                     // Validate position size (Projected) for buy orders
                     if matches!(proposal.side, OrderSide::Buy) {
                         // Estimate new total value for symbol
-                        let _projected_qty = self.get_projected_quantity(&proposal.symbol, Decimal::ZERO); 
- 
+                        let _projected_qty = self.get_projected_quantity(&proposal.symbol, Decimal::ZERO);
+
                         // Note: get_projected_quantity gets CURRENT + PENDING.
                         // But we need (CURRENT + PENDING + PROPOSAL) * Price.
                         // We need to fetch 'current' from portfolio first?
                         // We have portfolio below... wait, we fetch portfolio inside loop.
                         // Logic refactor:
-                        
+
                         let current_pos_qty = portfolio.positions.get(&proposal.symbol)
                             .map(|p| p.quantity).unwrap_or(Decimal::ZERO);
-                        
+
                         let total_qty = self.get_projected_quantity(&proposal.symbol, current_pos_qty) + proposal.quantity;
                         let total_exposure = total_qty * proposal.price; // Approximation using current proposal price
-                        
+
                         if !self.validate_position_size(&proposal.symbol, total_exposure, current_equity) {
                              warn!(
                                 "RiskManager: Rejecting {:?} order for {} - Position size limit (Projected)",
@@ -924,11 +899,11 @@ impl RiskManager {
                         };
 
                         info!("RiskManager: Approved. Sending Order {}", order.id);
-                        
+
                         // For BUY orders, reserve exposure with optimistic locking
                         if matches!(order.side, OrderSide::Buy) {
                             let cost = order.price * order.quantity;
-                            
+
                             match self.portfolio_state_manager
                                 .reserve_exposure(&order.symbol, cost, snapshot.version)
                                 .await
@@ -946,7 +921,7 @@ impl RiskManager {
                                 }
                             }
                         }
-                        
+
                         // Track as Pending BEFORE sending to avoid race condition
                         self.pending_orders.insert(order.id.clone(), PendingOrder {
                             symbol: order.symbol.clone(),
@@ -955,7 +930,7 @@ impl RiskManager {
                             filled_qty: Decimal::ZERO,
                             filled_but_not_synced: false,
                         });
-                        
+
                         if let Err(e) = self.order_tx.send(order.clone()).await {
                             error!("RiskManager: Failed to send order: {}", e);
                             // Rollback pending and reservation
@@ -1071,7 +1046,12 @@ mod tests {
             ..RiskConfig::default()
         };
 
-        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1145,7 +1125,12 @@ mod tests {
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
-        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1185,7 +1170,12 @@ mod tests {
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
-        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1233,7 +1223,12 @@ mod tests {
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
 
-        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1296,7 +1291,12 @@ mod tests {
 
         // New RiskManager with NON_PDT_MODE = true
         let market_service = Arc::new(MockMarketDataService::new());
-        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1379,7 +1379,12 @@ mod tests {
             ..RiskConfig::default()
         };
 
-        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1447,7 +1452,12 @@ mod tests {
             ..RiskConfig::default()
         };
 
-        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1525,7 +1535,12 @@ mod tests {
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         let market_service = Arc::new(MockMarketDataService::new());
-        let state_manager = Arc::new(crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(exec_service.clone(), 5000));
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
 
         let mut rm = RiskManager::new(
             proposal_rx,

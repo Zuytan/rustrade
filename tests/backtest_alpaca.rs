@@ -45,7 +45,7 @@ async fn test_backtest_strategy_on_historical_data() {
 
     // 3. Initialize Services
     let market_service = Arc::new(AlpacaMarketDataService::new(
-        api_key, api_secret, ws_url, data_url, 10000.0
+        api_key, api_secret, ws_url, data_url, 10000.0,
     ));
 
     let mut portfolio = Portfolio::new();
@@ -98,7 +98,6 @@ async fn test_backtest_strategy_on_historical_data() {
         trend_tolerance_pct: 0.0,
         macd_min_threshold: 0.0,
     };
-
 
     let simulator = Simulator::new(market_service, execution_service, config);
 

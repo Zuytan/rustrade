@@ -1,70 +1,144 @@
-use rustrade::infrastructure::alpaca::AlpacaExecutionService;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
+use rustrade::application::risk_management::risk_manager::{RiskConfig, RiskManager};
+use rustrade::domain::trading::portfolio::{Portfolio, Position};
+use rustrade::domain::trading::types::{OrderSide, TradeProposal};
+use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
+use tracing::{info, Level};
+use tracing_subscriber::FmtSubscriber;
 
-/// Test: Circuit breaker opens after API failures and recovers automatically
 #[tokio::test]
-async fn test_circuit_breaker_opens_and_recovers() {
-    // This test validates the circuit breaker state machine:
-    // 1. Starts Closed (normal operation)
-    // 2. Opens after 5 consecutive failures
-    // 3. Transitions to HalfOpen after 30s timeout
-    // 4. Closes after 2 consecutive successes
-    
-    // Note: This test uses the real AlpacaExecutionService with invalid credentials
-    // to trigger failures. In a real scenario, you'd use a mock service.
-    
-    let _service = Arc::new(AlpacaExecutionService::new(
-        "invalid_key".to_string(),
-        "invalid_secret".to_string(),
-        "https://paper-api.alpaca.markets".to_string(),
-    ));
-    
-    // Access the circuit breaker (we'd need to expose it for testing)
-    // For now, this test demonstrates the concept
-    
-    println!("Circuit breaker test structure created");
-    println!("In production, we would:");
-    println!("1. Trigger 5 API failures");
-    println!("2. Verify circuit opens");
-    println!("3. Wait 30s for timeout");
-    println!("4. Make 2 successful calls");
-    println!("5. Verify circuit closes");
-    
-    // This is a placeholder test that demonstrates the structure
-    // Real implementation would require exposing circuit breaker state
-    assert!(true, "Circuit breaker integration test structure validated");
-}
+async fn test_circuit_breaker_triggers_on_crash() {
+    // 1. Setup Logging
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .finish();
+    let _ = tracing::subscriber::set_global_default(subscriber);
 
-/// Test: Circuit breaker fast-fails when open
-#[tokio::test]
-async fn test_circuit_breaker_fast_fail() {
-    println!("Circuit breaker fast-fail test");
-    println!("Validates that requests are rejected immediately when circuit is open");
-    println!("Expected behavior: No retry loops, immediate error return");
-    
-    // In production, this would:
-    // 1. Open the circuit by causing failures
-    // 2. Attempt a request
-    // 3. Verify it returns immediately with CircuitBreakerError::Open
-    
-    assert!(true, "Circuit breaker fast-fail validated");
-}
+    // 2. Setup Services with Initial Portfolio
+    // Start with $100k Cash + $100k Stocks (Total $200k)
+    // We want to simulate a crash that drops equity below max_daily_loss (e.g. 2%)
+    let mut portfolio = Portfolio::new();
+    portfolio.cash = dec!(100_000);
+    portfolio.positions.insert(
+        "TSLA".to_string(),
+        Position {
+            symbol: "TSLA".to_string(),
+            quantity: dec!(100),       // 100 shares
+            average_price: dec!(1000), // @ $1000 = $100,000 value
+        },
+    );
+    let execution_service = Arc::new(MockExecutionService::new(Arc::new(RwLock::new(portfolio))));
+    let market_service = Arc::new(MockMarketDataService::new());
+    market_service.set_price("TSLA", dec!(1000)).await; // Align market price with portfolio avg price
 
-/// Test: Circuit breaker unit tests already exist in circuit_breaker.rs
-/// This integration test validates end-to-end behavior with real AlpacaExecutionService
-#[tokio::test]
-async fn test_circuit_breaker_unit_tests_passing() {
-    // The circuit breaker itself has comprehensive unit tests in
-    // src/infrastructure/circuit_breaker.rs that validate:
-    // - Circuit opens after threshold failures
-    // - Auto-recovery after timeout
-    // - HalfOpen state transitions
-    
-    // Run the circuit breaker unit tests
-    println!("✅ Circuit breaker unit tests validated:");
-    println!("  - test_circuit_opens_after_failures");
-    println!("  - test_circuit_recovers_after_timeout");
-    println!("  - test_halfopen_reopens_on_failure");
-    
-    assert!(true, "Circuit breaker has comprehensive unit test coverage");
+    let state_manager = Arc::new(PortfolioStateManager::new(execution_service.clone(), 500));
+
+    // 3. Setup Risk Manager
+    let (proposal_tx, proposal_rx) = mpsc::channel(10);
+    let (order_tx, mut order_rx) = mpsc::channel(10);
+
+    let config = RiskConfig {
+        max_daily_loss_pct: 0.05, // 5% limit
+        max_drawdown_pct: 0.10,
+        max_position_size_pct: 0.50,
+        consecutive_loss_limit: 5,
+        valuation_interval_seconds: 1, // Fast tick for test
+        max_sector_exposure_pct: 1.0,
+        sector_provider: None,
+        allow_pdt_risk: false,
+    };
+
+    let mut risk_manager = RiskManager::new(
+        proposal_rx,
+        order_tx,
+        execution_service.clone(),
+        market_service.clone(),
+        state_manager.clone(),
+        true, // Non-PDT
+        rustrade::config::AssetClass::Stock,
+        config,
+        None,
+    );
+
+    // Run RiskManager in background
+    tokio::spawn(async move {
+        risk_manager.run().await;
+    });
+
+    // Wait for RiskManager to initialize and establish baseline equity at $1000
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // 4. Simulate Market Crash
+    // Initial Equity = $200,000. 5% loss = $10,000.
+    // We need TSLA to drop enough to cause > $10k loss.
+    // 100 shares. Drop of $150/share = $15,000 loss (7.5%).
+    // New Price = $850.
+
+    info!("Test: Simulating Market Crash (TSLA $1000 -> $850)...");
+    market_service.set_price("TSLA", dec!(850)).await;
+
+    // Trigger a valuation update manually or wait for tick?
+    // The RiskManager runs a loop with `valuation_interval`.
+    // We configured it to 1s. We wait 2s.
+    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+
+    // 5. Verify Liquidation Order
+    // Expect a SELL order for 100 TSLA
+    let liquidation_order = order_rx.recv().await;
+    assert!(
+        liquidation_order.is_some(),
+        "Should have received liquidation order"
+    );
+
+    let order = liquidation_order.unwrap();
+    assert_eq!(order.symbol, "TSLA");
+    assert_eq!(order.side, OrderSide::Sell);
+    assert_eq!(order.quantity, dec!(100)); // Should sell all
+
+    // Verify it's a Market order (based on our Change #1)
+    assert!(
+        matches!(
+            order.order_type,
+            rustrade::domain::trading::types::OrderType::Market
+        ),
+        "Liquidation should be Market Order"
+    );
+
+    info!("Test: Liquidation order confirmed: {:?}", order);
+
+    // 6. Verify HALT state by sending a proposal
+    info!("Test: Verifying System Halt on new proposal...");
+    let proposal = TradeProposal {
+        symbol: "AAPL".to_string(),
+        side: OrderSide::Buy,
+        price: dec!(150),
+        quantity: dec!(10),
+        order_type: rustrade::domain::trading::types::OrderType::Limit,
+        reason: "Test".to_string(),
+        timestamp: 0,
+    };
+
+    proposal_tx.send(proposal).await.unwrap();
+
+    // We expect NO order output for this proposal, as system should be halted.
+    // We wait a bit to be sure.
+    let result =
+        tokio::time::timeout(tokio::time::Duration::from_millis(500), order_rx.recv()).await;
+
+    match result {
+        Ok(Some(order)) => panic!(
+            "TEST FAILED: Received unexpected order after HALT: {:?}",
+            order
+        ),
+        Ok(None) => {
+            panic!("TEST FAILED: RiskManager channel closed unexpectedly! Task might have crashed.")
+        }
+        Err(_) => {
+            info!("Test: System correctly rejected new orders after Halt (Timeout confirmed).")
+        }
+    }
 }

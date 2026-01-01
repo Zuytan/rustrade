@@ -11,13 +11,13 @@ use tracing::{info, warn};
 pub struct VersionedPortfolio {
     /// Monotonically increasing version number
     pub version: u64,
-    
+
     /// Current portfolio state
     pub portfolio: Portfolio,
-    
+
     /// Last update timestamp (milliseconds since epoch)
     pub timestamp: i64,
-    
+
     /// Reserved capital for pending orders (reservation_id -> amount)
     pub reserved_exposure: HashMap<String, Decimal>,
 }
@@ -71,7 +71,7 @@ impl ReservationToken {
 /// # #[async_trait]
 /// # impl ExecutionService for MockExec {
 /// #     async fn execute(&self, _: rustrade::domain::trading::types::Order) -> anyhow::Result<()> { Ok(()) }
-/// #     async fn get_portfolio(&self) -> anyhow::Result<Portfolio> { 
+/// #     async fn get_portfolio(&self) -> anyhow::Result<Portfolio> {
 /// #         let mut p = Portfolio::new();
 /// #         p.cash = Decimal::from(10000);
 /// #         Ok(p)
@@ -153,7 +153,7 @@ impl PortfolioStateManager {
         let portfolio = self.execution_service.get_portfolio().await?;
 
         let mut state = self.current_state.write().await;
-        
+
         // Increment version and update state
         state.version += 1;
         state.portfolio = portfolio;
@@ -213,7 +213,10 @@ impl PortfolioStateManager {
 
         info!(
             "PortfolioStateManager: Reserved ${} for {} (token: {}, v{})",
-            amount, symbol, &token.id[..8], state.version
+            amount,
+            symbol,
+            &token.id[..8],
+            state.version
         );
 
         Ok(token)
@@ -222,11 +225,13 @@ impl PortfolioStateManager {
     /// Release a reservation (trade completed or cancelled)
     pub async fn release_reservation(&self, token: ReservationToken) {
         let mut state = self.current_state.write().await;
-        
+
         if state.reserved_exposure.remove(&token.id).is_some() {
             info!(
                 "PortfolioStateManager: Released ${} for {} (token: {})",
-                token.amount, token.symbol, &token.id[..8]
+                token.amount,
+                token.symbol,
+                &token.id[..8]
             );
         } else {
             warn!(
@@ -256,7 +261,10 @@ mod tests {
 
     #[async_trait]
     impl ExecutionService for MockExecutionService {
-        async fn execute(&self, _order: crate::domain::trading::types::Order) -> anyhow::Result<()> {
+        async fn execute(
+            &self,
+            _order: crate::domain::trading::types::Order,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
 
@@ -265,7 +273,9 @@ mod tests {
             Ok(portfolio.clone())
         }
 
-        async fn get_today_orders(&self) -> anyhow::Result<Vec<crate::domain::trading::types::Order>> {
+        async fn get_today_orders(
+            &self,
+        ) -> anyhow::Result<Vec<crate::domain::trading::types::Order>> {
             Ok(Vec::new())
         }
 
@@ -281,7 +291,7 @@ mod tests {
     async fn test_version_increments_on_refresh() {
         let mut portfolio = Portfolio::new();
         portfolio.cash = dec!(10000);
-        
+
         let mock_service = Arc::new(MockExecutionService {
             portfolio: Arc::new(RwLock::new(portfolio)),
         });
@@ -322,13 +332,13 @@ mod tests {
     async fn test_reserve_exposure_succeeds() {
         let mut portfolio = Portfolio::new();
         portfolio.cash = dec!(10000);
-        
+
         let mock_service = Arc::new(MockExecutionService {
             portfolio: Arc::new(RwLock::new(portfolio)),
         });
 
         let manager = PortfolioStateManager::new(mock_service, 5000);
-        
+
         // Refresh to load portfolio from mock
         manager.refresh().await.unwrap();
         let snapshot = manager.get_snapshot().await;
@@ -349,7 +359,7 @@ mod tests {
     async fn test_reserve_exposure_version_mismatch() {
         let mut portfolio = Portfolio::new();
         portfolio.cash = dec!(10000);
-        
+
         let mock_service = Arc::new(MockExecutionService {
             portfolio: Arc::new(RwLock::new(portfolio)),
         });
@@ -373,7 +383,7 @@ mod tests {
     async fn test_reserve_exposure_insufficient_funds() {
         let mut portfolio = Portfolio::new();
         portfolio.cash = dec!(5000);
-        
+
         let mock_service = Arc::new(MockExecutionService {
             portfolio: Arc::new(RwLock::new(portfolio)),
         });
@@ -386,20 +396,23 @@ mod tests {
             .await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Insufficient funds"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Insufficient funds"));
     }
 
     #[tokio::test]
     async fn test_release_reservation() {
         let mut portfolio = Portfolio::new();
         portfolio.cash = dec!(10000);
-        
+
         let mock_service = Arc::new(MockExecutionService {
             portfolio: Arc::new(RwLock::new(portfolio)),
         });
 
         let manager = PortfolioStateManager::new(mock_service, 5000);
-        
+
         // Refresh to load portfolio from mock
         manager.refresh().await.unwrap();
         let snapshot = manager.get_snapshot().await;
@@ -420,13 +433,13 @@ mod tests {
     async fn test_concurrent_reservations() {
         let mut portfolio = Portfolio::new();
         portfolio.cash = dec!(10000);
-        
+
         let mock_service = Arc::new(MockExecutionService {
             portfolio: Arc::new(RwLock::new(portfolio)),
         });
 
         let manager = Arc::new(PortfolioStateManager::new(mock_service, 5000));
-        
+
         // Refresh to load portfolio from mock
         manager.refresh().await.unwrap();
         let snapshot = manager.get_snapshot().await;
@@ -437,17 +450,14 @@ mod tests {
         let manager3 = manager.clone();
         let v = snapshot.version;
 
-        let t1 = tokio::spawn(async move {
-            manager1.reserve_exposure("AAPL", dec!(3000), v).await
-        });
+        let t1 =
+            tokio::spawn(async move { manager1.reserve_exposure("AAPL", dec!(3000), v).await });
 
-        let t2 = tokio::spawn(async move {
-            manager2.reserve_exposure("MSFT", dec!(3000), v).await
-        });
+        let t2 =
+            tokio::spawn(async move { manager2.reserve_exposure("MSFT", dec!(3000), v).await });
 
-        let t3 = tokio::spawn(async move {
-            manager3.reserve_exposure("TSLA", dec!(3000), v).await
-        });
+        let t3 =
+            tokio::spawn(async move { manager3.reserve_exposure("TSLA", dec!(3000), v).await });
 
         let r1 = t1.await.unwrap();
         let r2 = t2.await.unwrap();
@@ -466,13 +476,13 @@ mod tests {
     async fn test_available_cash_calculation() {
         let mut portfolio = Portfolio::new();
         portfolio.cash = dec!(10000);
-        
+
         let mock_service = Arc::new(MockExecutionService {
             portfolio: Arc::new(RwLock::new(portfolio)),
         });
 
         let manager = PortfolioStateManager::new(mock_service, 5000);
-        
+
         // Refresh to load portfolio from mock
         manager.refresh().await.unwrap();
         let snapshot = manager.get_snapshot().await;

@@ -28,10 +28,10 @@ impl DynamicRegimeStrategy {
                 sma_threshold,
                 trend_sma_period,
                 rsi_threshold,
-                signal_confirmation_bars: 1,  // conservative default
+                signal_confirmation_bars: 1, // conservative default
                 macd_requires_rising: true,  // conservative default
-                trend_tolerance_pct: 0.0,   // strict default
-                macd_min_threshold: 0.0,   // neutral default
+                trend_tolerance_pct: 0.0,    // strict default
+                macd_min_threshold: 0.0,     // neutral default
             }),
             trend_divergence_threshold,
         }

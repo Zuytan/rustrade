@@ -155,13 +155,14 @@ mod tests {
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
             unimplemented!()
         }
-        async fn subscribe_order_updates(&self) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
-             let (_tx, rx) = tokio::sync::broadcast::channel(1);
+        async fn subscribe_order_updates(
+            &self,
+        ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+            let (_tx, rx) = tokio::sync::broadcast::channel(1);
 
-             Ok(rx)
+            Ok(rx)
         }
     }
-
 
     #[tokio::test]
     async fn test_scanner_sends_update() {

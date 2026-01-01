@@ -90,8 +90,8 @@ pub struct Config {
     // Transaction Costs
     pub slippage_pct: f64,
     pub commission_per_share: f64,
-    pub spread_bps: f64,              // New: spread in basis points (e.g., 5.0 = 5 bps)
-    pub min_profit_ratio: f64,        // New: minimum profit/cost ratio (e.g., 2.0 = 2x)
+    pub spread_bps: f64,       // New: spread in basis points (e.g., 5.0 = 5 bps)
+    pub min_profit_ratio: f64, // New: minimum profit/cost ratio (e.g., 2.0 = 2x)
     pub trend_riding_exit_buffer_pct: f64,
     pub mean_reversion_rsi_exit: f64,
     pub mean_reversion_bb_period: usize,
@@ -99,15 +99,15 @@ pub struct Config {
     // Metadata
     pub sector_map: std::collections::HashMap<String, String>, // Added
     pub portfolio_staleness_ms: u64,
-    pub portfolio_refresh_interval_ms: u64,  // New: interval for periodic portfolio refresh
+    pub portfolio_refresh_interval_ms: u64, // New: interval for periodic portfolio refresh
     // Adaptive Optimization
     pub adaptive_optimization_enabled: bool,
     pub regime_detection_window: usize,
     pub adaptive_evaluation_hour: u32,
-    pub min_volume_threshold: f64, // Added for symbol screening
-    pub max_position_value_usd: f64,  // New: cap on position value in USD
-    pub signal_confirmation_bars: usize,  // Phase 2: require N bars of confirmation
-    pub min_hold_time_minutes: i64,       // Phase 2: minimum hold time in minutes
+    pub min_volume_threshold: f64,       // Added for symbol screening
+    pub max_position_value_usd: f64,     // New: cap on position value in USD
+    pub signal_confirmation_bars: usize, // Phase 2: require N bars of confirmation
+    pub min_hold_time_minutes: i64,      // Phase 2: minimum hold time in minutes
     pub ema_fast_period: usize,
     pub ema_slow_period: usize,
     pub take_profit_pct: f64,
@@ -188,7 +188,7 @@ impl Config {
             .context("Failed to parse ORDER_COOLDOWN_SECONDS")?;
 
         let risk_per_trade_percent = env::var("RISK_PER_TRADE_PERCENT")
-            .unwrap_or_else(|_| "0.015".to_string())  // Reduced from 0.02 to 1.5%
+            .unwrap_or_else(|_| "0.015".to_string()) // Reduced from 0.02 to 1.5%
             .parse::<f64>()
             .context("Failed to parse RISK_PER_TRADE_PERCENT")?;
 
@@ -247,7 +247,7 @@ impl Config {
             .context("Failed to parse DYNAMIC_SCAN_INTERVAL_MINUTES")?;
 
         let trailing_stop_atr_multiplier = env::var("TRAILING_STOP_ATR_MULTIPLIER")
-            .unwrap_or_else(|_| "5.0".to_string())  // Increased from 4.0 to 5.0
+            .unwrap_or_else(|_| "5.0".to_string()) // Increased from 4.0 to 5.0
             .parse::<f64>()
             .context("Failed to parse TRAILING_STOP_ATR_MULTIPLIER")?;
 
@@ -327,7 +327,7 @@ impl Config {
             .context("Failed to parse SIGNAL_CONFIRMATION_BARS")?;
 
         let min_hold_time_minutes = env::var("MIN_HOLD_TIME_MINUTES")
-            .unwrap_or_else(|_| "240".to_string())  // 4 hours default
+            .unwrap_or_else(|_| "240".to_string()) // 4 hours default
             .parse::<i64>()
             .context("Failed to parse MIN_HOLD_TIME_MINUTES")?;
 
@@ -380,9 +380,9 @@ impl Config {
                 rsi_threshold,
                 max_position_size_pct,
                 min_profit_ratio,
-                true,  // Conservative default: require MACD rising
-                0.0,   // Conservative default: strict trend alignment  
-                0.0,   // Conservative default: neutral MACD threshold
+                true, // Conservative default: require MACD rising
+                0.0,  // Conservative default: strict trend alignment
+                0.0,  // Conservative default: neutral MACD threshold
             )
         };
 

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
 /// Test: Concurrent proposals for the same symbol respect position size limits
-/// 
+///
 /// This test validates that the PortfolioStateManager's exposure reservation system
 /// correctly prevents over-allocation when multiple proposals arrive simultaneously.
 #[tokio::test]
@@ -48,10 +48,10 @@ async fn test_concurrent_proposals_respect_limits() {
         mock_exec.clone(),
         mock_market,
         state_manager,
-        false,              // non_pdt_mode
+        false, // non_pdt_mode
         AssetClass::Stock,
         risk_config,
-        None,               // performance_monitor
+        None, // performance_monitor
     );
 
     // Start RiskManager in background
@@ -80,7 +80,7 @@ async fn test_concurrent_proposals_respect_limits() {
                 reason: format!("Concurrent test {}", i),
                 timestamp: chrono::Utc::now().timestamp_millis(),
             };
-            
+
             tx.send(proposal).await.ok();
         });
         handles.push(handle);
@@ -120,9 +120,12 @@ async fn test_concurrent_proposals_respect_limits() {
     let approved = &approved_orders[0];
     assert_eq!(approved.symbol, "AAPL");
     assert_eq!(approved.side, OrderSide::Buy);
-    
-    println!("✅ Concurrent proposals test passed: {} proposals → {} approved", 
-        5, approved_orders.len());
+
+    println!(
+        "✅ Concurrent proposals test passed: {} proposals → {} approved",
+        5,
+        approved_orders.len()
+    );
 }
 
 /// Test: Verify backpressure works when proposal channel fills up
@@ -130,12 +133,12 @@ async fn test_concurrent_proposals_respect_limits() {
 async fn test_backpressure_drops_excess_proposals() {
     let portfolio = Portfolio::new();
     let portfolio = Arc::new(RwLock::new(portfolio));
-    
+
     let mock_exec = Arc::new(MockExecutionService::new(portfolio.clone()));
     let mock_market = Arc::new(MockMarketDataService::new());
 
     // Small channel to trigger backpressure quickly
-    let (proposal_tx, proposal_rx) = mpsc::channel(5);  
+    let (proposal_tx, proposal_rx) = mpsc::channel(5);
     let (order_tx, _order_rx) = mpsc::channel(50);
 
     let risk_config = RiskConfig::default();
@@ -186,9 +189,12 @@ async fn test_backpressure_drops_excess_proposals() {
         dropped > 0,
         "Expected some proposals to be dropped due to channel capacity (5). \
          Sent: {}, Dropped: {}",
-        sent, dropped
+        sent,
+        dropped
     );
 
-    println!("✅ Backpressure test passed: {} sent, {} dropped (channel capacity: 5)", 
-        sent, dropped);
+    println!(
+        "✅ Backpressure test passed: {} sent, {} dropped (channel capacity: 5)",
+        sent, dropped
+    );
 }

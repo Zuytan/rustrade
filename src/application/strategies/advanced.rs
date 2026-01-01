@@ -16,8 +16,8 @@ pub struct AdvancedTripleFilterStrategy {
     rsi_threshold: f64,
     #[allow(dead_code)]
     trend_sma_period: usize,
-    _signal_confirmation_bars: usize,  // Phase 2: require N bars confirmation
-    _last_signals: HashMap<String, (OrderSide, usize)>,  // Phase 2: track (signal, count)
+    _signal_confirmation_bars: usize, // Phase 2: require N bars confirmation
+    _last_signals: HashMap<String, (OrderSide, usize)>, // Phase 2: track (signal, count)
     // Risk-based adaptive filters
     macd_requires_rising: bool,
     trend_tolerance_pct: f64,
@@ -59,7 +59,7 @@ impl AdvancedTripleFilterStrategy {
             sma_strategy: DualSMAStrategy::new(
                 config.fast_period,
                 config.slow_period,
-                config.sma_threshold
+                config.sma_threshold,
             ),
             rsi_threshold: config.rsi_threshold,
             trend_sma_period: config.trend_sma_period,
@@ -103,14 +103,14 @@ impl AdvancedTripleFilterStrategy {
         if ctx.macd_histogram < self.macd_min_threshold {
             return false;
         }
-        
+
         // If requires rising, check that condition too
         if self.macd_requires_rising {
             if let Some(prev_hist) = ctx.last_macd_histogram {
                 return ctx.macd_histogram > prev_hist;
             }
         }
-        
+
         // Passed all checks
         true
     }
@@ -144,8 +144,11 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                 if !self.macd_filter(ctx) {
                     tracing::info!(
                         "AdvancedFilter [{}]: BUY BLOCKED - MACD Filter (hist={:.4}, rising={})",
-                        ctx.symbol, ctx.macd_histogram,
-                        ctx.last_macd_histogram.map(|prev| ctx.macd_histogram > prev).unwrap_or(false)
+                        ctx.symbol,
+                        ctx.macd_histogram,
+                        ctx.last_macd_histogram
+                            .map(|prev| ctx.macd_histogram > prev)
+                            .unwrap_or(false)
                     );
                     return None;
                 }

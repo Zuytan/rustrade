@@ -150,7 +150,10 @@ mod tests {
         let aggressive = RiskAppetite::new(9).unwrap();
 
         assert!(conservative.requires_macd_rising());
-        assert!(!balanced.requires_macd_rising(), "Score 5 should NOT require MACD rising");
+        assert!(
+            !balanced.requires_macd_rising(),
+            "Score 5 should NOT require MACD rising"
+        );
         assert!(!aggressive.requires_macd_rising());
     }
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info};
 
+use crate::application::optimization::win_rate_provider::HistoricalWinRateProvider;
 use crate::application::strategies::TradingStrategy;
 use crate::application::{
     agents::{
@@ -20,7 +21,6 @@ use crate::application::{
     risk_management::{order_throttler::OrderThrottler, risk_manager::RiskManager},
     strategies::*,
 };
-use crate::application::optimization::win_rate_provider::HistoricalWinRateProvider;
 use crate::config::{Config, Mode};
 
 use crate::domain::performance::performance_evaluator::{
@@ -153,7 +153,7 @@ impl Application {
                 execution_factory,
                 ParameterGrid::default(), // Load from file in real world
                 config.strategy_mode,
-                config.min_profit_ratio,  // Use config value
+                config.min_profit_ratio, // Use config value
             ));
 
             Some(Arc::new(AdaptiveOptimizationService::new(
@@ -200,11 +200,11 @@ impl Application {
     pub async fn run(&self) -> Result<()> {
         info!("Starting Agents...");
 
-        let (market_tx, market_rx) = mpsc::channel(500);  // High throughput: market data events
-        let (proposal_tx, proposal_rx) = mpsc::channel(100);  // Moderate: trade proposals
-        let (order_tx, order_rx) = mpsc::channel(50);  // Low throughput: approved orders
-        let (throttled_order_tx, throttled_order_rx) = mpsc::channel(50);  // Low throughput: throttled orders
-        let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(10);  // Very low: control commands
+        let (market_tx, market_rx) = mpsc::channel(500); // High throughput: market data events
+        let (proposal_tx, proposal_rx) = mpsc::channel(100); // Moderate: trade proposals
+        let (order_tx, order_rx) = mpsc::channel(50); // Low throughput: approved orders
+        let (throttled_order_tx, throttled_order_rx) = mpsc::channel(50); // Low throughput: throttled orders
+        let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(10); // Very low: control commands
 
         let mut sentinel = Sentinel::new(
             self.market_service.clone(),
@@ -272,8 +272,8 @@ impl Application {
                     self.config.sma_threshold,
                 ))
             }
-            crate::domain::market::strategy_config::StrategyMode::Advanced => {
-                Arc::new(AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
+            crate::domain::market::strategy_config::StrategyMode::Advanced => Arc::new(
+                AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
                     fast_period: analyst_config.fast_sma_period,
                     slow_period: analyst_config.slow_sma_period,
                     sma_threshold: analyst_config.sma_threshold,
@@ -283,8 +283,8 @@ impl Application {
                     macd_requires_rising: analyst_config.macd_requires_rising,
                     trend_tolerance_pct: analyst_config.trend_tolerance_pct,
                     macd_min_threshold: analyst_config.macd_min_threshold,
-                }))
-            }
+                }),
+            ),
             crate::domain::market::strategy_config::StrategyMode::Dynamic => {
                 Arc::new(DynamicRegimeStrategy::new(
                     self.config.fast_sma_period,
@@ -303,18 +303,21 @@ impl Application {
                     self.config.trend_riding_exit_buffer_pct,
                 ))
             }
-            crate::domain::market::strategy_config::StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
-                analyst_config.mean_reversion_bb_period,
-                analyst_config.mean_reversion_rsi_exit,
-            )),
-            crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive => Arc::new(crate::application::strategies::TrendRidingStrategy::new(
-                analyst_config.fast_sma_period,
-                analyst_config.slow_sma_period,
-                analyst_config.sma_threshold,
-                analyst_config.trend_riding_exit_buffer_pct,
-            )),
+            crate::domain::market::strategy_config::StrategyMode::MeanReversion => {
+                Arc::new(MeanReversionStrategy::new(
+                    analyst_config.mean_reversion_bb_period,
+                    analyst_config.mean_reversion_rsi_exit,
+                ))
+            }
+            crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive => {
+                Arc::new(crate::application::strategies::TrendRidingStrategy::new(
+                    analyst_config.fast_sma_period,
+                    analyst_config.slow_sma_period,
+                    analyst_config.sma_threshold,
+                    analyst_config.trend_riding_exit_buffer_pct,
+                ))
+            }
         };
-
 
         let win_rate_provider = Arc::new(HistoricalWinRateProvider::new(
             self.order_repository.clone(),
@@ -335,7 +338,6 @@ impl Application {
                 win_rate_provider: Some(win_rate_provider),
             },
         );
-
 
         let sector_provider: Option<Arc<dyn SectorProvider>> = match self.config.mode {
             Mode::Alpaca => Some(Arc::new(AlpacaSectorProvider::new(
@@ -362,7 +364,10 @@ impl Application {
         let portfolio_state_manager = Arc::new(
             crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
                 self.execution_service.clone(),
-                self.config.portfolio_staleness_ms.try_into().unwrap_or(5000), // Configurable staleness
+                self.config
+                    .portfolio_staleness_ms
+                    .try_into()
+                    .unwrap_or(5000), // Configurable staleness
             ),
         );
 

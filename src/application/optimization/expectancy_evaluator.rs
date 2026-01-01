@@ -22,11 +22,11 @@ impl MarketExpectancyEvaluator {
     async fn calculate_win_prob(&self, symbol: &str, regime: &MarketRegime) -> f64 {
         // 1. Get Empirical Win Rate
         let empirical_rate = self.win_rate_provider.get_win_rate(symbol).await;
-        
+
         // 2. Adjust based on Regime Confidence (simple bayesian-like update or weighted avg)
         // If High Confidence Trend, boost win rate.
         // If Volatile/Unknown, discount win rate.
-        
+
         let regime_modifier = match regime.regime_type {
             MarketRegimeType::TrendingUp | MarketRegimeType::TrendingDown => {
                 0.05 * regime.confidence // +0% to +5% boost
@@ -45,7 +45,6 @@ impl MarketExpectancyEvaluator {
 impl ExpectancyEvaluator for MarketExpectancyEvaluator {
     async fn evaluate(&self, symbol: &str, price: Decimal, regime: &MarketRegime) -> Expectancy {
         let price_f64 = price.to_f64().unwrap_or(0.0);
-
 
         // Dynamic Reward/Risk estimation
         // In reality, this should use ATR or support/resistance levels

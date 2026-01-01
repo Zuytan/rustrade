@@ -130,11 +130,7 @@ impl StrategyValidator {
     ///
     /// # Returns
     /// ValidationResult with pass/fail status and detailed checks
-    pub async fn validate(
-        &self,
-        symbol: &str,
-        metrics: &PerformanceMetrics,
-    ) -> ValidationResult {
+    pub async fn validate(&self, symbol: &str, metrics: &PerformanceMetrics) -> ValidationResult {
         let mut passed_checks = Vec::new();
         let mut failed_checks = Vec::new();
 
@@ -486,6 +482,10 @@ mod tests {
             eprintln!("Metrics: {:?}", result.metrics);
         }
 
-        assert!(result.is_valid, "Should pass with custom thresholds. Failed checks: {:?}", result.failed_checks);
+        assert!(
+            result.is_valid,
+            "Should pass with custom thresholds. Failed checks: {:?}",
+            result.failed_checks
+        );
     }
 }

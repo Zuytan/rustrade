@@ -3,13 +3,13 @@ use rustrade::domain::market::strategy_config::StrategyMode;
 use rustrade::domain::repositories::CandleRepository;
 use rustrade::domain::trading::types::{Candle, MarketEvent};
 
-use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use rust_decimal::Decimal;
+use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::{Arc, Mutex};
 
-use tokio::sync::{mpsc, RwLock};
 use async_trait::async_trait;
 use rustrade::domain::trading::portfolio::Portfolio;
+use tokio::sync::{mpsc, RwLock};
 
 // --- Mock Candle Repository ---
 #[derive(Clone)]
@@ -23,7 +23,7 @@ impl MockCandleRepo {
             candles: Arc::new(Mutex::new(Vec::new())),
         }
     }
-    
+
     fn set_candles(&self, new_candles: Vec<Candle>) {
         let mut store = self.candles.lock().unwrap();
         *store = new_candles;
@@ -36,12 +36,11 @@ impl CandleRepository for MockCandleRepo {
         Ok(())
     }
 
-
-
     async fn get_range(&self, _symbol: &str, start: i64, end: i64) -> anyhow::Result<Vec<Candle>> {
         let store = self.candles.lock().unwrap();
         // Simple filter
-        let filtered: Vec<Candle> = store.iter()
+        let filtered: Vec<Candle> = store
+            .iter()
             .filter(|c| c.timestamp >= start && c.timestamp <= end)
             .cloned()
             .collect();
@@ -53,14 +52,13 @@ impl CandleRepository for MockCandleRepo {
     }
 }
 
-
 // --- Helper to Generate Candles ---
 fn generate_ranging_candles(symbol: &str, count: usize, start_ts: i64) -> Vec<Candle> {
     let mut candles = Vec::new();
     let base_price = 100.0;
     for i in 0..count {
         // Oscillate around 100
-        let offset = (i as f64).sin() * 2.0; 
+        let offset = (i as f64).sin() * 2.0;
         let close = base_price + offset;
 
         candles.push(Candle {
@@ -132,7 +130,9 @@ async fn test_adaptive_strategy_switching() {
 
     // Default strategy (initial) - usually Standard or DualSMA if factory defaults
     // But since config is RegimeAdaptive, Analyst resolves it.
-    let strategy = Arc::new(rustrade::application::strategies::trend_riding::TrendRidingStrategy::new(2, 5, 0.0, 0.02)); 
+    let strategy = Arc::new(
+        rustrade::application::strategies::trend_riding::TrendRidingStrategy::new(2, 5, 0.0, 0.02),
+    );
 
     let mut analyst = Analyst::new(
         market_rx,
@@ -145,7 +145,7 @@ async fn test_adaptive_strategy_switching() {
             candle_repository: Some(repo.clone()),
             strategy_repository: None,
             win_rate_provider: None,
-        }
+        },
     );
 
     tokio::spawn(async move {
@@ -166,7 +166,7 @@ async fn test_adaptive_strategy_switching() {
         symbol: symbol.to_string(),
         open: Decimal::from(100),
         high: Decimal::from(105),
-        low: Decimal::from(40), // Lower low
+        low: Decimal::from(40),   // Lower low
         close: Decimal::from(50), // Massive drop to ensure RSI < 30
 
         volume: 1000.0,
@@ -174,11 +174,11 @@ async fn test_adaptive_strategy_switching() {
         timestamp: start_ts + (40 * 86400),
     };
     // Note: We need indicators to be calculated. The Analyst updates indicators from *Price Stream* (process_candle context.update).
-    // But context.update buffers history locally? 
+    // But context.update buffers history locally?
     // `SymbolContext` uses `feature_service`. Feature service builds indicators from incoming checks.
     // DOES NOT load from repo!
     // So we need to feed enough candles to Analyst via `MarketEvent` to warm up indicators?
-    // OR we rely on the fact that `Regime Detection` uses the REPO. 
+    // OR we rely on the fact that `Regime Detection` uses the REPO.
     // `Strategy Selection` depends on Regime.
     // So if Repo has Ranging data, `Regime` = Ranging.
     // Then `StrategySelector` picks `MeanReversion`.
@@ -187,36 +187,39 @@ async fn test_adaptive_strategy_switching() {
     // But `Analyst` *log* "Adaptive Switch" or the proposal *Reason* will show the strategy!
     // Even if no signal, we want to know if it SWITCHED.
     // But we only get a Proposal if there is a signal.
-    
+
     // To verify SWITCH alone, checking logs is best, but here we can only check Proposal output.
     // So we need to force a Signal.
     // `MeanReversion` signals Buy when Price < LowerBand (or RSI < 30).
     // If we feed 20 candles via MarketEvent, Bollinger Bands will form.
-    
+
     // Feed ranging candles to warm up indicators
     for c in &ranging_candles {
-        market_tx.send(MarketEvent::Candle(c.clone())).await.unwrap();
+        market_tx
+            .send(MarketEvent::Candle(c.clone()))
+            .await
+            .unwrap();
         // Drain any warmup proposals
         while let Ok(_) = proposal_rx.try_recv() {}
     }
-    
+
     // Send trigger candle that should generate MeanReversion buy signal
-    market_tx.send(MarketEvent::Candle(trigger_candle_1.clone())).await.unwrap();
+    market_tx
+        .send(MarketEvent::Candle(trigger_candle_1.clone()))
+        .await
+        .unwrap();
 
     // Verify adaptive strategy switching works (Ranging -> MeanReversion)
-    let prop1 = tokio::time::timeout(
-        tokio::time::Duration::from_secs(5), 
-        proposal_rx.recv()
-    ).await;
-    
+    let prop1 = tokio::time::timeout(tokio::time::Duration::from_secs(5), proposal_rx.recv()).await;
+
     match prop1 {
         Ok(Some(p)) => {
             assert!(
                 p.reason.contains("MeanReversion") || p.reason.contains("Ranging"),
-                "Should use MeanReversion strategy in Ranging regime, got: {}", 
+                "Should use MeanReversion strategy in Ranging regime, got: {}",
                 p.reason
             );
-        },
+        }
         Ok(None) => panic!("Proposal channel closed unexpectedly"),
         Err(_) => panic!("Test timed out - no proposal generated for Ranging market"),
     }

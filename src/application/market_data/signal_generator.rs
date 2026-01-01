@@ -72,7 +72,7 @@ impl SignalGenerator {
     // Legacy method removed/unused
     #[allow(dead_code)]
     fn check_sma_crossover(&mut self, features: &FeatureSet, threshold: f64) -> Option<OrderSide> {
-         // Keep code for now to avoid breaking other legacy refs if any, but unused here
+        // Keep code for now to avoid breaking other legacy refs if any, but unused here
         let fast = features.ema_fast.or(features.sma_20)?;
         let slow = features.ema_slow.or(features.sma_50)?;
 
@@ -106,5 +106,4 @@ impl SignalGenerator {
             }
         }
     }
-
 }

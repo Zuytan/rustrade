@@ -10,7 +10,6 @@ pub enum StrategyMode {
     RegimeAdaptive,
 }
 
-
 impl std::str::FromStr for StrategyMode {
     type Err = anyhow::Error;
 
@@ -40,7 +39,6 @@ impl std::fmt::Display for StrategyMode {
             StrategyMode::TrendRiding => write!(f, "TrendRiding"),
             StrategyMode::MeanReversion => write!(f, "MeanReversion"),
             StrategyMode::RegimeAdaptive => write!(f, "RegimeAdaptive"),
-
         }
     }
 }

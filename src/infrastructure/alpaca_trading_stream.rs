@@ -39,17 +39,11 @@ pub struct AlpacaTradingStream {
 #[serde(tag = "stream")]
 enum StreamMessage {
     #[serde(rename = "authorization")]
-    Authorization {
-        data: AuthData,
-    },
+    Authorization { data: AuthData },
     #[serde(rename = "listening")]
-    Listening {
-        data: ListeningData,
-    },
+    Listening { data: ListeningData },
     #[serde(rename = "trade_updates")]
-    TradeUpdate {
-        data: TradeUpdateData,
-    },
+    TradeUpdate { data: TradeUpdateData },
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,7 +52,6 @@ struct AuthData {
     status: String,
     action: String,
 }
-
 
 #[derive(Debug, Deserialize)]
 struct ListeningData {
@@ -94,7 +87,7 @@ struct AlpacaOrderData {
 impl AlpacaTradingStream {
     pub fn new(api_key: String, api_secret: String, base_url: String) -> Self {
         let (event_tx, _) = broadcast::channel(100);
-        
+
         let stream = Self {
             api_key,
             api_secret,
@@ -114,14 +107,15 @@ impl AlpacaTradingStream {
     fn spawn_connection_task(&self) {
         let api_key = self.api_key.clone();
         let api_secret = self.api_secret.clone();
-        
+
         // Convert HTTP Base URL to WebSocket Stream URL
         // https://paper-api.alpaca.markets -> wss://paper-api.alpaca.markets/stream
-        let ws_url = self.base_url
+        let ws_url = self
+            .base_url
             .replace("https://", "wss://")
-            .replace("http://", "ws://") 
+            .replace("http://", "ws://")
             + "/stream";
-            
+
         let event_tx = self.event_tx.clone();
         let state = self.state.clone();
 
@@ -130,21 +124,20 @@ impl AlpacaTradingStream {
 
             loop {
                 info!("TradingStream: Connecting to {}...", ws_url);
-                
-                match Self::run_connection(&ws_url, &api_key, &api_secret, &event_tx, &state).await {
+
+                match Self::run_connection(&ws_url, &api_key, &api_secret, &event_tx, &state).await
+                {
                     Ok(_) => {
                         info!("TradingStream: Connection closed cleanly");
                         reconnect_attempts = 0;
-                    },
+                    }
                     Err(e) => {
                         error!("TradingStream error: {}. Reconnecting...", e);
                         *state.write().await = ConnectionState::Disconnected;
-                        
+
                         // Exponential backoff
-                        let delay = std::cmp::min(
-                            2u64.pow(reconnect_attempts), 
-                            MAX_RECONNECT_DELAY_SECS
-                        );
+                        let delay =
+                            std::cmp::min(2u64.pow(reconnect_attempts), MAX_RECONNECT_DELAY_SECS);
                         time::sleep(Duration::from_secs(delay)).await;
                         reconnect_attempts += 1;
                     }
@@ -174,12 +167,14 @@ impl AlpacaTradingStream {
                 "secret_key": secret
             }
         });
-        write.send(Message::Text(auth_msg.to_string().into())).await?;
+        write
+            .send(Message::Text(auth_msg.to_string().into()))
+            .await?;
         info!("TradingStream: Sent authentication");
 
         // Heartbeat
         let mut ping_interval = time::interval(Duration::from_secs(PING_INTERVAL_SECS));
-        
+
         loop {
             tokio::select! {
                 Some(msg) = read.next() => {
@@ -192,7 +187,7 @@ impl AlpacaTradingStream {
                                         if data.status == "authorized" {
                                             info!("TradingStream: Authenticated successfully");
                                             *state.write().await = ConnectionState::Authenticated;
-                                            
+
                                             // 2. Subscribe to trade_updates
                                             let sub_msg = serde_json::json!({
                                                 "action": "listen",
@@ -214,7 +209,7 @@ impl AlpacaTradingStream {
                                     }
                                 }
                             } else {
-                                // Sometimes messages are arrays or other formats? 
+                                // Sometimes messages are arrays or other formats?
                                 // Alpaca Stream usually sends single objects for these events
                                 warn!("TradingStream: Unhandled message format: {}", text);
                             }
@@ -247,8 +242,14 @@ impl AlpacaTradingStream {
         // If event is specifically "fill" or "partial_fill", we trust that.
         // But the status field is usually enough.
 
-        let filled_qty = data.order.filled_qty.parse::<Decimal>().unwrap_or(Decimal::ZERO);
-        let filled_avg_price = data.order.filled_avg_price
+        let filled_qty = data
+            .order
+            .filled_qty
+            .parse::<Decimal>()
+            .unwrap_or(Decimal::ZERO);
+        let filled_avg_price = data
+            .order
+            .filled_avg_price
             .and_then(|p| p.parse::<Decimal>().ok());
 
         let side = match data.order.side.as_str() {

@@ -43,6 +43,7 @@ pub struct TradeCost {
 ///     // Reject trade - costs exceed expected profit
 /// }
 /// ```
+#[derive(Debug, Clone)]
 pub struct CostEvaluator {
     /// Commission per share (e.g., $0.005 per share)
     commission_per_share: Decimal,
@@ -61,8 +62,7 @@ impl CostEvaluator {
     /// * `spread_bps` - Bid-ask spread in basis points (e.g., 5.0 for 5 bps)
     pub fn new(commission_per_share: f64, slippage_pct: f64, spread_bps: f64) -> Self {
         Self {
-            commission_per_share: Decimal::from_f64(commission_per_share)
-                .unwrap_or(Decimal::ZERO),
+            commission_per_share: Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO),
             slippage_pct: Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO),
             spread_bps: Decimal::from_f64(spread_bps).unwrap_or(Decimal::ZERO),
         }
@@ -179,11 +179,7 @@ impl CostEvaluator {
     /// # Returns
     /// Ratio of expected profit to total costs (e.g., 2.5 means profit is 2.5x costs)
     /// Returns 0.0 if costs are zero (edge case)
-    pub fn get_profit_cost_ratio(
-        &self,
-        proposal: &TradeProposal,
-        expected_profit: Decimal,
-    ) -> f64 {
+    pub fn get_profit_cost_ratio(&self, proposal: &TradeProposal, expected_profit: Decimal) -> f64 {
         let costs = self.evaluate(proposal);
 
         if costs.total_cost <= Decimal::ZERO {

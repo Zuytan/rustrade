@@ -1,6 +1,5 @@
-
-use crate::application::strategies::{TradingStrategy, StrategyFactory}; // Assuming Factory exists or we use direct instantiation
 use crate::application::agents::analyst::AnalystConfig;
+use crate::application::strategies::{StrategyFactory, TradingStrategy}; // Assuming Factory exists or we use direct instantiation
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
 use crate::domain::market::strategy_config::StrategyMode;
 use std::sync::Arc;
@@ -10,7 +9,7 @@ pub struct StrategySelector;
 
 impl StrategySelector {
     /// Selects the best strategy for the given market regime.
-    /// 
+    ///
     /// Default Logic:
     /// - TrendingUp/Down -> TrendRiding (or Advanced)
     /// - Ranging -> MeanReversion
@@ -21,11 +20,10 @@ impl StrategySelector {
         config: &AnalystConfig,
         current_mode: StrategyMode,
     ) -> (StrategyMode, Arc<dyn TradingStrategy>) {
-        
         let proposed_mode = match regime.regime_type {
             MarketRegimeType::TrendingUp | MarketRegimeType::TrendingDown => {
                 // In strong trends, prefer TrendRiding
-                 StrategyMode::TrendRiding
+                StrategyMode::TrendRiding
             }
             MarketRegimeType::Ranging => {
                 // In choppy sideways markets, Mean Reversion works best
@@ -42,18 +40,21 @@ impl StrategySelector {
             }
         };
 
-        // If no change, return what we have (optimization: don't re-instantiate if not needed, 
+        // If no change, return what we have (optimization: don't re-instantiate if not needed,
         // though strictly we return a new instance here for simplicity unless we pass the old one).
         // Actually, the caller holds the instance. The caller should check if mode changed.
         // But here we are asked to return the strategy object.
-        
+
         if proposed_mode == current_mode {
-             // We can't return the old instance easily without passing it in.
-             // But usually creating these strategies is cheap.
-             // Let's Log if we are "keeping" on paper, but we re-create for now.
-             // Ideally the caller checks the Mode enum before calling this factory if they want to avoid churn.
+            // We can't return the old instance easily without passing it in.
+            // But usually creating these strategies is cheap.
+            // Let's Log if we are "keeping" on paper, but we re-create for now.
+            // Ideally the caller checks the Mode enum before calling this factory if they want to avoid churn.
         } else {
-             info!("StrategySelector: Switching strategy from {} to {} based on Regime {:?}", current_mode, proposed_mode, regime.regime_type);
+            info!(
+                "StrategySelector: Switching strategy from {} to {} based on Regime {:?}",
+                current_mode, proposed_mode, regime.regime_type
+            );
         }
 
         let strategy = StrategyFactory::create(proposed_mode, config);

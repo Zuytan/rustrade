@@ -1,11 +1,11 @@
-use rustrade::infrastructure::mock::MockExecutionService;
+use rust_decimal::Decimal;
 use rustrade::domain::ports::ExecutionService;
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::domain::trading::types::{Order, OrderSide, OrderType};
-use rust_decimal::Decimal;
+use rustrade::infrastructure::mock::MockExecutionService;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::time::Duration;
+use tokio::sync::RwLock;
 
 #[tokio::test]
 async fn test_execution_service_timeouts_on_deadlock() {
@@ -28,17 +28,28 @@ async fn test_execution_service_timeouts_on_deadlock() {
 
     // 4. Attempt to Use Service (Should Fail Fast)
     let start = std::time::Instant::now();
-    
+
     // Test get_portfolio timeout
     let result = service.get_portfolio().await;
     let duration = start.elapsed();
 
     // 5. Verification
-    assert!(result.is_err(), "Service should have returned error due to timeout");
-    assert!(duration < Duration::from_secs(4), "Service should have failed fast (approx 2s), but took {:?}", duration);
-    
+    assert!(
+        result.is_err(),
+        "Service should have returned error due to timeout"
+    );
+    assert!(
+        duration < Duration::from_secs(4),
+        "Service should have failed fast (approx 2s), but took {:?}",
+        duration
+    );
+
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("Deadlock detected"), "Error message should indicate deadlock/timeout, got: {}", err_msg);
+    assert!(
+        err_msg.contains("Deadlock detected"),
+        "Error message should indicate deadlock/timeout, got: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]

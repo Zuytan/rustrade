@@ -1,10 +1,9 @@
-
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate}; // Added OrderUpdate
 use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::broadcast; // Added broadcast
-// use chrono::Utc;
+                            // use chrono::Utc;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::sync::Arc;
@@ -20,6 +19,7 @@ use tracing::info;
 pub struct MockMarketDataService {
     subscribers: Arc<RwLock<Vec<Sender<MarketEvent>>>>,
     pub simulation_enabled: bool,
+    current_prices: Arc<RwLock<std::collections::HashMap<String, Decimal>>>,
 }
 
 impl MockMarketDataService {
@@ -27,6 +27,7 @@ impl MockMarketDataService {
         Self {
             subscribers: Arc::new(RwLock::new(Vec::new())),
             simulation_enabled: true,
+            current_prices: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }
 
@@ -34,6 +35,7 @@ impl MockMarketDataService {
         Self {
             subscribers: Arc::new(RwLock::new(Vec::new())),
             simulation_enabled: false,
+            current_prices: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -46,6 +48,14 @@ impl Default for MockMarketDataService {
 
 impl MockMarketDataService {
     pub async fn publish(&self, event: MarketEvent) {
+        // If it's a quote, update internal price state
+        if let MarketEvent::Quote { symbol, price, .. } = &event {
+            self.current_prices
+                .write()
+                .await
+                .insert(symbol.clone(), *price);
+        }
+
         let mut subs = self.subscribers.write().await;
 
         if subs.is_empty() {
@@ -77,6 +87,22 @@ impl MockMarketDataService {
                 );
             }
         }
+    }
+
+    /// Helper for tests to manually set a price
+    pub async fn set_price(&self, symbol: &str, price: Decimal) {
+        self.current_prices
+            .write()
+            .await
+            .insert(symbol.to_string(), price);
+
+        // Also publish an event so subscribers get it
+        self.publish(MarketEvent::Quote {
+            symbol: symbol.to_string(),
+            price,
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        })
+        .await;
     }
 }
 
@@ -150,9 +176,15 @@ impl MarketDataService for MockMarketDataService {
                 }
             });
 
-            info!("MockMarketDataService: Subscribed to {:?} (Simulation Enabled)", symbols);
+            info!(
+                "MockMarketDataService: Subscribed to {:?} (Simulation Enabled)",
+                symbols
+            );
         } else {
-            info!("MockMarketDataService: Subscribed to {:?} (Simulation Disabled)", symbols);
+            info!(
+                "MockMarketDataService: Subscribed to {:?} (Simulation Disabled)",
+                symbols
+            );
         }
 
         Ok(rx)
@@ -172,28 +204,18 @@ impl MarketDataService for MockMarketDataService {
         &self,
         symbols: Vec<String>,
     ) -> Result<std::collections::HashMap<String, rust_decimal::Decimal>> {
-        let mut prices = std::collections::HashMap::new();
-        // Return some dummy prices or 100.0 for everything
-        // For E2E tests, this might be tricky if we want specific values.
-        // We could use a shared map in the struct to store "current" prices that can be set by tests?
-        // For now, let's just return a constant for simplicity or randomized variations.
-        // To trigger the circuit breaker test, we might need a way to inject a "crash" price.
-        // CHECK: The MockMarketDataService doesn't accept external price updates in this simple version
-        // except via publish(). But get_prices is Pull.
-        // We will return $100.0 for everything as a baseline.
+        let stored_prices = self.current_prices.read().await;
+        let mut result = std::collections::HashMap::new();
 
         for sym in symbols {
-            // If we want to simulate a crash for TSLA in the test, we might hardcode it here?
-            // That's ugly for general use.
-            // Better: RiskManager test will likely mock the service trait directly OR
-            // we can add a `set_price` method to MockMarketDataService.
-
-            // Check if it's TSLA for the specific test case? No, that's bad.
-            // Let's implement a rudimentary price store in MockMarketDataService later if needed.
-            // For now: $100.0.
-            prices.insert(sym, rust_decimal::Decimal::from(100));
+            // Use stored price if available, else default to 100
+            let price = stored_prices
+                .get(&sym)
+                .copied()
+                .unwrap_or(Decimal::from(100));
+            result.insert(sym, price);
         }
-        Ok(prices)
+        Ok(result)
     }
 
     async fn get_historical_bars(
@@ -250,10 +272,14 @@ impl ExecutionService for MockExecutionService {
         // time::sleep(Duration::from_millis(200)).await;
 
         // Simulate execution update on the "exchange" side
-        let mut port = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write())
-            .await
-            .map_err(|_| anyhow::anyhow!("MockExecution: Deadlock detected acquiring Portfolio write lock"))?;
-
+        let mut port =
+            tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write())
+                .await
+                .map_err(|_| {
+                    anyhow::anyhow!(
+                        "MockExecution: Deadlock detected acquiring Portfolio write lock"
+                    )
+                })?;
 
         // Apply slippage to execution price
         let slippage_multiplier = Decimal::from_f64(match order.side {
@@ -325,10 +351,11 @@ impl ExecutionService for MockExecutionService {
     async fn get_portfolio(&self) -> Result<Portfolio> {
         let port = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.read())
             .await
-            .map_err(|_| anyhow::anyhow!("MockExecution: Deadlock detected acquiring Portfolio read lock"))?;
+            .map_err(|_| {
+                anyhow::anyhow!("MockExecution: Deadlock detected acquiring Portfolio read lock")
+            })?;
         Ok(port.clone())
     }
-
 
     async fn get_today_orders(&self) -> Result<Vec<Order>> {
         let orders = self.orders.read().await;

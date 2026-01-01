@@ -149,7 +149,7 @@ async fn main() -> Result<()> {
         env::var("ALPACA_WS_URL").unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
     let data_url = env::var("ALPACA_DATA_URL").unwrap_or("https://data.alpaca.markets".to_string());
     let market_service = Arc::new(AlpacaMarketDataService::new(
-        api_key, api_secret, ws_url, data_url, 10000.0
+        api_key, api_secret, ws_url, data_url, 10000.0,
     ));
 
     // Execution service factory - creates fresh portfolio for each run
@@ -178,14 +178,14 @@ async fn main() -> Result<()> {
 
     // 6.5. Load Config to get min_profit_ratio (scales with Risk Appetite)
     let app_config = rustrade::config::Config::from_env()?;
-    
+
     // 7. Create optimizer
     let optimizer = GridSearchOptimizer::new(
         market_service,
         execution_service_factory,
         parameter_grid,
         strategy_mode,
-        app_config.min_profit_ratio,  // Uses Risk Appetite value if configured
+        app_config.min_profit_ratio, // Uses Risk Appetite value if configured
     );
 
     // 8. Run optimization

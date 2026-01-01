@@ -1,5 +1,7 @@
 use crate::application::agents::analyst::{Analyst, AnalystConfig, AnalystDependencies};
-use crate::application::strategies::{AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, TradingStrategy};
+use crate::application::strategies::{
+    AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, TradingStrategy,
+};
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::trading::types::MarketEvent;
 use crate::domain::trading::types::{Candle, Order};
@@ -207,7 +209,6 @@ impl Simulator {
                 win_rate_provider: None,
             },
         );
-
 
         let analyst_handle = tokio::spawn(async move {
             analyst.run().await;

@@ -41,7 +41,14 @@ impl EmpiricalWinRateProvider {
     ///
     /// Matches buy orders with subsequent sell orders for the same symbol.
     /// Returns vector of (buy_price, sell_price, quantity) tuples.
-    async fn reconstruct_trades(&self, symbol: &str) -> Vec<(rust_decimal::Decimal, rust_decimal::Decimal, rust_decimal::Decimal)> {
+    async fn reconstruct_trades(
+        &self,
+        symbol: &str,
+    ) -> Vec<(
+        rust_decimal::Decimal,
+        rust_decimal::Decimal,
+        rust_decimal::Decimal,
+    )> {
         match self.trade_repository.find_by_symbol(symbol).await {
             Ok(orders) => {
                 let mut trades = Vec::new();
@@ -64,7 +71,10 @@ impl EmpiricalWinRateProvider {
                 trades
             }
             Err(e) => {
-                info!("EmpiricalWinRate: Failed to fetch orders for {}: {}", symbol, e);
+                info!(
+                    "EmpiricalWinRate: Failed to fetch orders for {}: {}",
+                    symbol, e
+                );
                 Vec::new()
             }
         }
@@ -162,7 +172,9 @@ impl EmpiricalWinRateProvider {
 
                 info!(
                     "EmpiricalWinRate: Overall - {}/{} trades won = {:.2}%",
-                    winning_trades, total_trades, win_rate * 100.0
+                    winning_trades,
+                    total_trades,
+                    win_rate * 100.0
                 );
 
                 win_rate
@@ -170,7 +182,8 @@ impl EmpiricalWinRateProvider {
             Err(e) => {
                 info!(
                     "EmpiricalWinRate: Failed to fetch overall orders: {}. Using default {:.2}%",
-                    e, self.default_win_rate * 100.0
+                    e,
+                    self.default_win_rate * 100.0
                 );
                 self.default_win_rate
             }

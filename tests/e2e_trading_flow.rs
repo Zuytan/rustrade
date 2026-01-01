@@ -92,7 +92,6 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         macd_min_threshold: 0.0,
     });
 
-
     config.mode = Mode::Mock;
     config.symbols = vec!["BTC/USD".to_string()];
     config.fast_sma_period = 2;
