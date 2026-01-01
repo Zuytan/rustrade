@@ -22,14 +22,28 @@ pub struct TradeCost {
 ///
 /// # Example
 /// ```
+/// use rustrade::application::monitoring::cost_evaluator::CostEvaluator;
+/// use rustrade::domain::trading::types::{TradeProposal, OrderSide, OrderType};
+/// use rust_decimal::Decimal;
+///
 /// let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
-/// let proposal = TradeProposal { ... };
+/// let proposal = TradeProposal {
+///     symbol: "AAPL".to_string(),
+///     side: OrderSide::Buy,
+///     price: Decimal::from(100),
+///     quantity: Decimal::from(10),
+///     order_type: OrderType::Market,
+///     reason: "Test".to_string(),
+///     timestamp: 0,
+/// };
 /// let costs = evaluator.evaluate(&proposal);
+/// let expected_profit = Decimal::from(5);
 ///
 /// if costs.total_cost > expected_profit {
-///     // Reject trade
+///     // Reject trade - costs exceed expected profit
 /// }
 /// ```
+
 pub struct CostEvaluator {
     /// Commission per share (e.g., $0.005 per share)
     commission_per_share: Decimal,
@@ -103,10 +117,28 @@ impl CostEvaluator {
     ///
     /// # Example
     /// ```
+    /// use rustrade::application::monitoring::cost_evaluator::CostEvaluator;
+    /// use rustrade::domain::trading::types::{TradeProposal, OrderSide, OrderType};
+    /// use rust_decimal::Decimal;
+    ///
+    /// let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+    /// let proposal = TradeProposal {
+    ///     symbol: "AAPL".to_string(),
+    ///     side: OrderSide::Buy,
+    ///     price: Decimal::from(100),
+    ///     quantity: Decimal::from(10),
+    ///     order_type: OrderType::Market,
+    ///     reason: "Test".to_string(),
+    ///     timestamp: 0,
+    /// };
+    ///
     /// // Trade costs $1.50, expected profit is $5.00, min ratio is 2.0
     /// // Threshold = $1.50 * 2.0 = $3.00
     /// // $5.00 >= $3.00 → Profitable ✅
+    /// let is_profitable = evaluator.is_profitable(&proposal, Decimal::from(5), 2.0);
+    /// assert!(is_profitable);
     /// ```
+
     pub fn is_profitable(
         &self,
         proposal: &TradeProposal,

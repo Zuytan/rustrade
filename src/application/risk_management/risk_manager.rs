@@ -5,15 +5,13 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 use uuid::Uuid;
+use chrono::Utc;
 
 use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use crate::config::AssetClass;
-use crate::domain::trading::portfolio::Portfolio;
-use chrono::Utc;
 
 /// Risk management configuration
 #[derive(Clone)]
@@ -110,13 +108,13 @@ pub struct RiskManager {
     last_reset_date: chrono::NaiveDate,
     consecutive_losses: usize,
     current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
-    portfolio: Arc<RwLock<Portfolio>>,
-    portfolio_state_manager: Arc<PortfolioStateManager>, // Versioned state with optimistic locking
+    portfolio_state_manager: Arc<PortfolioStateManager>, // Versioned state with optimistic locking (ACTIVE)
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     sector_cache: HashMap<String, String>,
 
     halted: bool,
     pending_orders: HashMap<String, PendingOrder>,
+    pending_reservations: HashMap<String, crate::application::monitoring::portfolio_state_manager::ReservationToken>, // Exposure reservations
 }
 
 #[derive(Debug, Clone)]
@@ -144,7 +142,6 @@ impl RiskManager {
         order_tx: Sender<Order>,
         execution_service: Arc<dyn ExecutionService>,
         market_service: Arc<dyn MarketDataService>,
-        portfolio: Arc<RwLock<Portfolio>>,
         portfolio_state_manager: Arc<PortfolioStateManager>,
         non_pdt_mode: bool,
         asset_class: AssetClass,
@@ -159,7 +156,6 @@ impl RiskManager {
             order_tx,
             execution_service,
             market_service,
-            portfolio,
             portfolio_state_manager,
             non_pdt_mode,
             asset_class,
@@ -176,18 +172,17 @@ impl RiskManager {
 
             halted: false,
             pending_orders: HashMap::new(),
+            pending_reservations: HashMap::new(),
         }
     }
 
     /// Initialize session tracking with starting equity
     async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let portfolio = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.read())
-            .await
-            .map_err(|_| "RiskManager: Deadlock detected acquiring Portfolio read lock (init)")?;
-
+        // Refresh portfolio state from exchange
+        let snapshot = self.portfolio_state_manager.refresh().await?;
 
         // Fetch initial prices for accurate equity calculation
-        let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
+        let symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
         if !symbols.is_empty() {
             match self.market_service.get_prices(symbols).await {
                 Ok(prices) => {
@@ -201,13 +196,13 @@ impl RiskManager {
             }
         }
 
-        let initial_equity = portfolio.total_equity(&self.current_prices);
+        let initial_equity = snapshot.portfolio.total_equity(&self.current_prices);
         self.session_start_equity = initial_equity;
         self.daily_start_equity = initial_equity;  // Initialize daily tracking
         self.equity_high_water_mark = initial_equity;
         info!(
-            "RiskManager: Session initialized with equity: {}",
-            initial_equity
+            "RiskManager: Session initialized with equity: {} (portfolio v{})",
+            initial_equity, snapshot.version
         );
         Ok(())
     }
@@ -369,6 +364,14 @@ impl RiskManager {
             // Cleanup terminal states
             if matches!(update.status, OrderStatus::Filled | OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired) {
                  self.pending_orders.remove(&update.client_order_id);
+                 
+                 // Release any exposure reservation
+                 if let Some(token) = self.pending_reservations.remove(&update.client_order_id) {
+                     let state_manager = self.portfolio_state_manager.clone();
+                     tokio::spawn(async move {
+                         state_manager.release_reservation(token).await;
+                     });
+                 }
             }
         }
     }
@@ -456,14 +459,11 @@ impl RiskManager {
 
     /// Fetch latest prices for all held positions and update valuation
     async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // 1. Get Portfolio to know what we hold
-        let portfolio = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.read())
-            .await
-            .map_err(|_| "RiskManager: Deadlock detected acquiring Portfolio read lock (valuation)")?;
-
+        // 1. Get fresh portfolio snapshot
+        let snapshot = self.portfolio_state_manager.refresh().await?;
 
         // 2. Collect symbols
-        let symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
+        let symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
         if symbols.is_empty() {
             return Ok(());
         }
@@ -477,14 +477,13 @@ impl RiskManager {
                 }
 
                 // 4. Calculate Equity with NEW prices
-                let current_equity = portfolio.total_equity(&self.current_prices);
+                let current_equity = snapshot.portfolio.total_equity(&self.current_prices);
 
                 // 5. Update High Water Mark
                 if current_equity > self.equity_high_water_mark {
                     self.equity_high_water_mark = current_equity;
                 }
 
-                // 6. Check Risks (Async check)
                 // 6. Check Risks (Async check)
                 if let Some(reason) = self.check_circuit_breaker(current_equity) {
                     tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
@@ -494,11 +493,6 @@ impl RiskManager {
 
                 // 7. Capture performance snapshot if monitor available
                 if let Some(monitor) = &self.performance_monitor {
-                    // RiskManager typically handles all active symbols or we pick a primary one?
-                    // For now, let's snapshot for a generic "PORTFOLIO" or iterate symbols.
-                    // The capture_snapshot method takes a symbol.
-                    // Let's use "TOTAL" as a convention for portfolio level if allowed,
-                    // or snapshot for each position.
                     for sym in self.current_prices.keys() {
                         let _ = monitor.capture_snapshot(sym).await;
                     }
@@ -512,23 +506,17 @@ impl RiskManager {
     }
 
     async fn liquidate_portfolio(&mut self, reason: &str) {
-        let portfolio_res = tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.read()).await;
-        
-        let portfolio = match portfolio_res {
-            Ok(guard) => guard,
-            Err(_) => {
-                error!("RiskManager: Deadlock detected acquiring Portfolio read lock (liquidation)");
-                return;
-            }
+        // Get current portfolio snapshot
+        let snapshot = match self.portfolio_state_manager.get_snapshot().await {
+            snapshot => snapshot,
         };
-
 
         info!(
             "RiskManager: EMERGENCY LIQUIDATION TRIGGERED - Reason: {}",
             reason
         );
 
-        for (symbol, position) in &portfolio.positions {
+        for (symbol, position) in &snapshot.portfolio.positions {
             if position.quantity > Decimal::ZERO {
                 let current_price = self
                     .current_prices
@@ -538,16 +526,12 @@ impl RiskManager {
 
                 // Safe Liquidation: Use Marketable Limit Order
                 // For SELL: Limit Price = Price * 0.95 (5% slippage tolerance)
-                // If price is 0, we can't really set a limit, fallback to market or 0.
                 let limit_price = if current_price > Decimal::ZERO {
                     current_price * Decimal::from_f64(0.95).unwrap()
                 } else {
                     Decimal::ZERO
                 };
 
-                // If limit price is 0 (missing price), fallback to Market to ensure exit?
-                // Or risky? Existing was Market. Let's keep Limit logic but if 0, maybe Market is safer than stuck?
-                // Actually if price is 0, limit 0 is bad.
                 let (order_type, price) = if limit_price > Decimal::ZERO {
                     (OrderType::Limit, limit_price)
                 } else {
@@ -615,6 +599,16 @@ impl RiskManager {
             self.risk_config.valuation_interval_seconds,
         ));
 
+        // Ticker for periodic portfolio refresh (uses config from PortfolioStateManager)
+        // Default: refresh every 2 seconds to keep snapshot fresh
+        let refresh_interval_ms = std::env::var("PORTFOLIO_REFRESH_INTERVAL_MS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(2000);
+        let mut refresh_interval = tokio::time::interval(tokio::time::Duration::from_millis(
+            refresh_interval_ms,
+        ));
+
         // Subscribe to Real-Time Order Updates
         let mut order_update_rx = match self.execution_service.subscribe_order_updates().await {
             Ok(rx) => Some(rx),
@@ -626,6 +620,12 @@ impl RiskManager {
 
         loop {
             tokio::select! {
+                // Periodic portfolio state refresh
+                _ = refresh_interval.tick() => {
+                    if let Err(e) = self.portfolio_state_manager.refresh().await {
+                        error!("RiskManager: Portfolio refresh failed: {}", e);
+                    }
+                }
                 // Listen for Order Updates
                 Ok(update) = async {
                     if let Some(rx) = &mut order_update_rx {
@@ -643,16 +643,10 @@ impl RiskManager {
 
                             // Check circuit breaker logic on tick
                             if !self.halted {
-                                let (reason, current_equity) = {
-                                    if let Ok(portfolio_lock) = tokio::time::timeout(std::time::Duration::from_secs(1), self.portfolio.read()).await {
-                                        let eq = portfolio_lock.total_equity(&self.current_prices);
-                                        (self.check_circuit_breaker(eq), eq)
-                                    } else {
-                                        error!("RiskManager: Deadlock detected acquiring Portfolio lock (tick check)");
-                                        (None, Decimal::ZERO)
-                                    }
-                                };
-
+                                // Get current snapshot for equity calculation
+                                let snapshot = self.portfolio_state_manager.get_snapshot().await;
+                                let current_equity = snapshot.portfolio.total_equity(&self.current_prices);
+                                let reason = self.check_circuit_breaker(current_equity);
 
                                 // Check for Daily Reset (Crypto)
                                 self.check_daily_reset(current_equity);
@@ -687,14 +681,21 @@ impl RiskManager {
                     self.current_prices
                         .insert(proposal.symbol.clone(), proposal.price);
 
-                    // Fetch fresh portfolio data from exchange
-                    let portfolio = match self.execution_service.get_portfolio().await {
-                        Ok(p) => p,
-                        Err(e) => {
-                            error!("RiskManager: Failed to fetch portfolio: {}", e);
-                            continue;
-                        }
-                    };
+                    // Get portfolio snapshot (may be from cache)
+                    let mut snapshot = self.portfolio_state_manager.get_snapshot().await;
+                    
+                    // Check staleness and refresh if needed
+                    if self.portfolio_state_manager.is_stale(&snapshot) {
+                        snapshot = match self.portfolio_state_manager.refresh().await {
+                            Ok(s) => s,
+                            Err(e) => {
+                                error!("RiskManager: Failed to refresh portfolio: {}", e);
+                                continue;
+                            }
+                        };
+                    }
+                    
+                    let portfolio = &snapshot.portfolio;
 
                     // Calculate current equity
                     let current_equity = portfolio.total_equity(&self.current_prices);
@@ -896,6 +897,28 @@ impl RiskManager {
 
                         info!("RiskManager: Approved. Sending Order {}", order.id);
                         
+                        // For BUY orders, reserve exposure with optimistic locking
+                        if matches!(order.side, OrderSide::Buy) {
+                            let cost = order.price * order.quantity;
+                            
+                            match self.portfolio_state_manager
+                                .reserve_exposure(&order.symbol, cost, snapshot.version)
+                                .await
+                            {
+                                Ok(token) => {
+                                    // Store reservation for later release
+                                    self.pending_reservations.insert(order.id.clone(), token);
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "RiskManager: Reservation failed for {} (v{}): {}. Rejecting to prevent over-allocation.",
+                                        order.symbol, snapshot.version, e
+                                    );
+                                    continue; // Reject this proposal
+                                }
+                            }
+                        }
+                        
                         // Track as Pending BEFORE sending to avoid race condition
                         self.pending_orders.insert(order.id.clone(), PendingOrder {
                             symbol: order.symbol.clone(),
@@ -906,8 +929,14 @@ impl RiskManager {
                         
                         if let Err(e) = self.order_tx.send(order.clone()).await {
                             error!("RiskManager: Failed to send order: {}", e);
-                            // Rollback pending
+                            // Rollback pending and reservation
                             self.pending_orders.remove(&order.id);
+                            if let Some(token) = self.pending_reservations.remove(&order.id) {
+                                let state_manager = self.portfolio_state_manager.clone();
+                                tokio::spawn(async move {
+                                    state_manager.release_reservation(token).await;
+                                });
+                            }
                             break;
                         }
                     }
@@ -1020,7 +1049,6 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio,
             state_manager,
             false,
             AssetClass::Stock,
@@ -1095,7 +1123,6 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio,
             state_manager,
             false,
             AssetClass::Stock,
@@ -1136,7 +1163,6 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio,
             state_manager,
             false,
             AssetClass::Stock,
@@ -1185,7 +1211,6 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio,
             state_manager,
             false,
             AssetClass::Stock,
@@ -1249,7 +1274,6 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio,
             state_manager,
             true,
             AssetClass::Stock,
@@ -1333,7 +1357,6 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio,
             state_manager,
             false,
             AssetClass::Stock,
@@ -1402,7 +1425,6 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio,
             state_manager,
             false,
             AssetClass::Stock,
@@ -1481,7 +1503,6 @@ mod tests {
             order_tx,
             exec_service,
             market_service,
-            portfolio,
             state_manager,
             false,
             AssetClass::Crypto, // Enable Crypto mode

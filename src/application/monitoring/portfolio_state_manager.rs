@@ -58,6 +58,31 @@ impl ReservationToken {
 ///
 /// # Example
 /// ```
+/// use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
+/// use rustrade::domain::ports::ExecutionService;
+/// use rustrade::domain::trading::portfolio::Portfolio;
+/// use rust_decimal::Decimal;
+/// use std::sync::Arc;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// // Mock execution service (in real code, use actual service)
+/// # use async_trait::async_trait;
+/// # struct MockExec;
+/// # #[async_trait]
+/// # impl ExecutionService for MockExec {
+/// #     async fn execute(&self, _: rustrade::domain::trading::types::Order) -> anyhow::Result<()> { Ok(()) }
+/// #     async fn get_portfolio(&self) -> anyhow::Result<Portfolio> { 
+/// #         let mut p = Portfolio::new();
+/// #         p.cash = Decimal::from(10000);
+/// #         Ok(p)
+/// #     }
+/// #     async fn get_today_orders(&self) -> anyhow::Result<Vec<rustrade::domain::trading::types::Order>> { Ok(vec![]) }
+/// #     async fn subscribe_order_updates(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<rustrade::domain::ports::OrderUpdate>> {
+/// #         let (tx, _) = tokio::sync::broadcast::channel(1);
+/// #         Ok(tx.subscribe())
+/// #     }
+/// # }
+/// let execution_service: Arc<dyn ExecutionService> = Arc::new(MockExec);
 /// let manager = PortfolioStateManager::new(execution_service, 5000);
 ///
 /// // Get current snapshot
@@ -69,8 +94,12 @@ impl ReservationToken {
 /// }
 ///
 /// // Reserve exposure with version check
+/// let amount = Decimal::from(1000);
 /// let token = manager.reserve_exposure("AAPL", amount, snapshot.version).await?;
+/// # Ok(())
+/// # }
 /// ```
+
 pub struct PortfolioStateManager {
     current_state: Arc<RwLock<VersionedPortfolio>>,
     execution_service: Arc<dyn ExecutionService>,

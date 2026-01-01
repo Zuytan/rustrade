@@ -12,7 +12,7 @@ use crate::application::strategies::{StrategyFactory, TradingStrategy};
 use crate::application::strategies::strategy_selector::StrategySelector;
 
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeDetector};
-use crate::domain::ports::{ExecutionService, ExpectancyEvaluator, FeatureEngineeringService};
+use crate::domain::ports::{ExecutionService, ExpectancyEvaluator, FeatureEngineeringService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
 use crate::domain::trading::fees::{FeeConfig, FeeModel, StandardFeeModel};
 use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
@@ -21,7 +21,7 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 pub struct SymbolContext {
     pub feature_service: Box<dyn FeatureEngineeringService>,
@@ -156,6 +156,7 @@ pub struct Analyst {
     market_rx: Receiver<MarketEvent>,
     proposal_tx: Sender<TradeProposal>,
     execution_service: Arc<dyn ExecutionService>,
+    market_service: Arc<dyn MarketDataService>, // Added for warmup
     default_strategy: Arc<dyn TradingStrategy>, // Fallback
     config: AnalystConfig,                      // Default config
     symbol_states: HashMap<String, SymbolContext>,
@@ -172,6 +173,7 @@ impl Analyst {
         market_rx: Receiver<MarketEvent>,
         proposal_tx: Sender<TradeProposal>,
         execution_service: Arc<dyn ExecutionService>,
+        market_service: Arc<dyn MarketDataService>,
         strategy: Arc<dyn TradingStrategy>, // This becomes default strategy
         config: AnalystConfig,
         repository: Option<Arc<dyn CandleRepository>>,
@@ -200,6 +202,7 @@ impl Analyst {
             market_rx,
             proposal_tx,
             execution_service,
+            market_service,
             default_strategy: strategy,
             config,
             symbol_states: HashMap::new(),
@@ -247,7 +250,11 @@ impl Analyst {
         // 1. Get/Init Context
         if !self.symbol_states.contains_key(&symbol) {
             let (strategy, config) = self.resolve_strategy(&symbol).await;
-            let context = SymbolContext::new(config, strategy, self.win_rate_provider.clone());
+            let mut context = SymbolContext::new(config, strategy, self.win_rate_provider.clone());
+            
+            // WARMUP: Fetch historical data to initialize indicators
+            self.warmup_context(&mut context, &symbol).await;
+
             self.symbol_states.insert(symbol.clone(), context);
         }
 
@@ -357,10 +364,20 @@ impl Analyst {
                                     timestamp,
                                 };
 
-                                if (self.proposal_tx.send(proposal).await).is_ok() {
-                                    context.taken_profit = true;
-                                    // Don't process further signals this tick
-                                    return;
+                                match self.proposal_tx.try_send(proposal) {
+                                    Ok(_) => {
+                                        context.taken_profit = true;
+                                        // Don't process further signals this tick
+                                        return;
+                                    }
+                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                        warn!("Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, skipping proposal.", symbol);
+                                        return;
+                                    }
+                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                        error!("Analyst [{}]: Proposal channel CLOSED. Shutting down.", symbol);
+                                        return;
+                                    }
                                 }
                             }
                         }
@@ -615,23 +632,35 @@ impl Analyst {
                     side, symbol, expectancy_value, risk_ratio
                 );
 
-                if (self.proposal_tx.send(proposal).await).is_ok() {
-                    context.position_manager.pending_order = Some(side);
-                    
-                    // Phase 2: Track entry time on buy signals
-                    if side == OrderSide::Buy {
-                        context.last_entry_time = Some(timestamp);
-                    }
-                    if side == OrderSide::Buy {
-                        if let Some(atr) = context.last_features.atr {
-                            if atr > 0.0 {
-                                context.position_manager.trailing_stop = StopState::on_buy(
-                                    price_f64,
-                                    atr,
-                                    context.config.trailing_stop_atr_multiplier,
-                                );
+                match self.proposal_tx.try_send(proposal) {
+                    Ok(_) => {
+                        context.position_manager.pending_order = Some(side);
+                        
+                        // Phase 2: Track entry time on buy signals
+                        if side == OrderSide::Buy {
+                            context.last_entry_time = Some(timestamp);
+                        }
+                        if side == OrderSide::Buy {
+                            if let Some(atr) = context.last_features.atr {
+                                if atr > 0.0 {
+                                    context.position_manager.trailing_stop = StopState::on_buy(
+                                        price_f64,
+                                        atr,
+                                        context.config.trailing_stop_atr_multiplier,
+                                    );
+                                }
                             }
                         }
+                    }
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                        warn!(
+                            "Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, proposal dropped.",
+                            symbol
+                        );
+                    }
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                        error!("Analyst [{}]: Proposal channel CLOSED. Shutting down.", symbol);
+                        return;
                     }
                 }
             }
@@ -757,6 +786,55 @@ impl Analyst {
         // Default
         (self.default_strategy.clone(), self.config.clone())
     }
+
+    async fn warmup_context(&self, context: &mut SymbolContext, symbol: &str) {
+        // Calculate needed lookback
+        // Max(TrendSMA, SlowSMA, EMA, RSI, MACD_Slow)
+        let config = &context.config;
+        let max_period = [
+            config.trend_sma_period,
+            config.slow_sma_period,
+            config.ema_slow_period,
+            config.rsi_period * 2, // General rule for RSI stability
+            config.macd_slow_period + config.macd_signal_period,
+        ]
+        .iter()
+        .max()
+        .copied()
+        .unwrap_or(200);
+
+        // Add 10% buffer
+        let required_bars = (max_period as f64 * 1.1) as usize;
+        
+        info!("Analyst: Warming up {} with {} bars (Max Period: {})", symbol, required_bars, max_period);
+
+        let end = chrono::Utc::now();
+        // Assuming 1-minute bars.
+        // Market is open 6.5h a day ~ 390mins. 
+        // 2000 bars is ~5.1 trading days.
+        // We fetch enough calendar days back to cover weekends/holidays (e.g., 2000 bars might need 10 days if over weekend).
+        // Let's use a safe multiplier.
+        let days_back = (required_bars / (300)) + 3; 
+        let start = end - chrono::Duration::days(days_back as i64);
+
+        match self.market_service.get_historical_bars(symbol, start, end, "1Min").await {
+            Ok(bars) => {
+                let bars_count = bars.len();
+                info!("Analyst: Fetched {} historical bars for {}", bars_count, symbol);
+                
+                for candle in bars {
+                    // Update context (features + indicators)
+                    context.update(candle.close.to_f64().unwrap_or(0.0));
+                }
+                
+                info!("Analyst: Warmup complete for {}. Last Price: {:?}", 
+                      symbol, context.last_features.sma_50);
+            }
+            Err(e) => {
+                warn!("Analyst: Failed to warmup {}: {}", symbol, e);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -792,6 +870,7 @@ mod tests {
             portfolio_lock,
         ));
 
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
         let config = AnalystConfig {
             fast_sma_period: 2,
             slow_sma_period: 3,
@@ -838,6 +917,7 @@ mod tests {
             market_rx,
             proposal_tx,
             exec_service,
+            market_service,
             strategy,
             config,
             None,
@@ -887,6 +967,7 @@ mod tests {
         let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
             portfolio_lock,
         ));
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
 
         let config = AnalystConfig {
             fast_sma_period: 2,
@@ -934,6 +1015,7 @@ mod tests {
             market_rx,
             proposal_tx,
             exec_service,
+            market_service,
             strategy,
             config,
             None,
@@ -999,6 +1081,7 @@ mod tests {
         let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
             portfolio_lock,
         ));
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
 
         let config = AnalystConfig {
             fast_sma_period: 2,
@@ -1046,6 +1129,7 @@ mod tests {
             market_rx,
             proposal_tx,
             exec_service,
+            market_service,
             strategy,
             config,
             None,
@@ -1103,6 +1187,7 @@ mod tests {
             portfolio_lock,
         ));
 
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
         // Risk 2% (0.02)
         let config = AnalystConfig {
             fast_sma_period: 1,
@@ -1150,6 +1235,7 @@ mod tests {
             market_rx,
             proposal_tx,
             exec_service,
+            market_service,
             strategy,
             config,
             None,
@@ -1212,6 +1298,7 @@ mod tests {
         let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
             portfolio_lock,
         ));
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
 
         // 2 slots
         let config = AnalystConfig {
@@ -1260,6 +1347,7 @@ mod tests {
             market_rx,
             proposal_tx,
             exec_service,
+            market_service,
             strategy,
             config,
             None,
@@ -1337,6 +1425,7 @@ mod tests {
         let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
             portfolio,
         ));
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
 
         // Advanced mode with long trend SMA
         let config = AnalystConfig {
@@ -1385,6 +1474,7 @@ mod tests {
             market_rx,
             proposal_tx,
             exec_service,
+            market_service,
             strategy,
             config,
             None,
@@ -1461,6 +1551,7 @@ mod tests {
         let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
             portfolio_lock,
         ));
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
 
         // Production-like configuration
         let config = AnalystConfig {
@@ -1509,6 +1600,7 @@ mod tests {
             market_rx,
             proposal_tx,
             exec_service,
+            market_service,
             strategy,
             config,
             None,

@@ -3,7 +3,7 @@ use rustrade::domain::market::strategy_config::StrategyMode;
 use rustrade::domain::repositories::CandleRepository;
 use rustrade::domain::trading::types::{Candle, MarketEvent};
 
-use rustrade::infrastructure::mock::MockExecutionService;
+use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use rust_decimal::Decimal;
 use std::sync::{Arc, Mutex};
 
@@ -135,6 +135,7 @@ async fn test_adaptive_strategy_switching() {
         market_rx,
         proposal_tx,
         exec_service,
+        Arc::new(MockMarketDataService::new()), // Added
         strategy,
         config.clone(),
         Some(repo.clone()),

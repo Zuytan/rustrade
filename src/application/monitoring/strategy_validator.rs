@@ -68,16 +68,40 @@ pub struct StrategyMetrics {
 ///
 /// # Example
 /// ```
+/// use rustrade::application::monitoring::strategy_validator::{StrategyValidator, ValidationThresholds};
+/// use rustrade::application::monitoring::empirical_win_rate_provider::EmpiricalWinRateProvider;
+/// use rustrade::domain::performance::metrics::PerformanceMetrics;
+/// use std::sync::Arc;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// // Create mock repository and win rate provider
+/// # use async_trait::async_trait;
+/// # use rustrade::domain::repositories::TradeRepository;
+/// # struct MockRepo;
+/// # #[async_trait]
+/// # impl TradeRepository for MockRepo {
+/// #     async fn save(&self, _: &rustrade::domain::trading::types::Order) -> anyhow::Result<()> { Ok(()) }
+/// #     async fn find_by_symbol(&self, _: &str) -> anyhow::Result<Vec<rustrade::domain::trading::types::Order>> { Ok(vec![]) }
+/// #     async fn find_recent(&self, _: usize) -> anyhow::Result<Vec<rustrade::domain::trading::types::Order>> { Ok(vec![]) }
+/// #     async fn get_all(&self) -> anyhow::Result<Vec<rustrade::domain::trading::types::Order>> { Ok(vec![]) }
+/// #     async fn count(&self) -> anyhow::Result<usize> { Ok(0) }
+/// # }
+/// let repo = Arc::new(MockRepo);
+/// let win_rate_provider = Arc::new(EmpiricalWinRateProvider::new(repo, 0.5, 10));
 /// let validator = StrategyValidator::new(
 ///     win_rate_provider,
 ///     ValidationThresholds::default()
 /// );
 ///
+/// let performance_metrics = PerformanceMetrics::default();
 /// let result = validator.validate("AAPL", &performance_metrics).await;
 /// if !result.is_valid {
 ///     println!("Strategy failed validation: {:?}", result.failed_checks);
 /// }
+/// # Ok(())
+/// # }
 /// ```
+
 pub struct StrategyValidator {
     win_rate_provider: Arc<EmpiricalWinRateProvider>,
     thresholds: ValidationThresholds,

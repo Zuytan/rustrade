@@ -190,6 +190,7 @@ impl Simulator {
             market_rx,
             proposal_tx,
             self.execution_service.clone(),
+            self.market_data.clone(),
             strategy,
             sim_config,
             None,

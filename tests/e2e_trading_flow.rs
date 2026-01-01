@@ -85,6 +85,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         signal_confirmation_bars: 1,
         spread_bps: 5.0,
         min_profit_ratio: 2.0,
+        portfolio_staleness_ms: 3000,
     });
 
 

@@ -199,11 +199,11 @@ impl Application {
     pub async fn run(&self) -> Result<()> {
         info!("Starting Agents...");
 
-        let (market_tx, market_rx) = mpsc::channel(100);
-        let (proposal_tx, proposal_rx) = mpsc::channel(100);
-        let (order_tx, order_rx) = mpsc::channel(100);
-        let (throttled_order_tx, throttled_order_rx) = mpsc::channel(100);
-        let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(100);
+        let (market_tx, market_rx) = mpsc::channel(500);  // High throughput: market data events
+        let (proposal_tx, proposal_rx) = mpsc::channel(100);  // Moderate: trade proposals
+        let (order_tx, order_rx) = mpsc::channel(50);  // Low throughput: approved orders
+        let (throttled_order_tx, throttled_order_rx) = mpsc::channel(50);  // Low throughput: throttled orders
+        let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(10);  // Very low: control commands
 
         let mut sentinel = Sentinel::new(
             self.market_service.clone(),
@@ -320,6 +320,7 @@ impl Application {
             market_rx,
             proposal_tx,
             self.execution_service.clone(),
+            self.market_service.clone(),
             strategy,
             analyst_config,
             self.candle_repository.clone(),
@@ -362,7 +363,6 @@ impl Application {
             order_tx,
             self.execution_service.clone(),
             self.market_service.clone(),
-            self.portfolio.clone(),
             portfolio_state_manager,
             self.config.non_pdt_mode,
             self.config.asset_class,

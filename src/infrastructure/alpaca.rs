@@ -582,6 +582,7 @@ pub struct AlpacaExecutionService {
     api_secret: String,
     base_url: String,
     trading_stream: Arc<AlpacaTradingStream>, // Added
+    circuit_breaker: Arc<crate::infrastructure::circuit_breaker::CircuitBreaker>, // Circuit breaker for API calls
 }
 
 impl AlpacaExecutionService {
@@ -601,12 +602,21 @@ impl AlpacaExecutionService {
             base_url.clone(),
         ));
 
+        // Initialize Circuit Breaker
+        let circuit_breaker = Arc::new(crate::infrastructure::circuit_breaker::CircuitBreaker::new(
+            "AlpacaAPI",
+            5,                                      // 5 failures before opening
+            2,                                      // 2 successes to close
+            std::time::Duration::from_secs(30),    // 30s timeout
+        ));
+
         Self {
             client,
             api_key,
             api_secret,
             base_url,
             trading_stream,
+            circuit_breaker,
         }
     }
 }
@@ -745,95 +755,103 @@ impl ExecutionService for AlpacaExecutionService {
     }
 
     async fn get_portfolio(&self) -> Result<crate::domain::trading::portfolio::Portfolio> {
-        let account_url = format!("{}/v2/account", self.base_url);
-        let positions_url = format!("{}/v2/positions", self.base_url);
+        // Wrap API calls with circuit breaker
+        self.circuit_breaker.call(async {
+            let account_url = format!("{}/v2/account", self.base_url);
+            let positions_url = format!("{}/v2/positions", self.base_url);
 
-        // Fetch Account
-        let account_resp_raw = self
-            .client
-            .get(&account_url)
-            .header("APCA-API-KEY-ID", &self.api_key)
-            .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .send()
-            .await
-            .context("Failed to send account request")?;
+            // Fetch Account
+            let account_resp_raw = self
+                .client
+                .get(&account_url)
+                .header("APCA-API-KEY-ID", &self.api_key)
+                .header("APCA-API-SECRET-KEY", &self.api_secret)
+                .send()
+                .await
+                .context("Failed to send account request")?;
 
-        let account_text = account_resp_raw
-            .text()
-            .await
-            .context("Failed to read account response text")?;
-        let account_resp: AlpacaAccount = serde_json::from_str(&account_text).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to decode Alpaca Account: {}. Body: {}",
-                e,
-                account_text
-            )
-        })?;
-
-        // Fetch Positions
-        let positions_resp_raw = self
-            .client
-            .get(&positions_url)
-            .header("APCA-API-KEY-ID", &self.api_key)
-            .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .send()
-            .await
-            .context("Failed to send positions request")?;
-
-        let positions_text = positions_resp_raw
-            .text()
-            .await
-            .context("Failed to read positions response text")?;
-        let positions_resp: Vec<AlpacaPosition> =
-            serde_json::from_str(&positions_text).map_err(|e| {
+            let account_text = account_resp_raw
+                .text()
+                .await
+                .context("Failed to read account response text")?;
+            let account_resp: AlpacaAccount = serde_json::from_str(&account_text).map_err(|e| {
                 anyhow::anyhow!(
-                    "Failed to decode Alpaca Positions: {}. Body: {}",
+                    "Failed to decode Alpaca Account: {}. Body: {}",
                     e,
-                    positions_text
+                    account_text
                 )
             })?;
 
-        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
-        // Use buying_power or cash? For crypto, buying_power is usually what we have available.
-        // Actually, let's log both for debugging.
-        let cash = account_resp
-            .cash
-            .parse::<Decimal>()
-            .unwrap_or(Decimal::ZERO);
-        let bp = account_resp
-            .buying_power
-            .parse::<Decimal>()
-            .unwrap_or(Decimal::ZERO);
+            // Fetch Positions
+            let positions_resp_raw = self
+                .client
+                .get(&positions_url)
+                .header("APCA-API-KEY-ID", &self.api_key)
+                .header("APCA-API-SECRET-KEY", &self.api_secret)
+                .send()
+                .await
+                .context("Failed to send positions request")?;
 
-        info!("Alpaca Account: Cash={}, BuyingPower={}, DayTrades={}", cash, bp, account_resp.daytrade_count);
-        portfolio.cash = cash; // Using cash for now as it's what the validator expects
-        portfolio.day_trades_count = account_resp.daytrade_count as u64;
+            let positions_text = positions_resp_raw
+                .text()
+                .await
+                .context("Failed to read positions response text")?;
+            let positions_resp: Vec<AlpacaPosition> =
+                serde_json::from_str(&positions_text).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to decode Alpaca Positions: {}. Body: {}",
+                        e,
+                        positions_text
+                    )
+                })?;
 
-        for alp_pos in positions_resp {
-            // Normalize symbol: Alpaca might return BTCUSD or BTC/USD.
-            // We strip any / to be consistent if needed, or just keep it.
-            // Let's try to match exactly first, but log if it's different.
+            let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
+            // Use buying_power or cash? For crypto, buying_power is usually what we have available.
+            // Actually, let's log both for debugging.
+            let cash = account_resp
+                .cash
+                .parse::<Decimal>()
+                .unwrap_or(Decimal::ZERO);
+            let bp = account_resp
+                .buying_power
+                .parse::<Decimal>()
+                .unwrap_or(Decimal::ZERO);
 
-            let alp_symbol = alp_pos.symbol.clone(); // Define alp_symbol
+            info!("Alpaca Account: Cash={}, BuyingPower={}, DayTrades={}", cash, bp, account_resp.daytrade_count);
+            portfolio.cash = cash; // Using cash for now as it's what the validator expects
+            portfolio.day_trades_count = account_resp.daytrade_count as u64;
 
-            let pos = crate::domain::trading::portfolio::Position {
-                symbol: alp_symbol.clone(),
-                quantity: alp_pos.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO),
-                average_price: alp_pos
-                    .avg_entry_price
-                    .parse::<Decimal>()
-                    .unwrap_or(Decimal::ZERO),
-            };
+            for alp_pos in positions_resp {
+                // Normalize symbol: Alpaca might return BTCUSD or BTC/USD.
+                // We strip any / to be consistent if needed, or just keep it.
+                // Let's try to match exactly first, but log if it's different.
 
-            // Log positions for debugging
-            info!("Alpaca Position: {} qty={}", alp_symbol, pos.quantity);
+                let alp_symbol = alp_pos.symbol.clone(); // Define alp_symbol
 
-            // Store with and without slash to be safe?
-            // Better: use a normalized key in the map or normalize during lookup.
-            portfolio.positions.insert(alp_symbol, pos);
-        }
+                let pos = crate::domain::trading::portfolio::Position {
+                    symbol: alp_symbol.clone(),
+                    quantity: alp_pos.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO),
+                    average_price: alp_pos
+                        .avg_entry_price
+                        .parse::<Decimal>()
+                        .unwrap_or(Decimal::ZERO),
+                };
 
-        Ok(portfolio)
+                // Log positions for debugging
+                info!("Alpaca Position: {} qty={}", alp_symbol, pos.quantity);
+
+                // Store with and without slash to be safe?
+                // Better: use a normalized key in the map or normalize during lookup.
+                portfolio.positions.insert(alp_symbol, pos);
+            }
+
+            Ok(portfolio)
+        }).await.map_err(|e| match e {
+            crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                anyhow::anyhow!("Alpaca API circuit breaker open: {}", msg)
+            }
+            crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+        })
     }
 
     async fn get_today_orders(&self) -> Result<Vec<Order>> {

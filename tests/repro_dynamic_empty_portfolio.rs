@@ -84,6 +84,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         market_rx,
         proposal_tx,
         execution_service.clone(),
+        market_service.clone(), // Added
         strategy,
         config,
         None,

@@ -99,6 +99,7 @@ pub struct Config {
     // Metadata
     pub sector_map: std::collections::HashMap<String, String>, // Added
     pub portfolio_staleness_ms: u64,
+    pub portfolio_refresh_interval_ms: u64,  // New: interval for periodic portfolio refresh
     // Adaptive Optimization
     pub adaptive_optimization_enabled: bool,
     pub regime_detection_window: usize,
@@ -407,6 +408,11 @@ impl Config {
             .parse::<u64>()
             .unwrap_or(5000);
 
+        let portfolio_refresh_interval_ms = env::var("PORTFOLIO_REFRESH_INTERVAL_MS")
+            .unwrap_or_else(|_| "2000".to_string())
+            .parse::<u64>()
+            .unwrap_or(2000);
+
         Ok(Config {
             mode,
             asset_class,
@@ -467,6 +473,7 @@ impl Config {
             spread_bps,
             min_profit_ratio,
             portfolio_staleness_ms,
+            portfolio_refresh_interval_ms,
         })
     }
 }
