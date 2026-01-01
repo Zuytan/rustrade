@@ -5,3 +5,8 @@
 !.env.example
 results.json
 rustrade.db*
+
+# Benchmark and optimization results
+benchmark_results/
+optimization*.json
+/tmp/

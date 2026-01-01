@@ -176,12 +176,16 @@ async fn main() -> Result<()> {
         ))
     });
 
+    // 6.5. Load Config to get min_profit_ratio (scales with Risk Appetite)
+    let app_config = rustrade::config::Config::from_env()?;
+    
     // 7. Create optimizer
     let optimizer = GridSearchOptimizer::new(
         market_service,
         execution_service_factory,
         parameter_grid,
         strategy_mode,
+        app_config.min_profit_ratio,  // Uses Risk Appetite value if configured
     );
 
     // 8. Run optimization

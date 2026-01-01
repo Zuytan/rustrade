@@ -18,3 +18,6 @@ pub mod risk;
 
 // Core trading domain
 pub mod trading;
+
+// Domain-specific error types
+pub mod errors;

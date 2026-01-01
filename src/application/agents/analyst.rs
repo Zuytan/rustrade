@@ -108,6 +108,10 @@ pub struct AnalystConfig {
     pub signal_confirmation_bars: usize,  // Phase 2: signal confirmation
     pub spread_bps: f64,              // Cost-aware trading: spread in basis points
     pub min_profit_ratio: f64,        // Cost-aware trading: minimum profit/cost ratio
+    // Risk-based adaptive filters
+    pub macd_requires_rising: bool,   // Whether MACD must be rising for buy signals
+    pub trend_tolerance_pct: f64,     // Percentage tolerance for trend filter
+    pub macd_min_threshold: f64,      // Minimum MACD histogram threshold
 }
 
 impl From<crate::config::Config> for AnalystConfig {
@@ -148,6 +152,9 @@ impl From<crate::config::Config> for AnalystConfig {
             signal_confirmation_bars: config.signal_confirmation_bars,
             spread_bps: config.spread_bps,
             min_profit_ratio: config.min_profit_ratio,
+            macd_requires_rising: config.macd_requires_rising,
+            trend_tolerance_pct: config.trend_tolerance_pct,
+            macd_min_threshold: config.macd_min_threshold,
         }
     }
 }
@@ -907,6 +914,12 @@ mod tests {
             signal_confirmation_bars: 1,
             spread_bps: 5.0,
             min_profit_ratio: 2.0,
+
+            macd_requires_rising: true,
+
+            trend_tolerance_pct: 0.0,
+
+            macd_min_threshold: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1005,6 +1018,12 @@ mod tests {
             signal_confirmation_bars: 1,
             spread_bps: 5.0,
             min_profit_ratio: 2.0,
+
+            macd_requires_rising: true,
+
+            trend_tolerance_pct: 0.0,
+
+            macd_min_threshold: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1119,6 +1138,12 @@ mod tests {
             signal_confirmation_bars: 1,
             spread_bps: 5.0,
             min_profit_ratio: 2.0,
+
+            macd_requires_rising: true,
+
+            trend_tolerance_pct: 0.0,
+
+            macd_min_threshold: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1225,6 +1250,12 @@ mod tests {
             signal_confirmation_bars: 1,
             spread_bps: 5.0,
             min_profit_ratio: 2.0,
+
+            macd_requires_rising: true,
+
+            trend_tolerance_pct: 0.0,
+
+            macd_min_threshold: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1337,6 +1368,12 @@ mod tests {
             signal_confirmation_bars: 1,
             spread_bps: 5.0,
             min_profit_ratio: 2.0,
+
+            macd_requires_rising: true,
+
+            trend_tolerance_pct: 0.0,
+
+            macd_min_threshold: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1464,6 +1501,12 @@ mod tests {
             signal_confirmation_bars: 1,
             spread_bps: 5.0,
             min_profit_ratio: 2.0,
+
+            macd_requires_rising: true,
+
+            trend_tolerance_pct: 0.0,
+
+            macd_min_threshold: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1590,6 +1633,12 @@ mod tests {
             signal_confirmation_bars: 1,
             spread_bps: 5.0,
             min_profit_ratio: 2.0,
+
+            macd_requires_rising: true,
+
+            trend_tolerance_pct: 0.0,
+
+            macd_min_threshold: 0.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,

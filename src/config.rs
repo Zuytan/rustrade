@@ -111,6 +111,10 @@ pub struct Config {
     pub ema_fast_period: usize,
     pub ema_slow_period: usize,
     pub take_profit_pct: f64,
+    // Risk-based adaptive filters
+    pub macd_requires_rising: bool,
+    pub trend_tolerance_pct: f64,
+    pub macd_min_threshold: f64,
 }
 
 impl Config {
@@ -327,6 +331,16 @@ impl Config {
             .parse::<i64>()
             .context("Failed to parse MIN_HOLD_TIME_MINUTES")?;
 
+        let spread_bps = env::var("SPREAD_BPS")
+            .unwrap_or_else(|_| "5.0".to_string())
+            .parse::<f64>()
+            .unwrap_or(5.0);
+
+        let min_profit_ratio = env::var("MIN_PROFIT_RATIO")
+            .unwrap_or_else(|_| "2.0".to_string())
+            .parse::<f64>()
+            .unwrap_or(2.0);
+
         // Risk Appetite Score (optional - overrides individual risk params if set)
         let risk_appetite = if let Ok(score_str) = env::var("RISK_APPETITE_SCORE") {
             let score = score_str
@@ -343,12 +357,20 @@ impl Config {
             final_trailing_stop,
             final_rsi_threshold,
             final_max_position_size,
+            final_min_profit_ratio,
+            final_macd_requires_rising,
+            final_trend_tolerance_pct,
+            final_macd_min_threshold,
         ) = if let Some(ref appetite) = risk_appetite {
             (
                 appetite.calculate_risk_per_trade_percent(),
                 appetite.calculate_trailing_stop_multiplier(),
                 appetite.calculate_rsi_threshold(),
                 appetite.calculate_max_position_size_pct(),
+                appetite.calculate_min_profit_ratio(),
+                appetite.requires_macd_rising(),
+                appetite.calculate_trend_tolerance_pct(),
+                appetite.calculate_macd_min_threshold(),
             )
         } else {
             // Use individual env vars as before (backward compatibility)
@@ -357,6 +379,10 @@ impl Config {
                 trailing_stop_atr_multiplier,
                 rsi_threshold,
                 max_position_size_pct,
+                min_profit_ratio,
+                true,  // Conservative default: require MACD rising
+                0.0,   // Conservative default: strict trend alignment  
+                0.0,   // Conservative default: neutral MACD threshold
             )
         };
 
@@ -392,16 +418,6 @@ impl Config {
             .unwrap_or_else(|_| "0.05".to_string())
             .parse::<f64>()
             .unwrap_or(0.05);
-
-        let spread_bps = env::var("SPREAD_BPS")
-            .unwrap_or_else(|_| "5.0".to_string())
-            .parse::<f64>()
-            .unwrap_or(5.0);
-
-        let min_profit_ratio = env::var("MIN_PROFIT_RATIO")
-            .unwrap_or_else(|_| "2.0".to_string())
-            .parse::<f64>()
-            .unwrap_or(2.0);
 
         let portfolio_staleness_ms = env::var("PORTFOLIO_STALENESS_MS")
             .unwrap_or_else(|_| "5000".to_string())
@@ -470,8 +486,11 @@ impl Config {
             ema_fast_period,
             ema_slow_period,
             take_profit_pct,
+            macd_requires_rising: final_macd_requires_rising,
+            trend_tolerance_pct: final_trend_tolerance_pct,
+            macd_min_threshold: final_macd_min_threshold,
             spread_bps,
-            min_profit_ratio,
+            min_profit_ratio: final_min_profit_ratio,
             portfolio_staleness_ms,
             portfolio_refresh_interval_ms,
         })

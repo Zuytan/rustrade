@@ -1,0 +1,30 @@
+# Parameter Optimization Grid - Entry Parameters Focus
+# Target: Improve signal generation during Election Rally period (Nov 6 - Dec 6, 2024)
+# Problem: Current strategy (RSI_THRESHOLD=60, SIGNAL_CONFIRMATION_BARS) too restrictive
+
+# Fast SMA: Test responsiveness to trends
+# Current: 30. Test range for earlier detection
+fast_sma = [20, 25, 30, 35, 40]
+
+# Slow SMA: Trend confirmation filter
+# Current: 100. Test range around current value
+slow_sma = [80, 100, 120, 150]
+
+# RSI Threshold: CRITICAL PARAMETER - Lower to allow more entries
+# Current: 60.0 (too high). Test 50-60 range for moderate trends
+rsi_threshold = [50.0, 52.0, 55.0, 57.0, 60.0]
+
+# Trend Divergence: How strict on trend alignment?
+# Current: 0.002. Test relaxing this filter
+trend_divergence_threshold = [0.001, 0.002, 0.005]
+
+# Trailing Stop ATR Multiplier: Keep aggressive settings
+# Current: 3.5. This seems reasonable, test range
+trailing_stop_atr_multiplier = [3.0, 3.5, 4.0]
+
+# Order Cooldown: Current 60s seems fine
+# Test slightly longer to prevent overtrading
+order_cooldown_seconds = [60, 120]
+
+# Total combinations: 5 * 4 * 5 * 3 * 3 * 2 = 1,800 tests
+# Estimated time: ~30-60 minutes depending on API rate limits

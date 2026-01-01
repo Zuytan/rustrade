@@ -23,6 +23,9 @@ impl StrategyFactory {
                 config.trend_sma_period,
                 config.rsi_threshold,
                 config.signal_confirmation_bars,
+                    config.macd_requires_rising,
+                    config.trend_tolerance_pct,
+                    config.macd_min_threshold,
             )),
             StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(
                 config.fast_sma_period,

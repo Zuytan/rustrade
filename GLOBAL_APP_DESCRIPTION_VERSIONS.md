@@ -1,5 +1,21 @@
 # Rustrade - Historique des Versions
 
+## Version 0.27.1 (Décembre 2025) - Multi-Stock Benchmark Evaluation
+- **Évaluation Complète**: Test de performance sur **21 actions diversifiées** (7 secteurs) durant la période "Election Rally" (Nov 6 - Dec 6, 2024).
+- **Infrastructure Robuste**: 21/21 benchmarks complétés sans erreur, validation de l'infrastructure de test en production.
+- **Résultats Clés**:
+  - **Sélectivité Extrême**: Activité de trading minimale (0 trades pour 20/21 actions).
+  - **Discipline Stratégique**: La stratégie Advanced (Triple Filter) a correctement évité les entrées en conditions sous-optimales.
+  - **Performance Moyenne**: 0.00% - stratégie restée en cash, protégeant le capital.
+- **Analyse**: Les conditions de marché (consolidation post-rally, signaux techniques mixtes) n'ont pas satisfait les trois critères simultanés requis (EMA Trend + RSI Momentum + Signal Confirmation).
+- **Outils Créés**:
+  - Script de test `scripts/benchmark_stocks.sh` pour évaluation multi-symboles.
+  - Format CSV pour analyse facile des résultats.
+- **Recommandations**:
+  - Tester d'autres régimes (Flash Crash, Bull Trend, Recent Market).
+  - Optimiser paramètres d'entrée (RSI_THRESHOLD 60 → 55, SIGNAL_CONFIRMATION_BARS).
+  - Comparer avec stratégies `standard` et `mean_reversion`.
+  - Utiliser batch mode pour analyse de régime long-terme.
 
 ## Version 0.26.0 (Janvier 2026) - Architectural Hardening & Concurrency
 - **Deadlock Prevention (CRITICAL)**: Remplacement systématique des appels bloquants `read().await` / `write().await` par des versions avec `timeout` (2 secondes).

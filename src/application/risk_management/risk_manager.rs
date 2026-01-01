@@ -123,6 +123,7 @@ struct PendingOrder {
     side: OrderSide,
     requested_qty: Decimal,
     filled_qty: Decimal,
+    filled_but_not_synced: bool, // Track filled orders awaiting portfolio confirmation
 }
 
 impl PendingOrder {
@@ -335,34 +336,28 @@ impl RiskManager {
                 OrderStatus::Filled | OrderStatus::PartiallyFilled => {
                     pending.filled_qty = update.filled_qty;
                     if pending.filled_qty >= pending.requested_qty {
-                        // Full fill, remove from pending
-                        // Actually, wait. If we remove it, "remaining" becomes 0.
-                        // "Projected" = Current + Remaining.
-                        // If fully filled, Remaining is 0.
-                        // Current (REST Portfolio) MIGHT NOT have it yet if we are faster than REST.
-                        // If we remove it from Pending, and REST hasn't updated, we see 0 exposure.
-                        // This is a race condition.
-                        // "Phantom Position" gap.
-                        // Ideally we keep it in pending until REST reflects it?
-                        // Or we trust REST will update soon.
-                        // If we are strictly conservative, we remove it only when we confirm Portfolio has it.
-                        // But we don't know which position increment corresponds to this order easily.
-                        
-                        // For SAFETY: We remove it from pending.
-                        // The gap should be small (sub-second usually).
-                        // If we want to be super safe, we could have "FilledButNotSynced" state.
-                        // Let's stick to simple: Remove on Fill.
+                        // Full fill: Mark as tentative instead of removing
+                        // Keep order in pending until REST portfolio confirms position
+                        // This prevents "phantom position" race condition where:
+                        // 1. WebSocket confirms fill
+                        // 2. Portfolio REST API not yet updated
+                        // 3. Next signal sees 0 exposure and double-allocates
+                        pending.filled_but_not_synced = true;
+                        info!(
+                            "RiskManager: Order {} FILLED (tentative) - awaiting portfolio sync for {}",
+                            &update.client_order_id[..8], pending.symbol
+                        );
                     }
                 }
                 OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired | OrderStatus::Suspended  => {
-
-                     // Done.
+                     // Terminal states that don't result in positions: remove immediately
                 }
                 _ => {}
             }
             
-            // Cleanup terminal states
-            if matches!(update.status, OrderStatus::Filled | OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired) {
+            // Cleanup only non-fill terminal states (Cancelled/Rejected/Expired)
+            // Filled orders stay in pending until portfolio confirms
+            if matches!(update.status, OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired) {
                  self.pending_orders.remove(&update.client_order_id);
                  
                  // Release any exposure reservation
@@ -524,37 +519,34 @@ impl RiskManager {
                     .cloned()
                     .unwrap_or(Decimal::ZERO);
 
-                // Safe Liquidation: Use Marketable Limit Order
-                // For SELL: Limit Price = Price * 0.95 (5% slippage tolerance)
-                let limit_price = if current_price > Decimal::ZERO {
-                    current_price * Decimal::from_f64(0.95).unwrap()
-                } else {
-                    Decimal::ZERO
-                };
-
-                let (order_type, price) = if limit_price > Decimal::ZERO {
-                    (OrderType::Limit, limit_price)
-                } else {
+                // CRITICAL SAFETY: Never use unbounded Market orders during emergency
+                // Instead, use aggressive Limit orders with 2% slippage tolerance
+                // If price unavailable, skip liquidation (requires manual intervention)
+                if current_price <= Decimal::ZERO {
                     warn!(
-                        "RiskManager: No price for {}, using Market for liquidation",
+                        "RiskManager: No current price for {} - CANNOT safely liquidate. Manual intervention required.",
                         symbol
                     );
-                    (OrderType::Market, Decimal::ZERO)
-                };
+                    continue;
+                }
+
+                // Aggressive Limit: 2% below market for immediate fill
+                // This protects against flash crash unbounded slippage
+                let limit_price = current_price * Decimal::from_f64(0.98).unwrap();
 
                 let order = Order {
                     id: Uuid::new_v4().to_string(),
                     symbol: symbol.clone(),
                     side: OrderSide::Sell,
-                    price,
+                    price: limit_price,
                     quantity: position.quantity,
-                    order_type,
+                    order_type: OrderType::Limit,  // Always Limit for safety
                     timestamp: chrono::Utc::now().timestamp_millis(),
                 };
 
                 warn!(
-                    "RiskManager: Placing EMERGENCY SELL for {} (Qty: {}) @ {:?}",
-                    symbol, position.quantity, order_type
+                    "RiskManager: Placing EMERGENCY LIMIT SELL for {} (Qty: {}) @ ${} (2% below market)",
+                    symbol, position.quantity, limit_price
                 );
 
                 if let Err(e) = self.order_tx.send(order).await {
@@ -565,6 +557,10 @@ impl RiskManager {
                 }
             }
         }
+        
+        info!(
+            "RiskManager: Emergency liquidation orders placed. Trading HALTED. Manual review required."
+        );
     }
 
     /// Check if we need to reset session stats (for 24/7 Crypto markets)
@@ -696,6 +692,37 @@ impl RiskManager {
                     }
                     
                     let portfolio = &snapshot.portfolio;
+
+                    // === RECONCILIATION: Cleanup tentative filled orders ===
+                    // Remove pending orders marked as filled_but_not_synced if they now appear in portfolio
+                    // This closes the "phantom position" race condition window safely
+                    self.pending_orders.retain(|order_id, pending| {
+                        if pending.filled_but_not_synced {
+                            // Check if position exists in portfolio for this symbol
+                            let normalized_symbol = pending.symbol.replace("/", "").replace(" ", "");
+                            let in_portfolio = portfolio.positions.iter().any(|(sym, pos)| {
+                                let normalized_sym = sym.replace("/", "").replace(" ", "");
+                                normalized_sym == normalized_symbol && pos.quantity > Decimal::ZERO
+                            });
+                            
+                            if in_portfolio {
+                                // Portfolio synced! Remove pending and release reservation
+                                info!(
+                                    "RiskManager: Reconciled order {} - {} now confirmed in portfolio",
+                                    &order_id[..8], pending.symbol
+                                );
+                                
+                                if let Some(token) = self.pending_reservations.remove(order_id) {
+                                    let mgr = self.portfolio_state_manager.clone();
+                                    tokio::spawn(async move {
+                                        mgr.release_reservation(token).await;
+                                    });
+                                }
+                                return false; // Remove from pending
+                            }
+                        }
+                        true // Keep in pending
+                    });
 
                     // Calculate current equity
                     let current_equity = portfolio.total_equity(&self.current_prices);
@@ -925,6 +952,7 @@ impl RiskManager {
                             side: order.side,
                             requested_qty: order.quantity,
                             filled_qty: Decimal::ZERO,
+                            filled_but_not_synced: false,
                         });
                         
                         if let Err(e) = self.order_tx.send(order.clone()).await {
@@ -1094,8 +1122,8 @@ mod tests {
         assert_eq!(liquidation_order.symbol, "TSLA");
         assert_eq!(liquidation_order.side, OrderSide::Sell);
         assert_eq!(liquidation_order.order_type, OrderType::Limit); // Safe liquidation uses Limit
-                                                                    // Price should be 80 * 0.95 = 76
-        assert_eq!(liquidation_order.price, Decimal::from(76));
+                                                                    // Price should be 80 * 0.98 = 78.4
+        assert_eq!(liquidation_order.price, Decimal::from_f64(78.4).unwrap());
 
         // Ensure NO other orders (like the proposal) are processed
         assert!(
@@ -1465,8 +1493,8 @@ mod tests {
         assert_eq!(liquidation_order.side, OrderSide::Sell);
         assert_eq!(liquidation_order.quantity, Decimal::from(10));
         assert_eq!(liquidation_order.order_type, OrderType::Limit); // Safe liquidation uses Limit
-                                                                    // Price should be 700 * 0.95 = 665
-        assert_eq!(liquidation_order.price, Decimal::from(665));
+                                                                    // Price should be 700 * 0.98 = 686
+        assert_eq!(liquidation_order.price, Decimal::from(686));
 
         // Verify subsequent proposals are rejected (Halted state)
         let proposal2 = TradeProposal {

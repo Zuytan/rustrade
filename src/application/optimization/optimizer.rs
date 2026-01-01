@@ -68,6 +68,7 @@ pub struct GridSearchOptimizer {
     execution_service_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync>,
     parameter_grid: ParameterGrid,
     strategy_mode: StrategyMode,
+    min_profit_ratio: f64,  // From Config - scales with Risk Appetite
 }
 
 impl GridSearchOptimizer {
@@ -76,12 +77,14 @@ impl GridSearchOptimizer {
         execution_service_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync>,
         parameter_grid: ParameterGrid,
         strategy_mode: StrategyMode,
+        min_profit_ratio: f64,
     ) -> Self {
         Self {
             market_data,
             execution_service_factory,
             parameter_grid,
             strategy_mode,
+            min_profit_ratio,
         }
     }
 
@@ -136,7 +139,10 @@ impl GridSearchOptimizer {
                                     min_hold_time_minutes: 0,
                     signal_confirmation_bars: 1,
                                     spread_bps: 5.0,
-                                    min_profit_ratio: 2.0,
+                                    min_profit_ratio: self.min_profit_ratio,  // Use configured value
+                                    macd_requires_rising: true,  // Conservative default for grid search
+                                    trend_tolerance_pct: 0.0,     // Strict default for grid search
+                                    macd_min_threshold: 0.0,       // Neutral default for grid search
                                 });
                             }
                         }
@@ -365,9 +371,12 @@ mod tests {
                 ema_slow_period: 150,
                 take_profit_pct: 0.05,
                 min_hold_time_minutes: 0,
-                    signal_confirmation_bars: 1,
+                signal_confirmation_bars: 1,
                 spread_bps: 5.0,
                 min_profit_ratio: 2.0,
+                macd_requires_rising: true,
+                trend_tolerance_pct: 0.0,
+                macd_min_threshold: 0.0,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

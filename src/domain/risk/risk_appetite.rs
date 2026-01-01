@@ -88,6 +88,46 @@ impl RiskAppetite {
         Self::interpolate(self.score, 1, 9, 0.05, 0.30)
     }
 
+    /// Calculate minimum profit-to-cost ratio threshold
+    /// Conservative traders require higher profit margins
+    /// Aggressive traders accept lower margins for more opportunities
+    pub fn calculate_min_profit_ratio(&self) -> f64 {
+        // Inverse relationship: higher risk appetite = lower profit requirement
+        // Score 1 (conservative): 3.0 (very strict, only high-quality trades)
+        // Score 5 (balanced): 1.625
+        // Score 9 (aggressive): 0.5 (permissive, more trading opportunities)
+        Self::interpolate(self.score, 1, 9, 3.0, 0.5)
+    }
+
+    /// Determine if MACD histogram must be rising for buy signals
+    /// Conservative traders require rising momentum
+    /// Aggressive traders accept positive momentum even if not rising
+    pub fn requires_macd_rising(&self) -> bool {
+        // Score <= 4: require rising (very conservative)
+        // Score >= 5: just positive is OK (balanced to aggressive)
+        self.score <= 4
+    }
+
+    /// Calculate trend filter tolerance percentage
+    /// Conservative traders require strict trend alignment
+    /// Aggressive traders allow more deviation from trend
+    pub fn calculate_trend_tolerance_pct(&self) -> f64 {
+        // Score 1 (conservative): 0% tolerance (price must be > trend_sma)
+        // Score 5 (balanced): 2.5% tolerance
+        // Score 9 (aggressive): 5% tolerance (price > trend_sma * 0.95)
+        Self::interpolate(self.score, 1, 9, 0.0, 0.05)
+    }
+
+    /// Calculate minimum MACD histogram threshold for buy signals
+    /// Conservative traders require clearly positive momentum
+    /// Aggressive traders accept near-neutral or slightly negative
+    pub fn calculate_macd_min_threshold(&self) -> f64 {
+        // Score 1 (conservative): +0.01 (clearly positive)
+        // Score 5 (balanced): 0.0 (neutral)
+        // Score 9 (aggressive): -0.02 (slightly negative OK)
+        Self::interpolate(self.score, 1, 9, 0.01, -0.02)
+    }
+
     /// Linear interpolation helper
     ///
     /// Maps a score within [score_min, score_max] to a value within [value_min, value_max]
@@ -102,6 +142,39 @@ impl RiskAppetite {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_requires_macd_rising() {
+        let conservative = RiskAppetite::new(1).unwrap();
+        let balanced = RiskAppetite::new(5).unwrap();
+        let aggressive = RiskAppetite::new(9).unwrap();
+
+        assert!(conservative.requires_macd_rising());
+        assert!(!balanced.requires_macd_rising(), "Score 5 should NOT require MACD rising");
+        assert!(!aggressive.requires_macd_rising());
+    }
+
+    #[test]
+    fn test_calculate_trend_tolerance_pct() {
+        let conservative = RiskAppetite::new(1).unwrap();
+        let balanced = RiskAppetite::new(5).unwrap();
+        let aggressive = RiskAppetite::new(9).unwrap();
+
+        assert_eq!(conservative.calculate_trend_tolerance_pct(), 0.0);
+        assert!((balanced.calculate_trend_tolerance_pct() - 0.025).abs() < 0.001);
+        assert_eq!(aggressive.calculate_trend_tolerance_pct(), 0.05);
+    }
+
+    #[test]
+    fn test_calculate_macd_min_threshold() {
+        let conservative = RiskAppetite::new(1).unwrap();
+        let balanced = RiskAppetite::new(5).unwrap();
+        let aggressive = RiskAppetite::new(9).unwrap();
+
+        assert!((conservative.calculate_macd_min_threshold() - 0.01).abs() < 0.0001);
+        assert!((balanced.calculate_macd_min_threshold()).abs() < 0.005);
+        assert!((aggressive.calculate_macd_min_threshold() + 0.02).abs() < 0.0001);
+    }
 
     #[test]
     fn test_risk_appetite_score_validation_success() {

@@ -153,6 +153,7 @@ impl Application {
                 execution_factory,
                 ParameterGrid::default(), // Load from file in real world
                 config.strategy_mode,
+                config.min_profit_ratio,  // Use config value
             ));
 
             Some(Arc::new(AdaptiveOptimizationService::new(
@@ -258,6 +259,9 @@ impl Application {
             signal_confirmation_bars: self.config.signal_confirmation_bars,
             spread_bps: self.config.spread_bps,
             min_profit_ratio: self.config.min_profit_ratio,
+            macd_requires_rising: self.config.macd_requires_rising,
+            trend_tolerance_pct: self.config.trend_tolerance_pct,
+            macd_min_threshold: self.config.macd_min_threshold,
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
@@ -270,12 +274,15 @@ impl Application {
             }
             crate::domain::market::strategy_config::StrategyMode::Advanced => {
                 Arc::new(AdvancedTripleFilterStrategy::new(
-                    self.config.fast_sma_period,
-                    self.config.slow_sma_period,
-                    self.config.sma_threshold,
-                    self.config.trend_sma_period,
-                    self.config.rsi_threshold,
-                    self.config.signal_confirmation_bars,
+                    analyst_config.fast_sma_period,
+                    analyst_config.slow_sma_period,
+                    analyst_config.sma_threshold,
+                    analyst_config.trend_sma_period,
+                    analyst_config.rsi_threshold,
+                    analyst_config.signal_confirmation_bars,
+                    analyst_config.macd_requires_rising,
+                    analyst_config.trend_tolerance_pct,
+                    analyst_config.macd_min_threshold,
                 ))
             }
             crate::domain::market::strategy_config::StrategyMode::Dynamic => {

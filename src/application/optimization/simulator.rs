@@ -174,6 +174,9 @@ impl Simulator {
             signal_confirmation_bars: self.config.signal_confirmation_bars,
             spread_bps: self.config.spread_bps,
             min_profit_ratio: self.config.min_profit_ratio,
+            macd_requires_rising: self.config.macd_requires_rising,
+            trend_tolerance_pct: self.config.trend_tolerance_pct,
+            macd_min_threshold: self.config.macd_min_threshold,
         };
 
         // Use Advanced strategy for simulations
@@ -184,6 +187,9 @@ impl Simulator {
             sim_config.trend_sma_period,
             sim_config.rsi_threshold,
             sim_config.signal_confirmation_bars,
+            sim_config.macd_requires_rising,
+            sim_config.trend_tolerance_pct,
+            sim_config.macd_min_threshold,
         ));
 
         let mut analyst = Analyst::new(

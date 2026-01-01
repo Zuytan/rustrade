@@ -18,7 +18,10 @@ pub struct AdvancedTripleFilterStrategy {
     trend_sma_period: usize,
     _signal_confirmation_bars: usize,  // Phase 2: require N bars confirmation
     _last_signals: HashMap<String, (OrderSide, usize)>,  // Phase 2: track (signal, count)
-
+    // Risk-based adaptive filters
+    macd_requires_rising: bool,
+    trend_tolerance_pct: f64,
+    macd_min_threshold: f64,
 }
 
 impl AdvancedTripleFilterStrategy {
@@ -29,6 +32,9 @@ impl AdvancedTripleFilterStrategy {
         trend_sma_period: usize,
         rsi_threshold: f64,
         _signal_confirmation_bars: usize,  // Phase 2: new parameter
+        macd_requires_rising: bool,
+        trend_tolerance_pct: f64,
+        macd_min_threshold: f64,
     ) -> Self {
         Self {
             sma_strategy: DualSMAStrategy::new(fast_period, slow_period, sma_threshold),
@@ -36,14 +42,18 @@ impl AdvancedTripleFilterStrategy {
             trend_sma_period,
             _signal_confirmation_bars: 3,
             _last_signals: HashMap::new(),
+            macd_requires_rising,
+            trend_tolerance_pct,
+            macd_min_threshold,
         }
     }
 
     fn trend_filter(&self, ctx: &AnalysisContext, side: OrderSide) -> bool {
         match side {
             OrderSide::Buy => {
-                // For buy: price should be above trend SMA (uptrend)
-                ctx.price_f64 > ctx.trend_sma
+                // Apply tolerance: price > trend_sma * (1 - tolerance)
+                let adjusted_trend = ctx.trend_sma * (1.0 - self.trend_tolerance_pct);
+                ctx.price_f64 > adjusted_trend
             }
             OrderSide::Sell => {
                 // For sell: allow if price breaks below trend (or always allow sells)
@@ -66,13 +76,20 @@ impl AdvancedTripleFilterStrategy {
     }
 
     fn macd_filter(&self, ctx: &AnalysisContext) -> bool {
-        // MACD histogram should be positive and rising for buys
-        if let Some(prev_hist) = ctx.last_macd_histogram {
-            ctx.macd_histogram > 0.0 && ctx.macd_histogram > prev_hist
-        } else {
-            // If no previous histogram, just check if current is positive
-            ctx.macd_histogram > 0.0
+        // Check minimum threshold first
+        if ctx.macd_histogram < self.macd_min_threshold {
+            return false;
         }
+        
+        // If requires rising, check that condition too
+        if self.macd_requires_rising {
+            if let Some(prev_hist) = ctx.last_macd_histogram {
+                return ctx.macd_histogram > prev_hist;
+            }
+        }
+        
+        // Passed all checks
+        true
     }
 }
 
@@ -164,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_advanced_buy_all_filters_pass() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1, true, 0.0, 0.0);
         let ctx = create_test_context();
 
         let signal = strategy.analyze(&ctx);
@@ -177,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_advanced_buy_rejected_rsi_too_high() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1, true, 0.0, 0.0);
         let mut ctx = create_test_context();
         ctx.rsi = 80.0; // Overbought
 
@@ -188,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_advanced_buy_rejected_below_trend() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1, true, 0.0, 0.0);
         let mut ctx = create_test_context();
         ctx.price_f64 = 95.0; // Below trend SMA of 100
 
@@ -199,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_advanced_buy_rejected_macd_negative() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1, true, 0.0, 0.0);
         let mut ctx = create_test_context();
         ctx.macd_histogram = -0.1; // Negative
 
@@ -210,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_advanced_sell_signal() {
-        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1);
+        let strategy = AdvancedTripleFilterStrategy::new(20, 60, 0.001, 200, 75.0, 1, true, 0.0, 0.0);
         let mut ctx = create_test_context();
         ctx.fast_sma = 98.0; // Below slow SMA
         ctx.slow_sma = 100.0;
