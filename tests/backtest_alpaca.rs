@@ -3,6 +3,7 @@ use rust_decimal::Decimal;
 
 use rustrade::application::agents::analyst::AnalystConfig;
 use rustrade::application::optimization::simulator::Simulator;
+use rustrade::config::AssetClass;
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
@@ -45,7 +46,12 @@ async fn test_backtest_strategy_on_historical_data() {
 
     // 3. Initialize Services
     let market_service = Arc::new(AlpacaMarketDataService::new(
-        api_key, api_secret, ws_url, data_url, 10000.0,
+        api_key,
+        api_secret,
+        ws_url,
+        data_url,
+        10000.0,
+        AssetClass::Stock,
     ));
 
     let mut portfolio = Portfolio::new();

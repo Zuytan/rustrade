@@ -86,6 +86,7 @@ impl Application {
                         config.alpaca_ws_url.clone(),
                         config.alpaca_data_url.clone(),
                         config.min_volume_threshold,
+                        config.asset_class, // Added
                     )),
                     Arc::new(AlpacaExecutionService::new(
                         config.alpaca_api_key.clone(),
@@ -357,7 +358,8 @@ impl Application {
             valuation_interval_seconds: 60,
             max_sector_exposure_pct: self.config.max_sector_exposure_pct,
             sector_provider,
-            allow_pdt_risk: false,
+            pending_order_ttl_ms: self.config.pending_order_ttl_ms,
+            allow_pdt_risk: false, // Safer default
         };
 
         // Create portfolio state manager for versioned state access

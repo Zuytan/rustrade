@@ -1,5 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.29.0 (Janvier 2026) - Audit Fixes (Tier 1)
+- **Consecutive Loss Circuit Breaker (RISK-01)**:
+  - Implémentation d'un compteur de pertes consécutives pour chaque stratégie.
+  - Déclenche un **Halt** immédiat + **Liquidation** si le nombre de pertes consécutives atteint la limite (3).
+  - Empêche une stratégie défectueuse de vider le compte trade par trade.
+- **Race Condition Fix & TTL (EXEC-01)**:
+  - Résolution de la vulnérabilité "Phantom Position" où un ordre rempli mais non synchronisé permettait un double-achat.
+  - Introduction d'un **TTL (Time-To-Live)** configurable (défaut: 5 min) pour les ordres Pending.
+  - Nettoyage automatique des ordres bloqués et libération du capital réservé.
+- **Mock Infrastructure Upgrade**:
+  - Amélioration significative du `MockExecutionService` pour supporter les événements asynchrones (`OrderUpdate`) et simuler fidèlement les délais de l'exchange.
+- **Validation**: 130+ tests passants incluant de nouveaux tests d'intégration dédiés aux failles auditées.
+
 ## Version 0.28.1 (Janvier 2026) - Strategic Refactoring & Safety Verification
 - **Decomposition Analyst Agent (Phase 3)**:
   - **SizingEngine**: Extraction de la logique de calcul de taille de position dans un composant isolé et testable.

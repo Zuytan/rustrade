@@ -60,6 +60,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         max_daily_loss_pct: 0.02,
         max_drawdown_pct: 0.10,
         consecutive_loss_limit: 3,
+        pending_order_ttl_ms: None,
         slippage_pct: 0.001,
         commission_per_share: 0.001,
         trend_riding_exit_buffer_pct: 0.03,

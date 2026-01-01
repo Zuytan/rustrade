@@ -87,6 +87,7 @@ pub struct Config {
     pub max_daily_loss_pct: f64,
     pub max_drawdown_pct: f64,
     pub consecutive_loss_limit: usize,
+    pub pending_order_ttl_ms: Option<i64>, // Added
     // Transaction Costs
     pub slippage_pct: f64,
     pub commission_per_share: f64,
@@ -281,6 +282,10 @@ impl Config {
             .parse::<usize>()
             .context("Failed to parse CONSECUTIVE_LOSS_LIMIT")?;
 
+        let pending_order_ttl_ms = env::var("PENDING_ORDER_TTL_MS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok());
+
         let slippage_pct = env::var("SLIPPAGE_PCT")
             .unwrap_or_else(|_| "0.001".to_string())
             .parse::<f64>()
@@ -469,6 +474,7 @@ impl Config {
             max_daily_loss_pct,
             max_drawdown_pct,
             consecutive_loss_limit,
+            pending_order_ttl_ms,
             slippage_pct,
             commission_per_share,
             trend_riding_exit_buffer_pct,

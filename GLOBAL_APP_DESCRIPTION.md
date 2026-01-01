@@ -124,6 +124,8 @@ Le bot intègre désormais un système d'optimisation en boucle fermée qui ajus
     - **Active Liquidation (v0.22.0)**: Si un Circuit Breaker est déclenché, le Risk Manager envoie immédiatement des ordres de vente pour TOUTES les positions, bypassant les protections PDT. Objectif: "Cash is King" pendant un krach.
     - **Flash Crash Protection (v0.24.0)** : Utilisation d'ordres **Limit Marketables** (avec tolérance de slippage de 5%) lors des liquidations d'urgence pour éviter les exécutons à prix aberrant sur les carnets d'ordres vides.
     - **Session Continue (Crypto)** : Gestion spécifique des actifs `Crypto` avec réinitialisation automatique des compteurs de perte journalière ("Daily Loss") à 00:00 UTC.
+    - **Consecutive Loss Circuit Breaker (v0.29.0)**: Arrêt automatique du trading et liquidation des positions après N (défaut: 3) trades perdants consécutifs. Protection contre les dysfonctionnements de stratégie.
+    - **Phantom Position Protection (v0.29.0)**: Suivi précis des ordres "Pending" (remplis mais non synchronisés) avec TTL (Time-To-Live) de 5 minutes pour prévenir les blocages de capital et les Race Conditions.
 
 ### 4. L'Agent "Order Throttler" (Rate Limiting)
 - **Rôle**: Garde-fou technique.

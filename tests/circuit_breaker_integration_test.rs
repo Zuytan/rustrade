@@ -42,6 +42,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
     let (order_tx, mut order_rx) = mpsc::channel(10);
 
     let config = RiskConfig {
+        pending_order_ttl_ms: None,
         max_daily_loss_pct: 0.05, // 5% limit
         max_drawdown_pct: 0.10,
         max_position_size_pct: 0.50,

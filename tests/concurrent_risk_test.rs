@@ -35,6 +35,7 @@ async fn test_concurrent_proposals_respect_limits() {
         max_sector_exposure_pct: 0.30,
         sector_provider: None,
         allow_pdt_risk: false,
+        pending_order_ttl_ms: None,
     };
 
     let state_manager = Arc::new(PortfolioStateManager::new(
@@ -65,7 +66,7 @@ async fn test_concurrent_proposals_respect_limits() {
     // Send 5 concurrent proposals for AAPL, each requesting $1,500
     // Expected: Only 1 approved (10% = $1,000), 4 rejected
     let price = Decimal::from(150);
-    let quantity = Decimal::from(10); // 10 shares * $150 = $1,500
+    let quantity = Decimal::from(4); // 4 shares * $150 = $600 (Valid, < $1,000)
 
     let mut handles = vec![];
     for i in 0..5 {

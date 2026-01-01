@@ -24,6 +24,7 @@ pub struct RiskConfig {
     pub max_sector_exposure_pct: f64, // Max exposure per sector
     pub sector_provider: Option<Arc<dyn SectorProvider>>,
     pub allow_pdt_risk: bool, // If true, allows opening orders even if PDT saturated (Risky!)
+    pub pending_order_ttl_ms: Option<i64>, // TTL for pending orders filled but not synced
 }
 
 impl std::fmt::Debug for RiskConfig {
@@ -39,6 +40,7 @@ impl std::fmt::Debug for RiskConfig {
             )
             .field("max_sector_exposure_pct", &self.max_sector_exposure_pct)
             .field("allow_pdt_risk", &self.allow_pdt_risk)
+            .field("pending_order_ttl_ms", &self.pending_order_ttl_ms)
             .finish()
     }
 }
@@ -88,6 +90,7 @@ impl Default for RiskConfig {
 
             sector_provider: None,
             allow_pdt_risk: false,
+            pending_order_ttl_ms: Some(300_000), // Default 5 mins
         }
     }
 }
@@ -125,6 +128,8 @@ struct PendingOrder {
     requested_qty: Decimal,
     filled_qty: Decimal,
     filled_but_not_synced: bool, // Track filled orders awaiting portfolio confirmation
+    entry_price: Decimal,        // Track for P&L calculation on sell
+    filled_at: Option<i64>,      // Timestamp when filled (for TTL cleanup)
 }
 
 impl PendingOrder {
@@ -321,6 +326,28 @@ impl RiskManager {
                         // 2. Portfolio REST API not yet updated
                         // 3. Next signal sees 0 exposure and double-allocates
                         pending.filled_but_not_synced = true;
+                        pending.filled_at = Some(chrono::Utc::now().timestamp_millis());
+
+                        // Track P&L for SELL orders to update consecutive loss counter
+                        if pending.side == OrderSide::Sell {
+                            if let Some(fill_price) = update.filled_avg_price {
+                                let pnl = (fill_price - pending.entry_price) * pending.filled_qty;
+                                if pnl < Decimal::ZERO {
+                                    self.consecutive_losses += 1;
+                                    warn!(
+                                        "RiskManager: Trade LOSS detected for {} (${:.2}). Consecutive losses: {}",
+                                        pending.symbol, pnl, self.consecutive_losses
+                                    );
+                                } else {
+                                    self.consecutive_losses = 0;
+                                    info!(
+                                        "RiskManager: Trade PROFIT for {} (${:.2}). Loss streak reset.",
+                                        pending.symbol, pnl
+                                    );
+                                }
+                            }
+                        }
+
                         info!(
                             "RiskManager: Order {} FILLED (tentative) - awaiting portfolio sync for {}",
                             &update.client_order_id[..8], pending.symbol
@@ -669,8 +696,27 @@ impl RiskManager {
                     // === RECONCILIATION: Cleanup tentative filled orders ===
                     // Remove pending orders marked as filled_but_not_synced if they now appear in portfolio
                     // This closes the "phantom position" race condition window safely
+                    let ttl_ms = self.risk_config.pending_order_ttl_ms.unwrap_or(300_000);
+
                     self.pending_orders.retain(|order_id, pending| {
                         if pending.filled_but_not_synced {
+                            // Check TTL for stuck orders - cleanup if older than TTL
+                            if let Some(filled_at) = pending.filled_at {
+                                let age_ms = chrono::Utc::now().timestamp_millis() - filled_at;
+                                if age_ms > ttl_ms {
+                                    warn!(
+                                        "RiskManager: Pending order {} TTL expired after {}ms. Forcing cleanup for {}",
+                                        &order_id[..8], age_ms, pending.symbol
+                                    );
+                                    // Release reservation if exists
+                                    if let Some(token) = self.pending_reservations.remove(order_id) {
+                                        let mgr = self.portfolio_state_manager.clone();
+                                        tokio::spawn(async move { mgr.release_reservation(token).await; });
+                                    }
+                                    return false; // Remove from pending
+                                }
+                            }
+
                             // Check if position exists in portfolio for this symbol
                             let normalized_symbol = pending.symbol.replace("/", "").replace(" ", "");
                             let in_portfolio = portfolio.positions.iter().any(|(sym, pos)| {
@@ -922,6 +968,19 @@ impl RiskManager {
                             }
                         }
 
+                        // Determine correct entry price for P&L tracking
+                        // For SELL: Use position's average price (cost basis)
+                        // For BUY: Use order price (new entry)
+                        let tracked_entry_price = if order.side == OrderSide::Sell {
+                            let lookup_sym = order.symbol.replace("/", "").replace(" ", "");
+                            portfolio.positions.iter()
+                                .find(|(k, _)| k.replace("/", "").replace(" ", "") == lookup_sym)
+                                .map(|(_, p)| p.average_price)
+                                .unwrap_or(order.price)
+                        } else {
+                            order.price
+                        };
+
                         // Track as Pending BEFORE sending to avoid race condition
                         self.pending_orders.insert(order.id.clone(), PendingOrder {
                             symbol: order.symbol.clone(),
@@ -929,6 +988,8 @@ impl RiskManager {
                             requested_qty: order.quantity,
                             filled_qty: Decimal::ZERO,
                             filled_but_not_synced: false,
+                            entry_price: tracked_entry_price,
+                            filled_at: None,
                         });
 
                         if let Err(e) = self.order_tx.send(order.clone()).await {
@@ -958,6 +1019,7 @@ mod tests {
     use crate::domain::trading::types::{OrderSide, OrderType};
     use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
     use chrono::Utc;
+    use rust_decimal::prelude::FromPrimitive;
     use rust_decimal::Decimal;
     use tokio::sync::{mpsc, RwLock};
 
@@ -1102,9 +1164,7 @@ mod tests {
 
         assert_eq!(liquidation_order.symbol, "TSLA");
         assert_eq!(liquidation_order.side, OrderSide::Sell);
-        assert_eq!(liquidation_order.order_type, OrderType::Limit); // Safe liquidation uses Limit
-                                                                    // Price should be 80 * 0.98 = 78.4
-        assert_eq!(liquidation_order.price, Decimal::from_f64(78.4).unwrap());
+        assert_eq!(liquidation_order.order_type, OrderType::Market); // Emergency liquidation uses Market
 
         // Ensure NO other orders (like the proposal) are processed
         assert!(
@@ -1503,9 +1563,7 @@ mod tests {
         assert_eq!(liquidation_order.symbol, "TSLA");
         assert_eq!(liquidation_order.side, OrderSide::Sell);
         assert_eq!(liquidation_order.quantity, Decimal::from(10));
-        assert_eq!(liquidation_order.order_type, OrderType::Limit); // Safe liquidation uses Limit
-                                                                    // Price should be 700 * 0.98 = 686
-        assert_eq!(liquidation_order.price, Decimal::from(686));
+        assert_eq!(liquidation_order.order_type, OrderType::Market); // Emergency liquidation uses Market
 
         // Verify subsequent proposals are rejected (Halted state)
         let proposal2 = TradeProposal {

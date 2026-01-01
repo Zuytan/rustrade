@@ -237,6 +237,7 @@ pub struct MockExecutionService {
     orders: Arc<RwLock<Vec<Order>>>,
     slippage_pct: f64,         // Slippage as decimal (e.g., 0.001 = 0.1%)
     commission_per_share: f64, // Commission per share (e.g., 0.001 = $0.001/share)
+    order_update_sender: broadcast::Sender<OrderUpdate>,
 }
 
 impl MockExecutionService {
@@ -244,8 +245,9 @@ impl MockExecutionService {
         Self {
             portfolio,
             orders: Arc::new(RwLock::new(Vec::new())),
-            slippage_pct: 0.0,         // Default: no slippage for existing tests
-            commission_per_share: 0.0, // Default: no commission for existing tests
+            slippage_pct: 0.0,
+            commission_per_share: 0.0,
+            order_update_sender: broadcast::channel(100).0,
         }
     }
 
@@ -260,6 +262,7 @@ impl MockExecutionService {
             orders: Arc::new(RwLock::new(Vec::new())),
             slippage_pct,
             commission_per_share,
+            order_update_sender: broadcast::channel(100).0,
         }
     }
 }
@@ -341,6 +344,18 @@ impl ExecutionService for MockExecutionService {
         // Record order
         self.orders.write().await.push(order.clone());
 
+        // Broadcast OrderUpdate
+        let _ = self.order_update_sender.send(OrderUpdate {
+            order_id: order.id.clone(),
+            client_order_id: order.id.clone(), // In mock, they are the same
+            symbol: order.symbol.clone(),
+            side: order.side,
+            status: crate::domain::trading::types::OrderStatus::Filled,
+            filled_qty: order.quantity,
+            filled_avg_price: Some(execution_price),
+            timestamp: chrono::Utc::now(),
+        });
+
         info!(
             "MockExecution: Order {} placed and executed on Exchange.",
             order.id
@@ -363,15 +378,7 @@ impl ExecutionService for MockExecutionService {
     }
 
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
-        // Return a dummy channel for now
-        let (_tx, rx) = broadcast::channel(1);
-
-        // We drop tx so the stream won't yield anything, or we keep it?
-        // If we drop tx, receiver might close.
-        // Let's create a leak for now or just return immediate close.
-        // Better: Mock might want to send updates.
-        // But for now, just return a channel.
-        Ok(rx)
+        Ok(self.order_update_sender.subscribe())
     }
 }
 

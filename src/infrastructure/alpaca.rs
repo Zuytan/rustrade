@@ -1,3 +1,4 @@
+use crate::config::AssetClass; // Added
 use crate::domain::ports::OrderUpdate; // Added
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::trading::types::{MarketEvent, Order, OrderSide};
@@ -26,6 +27,7 @@ pub struct AlpacaMarketDataService {
     data_base_url: String,
     bar_cache: std::sync::RwLock<std::collections::HashMap<String, Vec<AlpacaBar>>>,
     min_volume_threshold: f64,
+    asset_class: AssetClass, // Added
 }
 
 impl AlpacaMarketDataService {
@@ -35,6 +37,7 @@ impl AlpacaMarketDataService {
         ws_url: String,
         data_base_url: String,
         min_volume_threshold: f64,
+        asset_class: AssetClass, // Added
     ) -> Self {
         // Configure client with connection pool limits
         let client = Client::builder()
@@ -59,6 +62,7 @@ impl AlpacaMarketDataService {
             data_base_url,
             bar_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
             min_volume_threshold,
+            asset_class,
         }
     }
 }
@@ -88,6 +92,11 @@ impl MarketDataService for AlpacaMarketDataService {
     }
 
     async fn get_top_movers(&self) -> Result<Vec<String>> {
+        if self.asset_class == AssetClass::Crypto {
+            info!("MarketScanner: Top movers not fully supported for Crypto in this version. Returning empty list.");
+            return Ok(vec![]);
+        }
+
         // Alpaca Data v1beta1 Screener Movers endpoint
         let url = format!("{}/v1beta1/screener/stocks/movers", self.data_base_url);
 
@@ -491,7 +500,15 @@ impl AlpacaMarketDataService {
 
         for chunk in universe.chunks(50) {
             let symbols_param = chunk.join(",");
-            let url = format!("{}/v2/stocks/bars", self.data_base_url);
+
+            // Determine endpoint based on asset class
+            let (url, timeframe_param) = match self.asset_class {
+                AssetClass::Crypto => (
+                    format!("{}/v1beta3/crypto/us/bars", self.data_base_url),
+                    "1Day", // Crypto API uses different timeframe enum strings sometimes, but 1Day is standard
+                ),
+                AssetClass::Stock => (format!("{}/v2/stocks/bars", self.data_base_url), "1Day"),
+            };
 
             let start_rfc = format!("{}T00:00:00Z", date);
             let end_rfc = format!("{}T23:59:59Z", date);
@@ -503,7 +520,7 @@ impl AlpacaMarketDataService {
                 .header("APCA-API-SECRET-KEY", &self.api_secret)
                 .query(&[
                     ("symbols", &symbols_param),
-                    ("timeframe", &"1Day".to_string()),
+                    ("timeframe", &timeframe_param.to_string()),
                     ("start", &start_rfc),
                     ("end", &end_rfc),
                     ("limit", &"10".to_string()),

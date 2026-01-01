@@ -148,8 +148,17 @@ async fn main() -> Result<()> {
     let ws_url =
         env::var("ALPACA_WS_URL").unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
     let data_url = env::var("ALPACA_DATA_URL").unwrap_or("https://data.alpaca.markets".to_string());
+    let asset_class_str = env::var("ASSET_CLASS").unwrap_or_else(|_| "stock".to_string());
+    let asset_class = rustrade::config::AssetClass::from_str(&asset_class_str)
+        .unwrap_or(rustrade::config::AssetClass::Stock);
+
     let market_service = Arc::new(AlpacaMarketDataService::new(
-        api_key, api_secret, ws_url, data_url, 10000.0,
+        api_key,
+        api_secret,
+        ws_url,
+        data_url,
+        10000.0,
+        asset_class,
     ));
 
     // Execution service factory - creates fresh portfolio for each run
