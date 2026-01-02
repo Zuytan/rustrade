@@ -101,8 +101,10 @@ impl TradeFilter {
         // Basic static cost check (Total Profit > Total Cost)
         if expected_profit < estimated_cost {
             info!(
-                "TradeFilter: Signal IGNORED for {} - Negative Expectancy after costs",
-                symbol
+                "TradeFilter: Signal IGNORED for {} - Negative Expectancy after costs (Expected Profit: ${:.2} < Costs: ${:.2})",
+                symbol,
+                expected_profit.to_f64().unwrap_or(0.0),
+                estimated_cost.to_f64().unwrap_or(0.0)
             );
             return false;
         }
@@ -152,5 +154,10 @@ impl TradeFilter {
     ) -> Decimal {
         self.cost_evaluator
             .calculate_expected_profit(proposal, atr, multiplier)
+    }
+
+    /// Evaluate costs using CostEvaluator (with real-time spreads if available)
+    pub fn evaluate_costs(&self, proposal: &TradeProposal) -> crate::application::monitoring::cost_evaluator::TradeCost {
+        self.cost_evaluator.evaluate(proposal)
     }
 }

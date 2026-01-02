@@ -607,8 +607,9 @@ impl Analyst {
                         .calculate_expected_profit(&proposal, atr, 1.5)
                 };
 
-                // Estimate cost (simple)
-                let estimated_cost = self.fee_model.estimate_total_cost(price, quantity);
+                // Get ACCURATE cost from CostEvaluator (with real-time spreads!)
+                let costs = self.trade_filter.evaluate_costs(&proposal);
+                let estimated_cost = costs.total_cost;
 
                 if !self.trade_filter.validate_profitability(
                     &proposal,
