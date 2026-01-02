@@ -112,6 +112,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let config: AnalystConfig = app_config.clone().into();
 
+    println!("{}", "=".repeat(95));
+    println!("⚙️  EFFECTIVE RISK CONFIGURATION");
+    println!("   Risk Per Trade:       {:.2}%", config.risk_per_trade_percent * 100.0);
+    println!("   Max Position Size:    {:.2}%", config.max_position_size_pct * 100.0);
+    println!("   RSI Threshold:        {:.1}", config.rsi_threshold);
+    println!("   Trailing Stop:        {:.1}x ATR", config.trailing_stop_atr_multiplier);
+    println!("   Profit Target:        {:.1}x ATR", config.profit_target_multiplier);
+    println!("   Trend Tolerance:      {:.1}%", config.trend_tolerance_pct * 100.0);
+    println!("   MACD Rising Required: {}", config.macd_requires_rising);
+    println!("{}", "=".repeat(95));
+
     let market_service = Arc::new(AlpacaMarketDataService::new(
         api_key,
         api_secret,

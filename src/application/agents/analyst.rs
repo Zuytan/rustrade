@@ -311,7 +311,10 @@ impl Analyst {
             let mut context = SymbolContext::new(config, strategy, self.win_rate_provider.clone());
 
             // WARMUP: Fetch historical data to initialize indicators
-            self.warmup_context(&mut context, &symbol).await;
+            let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
+                .unwrap_or_default()
+                .with_timezone(&chrono::Utc);
+            self.warmup_context(&mut context, &symbol, timestamp_dt).await;
 
             self.symbol_states.insert(symbol.clone(), context);
         }
@@ -728,7 +731,12 @@ impl Analyst {
         (self.default_strategy.clone(), self.config.clone())
     }
 
-    async fn warmup_context(&self, context: &mut SymbolContext, symbol: &str) {
+    async fn warmup_context(
+        &self,
+        context: &mut SymbolContext,
+        symbol: &str,
+        end: chrono::DateTime<chrono::Utc>,
+    ) {
         // Calculate needed lookback
         // Max(TrendSMA, SlowSMA, EMA, RSI, MACD_Slow)
         let config = &context.config;
@@ -748,11 +756,11 @@ impl Analyst {
         let required_bars = (max_period as f64 * 1.1) as usize;
 
         info!(
-            "Analyst: Warming up {} with {} bars (Max Period: {})",
-            symbol, required_bars, max_period
+            "Analyst: Warming up {} with {} bars (Max Period: {}) ending at {}",
+            symbol, required_bars, max_period, end
         );
 
-        let end = chrono::Utc::now();
+        // Assuming 1-minute bars.
         // Assuming 1-minute bars.
         // Market is open 6.5h a day ~ 390mins.
         // 2000 bars is ~5.1 trading days.
