@@ -610,11 +610,6 @@ impl Analyst {
                 }
                 // ====================================================
 
-                info!(
-                    "Analyst: Sending Proposal {:?} for {} (EV: {:.2}, R/R: {:.2})",
-                    side, symbol, expectancy_value, risk_ratio
-                );
-
                 match self.proposal_tx.try_send(proposal) {
                     Ok(_) => {
                         context.position_manager.pending_order = Some(side);
@@ -693,9 +688,9 @@ impl Analyst {
 
                 if let Ok(parsed_config) = serde_json::from_str::<AnalystConfig>(&def.config_json) {
                     config = parsed_config;
-                    info!("Analyst: Loaded custom config for {}", symbol);
+                    debug!("Analyst: Loaded custom config for {}", symbol);
                 } else {
-                    info!("Analyst: Failed to parse full config for {}, using default with custom strategy", symbol);
+                    debug!("Analyst: Failed to parse full config for {}, using default with custom strategy", symbol);
                 }
 
                 config.strategy_mode = def.mode;
@@ -759,9 +754,11 @@ impl Analyst {
                     context.update(candle.close.to_f64().unwrap_or(0.0));
                 }
 
-                info!(
-                    "Analyst: Warmup complete for {}. Last Price: {:?}",
-                    symbol, context.last_features.sma_50
+                debug!(
+                    "Analyst: Warmup complete for {} with {} candles. Last Price: {:?}",
+                    symbol,
+                    bars.len(),
+                    context.last_features.sma_50
                 );
 
                 // Calculate and cache reward/risk ratio for trade filtering

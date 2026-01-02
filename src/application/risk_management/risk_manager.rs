@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
@@ -734,7 +734,7 @@ impl RiskManager {
                                 warn!("RiskManager: Trading HALTED. Rejecting proposal for {}", proposal.symbol);
                                 continue;
                             }
-                            info!("RiskManager: reviewing proposal {:?}", proposal);
+                            debug!("RiskManager: reviewing proposal {:?}", proposal);
 
                     // Update current price for this symbol
                     self.current_prices
@@ -962,7 +962,7 @@ impl RiskManager {
                             timestamp: chrono::Utc::now().timestamp_millis(),
                         };
 
-                        info!("RiskManager: Approved. Sending Order {}", order.id);
+                        debug!("RiskManager: Approved. Sending Order {}", order.id);
 
                         // For BUY orders, reserve exposure with optimistic locking
                         if matches!(order.side, OrderSide::Buy) {

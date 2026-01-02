@@ -15,7 +15,7 @@ use tokio::sync::{
     broadcast,
     mpsc::{self, Receiver},
 }; // Added broadcast
-use tracing::{error, info}; // Restored imports
+use tracing::{debug, error, info, trace, warn}; // Restored imports
 
 // ===== Market Data Service (WebSocket) =====
 
@@ -397,13 +397,13 @@ impl AlpacaMarketDataService {
         {
             let cache = self.bar_cache.read().unwrap();
             if let Some(bars) = cache.get(&cache_key) {
-                info!("AlpacaMarketDataService: Cache HIT for {}", cache_key);
+                trace!("AlpacaMarketDataService: Cache HIT for {}", cache_key);
                 return Ok(bars.clone());
             }
         }
 
-        info!(
-            "AlpacaMarketDataService: Cache MISS for {}. Fetching from API...",
+        debug!(
+            "AlpacaMarketDataService: Cache MISS for {}. Fetching...",
             cache_key
         );
 
@@ -474,7 +474,7 @@ impl AlpacaMarketDataService {
             }
         }
 
-        info!("Fetched total {} bars for {}", all_bars.len(), symbol);
+        debug!("Fetched total {} bars for {}", all_bars.len(), symbol);
 
         // Save to cache
         if !all_bars.is_empty() {
