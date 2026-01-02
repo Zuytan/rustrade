@@ -833,7 +833,7 @@ impl ExecutionService for AlpacaExecutionService {
                     .cash
                     .parse::<Decimal>()
                     .unwrap_or(Decimal::ZERO);
-                let bp = account_resp
+                let _bp = account_resp
                     .buying_power
                     .parse::<Decimal>()
                     .unwrap_or(Decimal::ZERO);

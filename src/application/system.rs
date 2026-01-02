@@ -210,7 +210,7 @@ impl Application {
     pub async fn start(self) -> Result<SystemHandle> {
         info!("Starting Agents...");
 
-        let portfolio_handle = self.portfolio.clone();
+        let _portfolio_handle = self.portfolio.clone();
 
         let (market_tx, market_rx) = mpsc::channel(500); // High throughput: market data events
         let (proposal_tx, proposal_rx) = mpsc::channel(100); // Moderate: trade proposals
@@ -229,7 +229,7 @@ impl Application {
         let market_service_for_analyst = self.market_service.clone();
         let execution_service_for_analyst = self.execution_service.clone();
         let strategy_repo_for_analyst = self.strategy_repository.clone();
-        let order_repo_for_analyst = self.order_repository.clone();
+        let _order_repo_for_analyst = self.order_repository.clone();
         // win_rate_provider needs manual creation below
 
         let execution_service_for_state_manager = self.execution_service.clone();
