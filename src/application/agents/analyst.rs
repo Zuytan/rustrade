@@ -506,13 +506,9 @@ impl Analyst {
             context.position_manager.last_signal_time = timestamp;
 
             // Calculate Market Regime and Expectancy (only if we have historical data)
-            // ... (Regime logic stays here as it requires repo access) ...
-
-            // Note: We already calculated regime in step 1.5, we could reuse it if we passed it down.
-            // But context.regime_detector doesn't store state.
-            // Re-calculating for now to keep refactor safe.
+            // Try to recalculate with fresh data, fallback to cache if calculation fails
+            let mut risk_ratio = context.cached_reward_risk_ratio; // Start with cached value as fallback
             let mut expectancy_value = 0.0;
-            let mut risk_ratio = 0.0;
             let mut should_validate_expectancy = false;
 
             if let Some(repo) = &self.candle_repository {
@@ -522,23 +518,32 @@ impl Analyst {
                     .get_range(&symbol, start_ts, end_ts)
                     .await
                     .unwrap_or_default();
-                let regime = context
-                    .regime_detector
-                    .detect(&candles)
-                    .unwrap_or(MarketRegime::unknown());
+                
+                // Only recalculate if we have enough data
+                if candles.len() >= 20 {
+                    let regime = context
+                        .regime_detector
+                        .detect(&candles)
+                        .unwrap_or(MarketRegime::unknown());
 
-                let expectancy = context
-                    .expectancy_evaluator
-                    .evaluate(&symbol, price, &regime)
-                    .await;
-                expectancy_value = expectancy.expected_value;
-                risk_ratio = expectancy.reward_risk_ratio;
-                should_validate_expectancy = true;
-
-                // DELEGATED to TradeFilter
-                if !self.trade_filter.validate_expectancy(&symbol, risk_ratio) {
-                    return;
+                    let expectancy = context
+                        .expectancy_evaluator
+                        .evaluate(&symbol, price, &regime)
+                        .await;
+                    
+                    expectancy_value = expectancy.expected_value;
+                    should_validate_expectancy = true;
+                    
+                    // Use fresh calculation if valid (> 0), otherwise keep cached value
+                    if expectancy.reward_risk_ratio > 0.0 {
+                        risk_ratio = expectancy.reward_risk_ratio;
+                    }
                 }
+            }
+            
+            // Validate using calculated or cached ratio
+            if !self.trade_filter.validate_expectancy(&symbol, risk_ratio) {
+                return;
             }
 
             let quantity = Self::calculate_trade_quantity(
