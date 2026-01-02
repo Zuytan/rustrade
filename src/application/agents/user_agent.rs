@@ -24,6 +24,9 @@ pub struct UserAgent {
     pub market_data: std::collections::HashMap<String, Vec<Candle>>, // Store history
     pub selected_chart_tab: Option<String>, // Currently selected symbol for chart
     pub strategy_info: std::collections::HashMap<String, StrategyInfo>, // Strategy per symbol
+    
+    // Log filtering
+    pub log_level_filter: Option<String>, // None = All, Some("INFO"), Some("WARN"), Some("ERROR"), Some("DEBUG")
 }
 
 #[derive(Clone)]
@@ -54,6 +57,7 @@ impl UserAgent {
             market_data: std::collections::HashMap::new(),
             selected_chart_tab: None,
             strategy_info: std::collections::HashMap::new(),
+            log_level_filter: None, // Show all logs by default
         }
     }
 

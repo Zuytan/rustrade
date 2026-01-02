@@ -41,14 +41,57 @@ impl eframe::App for UserAgent {
                 ui.vertical(|ui| {
                     ui.heading("System Logs & Chat");
                     ui.separator();
+                    
+                    // Log Level Filter Buttons
+                    ui.horizontal(|ui| {
+                        ui.label("Filter:");
+                        if ui.selectable_label(self.log_level_filter.is_none(), "All").clicked() {
+                            self.log_level_filter = None;
+                        }
+                        if ui.selectable_label(
+                            self.log_level_filter == Some("INFO".to_string()), 
+                            "INFO"
+                        ).clicked() {
+                            self.log_level_filter = Some("INFO".to_string());
+                        }
+                        if ui.selectable_label(
+                            self.log_level_filter == Some("WARN".to_string()), 
+                            "WARN"
+                        ).clicked() {
+                            self.log_level_filter = Some("WARN".to_string());
+                        }
+                        if ui.selectable_label(
+                            self.log_level_filter == Some("ERROR".to_string()), 
+                            "ERROR"
+                        ).clicked() {
+                            self.log_level_filter = Some("ERROR".to_string());
+                        }
+                        if ui.selectable_label(
+                            self.log_level_filter == Some("DEBUG".to_string()), 
+                            "DEBUG"
+                        ).clicked() {
+                            self.log_level_filter = Some("DEBUG".to_string());
+                        }
+                    });
+                    ui.separator();
 
-                    // Chat History
+                    // Chat History with filtering
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, true])
                         .max_height(ui.available_height() - 50.0) // Leave room for input
                         .stick_to_bottom(true)
                         .show(ui, |ui| {
                             for (sender, msg) in &self.chat_history {
+                                // Apply log level filter
+                                if let Some(ref filter_level) = self.log_level_filter {
+                                    // Only filter System logs, not User/Agent messages
+                                    if sender == "System" {
+                                        if !msg.contains(filter_level.as_str()) {
+                                            continue; // Skip this log entry
+                                        }
+                                    }
+                                }
+                                
                                 ui.horizontal_wrapped(|ui| {
                                     let (label_text, color) = match sender.as_str() {
                                         "User" => {
