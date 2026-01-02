@@ -130,6 +130,15 @@ impl RiskAppetite {
         Self::interpolate(self.score, 1, 9, 0.01, -0.02)
     }
 
+    /// Calculate profit target multiplier (Risk/Reward expectation)
+    /// Conservative traders target modest gains (1.5x ATR)
+    /// Aggressive traders target larger swings (3.0x ATR)
+    pub fn calculate_profit_target_multiplier(&self) -> f64 {
+        // Score 1: 1.5x ATR
+        // Score 9: 3.0x ATR
+        Self::interpolate(self.score, 1, 9, 1.5, 3.0)
+    }
+
     /// Linear interpolation helper
     ///
     /// Maps a score within [score_min, score_max] to a value within [value_min, value_max]

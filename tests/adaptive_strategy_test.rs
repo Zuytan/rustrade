@@ -126,6 +126,7 @@ async fn test_adaptive_strategy_switching() {
         macd_requires_rising: true,
         trend_tolerance_pct: 0.0,
         macd_min_threshold: 0.0,
+        profit_target_multiplier: 1.5,
     };
 
     // Default strategy (initial) - usually Standard or DualSMA if factory defaults
@@ -145,6 +146,8 @@ async fn test_adaptive_strategy_switching() {
             candle_repository: Some(repo.clone()),
             strategy_repository: None,
             win_rate_provider: None,
+            spread_cache: std::sync::Arc::new(rustrade::application::market_data::spread_cache::SpreadCache::new()),
+            ui_candle_tx: None,
         },
     );
 

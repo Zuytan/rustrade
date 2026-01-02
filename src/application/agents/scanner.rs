@@ -217,11 +217,15 @@ mod tests {
         let update = cmd_rx.recv().await.expect("Should receive update");
 
         // Check for AAPL, GOOG (movers) and MSFT (held)
-        assert!(update.contains(&"AAPL".to_string()));
-        assert!(update.contains(&"GOOG".to_string()));
-        assert!(update.contains(&"MSFT".to_string()));
-        // Logic might change order, but all 3 should be there.
-        // Size should be 3 because AAPL is deduped.
-        assert_eq!(update.len(), 3);
+        if let crate::application::agents::sentinel::SentinelCommand::UpdateSymbols(symbols) = update {
+            assert!(symbols.contains(&"AAPL".to_string()));
+            assert!(symbols.contains(&"GOOG".to_string()));
+            assert!(symbols.contains(&"MSFT".to_string()));
+            // Logic might change order, but all 3 should be there.
+            // Size should be 3 because AAPL is deduped.
+            assert_eq!(symbols.len(), 3);
+        } else {
+            panic!("Expected UpdateSymbols, got {:?}", update);
+        }
     }
 }

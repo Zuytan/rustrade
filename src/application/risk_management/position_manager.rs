@@ -5,6 +5,7 @@ use tracing::info;
 pub struct PositionManager {
     pub trailing_stop: StopState,
     pub pending_order: Option<OrderSide>,
+    pub pending_order_timestamp: i64,
     pub last_signal_time: i64,
 }
 
@@ -19,7 +20,22 @@ impl PositionManager {
         Self {
             trailing_stop: StopState::NoPosition,
             pending_order: None,
+            pending_order_timestamp: 0,
             last_signal_time: 0,
+        }
+    }
+
+    pub fn set_pending_order(&mut self, side: OrderSide, timestamp: i64) {
+        self.pending_order = Some(side);
+        self.pending_order_timestamp = timestamp;
+    }
+
+    pub fn check_timeout(&mut self, current_time: i64, ttl_ms: i64) {
+        if self.pending_order.is_some() {
+            if current_time - self.pending_order_timestamp > ttl_ms {
+                info!("PositionManager: Pending order TIMEOUT after {}ms. Clearing.", current_time - self.pending_order_timestamp);
+                self.pending_order = None;
+            }
         }
     }
 

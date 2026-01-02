@@ -23,7 +23,10 @@ Le bot supporte désormais un **Score d'Appétit au Risque** configurable de 1 �
 
 - **Scores 1-3 (Conservateur)** : Préservation du capital, positions petites (5-10%), stops serrés (2.0-2.5x ATR).
 - **Scores 4-6 (Équilibré)** : Approche modérée, positions moyennes (10-20%), stops modérés (2.5-3.5x ATR). **Le score 5 est le centre exact.**
-- **Scores 7-9 (Agressif)** : Recherche de rendement, positions larges (20-30%), stops lâches (3.5-5.0x ATR).
+- **Scores 4-6 (Équilibré)** : Approche modérée, positions moyennes (10-20%), stops modérés (2.5-3.5x ATR). **Le score 5 est le centre exact.**
+- **Scores 7-9 (Agressif)** : Recherche de rendement, positions larges (20-30%), stops lâches (3.5-5.0x ATR), **Profit Target plus élevé (3.0x ATR)**.
+
+**Impact sur le Profit** : Un score plus élevé augmente le multiplicateur de cible de profit (de 1.5x à 3.0x ATR), permettant de viser des gains plus importants pour justifier le risque et couvrir les coûts fixes sur les petits mouvements.
 
 **Configuration** : Définir `RISK_APPETITE_SCORE=5` dans `.env`. Si non défini, les paramètres individuels sont utilisés (rétrocompatibilité).
 > ℹ️ **Note** : Pour une liste exhaustive de tous les paramètres de configuration, voir la section [Configuration du README](../README.md#⚙️-configuration).

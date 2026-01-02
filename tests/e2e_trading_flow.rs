@@ -91,6 +91,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         macd_requires_rising: true,
         trend_tolerance_pct: 0.0,
         macd_min_threshold: 0.0,
+        profit_target_multiplier: 1.5,
     });
 
     config.mode = Mode::Mock;
@@ -157,7 +158,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
 
     // 4. Run Application (BACKGROUND)
     tokio::spawn(async move {
-        app.run().await.unwrap();
+        app.start().await.unwrap();
     });
 
     // Wait for agents to start

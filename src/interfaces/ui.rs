@@ -14,6 +14,7 @@ impl eframe::App for UserAgent {
 
         // --- 1. Process System Events (Logs & Candles) ---
         self.update();
+        ctx.request_repaint(); // Ensure continuous updates for logs/charts
 
         // --- 2. Top Status Bar ---
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -160,7 +161,8 @@ impl eframe::App for UserAgent {
             ui.heading("Portfolio Dashboard");
             ui.add_space(10.0);
 
-            if let Ok(pf) = self.portfolio.try_read() {
+            match self.portfolio.try_read() {
+                Ok(pf) => {
                 // KPI Cards
                 ui.horizontal(|ui| {
                     metric_card(ui, "Cash Available", pf.cash.to_f64().unwrap_or(0.0), "$");
@@ -224,8 +226,10 @@ impl eframe::App for UserAgent {
                                 }
                             });
                     });
-            } else {
-                ui.colored_label(egui::Color32::RED, "Portfolio Locked (Data updating...)");
+                }
+                Err(_) => {
+                    ui.colored_label(egui::Color32::RED, "Portfolio Locked (Data updating...)");
+                }
             }
 
             ui.add_space(20.0);

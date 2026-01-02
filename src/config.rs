@@ -116,6 +116,7 @@ pub struct Config {
     pub macd_requires_rising: bool,
     pub trend_tolerance_pct: f64,
     pub macd_min_threshold: f64,
+    pub profit_target_multiplier: f64,
 }
 
 impl Config {
@@ -366,6 +367,7 @@ impl Config {
             final_macd_requires_rising,
             final_trend_tolerance_pct,
             final_macd_min_threshold,
+            final_profit_target_multiplier,
         ) = if let Some(ref appetite) = risk_appetite {
             (
                 appetite.calculate_risk_per_trade_percent(),
@@ -376,6 +378,7 @@ impl Config {
                 appetite.requires_macd_rising(),
                 appetite.calculate_trend_tolerance_pct(),
                 appetite.calculate_macd_min_threshold(),
+                appetite.calculate_profit_target_multiplier(),
             )
         } else {
             // Use individual env vars as before (backward compatibility)
@@ -388,6 +391,7 @@ impl Config {
                 true, // Conservative default: require MACD rising
                 0.0,  // Conservative default: strict trend alignment
                 0.0,  // Conservative default: neutral MACD threshold
+                1.5,  // Conservative default: 1.5x ATR
             )
         };
 
@@ -495,6 +499,7 @@ impl Config {
             macd_requires_rising: final_macd_requires_rising,
             trend_tolerance_pct: final_trend_tolerance_pct,
             macd_min_threshold: final_macd_min_threshold,
+            profit_target_multiplier: final_profit_target_multiplier,
             spread_bps,
             min_profit_ratio: final_min_profit_ratio,
             portfolio_staleness_ms,

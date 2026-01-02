@@ -179,6 +179,7 @@ impl Simulator {
             macd_requires_rising: self.config.macd_requires_rising,
             trend_tolerance_pct: self.config.trend_tolerance_pct,
             macd_min_threshold: self.config.macd_min_threshold,
+            profit_target_multiplier: self.config.profit_target_multiplier,
         };
 
         // Use Advanced strategy for simulations

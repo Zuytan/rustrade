@@ -1,5 +1,14 @@
 # Rustrade - Historique des Versions
 
+## Version 0.29.1 (Janvier 2026) - Risk Appetite Scaling & Resilience
+- **Dynamic Profit Target (FIN-01)**:
+  - Le Profit Target s'adapte désormais dynamiquement au Score d'Appétit au Risque (1.5x à 3.0x ATR).
+  - Résout les rejets "Negative Expectancy" pour les actifs peu volatils en mode agressif.
+- **Crypto Execution Fix**:
+  - Force automatiquement le Time-In-Force (TIF) à `gtc` pour les ordres Crypto sur Alpaca, corrigeant les erreurs d'exécution pour les ordres fractionnaires.
+- **System Resilience**:
+  - **Pending Order Circuit Breaker**: Auto-reset des ordres bloqués "Pending" après 60s si aucune confirmation d'exécution n'est reçue, débloquant le pipeline de trading.
+
 ## Version 0.29.0 (Janvier 2026) - Audit Fixes (Tier 1)
 - **Consecutive Loss Circuit Breaker (RISK-01)**:
   - Implémentation d'un compteur de pertes consécutives pour chaque stratégie.

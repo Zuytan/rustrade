@@ -103,6 +103,7 @@ async fn test_backtest_strategy_on_historical_data() {
         macd_requires_rising: true,
         trend_tolerance_pct: 0.0,
         macd_min_threshold: 0.0,
+        profit_target_multiplier: 1.5,
     };
 
     let simulator = Simulator::new(market_service, execution_service, config);

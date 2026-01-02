@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Timelike;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::application::optimization::win_rate_provider::HistoricalWinRateProvider;
 use crate::application::strategies::TradingStrategy;
@@ -211,6 +211,26 @@ impl Application {
     pub async fn start(self) -> Result<SystemHandle> {
         info!("Starting Agents...");
 
+        // Initial Portfolio Sync
+        info!("Synchronizing Portfolio State...");
+        match self.execution_service.get_portfolio().await {
+            Ok(initial_portfolio) => {
+                let mut pf = self.portfolio.write().await;
+                *pf = initial_portfolio;
+                info!(
+                    "Portfolio synchronized. Cash: ${}, Positions: {}",
+                    pf.cash,
+                    pf.positions.len()
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to fetch initial portfolio state: {}. Using default/empty state.",
+                    e
+                );
+            }
+        }
+
         let _portfolio_handle = self.portfolio.clone();
 
         let (market_tx, market_rx) = mpsc::channel(500); // High throughput: market data events
@@ -311,6 +331,7 @@ impl Application {
             macd_requires_rising: self.config.macd_requires_rising,
             trend_tolerance_pct: self.config.trend_tolerance_pct,
             macd_min_threshold: self.config.macd_min_threshold,
+            profit_target_multiplier: self.config.profit_target_multiplier,
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {

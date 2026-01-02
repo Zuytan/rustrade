@@ -730,7 +730,14 @@ impl ExecutionService for AlpacaExecutionService {
             (type_str, limit_price, stop_price)
         };
 
-        let tif = if is_fractional { "day" } else { "gtc" };
+        let is_crypto = order.symbol.contains('/') || order.symbol.contains("USD");
+        let tif = if is_crypto {
+            "gtc"
+        } else if is_fractional {
+            "day"
+        } else {
+            "gtc"
+        };
 
         // Using outer AlpacaOrderRequest struct definition
 

@@ -143,6 +143,7 @@ impl GridSearchOptimizer {
                                     macd_requires_rising: true, // Conservative default for grid search
                                     trend_tolerance_pct: 0.0,   // Strict default for grid search
                                     macd_min_threshold: 0.0,    // Neutral default for grid search
+                                    profit_target_multiplier: 1.5, // Conservative default
                                 });
                             }
                         }
@@ -377,6 +378,7 @@ mod tests {
                 macd_requires_rising: true,
                 trend_tolerance_pct: 0.0,
                 macd_min_threshold: 0.0,
+                profit_target_multiplier: 1.5,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

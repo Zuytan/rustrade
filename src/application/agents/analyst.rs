@@ -116,6 +116,7 @@ pub struct AnalystConfig {
     pub signal_confirmation_bars: usize, // Phase 2: signal confirmation
     pub spread_bps: f64,                 // Cost-aware trading: spread in basis points
     pub min_profit_ratio: f64,           // Cost-aware trading: minimum profit/cost ratio
+    pub profit_target_multiplier: f64,
     // Risk-based adaptive filters
     pub macd_requires_rising: bool, // Whether MACD must be rising for buy signals
     pub trend_tolerance_pct: f64,   // Percentage tolerance for trend filter
@@ -160,6 +161,7 @@ impl From<crate::config::Config> for AnalystConfig {
             signal_confirmation_bars: config.signal_confirmation_bars,
             spread_bps: config.spread_bps,
             min_profit_ratio: config.min_profit_ratio,
+            profit_target_multiplier: config.profit_target_multiplier,
             macd_requires_rising: config.macd_requires_rising,
             trend_tolerance_pct: config.trend_tolerance_pct,
             macd_min_threshold: config.macd_min_threshold,
@@ -450,6 +452,9 @@ impl Analyst {
             }
         }
 
+        // Monitor pending order timeout
+        context.position_manager.check_timeout(timestamp, 60000); // 60s timeout for Analyst-side pending flag
+
         // 5. Strategy Check via SignalGenerator
         if !trailing_stop_triggered {
             let strategy_signal = context.signal_generator.generate_signal(
@@ -601,8 +606,8 @@ impl Analyst {
                 
                 // Log ATR context
                 info!(
-                    "Analyst [{}]: Calculating Profit Expectancy - ATR=${:.4}, Multiplier=1.5, Quantity={}",
-                    symbol, atr, quantity
+                    "Analyst [{}]: Calculating Profit Expectancy - ATR=${:.4}, Multiplier={:.2}, Quantity={}",
+                    symbol, atr, context.config.profit_target_multiplier, quantity
                 );
 
                 let expected_profit = if should_validate_expectancy {
@@ -611,7 +616,7 @@ impl Analyst {
                     // Fallback if no expectancy? OLD used to skip.
                     // The cost filter uses ATR based profit.
                     self.trade_filter
-                        .calculate_expected_profit(&proposal, atr, 1.5)
+                        .calculate_expected_profit(&proposal, atr, context.config.profit_target_multiplier)
                 };
 
                 // Get ACCURATE cost from CostEvaluator (with real-time spreads!)
@@ -631,7 +636,7 @@ impl Analyst {
 
                 match self.proposal_tx.try_send(proposal) {
                     Ok(_) => {
-                        context.position_manager.pending_order = Some(side);
+                        context.position_manager.set_pending_order(side, timestamp);
 
                         // Phase 2: Track entry time on buy signals
                         if side == OrderSide::Buy {
@@ -907,6 +912,7 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+            profit_target_multiplier: 1.5,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1014,6 +1020,7 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+            profit_target_multiplier: 1.5,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1137,6 +1144,7 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+            profit_target_multiplier: 1.5,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1252,6 +1260,7 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+            profit_target_multiplier: 1.5,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1373,6 +1382,7 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+            profit_target_multiplier: 1.5,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1509,6 +1519,7 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+            profit_target_multiplier: 1.5,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1644,6 +1655,7 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+            profit_target_multiplier: 1.5,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
