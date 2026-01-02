@@ -57,10 +57,12 @@ impl RiskAppetite {
 
     /// Calculates the risk per trade percentage based on appetite
     ///
-    /// Returns a value between 0.005 (0.5%) for score 1 and 0.03 (3%) for score 10
+    /// Returns a value between 0.02 (2%) for score 1 and 0.10 (10%) for score 10
     /// Uses continuous linear interpolation for smooth progression
     pub fn calculate_risk_per_trade_percent(&self) -> f64 {
-        Self::interpolate(self.score, 1, 9, 0.005, 0.03)
+        // Boosted from 0.005-0.03 to 0.02-0.10 to allow larger positions
+        // This overcomes minimum fixed costs on small accounts
+        Self::interpolate(self.score, 1, 9, 0.02, 0.10)
     }
 
     /// Calculates the trailing stop ATR multiplier based on appetite
@@ -261,8 +263,8 @@ mod tests {
         // - 1/9 of the way from min to max (score 2 out of 1-10 range)
         let risk_per_trade = risk.calculate_risk_per_trade_percent();
         assert!(
-            (0.005..=0.015).contains(&risk_per_trade),
-            "Score 2 risk per trade should be early in range, got {}",
+            (0.02..=0.04).contains(&risk_per_trade),
+            "Score 2 risk per trade should be early in range (approx 0.03), got {}",
             risk_per_trade
         );
 
@@ -294,8 +296,8 @@ mod tests {
 
         // Score 5 is EXACTLY mid-range (4/8 through the scale)
         let risk_per_trade = risk.calculate_risk_per_trade_percent();
-        // 0.005 + 0.5 * (0.03 - 0.005) = 0.0175
-        assert!((risk_per_trade - 0.0175).abs() < 1e-10);
+        // 0.02 + 0.5 * (0.10 - 0.02) = 0.06
+        assert!((risk_per_trade - 0.06).abs() < 1e-10);
 
         let trailing_stop = risk.calculate_trailing_stop_multiplier();
         // 2.0 + 0.5 * (5.0 - 2.0) = 3.5
@@ -317,8 +319,8 @@ mod tests {
         // Score 9 should be near the high end (8/9 through the scale)
         let risk_per_trade = risk.calculate_risk_per_trade_percent();
         assert!(
-            (0.025..=0.03).contains(&risk_per_trade),
-            "Score 9 risk per trade should be high, got {}",
+            (0.09..=0.10).contains(&risk_per_trade),
+            "Score 9 risk per trade should be high (0.10), got {}",
             risk_per_trade
         );
 
