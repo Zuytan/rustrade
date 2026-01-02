@@ -109,13 +109,22 @@ impl CostEvaluator {
         // Spread: Use REAL spread from cache if available, otherwise use default
         let spread_bps = if let Some(ref cache) = self.spread_cache {
             if let Some(real_spread_pct) = cache.get_spread_pct(&proposal.symbol) {
-                // Convert percentage to basis points (e.g., 0.0005 = 0.05% = 5 bps)
-                Decimal::from_f64(real_spread_pct * 10000.0).unwrap_or(self.default_spread_bps)
+                let real_bps = Decimal::from_f64(real_spread_pct * 10000.0).unwrap_or(self.default_spread_bps);
+                tracing::info!(
+                    "💰 CostEvaluator: Using REAL spread for {} = {:.2} bps (vs default {:.2} bps)",
+                    proposal.symbol, real_bps, self.default_spread_bps
+                );
+                real_bps
             } else {
-                self.default_spread_bps  // Fallback if symbol not in cache
+                tracing::warn!(
+                    "⚠️  CostEvaluator: No real spread for {}, using DEFAULT {:.2} bps",
+                    proposal.symbol, self.default_spread_bps
+                );
+                self.default_spread_bps
             }
         } else {
-            self.default_spread_bps  // Fallback if no cache
+            tracing::warn!("⚠️  CostEvaluator: No SpreadCache!");
+            self.default_spread_bps
         };
 
         // Spread cost: trade_value * (spread_bps / 10000)
@@ -123,6 +132,16 @@ impl CostEvaluator {
 
         // Total cost is sum of all components
         let total_cost = commission + estimated_slippage + spread_cost;
+
+        tracing::info!(
+            "💵 {} Cost Breakdown: Commission=${:.2}, Slippage=${:.2}, Spread=${:.2} ({:.1} bps), TOTAL=${:.2}",
+            proposal.symbol,
+            commission.to_f64().unwrap_or(0.0),
+            estimated_slippage.to_f64().unwrap_or(0.0),
+            spread_cost.to_f64().unwrap_or(0.0),
+            spread_bps.to_f64().unwrap_or(0.0),
+            total_cost.to_f64().unwrap_or(0.0)
+        );
 
         TradeCost {
             commission,

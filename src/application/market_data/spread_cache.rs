@@ -15,6 +15,15 @@ pub struct SpreadCache {
     spreads: RwLock<HashMap<String, SpreadData>>,
 }
 
+// Manual Debug implementation for SpreadCache
+impl std::fmt::Debug for SpreadCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpreadCache")
+            .field("spreads", &"<RwLock>")
+            .finish()
+    }
+}
+
 impl SpreadCache {
     pub fn new() -> Self {
         Self {

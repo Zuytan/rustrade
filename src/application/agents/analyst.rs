@@ -227,11 +227,12 @@ impl Analyst {
             .win_rate_provider
             .unwrap_or_else(|| Arc::new(StaticWinRateProvider::new(0.50)));
 
-        // Initialize Cost Evaluator for profit-aware trading
-        let cost_evaluator = CostEvaluator::new(
+        // Initialize Cost Evaluator for profit-aware trading WITH real-time spreads
+        let cost_evaluator = CostEvaluator::with_spread_cache(
             config.commission_per_share,
             config.slippage_pct,
-            config.spread_bps,
+            config.spread_bps,  // Default fallback if real spread unavailable
+            dependencies.spread_cache.clone(), // Real-time spreads from WebSocket!
         );
 
         let trade_filter =
