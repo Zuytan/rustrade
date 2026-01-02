@@ -43,6 +43,7 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{self, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{debug, error, info, warn};
+use crate::application::market_data::spread_cache::SpreadCache;
 
 // WebSocket heartbeat and reconnection configuration
 const PING_INTERVAL_SECS: u64 = 20;
@@ -85,6 +86,9 @@ pub struct AlpacaWebSocketManager {
 
     /// Current connection state
     state: Arc<RwLock<ConnectionState>>,
+
+    /// Spread cache for real-time bid/ask tracking
+    spread_cache: Arc<SpreadCache>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,7 +131,12 @@ struct AlpacaTrade {
 
 impl AlpacaWebSocketManager {
     /// Create a new WebSocket manager and start the background connection task
-    pub fn new(api_key: String, api_secret: String, ws_url: String) -> Self {
+    pub fn new(
+        api_key: String,
+        api_secret: String,
+        ws_url: String,
+        spread_cache: Arc<SpreadCache>,
+    ) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
         let (command_tx, command_rx) = mpsc::channel(10);
 
@@ -139,6 +148,7 @@ impl AlpacaWebSocketManager {
             subscribed_symbols: Arc::new(RwLock::new(Vec::new())),
             command_tx,
             state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
+            spread_cache, // NEW
         };
 
         // Spawn background task
@@ -178,8 +188,11 @@ impl AlpacaWebSocketManager {
         let event_tx = self.event_tx.clone();
         let state = self.state.clone();
         let subscribed_symbols = self.subscribed_symbols.clone();
+        let spread_cache = self.spread_cache.clone();
 
         tokio::spawn(async move {
+            // Force capture spread_cache in this async move block
+            let _spread_cache_check = &spread_cache;
             let mut reconnect_attempts = 0u32;
 
             loop {
@@ -200,6 +213,7 @@ impl AlpacaWebSocketManager {
                     &state,
                     &subscribed_symbols,
                     &mut command_rx,
+                    &spread_cache, // NEW
                 )
                 .await
                 {
@@ -252,6 +266,7 @@ impl AlpacaWebSocketManager {
         state: &Arc<RwLock<ConnectionState>>,
         subscribed_symbols: &Arc<RwLock<Vec<String>>>,
         command_rx: &mut mpsc::Receiver<SubscriptionCommand>,
+        spread_cache: &Arc<SpreadCache>, // NEW  
     ) -> Result<bool> {
         // Connect to WebSocket
         let (ws_stream, _) = connect_async(ws_url)
@@ -317,6 +332,9 @@ impl AlpacaWebSocketManager {
                                             info!("WebSocketManager: Subscribed - Trades: {:?}, Quotes: {:?}", trades, quotes);
                                         }
                                         AlpacaMessage::Quote(quote) => {
+                                            // Store real-time spread BEFORE creating event
+                                            spread_cache.update(quote.symbol.clone(), quote.bid_price, quote.ask_price);
+                                            
                                             let mid_price = (quote.bid_price + quote.ask_price) / 2.0;
                                             let event = MarketEvent::Quote {
                                                 symbol: quote.symbol,

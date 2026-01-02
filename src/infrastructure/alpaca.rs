@@ -48,10 +48,12 @@ impl AlpacaMarketDataService {
             .unwrap_or_else(|_| Client::new());
 
         // Create singleton WebSocket manager
+        let spread_cache = Arc::new(crate::application::market_data::spread_cache::SpreadCache::new());
         let ws_manager = Arc::new(AlpacaWebSocketManager::new(
             api_key.clone(),
             api_secret.clone(),
             ws_url,
+            spread_cache,
         ));
 
         Self {

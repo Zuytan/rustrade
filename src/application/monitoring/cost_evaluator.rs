@@ -1,6 +1,8 @@
 use crate::domain::trading::types::TradeProposal;
+use crate::application::market_data::spread_cache::SpreadCache;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
+use std::sync::Arc;
 
 /// Detailed breakdown of transaction costs for a trade
 #[derive(Debug, Clone)]
@@ -49,8 +51,10 @@ pub struct CostEvaluator {
     commission_per_share: Decimal,
     /// Slippage as percentage of trade value (e.g., 0.001 = 0.1%)
     slippage_pct: Decimal,
-    /// Spread in basis points (e.g., 5.0 = 0.05%)
-    spread_bps: Decimal,
+    /// DEFAULT spread in basis points (fallback when real spread unavailable)
+    default_spread_bps: Decimal,
+    /// Real-time spread cache (optional - uses default if None or stale)
+    spread_cache: Option<Arc<SpreadCache>>,
 }
 
 impl CostEvaluator {
@@ -59,12 +63,28 @@ impl CostEvaluator {
     /// # Arguments
     /// * `commission_per_share` - Commission fee per share (e.g., 0.005 for $0.005/share)
     /// * `slippage_pct` - Expected slippage as decimal (e.g., 0.001 for 0.1%)
-    /// * `spread_bps` - Bid-ask spread in basis points (e.g., 5.0 for 5 bps)
+    /// * `spread_bps` - DEFAULT bid-ask spread in basis points (e.g., 5.0 for 5 bps)
     pub fn new(commission_per_share: f64, slippage_pct: f64, spread_bps: f64) -> Self {
         Self {
             commission_per_share: Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO),
             slippage_pct: Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO),
-            spread_bps: Decimal::from_f64(spread_bps).unwrap_or(Decimal::ZERO),
+            default_spread_bps: Decimal::from_f64(spread_bps).unwrap_or(Decimal::ZERO),
+            spread_cache: None,
+        }
+    }
+
+    /// Create CostEvaluator with real-time spread tracking
+    pub fn with_spread_cache(
+        commission_per_share: f64,
+        slippage_pct: f64,
+        default_spread_bps: f64,
+        spread_cache: Arc<SpreadCache>,
+    ) -> Self {
+        Self {
+            commission_per_share: Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO),
+            slippage_pct: Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO),
+            default_spread_bps: Decimal::from_f64(default_spread_bps).unwrap_or(Decimal::ZERO),
+            spread_cache: Some(spread_cache),
         }
     }
 
@@ -86,9 +106,20 @@ impl CostEvaluator {
         // This represents the expected price impact when executing the order
         let estimated_slippage = trade_value * self.slippage_pct;
 
-        // Spread: trade_value * (spread_bps / 10000)
-        // Convert basis points to decimal (1 bp = 0.01% = 0.0001)
-        let spread_cost = trade_value * (self.spread_bps / Decimal::from(10000));
+        // Spread: Use REAL spread from cache if available, otherwise use default
+        let spread_bps = if let Some(ref cache) = self.spread_cache {
+            if let Some(real_spread_pct) = cache.get_spread_pct(&proposal.symbol) {
+                // Convert percentage to basis points (e.g., 0.0005 = 0.05% = 5 bps)
+                Decimal::from_f64(real_spread_pct * 10000.0).unwrap_or(self.default_spread_bps)
+            } else {
+                self.default_spread_bps  // Fallback if symbol not in cache
+            }
+        } else {
+            self.default_spread_bps  // Fallback if no cache
+        };
+
+        // Spread cost: trade_value * (spread_bps / 10000)
+        let spread_cost = trade_value * (spread_bps / Decimal::from(10000));
 
         // Total cost is sum of all components
         let total_cost = commission + estimated_slippage + spread_cost;
