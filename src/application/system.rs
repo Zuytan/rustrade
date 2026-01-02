@@ -13,6 +13,7 @@ use crate::application::{
         scanner::MarketScanner,
         sentinel::{Sentinel, SentinelCommand}, // Added SentinelCommand
     },
+    market_data::spread_cache::SpreadCache,
     monitoring::performance_monitoring_service::PerformanceMonitoringService,
     optimization::{
         adaptive_optimization_service::AdaptiveOptimizationService,
@@ -221,6 +222,9 @@ impl Application {
         // Broadcast channel for Candles (for UI)
         let (candle_tx, candle_rx) = broadcast::channel(100);
 
+        // Create SpreadCache (shared across agents for real-time cost tracking)
+        let spread_cache = Arc::new(SpreadCache::new());
+
         // Create clones of Arc services for each task
         let market_service_for_sentinel = self.market_service.clone();
         let market_service_for_scanner = self.market_service.clone();
@@ -382,6 +386,7 @@ impl Application {
                 strategy_repository: Some(strategy_repo_for_analyst),
                 win_rate_provider: Some(win_rate_provider),
                 ui_candle_tx: Some(candle_tx),
+                spread_cache: spread_cache.clone(),
             },
         );
 

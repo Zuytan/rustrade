@@ -1,5 +1,6 @@
 use crate::domain::repositories::CandleRepository;
 use crate::domain::trading::types::Candle;
+use crate::application::market_data::spread_cache::SpreadCache;
 use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -66,14 +67,19 @@ pub struct CandleAggregator {
     builders: HashMap<String, CandleBuilder>,
     _timeframe: Duration, // e.g., 1 minute
     repository: Option<Arc<dyn CandleRepository>>,
+    spread_cache: Arc<SpreadCache>, // Store real-time bid/ask spreads
 }
 
 impl CandleAggregator {
-    pub fn new(repository: Option<Arc<dyn CandleRepository>>) -> Self {
+    pub fn new(
+        repository: Option<Arc<dyn CandleRepository>>,
+        spread_cache: Arc<SpreadCache>,
+    ) -> Self {
         Self {
             builders: HashMap::new(),
             _timeframe: Duration::minutes(1),
             repository,
+            spread_cache,
         }
     }
 
@@ -147,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_candle_aggregation() {
-        let mut agg = CandleAggregator::new(None);
+        let mut agg = CandleAggregator::new(None, Arc::new(SpreadCache::new()));
         let symbol = "BTC/USD";
 
         // T0: 00:00:01 - First tick

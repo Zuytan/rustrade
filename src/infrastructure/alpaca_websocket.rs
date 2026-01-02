@@ -341,7 +341,7 @@ impl AlpacaWebSocketManager {
                             // Received pong response
                             if pong_deadline.is_some() {
                                 pong_deadline = None;
-                                info!("WebSocketManager: Pong received");
+                                debug!("WebSocketManager: Pong received");
                             }
                         }
                         Some(Ok(Message::Close(_))) => {

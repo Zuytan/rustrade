@@ -208,6 +208,7 @@ impl Simulator {
                 strategy_repository: None,
                 win_rate_provider: None,
                 ui_candle_tx: None,
+                spread_cache: Arc::new(crate::application::market_data::spread_cache::SpreadCache::new()),
             },
         );
 
