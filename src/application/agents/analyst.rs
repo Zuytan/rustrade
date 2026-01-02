@@ -598,6 +598,13 @@ impl Analyst {
 
                 // Calculate expected profit (using Helper)
                 let atr = context.last_features.atr.unwrap_or(0.0);
+                
+                // Log ATR context
+                info!(
+                    "Analyst [{}]: Calculating Profit Expectancy - ATR=${:.4}, Multiplier=1.5, Quantity={}",
+                    symbol, atr, quantity
+                );
+
                 let expected_profit = if should_validate_expectancy {
                     Decimal::from_f64_retain(expectancy_value).unwrap_or(Decimal::ZERO) * quantity
                 } else {
