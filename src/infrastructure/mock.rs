@@ -1,18 +1,15 @@
-use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate}; // Added OrderUpdate
+use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
 use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::broadcast; // Added broadcast
-                            // use chrono::Utc;
+use tokio::sync::broadcast;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::sync::Arc;
-// use std::time::Duration;
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     RwLock,
 };
-// use tokio::time;
 use tracing::info;
 
 #[derive(Clone)]
@@ -47,8 +44,9 @@ impl Default for MockMarketDataService {
 }
 
 impl MockMarketDataService {
+
+
     pub async fn publish(&self, event: MarketEvent) {
-        // If it's a quote, update internal price state
         if let MarketEvent::Quote { symbol, price, .. } = &event {
             self.current_prices
                 .write()
@@ -59,11 +57,9 @@ impl MockMarketDataService {
         let mut subs = self.subscribers.write().await;
 
         if subs.is_empty() {
-            // info!("MockMarketDataService: No subscribers for event: {:?}", event);
             return;
         }
 
-        // retain only active subscribers
         let mut active_subs = Vec::new();
         let mut sent_count = 0;
         for tx in subs.iter() {
@@ -74,7 +70,6 @@ impl MockMarketDataService {
         }
         *subs = active_subs;
 
-        // Log every 10th event to avoid spam
         if matches!(event, MarketEvent::Quote { symbol, .. } if symbol.contains("BTC")) {
             use std::sync::atomic::{AtomicUsize, Ordering};
             static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -89,14 +84,12 @@ impl MockMarketDataService {
         }
     }
 
-    /// Helper for tests to manually set a price
     pub async fn set_price(&self, symbol: &str, price: Decimal) {
         self.current_prices
             .write()
             .await
             .insert(symbol.to_string(), price);
 
-        // Also publish an event so subscribers get it
         self.publish(MarketEvent::Quote {
             symbol: symbol.to_string(),
             price,
@@ -111,14 +104,12 @@ impl MarketDataService for MockMarketDataService {
     async fn subscribe(&self, symbols: Vec<String>) -> Result<Receiver<MarketEvent>> {
         let (tx, rx) = mpsc::channel(100);
 
-        // Add to subscribers
         self.subscribers.write().await.push(tx.clone());
 
         let symbols_clone = symbols.clone();
         let service_clone = self.clone();
 
         if self.simulation_enabled {
-            // Spawn random walk simulation for demo/testing
             tokio::spawn(async move {
                 use chrono::Utc;
                 use std::time::Duration;
@@ -128,7 +119,6 @@ impl MarketDataService for MockMarketDataService {
                     std::collections::HashMap::new();
                 let mut iteration = 0u64;
 
-                // Initialize prices
                 for symbol in &symbols_clone {
                     let base_price = if symbol.contains("BTC") {
                         96000.0
@@ -156,10 +146,8 @@ impl MarketDataService for MockMarketDataService {
                     for (idx, symbol) in symbols_clone.iter().enumerate() {
                         let current_price = prices.get(symbol).copied().unwrap_or(100.0);
 
-                        // Simple pseudo-random using iteration and timestamp
-                        // This creates -0.5% to +0.5% variance
                         let seed = (iteration + idx as u64) * 1103515245 + 12345;
-                        let random_val = (((seed / 65536) % 1000) as f64 / 1000.0) - 0.5; // -0.5 to +0.5
+                        let random_val = (((seed / 65536) % 1000) as f64 / 1000.0) - 0.5;
                         let change_pct = random_val * 0.01;
                         let new_price = current_price * (1.0 + change_pct);
 
@@ -208,7 +196,6 @@ impl MarketDataService for MockMarketDataService {
         let mut result = std::collections::HashMap::new();
 
         for sym in symbols {
-            // Use stored price if available, else default to 100
             let price = stored_prices
                 .get(&sym)
                 .copied()
@@ -225,7 +212,6 @@ impl MarketDataService for MockMarketDataService {
         _end: chrono::DateTime<chrono::Utc>,
         _timeframe: &str,
     ) -> Result<Vec<crate::domain::trading::types::Candle>> {
-        // For now, return empty or mock data
         Ok(vec![])
     }
 }
@@ -235,8 +221,8 @@ use crate::domain::trading::portfolio::Portfolio;
 pub struct MockExecutionService {
     portfolio: Arc<RwLock<Portfolio>>,
     orders: Arc<RwLock<Vec<Order>>>,
-    slippage_pct: f64,         // Slippage as decimal (e.g., 0.001 = 0.1%)
-    commission_per_share: f64, // Commission per share (e.g., 0.001 = $0.001/share)
+    slippage_pct: f64,
+    commission_per_share: f64,
     order_update_sender: broadcast::Sender<OrderUpdate>,
 }
 
@@ -251,7 +237,6 @@ impl MockExecutionService {
         }
     }
 
-    /// Create with transaction costs (for realistic backtests)
     pub fn with_costs(
         portfolio: Arc<RwLock<Portfolio>>,
         slippage_pct: f64,
@@ -271,10 +256,7 @@ impl MockExecutionService {
 impl ExecutionService for MockExecutionService {
     async fn execute(&self, order: Order) -> Result<()> {
         info!("MockExecution: Placing order {}...", order.id);
-        // Faster execution for tests
-        // time::sleep(Duration::from_millis(200)).await;
 
-        // Simulate execution update on the "exchange" side
         let mut port =
             tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write())
                 .await
@@ -284,17 +266,15 @@ impl ExecutionService for MockExecutionService {
                     )
                 })?;
 
-        // Apply slippage to execution price
         let slippage_multiplier = Decimal::from_f64(match order.side {
-            crate::domain::trading::types::OrderSide::Buy => 1.0 + self.slippage_pct, // Buy higher
-            crate::domain::trading::types::OrderSide::Sell => 1.0 - self.slippage_pct, // Sell lower
+            crate::domain::trading::types::OrderSide::Buy => 1.0 + self.slippage_pct,
+            crate::domain::trading::types::OrderSide::Sell => 1.0 - self.slippage_pct,
         })
         .unwrap_or(Decimal::ONE);
 
         let execution_price = order.price * slippage_multiplier;
         let cost = execution_price * order.quantity;
 
-        // Calculate commission
         let commission =
             Decimal::from_f64(self.commission_per_share).unwrap_or(Decimal::ZERO) * order.quantity;
 
@@ -310,7 +290,6 @@ impl ExecutionService for MockExecutionService {
 
         match order.side {
             crate::domain::trading::types::OrderSide::Buy => {
-                // Deduct cost + commission from cash
                 port.cash -= cost + commission;
                 let pos = port.positions.entry(order.symbol.clone()).or_insert(
                     crate::domain::trading::portfolio::Position {
@@ -328,7 +307,6 @@ impl ExecutionService for MockExecutionService {
                 pos.quantity = total_qty;
             }
             crate::domain::trading::types::OrderSide::Sell => {
-                // Add proceeds minus commission to cash
                 port.cash += cost - commission;
                 let pos = port.positions.entry(order.symbol.clone()).or_insert(
                     crate::domain::trading::portfolio::Position {
@@ -341,13 +319,11 @@ impl ExecutionService for MockExecutionService {
             }
         }
 
-        // Record order
         self.orders.write().await.push(order.clone());
 
-        // Broadcast OrderUpdate
         let _ = self.order_update_sender.send(OrderUpdate {
             order_id: order.id.clone(),
-            client_order_id: order.id.clone(), // In mock, they are the same
+            client_order_id: order.id.clone(),
             symbol: order.symbol.clone(),
             side: order.side,
             status: crate::domain::trading::types::OrderStatus::Filled,
@@ -375,6 +351,14 @@ impl ExecutionService for MockExecutionService {
     async fn get_today_orders(&self) -> Result<Vec<Order>> {
         let orders = self.orders.read().await;
         Ok(orders.clone())
+    }
+
+    async fn get_open_orders(&self) -> Result<Vec<Order>> {
+        Ok(vec![])
+    }
+
+    async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+        Ok(())
     }
 
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {

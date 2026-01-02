@@ -28,6 +28,8 @@ pub trait ExecutionService: Send + Sync {
     async fn execute(&self, order: Order) -> Result<()>;
     async fn get_portfolio(&self) -> Result<Portfolio>;
     async fn get_today_orders(&self) -> Result<Vec<Order>>;
+    async fn get_open_orders(&self) -> Result<Vec<Order>>;
+    async fn cancel_order(&self, order_id: &str) -> Result<()>;
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>>;
 }
 

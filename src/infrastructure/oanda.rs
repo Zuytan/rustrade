@@ -10,6 +10,7 @@ use async_trait::async_trait;
 
 use reqwest::Client;
 use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::broadcast;
 
 pub struct OandaMarketDataService {
     _api_key: String,
@@ -106,9 +107,19 @@ impl ExecutionService for OandaExecutionService {
         Ok(Vec::new())
     }
 
+    async fn get_open_orders(&self) -> Result<Vec<Order>> {
+        // Oanda implementation pending, return empty for now
+        Ok(vec![])
+    }
+
+    async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+        // Oanda implementation pending
+        Ok(())
+    }
+
     async fn subscribe_order_updates(
         &self,
-    ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+    ) -> Result<broadcast::Receiver<OrderUpdate>> {
         anyhow::bail!("Oanda order updates not implemented")
     }
 }

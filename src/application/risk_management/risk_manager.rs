@@ -185,7 +185,7 @@ impl RiskManager {
     }
 
     /// Initialize session tracking with starting equity
-    async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Refresh portfolio state from exchange
         let snapshot = self.portfolio_state_manager.refresh().await?;
 
@@ -250,11 +250,14 @@ impl RiskManager {
                 .unwrap_or(0.0);
 
             if daily_loss_pct < -self.risk_config.max_daily_loss_pct {
-                return Some(format!(
-                    "Daily loss limit breached: {:.2}% (limit: {:.2}%)",
+                let msg = format!(
+                    "Daily loss limit breached: {:.2}% (limit: {:.2}%) [Start: {}, Current: {}]",
                     daily_loss_pct * 100.0,
-                    self.risk_config.max_daily_loss_pct * 100.0
-                ));
+                    self.risk_config.max_daily_loss_pct * 100.0,
+                    self.session_start_equity,
+                    current_equity
+                );
+                return Some(msg);
             }
         }
 
@@ -465,7 +468,7 @@ impl RiskManager {
     }
 
     /// Fetch latest prices for all held positions and update valuation
-    async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // 1. Get fresh portfolio snapshot
         let snapshot = self.portfolio_state_manager.refresh().await?;
 
@@ -492,10 +495,11 @@ impl RiskManager {
                 }
 
                 // 6. Check Risks (Async check)
+                // 6. Check Risks (Async check)
                 if let Some(reason) = self.check_circuit_breaker(current_equity) {
                     tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
-                    // In a real system, we might want to shut down or cancel all orders here.
-                    // For now, next proposal will be rejected.
+                    self.halted = true;
+                    self.liquidate_portfolio(&reason).await;
                 }
 
                 // 7. Capture performance snapshot if monitor available
@@ -648,6 +652,10 @@ impl RiskManager {
             true // Keep in pending
         });
     }
+    
+    pub fn is_halted(&self) -> bool {
+        self.halted
+    }
 
     pub async fn run(&mut self) {
         info!("RiskManager started with config: {:?}", self.risk_config);
@@ -705,27 +713,12 @@ impl RiskManager {
 
                             // Check circuit breaker logic on tick
                             if !self.halted {
-                                // Get current snapshot for equity calculation
-                                let snapshot = self.portfolio_state_manager.get_snapshot().await;
-                                let current_equity = snapshot.portfolio.total_equity(&self.current_prices);
-                                let reason = self.check_circuit_breaker(current_equity);
-
-                                // Check for Daily Reset (Crypto)
-                                self.check_daily_reset(current_equity);
-
-                                // Check daily loss limit (Duplicate check removed - covered by check_circuit_breaker)
-                                // if self.check_daily_loss_limit(current_equity) {
-                                //     ...
-                                // }
-
-                                if let Some(r) = reason {
-                                    error!("RiskManager: CIRCUIT BREAKER TRIGGERED (Tick) - {}", r);
-                                    self.halted = true;
-                                    self.liquidate_portfolio(&r).await;
-                                }
-
                                 // PERIODIC RECONCILIATION
                                 // Ensure we clean up stale pending orders even if no new proposals arrive
+                                // We need a snapshot for this. update_portfolio_valuation got one, but didn't return it.
+                                // We can get a cached one.
+                                let snapshot = self.portfolio_state_manager.get_snapshot().await;
+                                self.check_daily_reset(snapshot.portfolio.total_equity(&self.current_prices));
                                 self.reconcile_pending_orders(&snapshot.portfolio);
                             }
                         }
@@ -753,8 +746,6 @@ impl RiskManager {
                             }
                         };
                     }
-
-                    let portfolio = &snapshot.portfolio;
 
                     let portfolio = &snapshot.portfolio;
 

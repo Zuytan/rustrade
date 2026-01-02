@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::{Receiver, Sender};
+use crate::domain::trading::types::OrderStatus; // Added
 use tracing::{debug, error, info, warn};
 
 pub struct SymbolContext {
@@ -267,20 +268,58 @@ impl Analyst {
             self.config.max_positions
         );
 
-        while let Some(event) = self.market_rx.recv().await {
-            match event {
-                MarketEvent::Quote {
-                    symbol,
-                    price,
-                    timestamp,
-                } => {
-                    if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, timestamp)
-                    {
-                        self.process_candle(candle).await;
+        // Subscribe to Order Updates
+        let mut order_rx = match self.execution_service.subscribe_order_updates().await {
+             Ok(rx) => {
+                 info!("Analyst: Subscribed to order updates.");
+                 Some(rx)
+             }
+             Err(e) => {
+                 error!("Analyst: Failed to subscribe to order updates: {}", e);
+                 None
+             }
+        };
+
+        loop {
+            tokio::select! {
+                Some(event) = self.market_rx.recv() => {
+                    match event {
+                        MarketEvent::Quote {
+                            symbol,
+                            price,
+                            timestamp,
+                        } => {
+                            if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, timestamp)
+                            {
+                                self.process_candle(candle).await;
+                            }
+                        }
+                        MarketEvent::Candle(candle) => {
+                            self.process_candle(candle).await;
+                        }
                     }
                 }
-                MarketEvent::Candle(candle) => {
-                    self.process_candle(candle).await;
+                
+                // Handle Order Updates
+                Ok(order_update) = async { 
+                     if let Some(rx) = &mut order_rx {
+                         rx.recv().await 
+                     } else {
+                         std::future::pending().await // Wait forever if no subscription
+                     }
+                } => {
+                    debug!("Analyst: Received Order Update for {}: {:?}", order_update.symbol, order_update.status);
+                    
+                    if let Some(context) = self.symbol_states.get_mut(&order_update.symbol) {
+                         // If order is Filled or Canceled, we clear the pending state immediately
+                         match order_update.status {
+                             OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => {
+                                 info!("Analyst: Order {} for {} resolved ({:?}). Clearing pending state.", order_update.order_id, order_update.symbol, order_update.status);
+                                 context.position_manager.clear_pending();
+                             }
+                             _ => {}
+                         }
+                    }
                 }
             }
         }
@@ -456,7 +495,37 @@ impl Analyst {
         }
 
         // Monitor pending order timeout
-        context.position_manager.check_timeout(timestamp, 60000); // 60s timeout for Analyst-side pending flag
+        if context.position_manager.check_timeout(timestamp, 60000) { // 60s timeout
+             info!("Analyst [{}]: Pending order TIMEOUT detected. Checking open orders to CANCEL...", symbol);
+             
+             // 1. Fetch Open Orders
+             match self.execution_service.get_open_orders().await {
+                 Ok(orders) => {
+                     // 2. Find orders for this symbol
+                     let symbol_orders: Vec<_> = orders.iter()
+                         .filter(|o| o.symbol == symbol)
+                         .collect();
+                         
+                     if symbol_orders.is_empty() {
+                         info!("Analyst [{}]: No open orders found on exchange. Clearing local pending state.", symbol);
+                         context.position_manager.clear_pending();
+                     } else {
+                         // 3. Cancel them
+                         for order in symbol_orders {
+                             info!("Analyst [{}]: Cancelling orphaned order {}...", symbol, order.id);
+                             if let Err(e) = self.execution_service.cancel_order(&order.id).await {
+                                 error!("Analyst [{}]: Failed to cancel order {}: {}", symbol, order.id, e);
+                             }
+                         }
+                         // 4. Clear local state (Optimistic or wait for update)
+                         context.position_manager.clear_pending();
+                     }
+                 }
+                 Err(e) => {
+                     error!("Analyst [{}]: Failed to fetch open orders for cancellation check: {}", symbol, e);
+                 }
+             }
+        }
 
         // 5. Strategy Check via SignalGenerator
         if !trailing_stop_triggered {

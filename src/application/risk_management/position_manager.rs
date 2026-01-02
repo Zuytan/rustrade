@@ -30,13 +30,18 @@ impl PositionManager {
         self.pending_order_timestamp = timestamp;
     }
 
-    pub fn check_timeout(&mut self, current_time: i64, ttl_ms: i64) {
+    pub fn check_timeout(&mut self, current_time: i64, ttl_ms: i64) -> bool {
         if self.pending_order.is_some() {
             if current_time - self.pending_order_timestamp > ttl_ms {
-                info!("PositionManager: Pending order TIMEOUT after {}ms. Clearing.", current_time - self.pending_order_timestamp);
-                self.pending_order = None;
+                return true;
             }
         }
+        false
+    }
+
+    pub fn clear_pending(&mut self) {
+        self.pending_order = None;
+        self.pending_order_timestamp = 0;
     }
 
     pub fn ack_pending_orders(&mut self, has_position: bool, symbol: &str) {

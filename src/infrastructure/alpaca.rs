@@ -889,22 +889,85 @@ impl ExecutionService for AlpacaExecutionService {
             })
     }
 
-    async fn get_today_orders(&self) -> Result<Vec<Order>> {
-        let now = chrono::Utc::now();
-        // Start of today (UTC)
-        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc();
-
+    async fn get_open_orders(&self) -> Result<Vec<Order>> {
         let url = format!("{}/v2/orders", self.base_url);
 
+        let response = self.client.get(&url)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .query(&[("status", "open")])
+            .send()
+            .await
+            .context("Failed to fetch open orders")?;
+
+        if !response.status().is_success() {
+             let error_text = response.text().await.unwrap_or_default();
+             anyhow::bail!("Alpaca open orders fetch failed: {}", error_text);
+        }
+
+        let alpaca_orders: Vec<AlpacaOrder> = response.json().await.context("Failed to parse open orders")?;
+
+        let orders = alpaca_orders.into_iter().map(|ao| {
+             let side = match ao.side.as_str() {
+                 "buy" => OrderSide::Buy,
+                 "sell" => OrderSide::Sell,
+                 _ => OrderSide::Buy, // Fallback
+             };
+             
+             let qty = Decimal::from_str_exact(&ao.qty).unwrap_or(Decimal::ZERO);
+             
+             Order {
+                 id: ao.id,
+                 symbol: ao.symbol,
+                 side,
+                 price: Decimal::ZERO, // Open orders might contain limit price, but simple mapping for now
+                 quantity: qty,
+                 order_type: crate::domain::trading::types::OrderType::Market, // Simplified
+                 timestamp: chrono::DateTime::parse_from_rfc3339(&ao.created_at).unwrap_or_default().timestamp(),
+             }
+        }).collect();
+
+        Ok(orders)
+    }
+
+    async fn cancel_order(&self, order_id: &str) -> Result<()> {
+        let url = format!("{}/v2/orders/{}", self.base_url, order_id);
+
+        let response = self.client.delete(&url)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .send()
+            .await
+            .context("Failed to cancel order")?;
+
+        if !response.status().is_success() {
+             // If 404, it might already be filled or canceled, consider success or ignore
+             if response.status().as_u16() == 404 {
+                 info!("AlpacaExecution: Order {} not found for cancellation (already closed?)", order_id);
+                 return Ok(());
+             }
+             let error_text = response.text().await.unwrap_or_default();
+             anyhow::bail!("Alpaca cancel order failed: {}", error_text);
+        }
+        
+        info!("AlpacaExecution: Order {} cancelled successfully.", order_id);
+        Ok(())
+    }
+
+    async fn get_today_orders(&self) -> Result<Vec<Order>> {
+        // Only fetch closed orders for today (default status=closed, limit=500)
+        // Alpaca defaults to open, use status=closed for "today's filled orders"
+        let url = format!("{}/v2/orders", self.base_url);
+        
         let response = self
             .client
             .get(&url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .query(&[("status", "all"), ("after", &today_start.to_rfc3339())])
+            .query(&[("status", "all"), ("limit", "100")]) // Fetch all recent
             .send()
             .await
-            .context("Failed to fetch orders from Alpaca")?;
+            .context("Failed to fetch today orders from Alpaca")?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
