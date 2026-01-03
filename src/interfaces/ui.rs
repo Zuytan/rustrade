@@ -278,7 +278,7 @@ impl eframe::App for UserAgent {
                     render_metric_card(
                         ui,
                         "📈",
-                        "Positions",
+                        self.i18n.t("metric_positions"),
                         &format!("{}", position_count),
                         None,
                         egui::Color32::from_rgb(88, 166, 255),
@@ -289,16 +289,16 @@ impl eframe::App for UserAgent {
                     // Card 5: Win Rate
                     let win_rate_color = if win_rate >= 50.0 {
                         egui::Color32::from_rgb(87, 171, 90)
-                    } else if win_rate > 0.0 {
-                        egui::Color32::from_rgb(255, 212, 59)
+                    } else if win_rate >= 30.0 {
+                        egui::Color32::from_rgb(255, 193, 7)
                     } else {
-                        egui::Color32::from_gray(160)
+                        egui::Color32::from_rgb(248, 81, 73)
                     };
 
                     render_metric_card(
                         ui,
                         "🎯",
-                        "Win Rate",
+                        self.i18n.t("metric_win_rate"),
                         &format!("{:.1}%", win_rate),
                         Some(&format!(
                             "{}/{} trades",
@@ -318,7 +318,7 @@ impl eframe::App for UserAgent {
             .show(ctx, |ui| {
                 ui.vertical(|ui| {
                     // Section 1: Compact Positions List
-                    ui.heading(egui::RichText::new("📈 Positions").size(15.0));
+                    ui.heading(egui::RichText::new(self.i18n.t("section_positions")).size(15.0));
                     ui.add_space(6.0);
 
                     egui::Frame::none()
@@ -420,8 +420,11 @@ impl eframe::App for UserAgent {
 
                     ui.add_space(12.0);
 
-                    // Section 2: Activity Feed
-                    ui.heading(egui::RichText::new("🕒 Recent Activity").size(15.0));
+                    // Section 2: Recent Activity Feed
+                    ui.add_space(20.0);
+                    ui.heading(
+                        egui::RichText::new(self.i18n.t("section_recent_activity")).size(15.0),
+                    );
                     ui.add_space(6.0);
 
                     egui::Frame::none()
@@ -436,7 +439,8 @@ impl eframe::App for UserAgent {
                     ui.add_space(12.0);
 
                     // Section 3: Strategy Status
-                    ui.heading(egui::RichText::new("⚙️ Strategy").size(15.0));
+                    ui.add_space(20.0);
+                    ui.heading(egui::RichText::new(self.i18n.t("section_strategy")).size(15.0));
                     ui.add_space(6.0);
 
                     egui::Frame::none()
@@ -580,13 +584,13 @@ impl eframe::App for UserAgent {
                                             .spacing([10.0, 8.0])
                                             .show(ui, |ui| {
                                                 // Enhanced Header
-                                                ui.label(egui::RichText::new("SYMBOL").strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new("QTY").strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new("AVG").strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new("CURRENT").strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new("P&L $").strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new("P&L %").strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new("TREND").strong().color(egui::Color32::from_gray(160)));
+                                                ui.label(egui::RichText::new(self.i18n.t("header_symbol")).strong().color(egui::Color32::from_gray(160)));
+                                                ui.label(egui::RichText::new(self.i18n.t("header_quantity")).strong().color(egui::Color32::from_gray(160)));
+                                                ui.label(egui::RichText::new(self.i18n.t("header_average")).strong().color(egui::Color32::from_gray(160)));
+                                                ui.label(egui::RichText::new(self.i18n.t("header_current")).strong().color(egui::Color32::from_gray(160)));
+                                                ui.label(egui::RichText::new(self.i18n.t("header_pnl_dollar")).strong().color(egui::Color32::from_gray(160)));
+                                                ui.label(egui::RichText::new(self.i18n.t("header_pnl_percent")).strong().color(egui::Color32::from_gray(160)));
+                                                ui.label(egui::RichText::new(self.i18n.t("header_trend")).strong().color(egui::Color32::from_gray(160)));
                                                 ui.end_row();
 
                                                 // Rows
@@ -921,7 +925,9 @@ impl eframe::App for UserAgent {
             .show_animated(ctx, !self.logs_collapsed, |ui| {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
-                        ui.heading(egui::RichText::new("📋 System Logs").size(14.0));
+                        ui.label(
+                            egui::RichText::new(self.i18n.t("section_system_logs")).size(14.0),
+                        );
                         ui.add_space(8.0);
 
                         // Log Level Filter Buttons
@@ -1047,14 +1053,15 @@ impl eframe::App for UserAgent {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    let toggle_text = if self.logs_collapsed {
-                        "▲ Show Logs"
+                    // Toggle button to show/hide logs
+                    let button_text = if self.logs_collapsed {
+                        self.i18n.t("show_logs")
                     } else {
-                        "▼ Hide Logs"
+                        self.i18n.t("hide_logs")
                     };
                     if ui
                         .button(
-                            egui::RichText::new(toggle_text)
+                            egui::RichText::new(button_text)
                                 .size(11.0)
                                 .color(egui::Color32::from_gray(180)),
                         )
