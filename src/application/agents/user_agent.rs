@@ -86,8 +86,11 @@ pub struct UserAgent {
     // Internationalization
     pub i18n: I18nService,
 
-    // Help panel state
-    pub help_panel_open: bool,
+    // Settings panel state
+    pub settings_panel: crate::interfaces::ui_components::SettingsPanel,
+    
+    // Dashboard Navigation State
+    pub current_view: crate::interfaces::ui_components::DashboardView,
 }
 
 /// Direction of the market trend for a symbol
@@ -104,7 +107,7 @@ impl TrendDirection {
         match self {
             TrendDirection::Bullish => "📈",
             TrendDirection::Bearish => "📉",
-            TrendDirection::Sideways => "➡️",
+            TrendDirection::Sideways => "→",
         }
     }
 }
@@ -147,7 +150,8 @@ impl UserAgent {
             total_trades: 0,
             winning_trades: 0,
             i18n: I18nService::new(), // Initialize i18n service
-            help_panel_open: false,
+            settings_panel: crate::interfaces::ui_components::SettingsPanel::new(),
+            current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
         }
     }
 

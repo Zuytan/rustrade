@@ -1,5 +1,45 @@
 # Rustrade - Historique des Versions
 
+
+## Version 0.35.0 (Janvier 2026) - Concept Art Layout Rework
+- **Refonte Layout Dashboard**:
+  - **Top Header**: Ajout de la barre supérieure "Total Value" & "System Status" comme sur le concept.
+  - **4-Column Grid**: Remplacement de la grille 5 colonnes par 4 cartes spécifiques (Daily P&L, Win Rate, Open Positions, Risk Score).
+  - **Cartes Spécialisées**: Design unique pour chaque carte (Donut chart pour Win Rate, Graph pour P&L, Shield pour Risk).
+  - **Panneau Live Positions**: Liste dédiée à droite avec P&L pills et layout compact.
+- **Code**:
+  - Refonte complète de `render_dashboard`.
+  - Nettoyage des composants legacy.
+
+## Version 0.34.0 (Janvier 2026) - UI Polish (Concept Art Alignment)
+- **Refonte Visuelle "Premium"**:
+  - **Thème "Space Black"**: Adoption d'une palette plus sombre (`#0a0c10`) avec accents néons pour un look moderne et profond.
+  - **Glassmorphism**: Ajout d'effets de transparence et de bordures subtiles (`rgba(255,255,255,0.05)`) sur les panneaux.
+  - **Métriques Enrichies**: Cartes métriques avec ombres portées (blur 20px), icônes avec background glow, et sparklines lissées.
+- **Améliorations Ergonomiques**:
+  - **Sidebar Active Step**: Indicateur visuel "Pill" + Glow pour l'onglet actif, espacement augmenté.
+  - **Liste Positions Tabulaire**: Présentation en tableau avec headers, badges "BUY/SELL" translucides, et row striping.
+  - **Activity Feed**: Meilleure lisibilité avec icônes colorées et fond alterné.
+- **Technique**:
+  - Utilisation avancée de `egui::Painter` pour les effets graphiques (cercles, glows).
+  - Code propre et factorisé (`render_metric_card` mis à jour).
+- **Validation**: 0 erreurs de compilation, respect strict du design system proposé.
+
+## Version 0.33.0 (Janvier 2026) - UI Refactoring & Settings Integration
+- **Refonte Interface Utilisateur (UI)**:
+  - **Panneau Paramètres Unifié**: Panneau latéral droit remplaçant l'ancien panneau d'aide et les contrôles dispersés.
+  - **Système d'Onglets**: Organisation claire en 4 sections : Langue 🌐, Aide ❓, Raccourcis ⌨️, À propos ℹ️.
+  - **Barre Supérieure Épurée**: Consolidation de tous les contrôles secondaires en un seul bouton "Paramètres" (⚙️).
+- **Expérience Utilisateur**:
+  - **Raccourcis Clavier**: Navigation fluide avec `Ctrl+,` (Settings), `F1` (Help), `Ctrl+K` (Shortcuts).
+  - **Help Panel 2.0**: Meilleure lisibilité des topics d'aide avec recherche et catégories intégrées.
+  - **Language Selector**: Interface visuelle améliorée avec drapeaux et sélection immédiate.
+- **Architecture**:
+  - **Module UI Components**: Création de `src/interfaces/ui_components.rs` pour centraliser les composants réutilisables.
+  - **Extensibilité**: Design pattern facilitant l'ajout futur d'onglets (Thèmes, Notifications, Configuration Avancée).
+  - **Clean Code**: Réduction de la complexité de `ui.rs` et meilleure séparation des responsabilités.
+- **Tests**: Compilation validée, 0 warnings clippy, tests de régression UI passés.
+
 ## Version 0.32.0 (Janvier 2026) - I18n Infrastructure Layer
 - **Infrastructure d'Internationalisation**:
   - **Système Zero-Code-Change**: Architecture complète permettant l'ajout de nouvelles langues sans modification du code Rust.

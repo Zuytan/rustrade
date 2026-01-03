@@ -7,7 +7,7 @@ Développer un système multi-agents capable de surveiller le marché des action
 
 ## Internationalisation (I18n) - Infrastructure Layer
 
-**Status (v0.32.0)** : Infrastructure domaine complète, intégration UI en cours.
+**Status (v0.33.0)** : ✅ **UI Integration Complete**. Le panneau paramètres unifié intègre maintenant le sélecteur de langue avec un design moderne et des raccourcis clavier.
 
 Le bot dispose d'une infrastructure d'internationalisation moderne prête pour une adoption mondiale :
 
@@ -16,7 +16,7 @@ Le bot dispose d'une infrastructure d'internationalisation moderne prête pour u
 - **Métadonnées Embarquées** : Chaque fichier de traduction contient ses propres métadonnées (code langue, nom, drapeau, nom natif), éliminant tout hardcoding dans le code Rust.
 - **API Dynamique** : `I18nService` expose `available_languages()` qui retourne toutes les langues découvertes, permettant une construction dynamique du sélecteur de langue UI.
 
-### Langues Supportées (v0.32.0) ✅
+### Langues Supportées (v0.33.0) ✅
 - 🇫🇷 **Français** (`fr.json`) - Langue par défaut
 - 🇬🇧 **English** (`en.json`) - Traduction complète
 
@@ -52,22 +52,27 @@ Le processus est simplifié au maximum :
 
 ### Fichiers Concernés ✅
 - **Domain** : `src/domain/ui/i18n.rs` (service de chargement), `src/domain/ui/help_content.rs` (constantes)
+- **UI Components** : `src/interfaces/ui_components.rs` (composants réutilisables)
 - **Traductions** : `translations/` (fr.json, en.json, README.md)
 - **Tests** : 3 tests unitaires pour auto-discovery, changement de langue, et chargement des topics
 
-### Roadmap UI (v0.33.0) 🔄
-L'intégration dans l'interface utilisateur est prévue pour la prochaine version :
-- **UserAgent Extension** : Ajout des champs `i18n: I18nService`, `help_panel_open: bool`, `help_search_query`, `selected_help_category`
-- **UI Localization** : Remplacement des strings hardcodés dans `ui.rs` par des appels `i18n.t("key")`
-- **Language Selector** : Menu déroulant avec drapeaux pour changer de langue dynamiquement
-- **Help Panel** : Panneau latéral coulissant avec recherche, catégories, et topics détaillés
+### Intégration UI (v0.33.0) ✅
+Refonte complète de l'interface pour une meilleure organisation et extensibilité :
+- **Panneau Paramètres Unifié** : Panneau latéral droit avec onglets (🌐 Language, ❓ Help, ⌨️ Shortcuts, ℹ️ About)
+- **Barre Supérieure Simplifiée** : Un seul bouton ⚙️ remplace l'ancien sélecteur de langue + bouton aide
+- **Raccourcis Clavier** : `Ctrl/Cmd+,` (paramètres), `F1` (aide), `Ctrl/Cmd+K` (raccourcis)
+- **Architecture Modulaire** : Nouveau module `ui_components.rs` pour réutilisabilité et extensibilité facile
 
 ### Objectif à Long Terme
 Rendre Rustrade accessible mondialement avec support communautaire pour : ES (Espagnol), DE (Allemand), IT (Italien), PT (Portugais), JA (Japonais), ZH (Chinois), KO (Coréen), et plus encore.
 
 ## Historique et Évolution
 
-> 📘 **Nouveau (v0.31.0 - Jan 2026) :** **Incremental Candle Loading**. Optimisation majeure du chargement des données historiques : vérification de la base SQLite locale en premier, chargement incrémental des nouvelles données uniquement, et mode dégradé gracieux en cas d'échec API. Résultat : **80-90% de réduction du temps de démarrage** et meilleure résilience pour les utilisateurs avec accès API limité.
+> 📘 **Nouveau (v0.35.0 - Jan 2026) :** **Concept Art Layout Rework**. Refonte majeure du Dashboard pour s'aligner sur la vision artistique "Premium". Ajout d'une Top Bar "Total Value", grille de 4 cartes métriques spécialisées (Daily P&L Graph, Win Rate Donut, Risk Shield), et panneau latéral "Live Positions" dédié. Code factorisé et moderne.
+>
+> 📘 **Précédent (v0.33.0 - Jan 2026) :** **UI Refactoring for Settings Integration**. Refonte majeure de l'interface : nouveau panneau paramètres unifié avec onglets (Language, Help, Shortcuts, About), simplification de la barre supérieure (remplacement de 2 contrôles par 1 bouton ⚙️), ajout de raccourcis clavier (Ctrl+, / F1 / Ctrl+K), et architecture modulaire extensible via `ui_components.rs`. L'interface est maintenant prête pour l'ajout facile de futures fonctionnalités (thèmes, notifications, etc.).
+>
+> 📘 **Précédent (v0.31.0 - Jan 2026) :** **Incremental Candle Loading**. Optimisation majeure du chargement des données historiques : vérification de la base SQLite locale en premier, chargement incrémental des nouvelles données uniquement, et mode dégradé gracieux en cas d'échec API. Résultat : **80-90% de réduction du temps de démarrage** et meilleure résilience pour les utilisateurs avec accès API limité.
 >
 > 📘 **Précédent (v0.30.0) :** **UI Reorganization Complete**. Interface redesignée avec 5 cartes métriques en haut (Total Value, Cash, P&L, Positions, Win Rate), nouveau layout 65/40 (charts/info panel), panneau latéral droit avec positions compactes + flux d'activité + statut stratégie, et logs repliables en bas. Meilleure hiérarchie d'information avec maximisation de l'espace graphique.
 >
