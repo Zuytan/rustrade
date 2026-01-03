@@ -1,5 +1,23 @@
 # Rustrade - Historique des Versions
 
+## Version 0.30.0 (Janvier 2026) - Complete UI Reorganization
+- **Interface Redesignée**:
+  - **5 Cartes Métriques en Haut**: Affichage permanent des KPIs clés (Total Value, Cash, P&L Today, Positions, Win Rate).
+  - **Nouveau Layout 65/35**: Split horizontal avec graphiques à gauche (65%) et panneau d'informations à droite (35%), maximisant l'espace pour les charts.
+  - **Panneau Latéral Droit**: Trois sections intégrées - Positions Compactes (liste simplifiée avec tendances), Flux d'Activité (20 derniers événements avec icônes), Statut Stratégie (mode, risk score, paramètres SMA).
+  - **Logs Repliables en Bas**: Panel inférieur avec animation collapse/expand, collapsé par défaut pour libérer l'espace, toggle button toujours visible.
+- **Architecture UI**:
+  - **Helper Functions**: `render_metric_card()` et `render_activity_feed()` pour composants réutilisables.
+  - **Data Structures**: `ActivityEvent`, `ActivityEventType`, `EventSeverity` pour tracking des événements système.
+  - **State Management**: Ajout de `activity_feed`, `logs_collapsed`, `total_trades`, `winning_trades` à `UserAgent`.
+  - **Méthodes Helper**: `add_activity()`, `calculate_total_value()`, `calculate_win_rate()` pour métriques temps réel.
+- **Meilleure Hiérarchie d'Information**:
+  - **Niveau 1** (Must See): Métriques en cartes colorées avec icônes
+  - **Niveau 2** (Frequent Reference): Positions, Activity Feed, Charts
+  - **Niveau 3** (On Demand): Logs systèmes accessibles via toggle
+- **Code Stats**: +490 lignes (~350 ajoutées, ~140 supprimées), 0 erreurs de compilation, 2 warnings préexistants.
+- **Tests**: 142+ tests unitaires passants.
+
 ## Version 0.29.4 (Janvier 2026) - Crypto Top Movers Scanner
 - **Mode Dynamique Crypto Activé**:
   - **Scanner Crypto Dédié**: Implémentation d'un scanner de top movers spécialisé pour les cryptomonnaies dans `AlpacaMarketDataService`.
