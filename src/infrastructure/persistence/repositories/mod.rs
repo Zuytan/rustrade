@@ -184,6 +184,37 @@ impl CandleRepository for SqliteCandleRepository {
         Ok(candles)
     }
 
+
+    async fn get_latest_timestamp(&self, symbol: &str) -> Result<Option<i64>> {
+        let row = sqlx::query(
+            "SELECT MAX(timestamp) as latest FROM candles WHERE symbol = ?"
+        )
+        .bind(symbol)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let latest: Option<i64> = row.try_get("latest").ok();
+            Ok(latest)
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn count_candles(&self, symbol: &str, start_ts: i64, end_ts: i64) -> Result<usize> {
+        let row = sqlx::query(
+            "SELECT COUNT(*) as count FROM candles WHERE symbol = ? AND timestamp >= ? AND timestamp <= ?"
+        )
+        .bind(symbol)
+        .bind(start_ts)
+        .bind(end_ts)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let count: i64 = row.try_get("count")?;
+        Ok(count as usize)
+    }
+
     async fn prune(&self, days_retention: i64) -> Result<u64> {
         let cutoff_ts = Utc::now().timestamp() - (days_retention * 24 * 60 * 60);
 

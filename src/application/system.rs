@@ -77,7 +77,18 @@ impl Application {
         initial_portfolio.cash = config.initial_cash;
         let portfolio = Arc::new(RwLock::new(initial_portfolio));
 
-        // 2. Initialize Infrastructure
+        // 2. Initialize Persistence FIRST (needed by AlpacaMarketDataService for caching)
+        let db_url =
+            std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://rustrade.db".to_string());
+        info!("Initializing Database at {}", db_url);
+
+        let db = Database::new(&db_url)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to initialize database: {}", e))?;
+
+        let candle_repo = Arc::new(SqliteCandleRepository::new(db.pool.clone()));
+
+        // 3. Initialize Infrastructure Services
         // For Alpaca, we need to capture the spread cache from the market service
         let (market_service, execution_service, spread_cache): (
             Arc<dyn MarketDataService>,
@@ -101,6 +112,7 @@ impl Application {
                     config.alpaca_data_url.clone(),
                     config.min_volume_threshold,
                     config.asset_class,
+                    Some(candle_repo.clone()), // Pass repository for intelligent caching
                 );
                 // Extract the real spread cache that receives WebSocket updates
                 let spread_cache = alpaca_market_service.get_spread_cache();
@@ -133,17 +145,8 @@ impl Application {
             }
         };
 
-        // 3. Initialize Persistence
-        let db_url =
-            std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://rustrade.db".to_string());
-        info!("Initializing Database at {}", db_url);
-
-        let db = Database::new(&db_url)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initialize database: {}", e))?;
-
+        // 4. Initialize remaining Persistence repositories
         let order_repo = Arc::new(SqliteOrderRepository::new(db.pool.clone()));
-        let candle_repo = Arc::new(SqliteCandleRepository::new(db.pool.clone()));
         let strategy_repo = Arc::new(SqliteStrategyRepository::new(db.pool.clone()));
 
         // 4. Initialize Adaptive Optimization Repositories

@@ -145,6 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         data_url,
         app_config.min_volume_threshold, // Use configured threshold
         app_config.asset_class,          // Added
+        None,                            // No caching needed for benchmarks
     ));
 
     // Determine target symbols and dates

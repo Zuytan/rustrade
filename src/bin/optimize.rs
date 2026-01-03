@@ -159,6 +159,7 @@ async fn main() -> Result<()> {
         data_url,
         10000.0,
         asset_class,
+        None, // No caching needed for optimization
     ));
 
     // Execution service factory - creates fresh portfolio for each run

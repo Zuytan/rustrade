@@ -85,6 +85,14 @@ pub trait CandleRepository: Send + Sync {
     /// Get candles for a symbol within a time range
     async fn get_range(&self, symbol: &str, start_ts: i64, end_ts: i64) -> Result<Vec<Candle>>;
 
+    /// Get the timestamp of the most recent candle for a symbol
+    /// Returns None if no candles exist for this symbol
+    async fn get_latest_timestamp(&self, symbol: &str) -> Result<Option<i64>>;
+
+    /// Count how many candles exist for a symbol within a time range
+    /// Useful for determining if we have sufficient cached data
+    async fn count_candles(&self, symbol: &str, start_ts: i64, end_ts: i64) -> Result<usize>;
+
     /// Prune old candles
     async fn prune(&self, days_retention: i64) -> Result<u64>;
 }

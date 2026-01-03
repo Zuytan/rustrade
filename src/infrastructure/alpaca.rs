@@ -6,7 +6,7 @@ use crate::infrastructure::alpaca_trading_stream::AlpacaTradingStream; // Added
 use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use chrono::NaiveDate;
+use chrono::{NaiveDate, TimeZone};
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -46,6 +46,7 @@ pub struct AlpacaMarketDataService {
     min_volume_threshold: f64,
     asset_class: AssetClass, // Added
     spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>, // Shared spread cache for real-time cost tracking
+    candle_repository: Option<Arc<dyn crate::domain::repositories::CandleRepository>>, // For intelligent caching
 }
 
 impl AlpacaMarketDataService {
@@ -56,6 +57,7 @@ impl AlpacaMarketDataService {
         data_base_url: String,
         min_volume_threshold: f64,
         asset_class: AssetClass, // Added
+        candle_repository: Option<Arc<dyn crate::domain::repositories::CandleRepository>>,
     ) -> Self {
         // Configure client with connection pool limits
         let client = Client::builder()
@@ -85,6 +87,7 @@ impl AlpacaMarketDataService {
             min_volume_threshold,
             asset_class,
             spread_cache, // Store for external access
+            candle_repository,
         }
     }
 
@@ -412,32 +415,172 @@ impl MarketDataService for AlpacaMarketDataService {
         end: chrono::DateTime<chrono::Utc>,
         timeframe: &str,
     ) -> Result<Vec<crate::domain::trading::types::Candle>> {
-        // Use the internal implementation
-        let alpaca_bars = self
-            .fetch_historical_bars_internal(symbol, start, end, timeframe)
-            .await?;
+        const MIN_REQUIRED_BARS: usize = 200; // Conservative default for warmup
 
-        // Convert AlpacaBar -> Candle
-        let candles = alpaca_bars
-            .into_iter()
-            .map(|b| {
-                let timestamp = chrono::DateTime::parse_from_rfc3339(&b.timestamp)
-                    .unwrap_or_default()
-                    .timestamp();
+        // ========== HYBRID LOADING STRATEGY ==========
+        // 1. Check if we have a repository
+        if let Some(repo) = &self.candle_repository {
+            let start_ts = start.timestamp();
+            let end_ts = end.timestamp();
 
-                crate::domain::trading::types::Candle {
-                    symbol: symbol.to_string(),
-                    open: Decimal::from_f64_retain(b.open).unwrap_or(Decimal::ZERO),
-                    high: Decimal::from_f64_retain(b.high).unwrap_or(Decimal::ZERO),
-                    low: Decimal::from_f64_retain(b.low).unwrap_or(Decimal::ZERO),
-                    close: Decimal::from_f64_retain(b.close).unwrap_or(Decimal::ZERO),
-                    volume: b.volume,
-                    timestamp,
+            // 2. Query existing cache
+            match repo.get_range(symbol, start_ts, end_ts).await {
+                Ok(cached_candles) => {
+                    let cached_count = cached_candles.len();
+                    
+                    if cached_count >= MIN_REQUIRED_BARS {
+                        // Cache is sufficient - check if we need incremental update
+                        if let Ok(Some(latest_ts)) = repo.get_latest_timestamp(symbol).await {
+                            let latest_dt = chrono::Utc.timestamp_opt(latest_ts, 0).unwrap();
+                            
+                            // If latest cache is recent enough (within requested range), use cache + incremental
+                            if latest_dt < end && latest_dt >= start {
+                                info!(
+                                    "AlpacaMarketDataService: Using cached data for {} ({} bars), fetching incremental data from {}",
+                                    symbol, cached_count, latest_dt
+                                );
+
+                                // Fetch only new data since last cached candle
+                                let new_start = latest_dt + chrono::Duration::seconds(60); // Start from next minute
+                                let api_result = self.fetch_historical_bars_internal(symbol, new_start, end, timeframe).await;
+
+                                match api_result {
+                                    Ok(new_bars) => {
+                                        info!(
+                                            "AlpacaMarketDataService: Fetched {} new bars from API for {}",
+                                            new_bars.len(), symbol
+                                        );
+
+                                        // Save new bars to database
+                                        for bar in &new_bars {
+                                            let timestamp = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
+                                                .unwrap_or_default()
+                                                .timestamp();
+
+                                            let candle = crate::domain::trading::types::Candle {
+                                                symbol: symbol.to_string(),
+                                                open: Decimal::from_f64_retain(bar.open).unwrap_or(Decimal::ZERO),
+                                                high: Decimal::from_f64_retain(bar.high).unwrap_or(Decimal::ZERO),
+                                                low: Decimal::from_f64_retain(bar.low).unwrap_or(Decimal::ZERO),
+                                                close: Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO),
+                                                volume: bar.volume,
+                                                timestamp,
+                                            };
+
+                                            if let Err(e) = repo.save(&candle).await {
+                                                tracing::warn!("Failed to save candle to repository: {}", e);
+                                            }
+                                        }
+
+                                        // Convert new bars to candles and merge with cached
+                                        let mut all_candles = cached_candles;
+                                        for bar in new_bars {
+                                            let timestamp = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
+                                                .unwrap_or_default()
+                                                .timestamp();
+
+                                            all_candles.push(crate::domain::trading::types::Candle {
+                                                symbol: symbol.to_string(),
+                                                open: Decimal::from_f64_retain(bar.open).unwrap_or(Decimal::ZERO),
+                                                high: Decimal::from_f64_retain(bar.high).unwrap_or(Decimal::ZERO),
+                                                low: Decimal::from_f64_retain(bar.low).unwrap_or(Decimal::ZERO),
+                                                close: Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO),
+                                                volume: bar.volume,
+                                                timestamp,
+                                            });
+                                        }
+
+                                        return Ok(all_candles);
+                                    }
+                                    Err(e) => {
+                                        // API failed - use cached data gracefully
+                                        tracing::warn!(
+                                            "AlpacaMarketDataService: API fetch failed for {}: {}. Using {} cached bars (DEGRADED MODE)",
+                                            symbol, e, cached_count
+                                        );
+                                        return Ok(cached_candles);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Cache is complete for the range - just return it
+                        info!(
+                            "AlpacaMarketDataService: Using {} cached bars for {} (no API call needed)",
+                            cached_count, symbol
+                        );
+                        return Ok(cached_candles);
+                    } else {
+                        // Insufficient cache - need full reload
+                        info!(
+                            "AlpacaMarketDataService: Insufficient cache for {} ({}/{} bars), performing full API reload",
+                            symbol, cached_count, MIN_REQUIRED_BARS
+                        );
+                    }
                 }
-            })
-            .collect();
+                Err(e) => {
+                    tracing::debug!("AlpacaMarketDataService: Cache query failed for {}: {}", symbol, e);
+                }
+            }
+        }
 
-        Ok(candles)
+        // ========== FULL API LOAD (Fallback or No Cache) ==========
+        let api_result = self.fetch_historical_bars_internal(symbol, start, end, timeframe).await;
+
+        match api_result {
+            Ok(alpaca_bars) => {
+                // Convert AlpacaBar -> Candle
+                let candles: Vec<_> = alpaca_bars
+                    .into_iter()
+                    .map(|b| {
+                        let timestamp = chrono::DateTime::parse_from_rfc3339(&b.timestamp)
+                            .unwrap_or_default()
+                            .timestamp();
+
+                        crate::domain::trading::types::Candle {
+                            symbol: symbol.to_string(),
+                            open: Decimal::from_f64_retain(b.open).unwrap_or(Decimal::ZERO),
+                            high: Decimal::from_f64_retain(b.high).unwrap_or(Decimal::ZERO),
+                            low: Decimal::from_f64_retain(b.low).unwrap_or(Decimal::ZERO),
+                            close: Decimal::from_f64_retain(b.close).unwrap_or(Decimal::ZERO),
+                            volume: b.volume,
+                            timestamp,
+                        }
+                    })
+                    .collect();
+
+                // Save to repository for future use
+                if let Some(repo) = &self.candle_repository {
+                    for candle in &candles {
+                        if let Err(e) = repo.save(candle).await {
+                            tracing::warn!("Failed to save candle to repository: {}", e);
+                        }
+                    }
+                }
+
+                Ok(candles)
+            }
+            Err(e) => {
+                // API failed and no sufficient cache - try to use whatever cache we have
+                if let Some(repo) = &self.candle_repository {
+                    let start_ts = start.timestamp();
+                    let end_ts = end.timestamp();
+
+                    if let Ok(cached_candles) = repo.get_range(symbol, start_ts, end_ts).await {
+                        if !cached_candles.is_empty() {
+                            tracing::warn!(
+                                "AlpacaMarketDataService: API failed for {}: {}. Falling back to {} cached bars (DEGRADED MODE)",
+                                symbol, e, cached_candles.len()
+                            );
+                            return Ok(cached_candles);
+                        }
+                    }
+                }
+
+                // No cache available and API failed - propagate error
+                Err(e)
+            }
+        }
     }
 }
 

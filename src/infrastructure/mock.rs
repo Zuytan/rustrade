@@ -400,6 +400,12 @@ impl crate::domain::repositories::CandleRepository for NullCandleRepository {
     ) -> Result<Vec<crate::domain::trading::types::Candle>> {
         Ok(vec![])
     }
+    async fn get_latest_timestamp(&self, _symbol: &str) -> Result<Option<i64>> {
+        Ok(None)
+    }
+    async fn count_candles(&self, _symbol: &str, _start_ts: i64, _end_ts: i64) -> Result<usize> {
+        Ok(0)
+    }
     async fn prune(&self, _days_retention: i64) -> Result<u64> {
         Ok(0)
     }
