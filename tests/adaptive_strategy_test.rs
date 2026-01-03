@@ -146,7 +146,9 @@ async fn test_adaptive_strategy_switching() {
             candle_repository: Some(repo.clone()),
             strategy_repository: None,
             win_rate_provider: None,
-            spread_cache: std::sync::Arc::new(rustrade::application::market_data::spread_cache::SpreadCache::new()),
+            spread_cache: std::sync::Arc::new(
+                rustrade::application::market_data::spread_cache::SpreadCache::new(),
+            ),
             ui_candle_tx: None,
         },
     );

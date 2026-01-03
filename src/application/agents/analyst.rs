@@ -19,6 +19,7 @@ use crate::domain::ports::{
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
 use crate::domain::trading::fees::{FeeConfig, FeeModel, StandardFeeModel};
 use crate::domain::trading::types::Candle;
+use crate::domain::trading::types::OrderStatus; // Added
 use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -26,7 +27,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::{Receiver, Sender};
-use crate::domain::trading::types::OrderStatus; // Added
 use tracing::{debug, error, info, warn};
 
 pub struct SymbolContext {
@@ -44,6 +44,7 @@ pub struct SymbolContext {
     pub active_strategy_mode: crate::domain::market::strategy_config::StrategyMode, // Phase 3: Track active mode
     pub last_macd_histogram: Option<f64>, // Track previous MACD histogram for rising/falling detection
     pub cached_reward_risk_ratio: f64,    // Calculated during warmup, used for trade filtering
+    pub warmup_succeeded: bool,           // Track if historical warmup was successful
 }
 
 impl SymbolContext {
@@ -70,6 +71,7 @@ impl SymbolContext {
             active_strategy_mode: config.strategy_mode, // Initial mode
             last_macd_histogram: None,
             cached_reward_risk_ratio: 1.0, // Default safe value, will be updated during warmup
+            warmup_succeeded: false,       // Will be set to true if warmup completes
         }
     }
 
@@ -122,6 +124,52 @@ pub struct AnalystConfig {
     pub macd_requires_rising: bool, // Whether MACD must be rising for buy signals
     pub trend_tolerance_pct: f64,   // Percentage tolerance for trend filter
     pub macd_min_threshold: f64,    // Minimum MACD histogram threshold
+}
+
+impl Default for AnalystConfig {
+    fn default() -> Self {
+        Self {
+            fast_sma_period: 10,
+            slow_sma_period: 20,
+            max_positions: 5,
+            trade_quantity: rust_decimal::Decimal::ONE,
+            sma_threshold: 0.05,
+            order_cooldown_seconds: 60,
+            risk_per_trade_percent: 1.0,
+            strategy_mode: Default::default(),
+            trend_sma_period: 50,
+            rsi_period: 14,
+            macd_fast_period: 12,
+            macd_slow_period: 26,
+            macd_signal_period: 9,
+            trend_divergence_threshold: 0.05,
+            trailing_stop_atr_multiplier: 2.0,
+            atr_period: 14,
+            rsi_threshold: 70.0,
+            trend_riding_exit_buffer_pct: 0.02,
+            mean_reversion_rsi_exit: 50.0,
+            mean_reversion_bb_period: 20,
+            slippage_pct: 0.0,
+            commission_per_share: 0.0,
+            max_position_size_pct: 10.0,
+            bb_period: 20,
+            bb_std_dev: 2.0,
+            macd_fast: 12,
+            macd_slow: 26,
+            macd_signal: 9,
+            ema_fast_period: 10,
+            ema_slow_period: 20,
+            take_profit_pct: 0.1,
+            min_hold_time_minutes: 0,
+            signal_confirmation_bars: 1,
+            spread_bps: 0.0,
+            min_profit_ratio: 1.5,
+            profit_target_multiplier: 2.0,
+            macd_requires_rising: false,
+            trend_tolerance_pct: 0.02,
+            macd_min_threshold: 0.0,
+        }
+    }
 }
 
 impl From<crate::config::Config> for AnalystConfig {
@@ -234,7 +282,7 @@ impl Analyst {
         let cost_evaluator = CostEvaluator::with_spread_cache(
             config.commission_per_share,
             config.slippage_pct,
-            config.spread_bps,  // Default fallback if real spread unavailable
+            config.spread_bps, // Default fallback if real spread unavailable
             dependencies.spread_cache.clone(), // Real-time spreads from WebSocket!
         );
 
@@ -270,14 +318,14 @@ impl Analyst {
 
         // Subscribe to Order Updates
         let mut order_rx = match self.execution_service.subscribe_order_updates().await {
-             Ok(rx) => {
-                 info!("Analyst: Subscribed to order updates.");
-                 Some(rx)
-             }
-             Err(e) => {
-                 error!("Analyst: Failed to subscribe to order updates: {}", e);
-                 None
-             }
+            Ok(rx) => {
+                info!("Analyst: Subscribed to order updates.");
+                Some(rx)
+            }
+            Err(e) => {
+                error!("Analyst: Failed to subscribe to order updates: {}", e);
+                None
+            }
         };
 
         loop {
@@ -299,17 +347,17 @@ impl Analyst {
                         }
                     }
                 }
-                
+
                 // Handle Order Updates
-                Ok(order_update) = async { 
+                Ok(order_update) = async {
                      if let Some(rx) = &mut order_rx {
-                         rx.recv().await 
+                         rx.recv().await
                      } else {
                          std::future::pending().await // Wait forever if no subscription
                      }
                 } => {
                     debug!("Analyst: Received Order Update for {}: {:?}", order_update.symbol, order_update.status);
-                    
+
                     if let Some(context) = self.symbol_states.get_mut(&order_update.symbol) {
                          // If order is Filled or Canceled, we clear the pending state immediately
                          match order_update.status {
@@ -353,7 +401,8 @@ impl Analyst {
             let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
                 .unwrap_or_default()
                 .with_timezone(&chrono::Utc);
-            self.warmup_context(&mut context, &symbol, timestamp_dt).await;
+            self.warmup_context(&mut context, &symbol, timestamp_dt)
+                .await;
 
             self.symbol_states.insert(symbol.clone(), context);
         }
@@ -495,36 +544,48 @@ impl Analyst {
         }
 
         // Monitor pending order timeout
-        if context.position_manager.check_timeout(timestamp, 60000) { // 60s timeout
-             info!("Analyst [{}]: Pending order TIMEOUT detected. Checking open orders to CANCEL...", symbol);
-             
-             // 1. Fetch Open Orders
-             match self.execution_service.get_open_orders().await {
-                 Ok(orders) => {
-                     // 2. Find orders for this symbol
-                     let symbol_orders: Vec<_> = orders.iter()
-                         .filter(|o| o.symbol == symbol)
-                         .collect();
-                         
-                     if symbol_orders.is_empty() {
-                         info!("Analyst [{}]: No open orders found on exchange. Clearing local pending state.", symbol);
-                         context.position_manager.clear_pending();
-                     } else {
-                         // 3. Cancel them
-                         for order in symbol_orders {
-                             info!("Analyst [{}]: Cancelling orphaned order {}...", symbol, order.id);
-                             if let Err(e) = self.execution_service.cancel_order(&order.id).await {
-                                 error!("Analyst [{}]: Failed to cancel order {}: {}", symbol, order.id, e);
-                             }
-                         }
-                         // 4. Clear local state (Optimistic or wait for update)
-                         context.position_manager.clear_pending();
-                     }
-                 }
-                 Err(e) => {
-                     error!("Analyst [{}]: Failed to fetch open orders for cancellation check: {}", symbol, e);
-                 }
-             }
+        if context.position_manager.check_timeout(timestamp, 60000) {
+            // 60s timeout
+            info!(
+                "Analyst [{}]: Pending order TIMEOUT detected. Checking open orders to CANCEL...",
+                symbol
+            );
+
+            // 1. Fetch Open Orders
+            match self.execution_service.get_open_orders().await {
+                Ok(orders) => {
+                    // 2. Find orders for this symbol
+                    let symbol_orders: Vec<_> =
+                        orders.iter().filter(|o| o.symbol == symbol).collect();
+
+                    if symbol_orders.is_empty() {
+                        info!("Analyst [{}]: No open orders found on exchange. Clearing local pending state.", symbol);
+                        context.position_manager.clear_pending();
+                    } else {
+                        // 3. Cancel them
+                        for order in symbol_orders {
+                            info!(
+                                "Analyst [{}]: Cancelling orphaned order {}...",
+                                symbol, order.id
+                            );
+                            if let Err(e) = self.execution_service.cancel_order(&order.id).await {
+                                error!(
+                                    "Analyst [{}]: Failed to cancel order {}: {}",
+                                    symbol, order.id, e
+                                );
+                            }
+                        }
+                        // 4. Clear local state (Optimistic or wait for update)
+                        context.position_manager.clear_pending();
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Analyst [{}]: Failed to fetch open orders for cancellation check: {}",
+                        symbol, e
+                    );
+                }
+            }
         }
 
         // 5. Strategy Check via SignalGenerator
@@ -601,7 +662,7 @@ impl Analyst {
                     .get_range(&symbol, start_ts, end_ts)
                     .await
                     .unwrap_or_default();
-                
+
                 // Only recalculate if we have enough data
                 if candles.len() >= 20 {
                     let regime = context
@@ -613,17 +674,17 @@ impl Analyst {
                         .expectancy_evaluator
                         .evaluate(&symbol, price, &regime)
                         .await;
-                    
+
                     expectancy_value = expectancy.expected_value;
                     should_validate_expectancy = true;
-                    
+
                     // Use fresh calculation if valid (> 0), otherwise keep cached value
                     if expectancy.reward_risk_ratio > 0.0 {
                         risk_ratio = expectancy.reward_risk_ratio;
                     }
                 }
             }
-            
+
             // Validate using calculated or cached ratio
             if !self.trade_filter.validate_expectancy(&symbol, risk_ratio) {
                 return;
@@ -675,7 +736,7 @@ impl Analyst {
 
                 // Calculate expected profit (using Helper)
                 let atr = context.last_features.atr.unwrap_or(0.0);
-                
+
                 // Log ATR context
                 info!(
                     "Analyst [{}]: Calculating Profit Expectancy - ATR=${:.4}, Multiplier={:.2}, Quantity={}",
@@ -687,8 +748,11 @@ impl Analyst {
                 } else {
                     // Fallback if no expectancy? OLD used to skip.
                     // The cost filter uses ATR based profit.
-                    self.trade_filter
-                        .calculate_expected_profit(&proposal, atr, context.config.profit_target_multiplier)
+                    self.trade_filter.calculate_expected_profit(
+                        &proposal,
+                        atr,
+                        context.config.profit_target_multiplier,
+                    )
                 };
 
                 // Get ACCURATE cost from CostEvaluator (with real-time spreads!)
@@ -905,9 +969,23 @@ impl Analyst {
                         let _ = tx.send(candle);
                     }
                 }
+
+                // Mark warmup as successful
+                context.warmup_succeeded = true;
+                info!(
+                    "Analyst: ✓ Warmup completed successfully for {} with {} bars",
+                    symbol,
+                    bars.len()
+                );
             }
             Err(e) => {
-                warn!("Analyst: Failed to warmup {}: {}", symbol, e);
+                warn!(
+                    "Analyst: Failed to warmup {}: {}. Indicators will start from zero (degraded mode)",
+                    symbol, e
+                );
+                // warmup_succeeded remains false
+                // Indicators are already initialized to zero/default in SymbolContext::new()
+                // The system will continue trading but with less historical context
             }
         }
     }

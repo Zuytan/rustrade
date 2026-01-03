@@ -1,5 +1,26 @@
 # Rustrade - Historique des Versions
 
+## Version 0.29.3 (Janvier 2026) - Enhanced UI with P&L and Trends
+- **Real-Time P&L Display**:
+  - **Portfolio Header**: Affiche le P&L non-réalisé total avec couleur (vert = profit, rouge = perte) et pourcentage.
+  - **Positions Table Enhanced**: Nouvelles colonnes CURRENT (prix actuel), P&L $ (gain/perte en dollars), P&L % (pourcentage), et TREND (indicateur visuel).
+- **Trend Indicators**:
+  - **TrendDirection Enum**: Nouveau type `Bullish`, `Bearish`, `Sideways` avec méthode `emoji()` pour affichage (📈/📉/➡️).
+  - **SMA-Based Trend Detection**: Calcul automatique de la tendance basée sur la relation entre SMA rapide (20) et SMA lente (50).
+  - **Market Tabs**: Les onglets de symboles affichent maintenant le trend emoji et le prix actuel pour un aperçu rapide.
+- **StrategyInfo Extended**: Ajout des champs `trend` et `current_price` pour le tracking en temps réel.
+- **Tests**: 142 tests unitaires passants.
+
+## Version 0.29.2 (Janvier 2026) - Symbol Normalization Refactor
+- **Domain-Driven Symbol Normalization**:
+  - Déplacement de la logique de normalisation des symboles crypto de l'infrastructure vers la couche domaine (`domain/trading/types.rs`).
+  - **Support Étendu des Stablecoins**: Ajout du support pour USDT, USDC, BUSD, TUSD (4 caractères) en plus de USD, EUR, GBP (3 caractères).
+  - **Normalisation Intelligente**: Priorité automatique aux devises de quote les plus longues (USDT prioritaire sur USD) pour éviter les corruptions de symboles.
+  - **Gestion d'Erreurs Robuste**: Retour `Result<String, String>` avec messages d'erreur contextuels au lieu de conversions silencieuses incorrectes.
+  - **Validation Stricte**: Vérification de la casse (uppercase requis), longueur minimale, et caractères valides pour les symboles crypto.
+- **Fiabilité Accrue**: Élimination du risque de tracking incorrect des positions crypto (ex: `BTCUSDT` → `BTC/USDT` au lieu de `BTCU/SDT`).
+- **Tests Complets**: Ajout de 7 tests unitaires couvrant tous les cas limites (paires standard, stablecoins, symbols déjà normalisés, entrées invalides).
+
 ## Version 0.29.1 (Janvier 2026) - Risk Appetite Scaling & Resilience
 - **Dynamic Profit Target (FIN-01)**:
   - Le Profit Target s'adapte désormais dynamiquement au Score d'Appétit au Risque (1.5x à 3.0x ATR).

@@ -10,15 +10,21 @@ impl eframe::App for UserAgent {
         let mut visuals = egui::Visuals::dark();
         visuals.window_fill = egui::Color32::from_rgb(10, 15, 20); // Deep dark blue/black
         visuals.panel_fill = egui::Color32::from_rgb(10, 15, 20);
-        
+
         // Improve Graph/Tooltip Interaction Visibility
-        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(240)); // Brighter text
+        visuals.widgets.noninteractive.fg_stroke =
+            egui::Stroke::new(1.0, egui::Color32::from_gray(240)); // Brighter text
         visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(200));
-        
+
         // Ensure popups (tooltips) have a visible border and distinct background if needed
         visuals.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(60));
-        visuals.popup_shadow = egui::epaint::Shadow { offset: [2.0, 6.0].into(), blur: 8.0, spread: 0.0, color: egui::Color32::from_black_alpha(96) };
-        
+        visuals.popup_shadow = egui::epaint::Shadow {
+            offset: [2.0, 6.0].into(),
+            blur: 8.0,
+            spread: 0.0,
+            color: egui::Color32::from_black_alpha(96),
+        };
+
         ctx.set_visuals(visuals);
 
         // --- 1. Process System Events (Logs & Candles) ---
@@ -51,35 +57,50 @@ impl eframe::App for UserAgent {
                 ui.vertical(|ui| {
                     ui.heading("System Logs & Chat");
                     ui.separator();
-                    
+
                     // Log Level Filter Buttons
                     ui.horizontal(|ui| {
                         ui.label("Filter:");
-                        if ui.selectable_label(self.log_level_filter.is_none(), "All").clicked() {
+                        if ui
+                            .selectable_label(self.log_level_filter.is_none(), "All")
+                            .clicked()
+                        {
                             self.log_level_filter = None;
                         }
-                        if ui.selectable_label(
-                            self.log_level_filter == Some("INFO".to_string()), 
-                            "INFO"
-                        ).clicked() {
+                        if ui
+                            .selectable_label(
+                                self.log_level_filter == Some("INFO".to_string()),
+                                "INFO",
+                            )
+                            .clicked()
+                        {
                             self.log_level_filter = Some("INFO".to_string());
                         }
-                        if ui.selectable_label(
-                            self.log_level_filter == Some("WARN".to_string()), 
-                            "WARN"
-                        ).clicked() {
+                        if ui
+                            .selectable_label(
+                                self.log_level_filter == Some("WARN".to_string()),
+                                "WARN",
+                            )
+                            .clicked()
+                        {
                             self.log_level_filter = Some("WARN".to_string());
                         }
-                        if ui.selectable_label(
-                            self.log_level_filter == Some("ERROR".to_string()), 
-                            "ERROR"
-                        ).clicked() {
+                        if ui
+                            .selectable_label(
+                                self.log_level_filter == Some("ERROR".to_string()),
+                                "ERROR",
+                            )
+                            .clicked()
+                        {
                             self.log_level_filter = Some("ERROR".to_string());
                         }
-                        if ui.selectable_label(
-                            self.log_level_filter == Some("DEBUG".to_string()), 
-                            "DEBUG"
-                        ).clicked() {
+                        if ui
+                            .selectable_label(
+                                self.log_level_filter == Some("DEBUG".to_string()),
+                                "DEBUG",
+                            )
+                            .clicked()
+                        {
                             self.log_level_filter = Some("DEBUG".to_string());
                         }
                     });
@@ -101,7 +122,7 @@ impl eframe::App for UserAgent {
                                         }
                                     }
                                 }
-                                
+
                                 ui.horizontal_wrapped(|ui| {
                                     let (label_text, color) = match sender.as_str() {
                                         "User" => {
@@ -174,12 +195,51 @@ impl eframe::App for UserAgent {
                     match self.portfolio.try_read() {
                         Ok(pf) => {
                             let mut cost_basis = rust_decimal::Decimal::ZERO;
-                            for pos in pf.positions.values() {
-                                cost_basis += pos.quantity * pos.average_price;
+                            let mut market_value = rust_decimal::Decimal::ZERO;
+                            
+                            for (symbol, pos) in pf.positions.iter() {
+                                let position_cost = pos.quantity * pos.average_price;
+                                cost_basis += position_cost;
+                                
+                                // Get current price from strategy_info
+                                if let Some(info) = self.strategy_info.get(symbol) {
+                                    market_value += pos.quantity * info.current_price;
+                                } else {
+                                    // Fallback to average price if no current price
+                                    market_value += position_cost;
+                                }
                             }
                             
+                            let unrealized_pnl = market_value - cost_basis;
+                            let unrealized_pct = if cost_basis > rust_decimal::Decimal::ZERO {
+                                (unrealized_pnl / cost_basis * rust_decimal::Decimal::from(100)).to_f64().unwrap_or(0.0)
+                            } else {
+                                0.0
+                            };
+                            
+                            // Unrealized P&L display
+                            let pnl_color = if unrealized_pnl >= rust_decimal::Decimal::ZERO {
+                                egui::Color32::from_rgb(100, 255, 100)
+                            } else {
+                                egui::Color32::from_rgb(255, 100, 100)
+                            };
+                            let pnl_sign = if unrealized_pnl >= rust_decimal::Decimal::ZERO { "+" } else { "" };
+                            
                             ui.label(
-                                egui::RichText::new(format!("Cost Basis: ${:.2}", cost_basis.to_f64().unwrap_or(0.0)))
+                                egui::RichText::new(format!(
+                                    "P&L: {}${:.2} ({}{}%)",
+                                    pnl_sign,
+                                    unrealized_pnl.to_f64().unwrap_or(0.0).abs(),
+                                    pnl_sign,
+                                    format!("{:.2}", unrealized_pct.abs())
+                                ))
+                                .strong()
+                                .color(pnl_color)
+                            );
+                            ui.separator();
+                            
+                            ui.label(
+                                egui::RichText::new(format!("Value: ${:.2}", market_value.to_f64().unwrap_or(0.0)))
                                     .color(egui::Color32::from_rgb(200, 200, 200))
                             );
                             ui.separator();
@@ -209,27 +269,69 @@ impl eframe::App for UserAgent {
                                 .show(ui, |ui| {
                                     egui::Grid::new("positions_grid")
                                         .striped(true)
-                                        .min_col_width(100.0)
-                                        .spacing([20.0, 5.0]) // tighter spacing
+                                        .min_col_width(70.0)
+                                        .spacing([15.0, 5.0]) // tighter spacing
                                         .show(ui, |ui| {
                                             // Header
                                             ui.label(egui::RichText::new("SYMBOL").strong());
                                             ui.label(egui::RichText::new("QTY").strong());
                                             ui.label(egui::RichText::new("AVG").strong());
-                                            ui.label(egui::RichText::new("TOTAL").strong());
+                                            ui.label(egui::RichText::new("CURRENT").strong());
+                                            ui.label(egui::RichText::new("P&L $").strong());
+                                            ui.label(egui::RichText::new("P&L %").strong());
+                                            ui.label(egui::RichText::new("TREND").strong());
                                             ui.end_row();
 
                                             // Rows
                                             for (symbol, pos) in &pf.positions {
+                                                // Get current price and trend from strategy_info
+                                                let (current_price, trend_emoji) = if let Some(info) = self.strategy_info.get(symbol) {
+                                                    (info.current_price, info.trend.emoji())
+                                                } else {
+                                                    (pos.average_price, "➡️")
+                                                };
+                                                
+                                                let cost_basis = pos.quantity * pos.average_price;
+                                                let market_value = pos.quantity * current_price;
+                                                let pnl = market_value - cost_basis;
+                                                let pnl_pct = if cost_basis > rust_decimal::Decimal::ZERO {
+                                                    (pnl / cost_basis * rust_decimal::Decimal::from(100)).to_f64().unwrap_or(0.0)
+                                                } else {
+                                                    0.0
+                                                };
+                                                
+                                                // P&L color
+                                                let pnl_color = if pnl >= rust_decimal::Decimal::ZERO {
+                                                    egui::Color32::from_rgb(100, 255, 100)
+                                                } else {
+                                                    egui::Color32::from_rgb(255, 100, 100)
+                                                };
+                                                let pnl_sign = if pnl >= rust_decimal::Decimal::ZERO { "+" } else { "" };
+                                                
+                                                // Symbol
                                                 ui.label(
                                                     egui::RichText::new(symbol)
                                                         .strong()
                                                         .color(egui::Color32::GOLD),
                                                 );
+                                                // Quantity
                                                 ui.label(format!("{:.4}", pos.quantity.to_f64().unwrap_or(0.0)));
+                                                // Average price
                                                 ui.label(format!("${:.2}", pos.average_price.to_f64().unwrap_or(0.0)));
-                                                let cost = pos.quantity * pos.average_price;
-                                                ui.label(format!("${:.2}", cost.to_f64().unwrap_or(0.0)));
+                                                // Current price
+                                                ui.label(format!("${:.2}", current_price.to_f64().unwrap_or(0.0)));
+                                                // P&L $
+                                                ui.label(
+                                                    egui::RichText::new(format!("{}${:.2}", pnl_sign, pnl.to_f64().unwrap_or(0.0).abs()))
+                                                        .color(pnl_color)
+                                                );
+                                                // P&L %
+                                                ui.label(
+                                                    egui::RichText::new(format!("{}{}%", pnl_sign, format!("{:.2}", pnl_pct.abs())))
+                                                        .color(pnl_color)
+                                                );
+                                                // Trend
+                                                ui.label(trend_emoji);
                                                 ui.end_row();
                                             }
                                         });
@@ -267,12 +369,24 @@ impl eframe::App for UserAgent {
                     self.selected_chart_tab = Some(symbols[0].clone());
                 }
 
-                // Tab buttons
+                // Tab buttons with trend indicators
                 ui.horizontal(|ui| {
                     ui.label("Market:");
                     for symbol in &symbols {
                         let is_selected = self.selected_chart_tab.as_ref() == Some(symbol);
-                        if ui.selectable_label(is_selected, symbol).clicked() {
+                        
+                        // Get trend and price info
+                        let tab_label = if let Some(info) = self.strategy_info.get(symbol) {
+                            format!("{} {} ${:.2}", 
+                                info.trend.emoji(), 
+                                symbol, 
+                                info.current_price.to_f64().unwrap_or(0.0)
+                            )
+                        } else {
+                            symbol.clone()
+                        };
+                        
+                        if ui.selectable_label(is_selected, &tab_label).clicked() {
                             self.selected_chart_tab = Some(symbol.clone());
                         }
                     }
@@ -290,7 +404,26 @@ impl eframe::App for UserAgent {
                             if let Some(strat_info) = self.strategy_info.get(selected_symbol) {
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new("Strategy:").strong());
-                                    ui.label(&strat_info.mode);
+                                    
+                                    // If dynamic strategy, try to extract current regime from last signal
+                                    let strategy_display = if strat_info.mode.to_lowercase() == "dynamicregime" {
+                                        if let Some(signal) = &strat_info.last_signal {
+                                            // Extract regime from signal reason
+                                            if signal.contains("Dynamic (Trend)") {
+                                                "Dynamic (Trend)".to_string()
+                                            } else if signal.contains("Dynamic (Choppy)") {
+                                                "Dynamic (Choppy)".to_string()
+                                            } else {
+                                                "Dynamic".to_string()
+                                            }
+                                        } else {
+                                            "Dynamic".to_string()
+                                        }
+                                    } else {
+                                        strat_info.mode.clone()
+                                    };
+                                    
+                                    ui.label(&strategy_display);
                                     ui.separator();
                                     ui.label(
                                         egui::RichText::new(format!(

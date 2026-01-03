@@ -95,7 +95,9 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
             candle_repository: None,
             strategy_repository: None,
             win_rate_provider: None,
-            spread_cache: std::sync::Arc::new(rustrade::application::market_data::spread_cache::SpreadCache::new()),
+            spread_cache: std::sync::Arc::new(
+                rustrade::application::market_data::spread_cache::SpreadCache::new(),
+            ),
             ui_candle_tx: None,
         },
     );

@@ -129,6 +129,7 @@ fn main() -> anyhow::Result<()> {
         system_handle.sentinel_cmd_tx,
         system_handle.proposal_tx,
         system_handle.portfolio,
+        system_handle.strategy_mode,
     );
 
     // 6. Run UI (Blocks Main Thread)

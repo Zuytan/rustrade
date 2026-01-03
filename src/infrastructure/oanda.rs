@@ -9,8 +9,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use reqwest::Client;
-use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::broadcast;
+use tokio::sync::mpsc::{self, Receiver};
 
 pub struct OandaMarketDataService {
     _api_key: String,
@@ -117,9 +117,7 @@ impl ExecutionService for OandaExecutionService {
         Ok(())
     }
 
-    async fn subscribe_order_updates(
-        &self,
-    ) -> Result<broadcast::Receiver<OrderUpdate>> {
+    async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
         anyhow::bail!("Oanda order updates not implemented")
     }
 }

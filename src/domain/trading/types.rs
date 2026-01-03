@@ -179,3 +179,173 @@ pub struct FeatureSet {
     pub ema_fast: Option<f64>,
     pub ema_slow: Option<f64>,
 }
+
+// ===== Symbol Normalization =====
+
+/// Supported quote currencies for crypto pairs, ordered by priority (longest first to prefer USDT over USD)
+const CRYPTO_QUOTE_CURRENCIES: &[&str] = &[
+    "USDT", "USDC", "BUSD", "TUSD", // Stablecoins (4 chars)
+    "USD", "EUR", "GBP", "BTC", "ETH", // Traditional (3 chars)
+];
+
+/// Normalizes a crypto symbol from Alpaca format to application format.
+///
+/// Alpaca returns crypto symbols without slashes (e.g., "BTCUSD", "ETHUSDT"),
+/// but the application uses slash-separated format (e.g., "BTC/USD", "ETH/USDT").
+///
+/// # Arguments
+/// * `symbol` - The symbol to normalize (e.g., "BTCUSD", "ETHUSDT", "BTC/USD")
+///
+/// # Returns
+/// * `Ok(String)` - The normalized symbol in "BASE/QUOTE" format
+/// * `Err(String)` - Error message if the symbol cannot be normalized
+///
+/// # Examples
+/// ```
+/// use rustrade::domain::trading::types::normalize_crypto_symbol;
+///
+/// assert_eq!(normalize_crypto_symbol("BTCUSD").unwrap(), "BTC/USD");
+/// assert_eq!(normalize_crypto_symbol("BTCUSDT").unwrap(), "BTC/USDT");
+/// assert_eq!(normalize_crypto_symbol("ETHEUR").unwrap(), "ETH/EUR");
+/// assert_eq!(normalize_crypto_symbol("BTC/USD").unwrap(), "BTC/USD"); // Already normalized
+/// ```
+pub fn normalize_crypto_symbol(symbol: &str) -> Result<String, String> {
+    // Already normalized
+    if symbol.contains('/') {
+        return Ok(symbol.to_string());
+    }
+
+    // Empty check
+    if symbol.is_empty() {
+        return Err("Cannot normalize empty symbol".to_string());
+    }
+
+    // Try to match known quote currencies (longest first to prefer USDT over USD)
+    for quote in CRYPTO_QUOTE_CURRENCIES {
+        if symbol.ends_with(quote) && symbol.len() > quote.len() {
+            let base = &symbol[..symbol.len() - quote.len()];
+            // Validate base currency is not empty and looks reasonable (ASCII uppercase)
+            if !base.is_empty() && base.chars().all(|c| c.is_ascii_uppercase()) {
+                return Ok(format!("{}/{}", base, quote));
+            }
+        }
+    }
+
+    Err(format!(
+        "Cannot normalize crypto symbol: '{}' - no recognized quote currency",
+        symbol
+    ))
+}
+
+/// Denormalizes a crypto symbol from application format back to Alpaca format.
+///
+/// This is the reverse of `normalize_crypto_symbol`, used when making API calls to Alpaca
+/// that require symbols without slashes (e.g., snapshot API, historical bars API).
+///
+/// # Arguments
+/// * `symbol` - The symbol to denormalize (e.g., "BTC/USD", "ETH/USDT")
+///
+/// # Returns
+/// * `String` - The denormalized symbol in "BASEQUOTE" format (e.g., "BTCUSD", "ETHUSDT")
+///
+/// # Examples
+/// ```
+/// use rustrade::domain::trading::types::denormalize_crypto_symbol;
+///
+/// assert_eq!(denormalize_crypto_symbol("BTC/USD"), "BTCUSD");
+/// assert_eq!(denormalize_crypto_symbol("ETH/USDT"), "ETHUSDT");
+/// assert_eq!(denormalize_crypto_symbol("BTCUSD"), "BTCUSD"); // Already denormalized
+/// ```
+pub fn denormalize_crypto_symbol(symbol: &str) -> String {
+    // Remove the slash if present
+    symbol.replace('/', "")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_denormalize_crypto_symbol() {
+        assert_eq!(denormalize_crypto_symbol("BTC/USD"), "BTCUSD");
+        assert_eq!(denormalize_crypto_symbol("ETH/USDT"), "ETHUSDT");
+        assert_eq!(denormalize_crypto_symbol("AVAX/USD"), "AVAXUSD");
+        assert_eq!(denormalize_crypto_symbol("LINK/EUR"), "LINKEUR");
+        
+        // Already denormalized (no slash)
+        assert_eq!(denormalize_crypto_symbol("BTCUSD"), "BTCUSD");
+        assert_eq!(denormalize_crypto_symbol("ETHUSDT"), "ETHUSDT");
+    }
+
+    #[test]
+    fn test_normalize_denormalize_roundtrip() {
+        let symbols = vec!["BTCUSD", "ETHUSDT", "AVAXUSD", "LINKEUR"];
+        
+        for symbol in symbols {
+            let normalized = normalize_crypto_symbol(symbol).unwrap();
+            let denormalized = denormalize_crypto_symbol(&normalized);
+            assert_eq!(denormalized, symbol);
+        }
+    }
+
+    #[test]
+    fn test_normalize_crypto_standard_pairs() {
+        assert_eq!(normalize_crypto_symbol("BTCUSD").unwrap(), "BTC/USD");
+        assert_eq!(normalize_crypto_symbol("ETHEUR").unwrap(), "ETH/EUR");
+        assert_eq!(normalize_crypto_symbol("LTCGBP").unwrap(), "LTC/GBP");
+        assert_eq!(normalize_crypto_symbol("BTCBTC").unwrap(), "BTC/BTC"); // Edge case but valid
+        assert_eq!(normalize_crypto_symbol("LINKETH").unwrap(), "LINK/ETH");
+    }
+
+    #[test]
+    fn test_normalize_crypto_stablecoins() {
+        assert_eq!(normalize_crypto_symbol("BTCUSDT").unwrap(), "BTC/USDT");
+        assert_eq!(normalize_crypto_symbol("ETHUSDC").unwrap(), "ETH/USDC");
+        assert_eq!(normalize_crypto_symbol("BNBBUSD").unwrap(), "BNB/BUSD");
+        assert_eq!(normalize_crypto_symbol("ADATUSD").unwrap(), "ADA/TUSD");
+    }
+
+    #[test]
+    fn test_normalize_crypto_already_normalized() {
+        assert_eq!(normalize_crypto_symbol("BTC/USD").unwrap(), "BTC/USD");
+        assert_eq!(normalize_crypto_symbol("ETH/USDT").unwrap(), "ETH/USDT");
+        assert_eq!(normalize_crypto_symbol("LINK/EUR").unwrap(), "LINK/EUR");
+    }
+
+    #[test]
+    fn test_normalize_crypto_prefers_longer_quote() {
+        // Should prefer USDT (4 chars) over USD (3 chars)
+        assert_eq!(normalize_crypto_symbol("BTCUSDT").unwrap(), "BTC/USDT");
+        // Not BTCU/SDT or BTC/USD
+    }
+
+    #[test]
+    fn test_normalize_crypto_invalid_symbols() {
+        // No recognized quote currency
+        assert!(normalize_crypto_symbol("INVALID").is_err());
+        assert!(normalize_crypto_symbol("ABC").is_err());
+        assert!(normalize_crypto_symbol("GOOGLE").is_err());
+
+        // Empty symbol
+        assert!(normalize_crypto_symbol("").is_err());
+    }
+
+    #[test]
+    fn test_normalize_crypto_edge_cases() {
+        // Too short to have valid base after extracting quote
+        assert!(normalize_crypto_symbol("USD").is_err());
+        assert!(normalize_crypto_symbol("EUR").is_err());
+        assert!(normalize_crypto_symbol("USDT").is_err());
+
+        // Base would be empty
+        let result = normalize_crypto_symbol("USD");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_normalize_crypto_case_sensitivity() {
+        // Lowercase should fail since crypto symbols are uppercase
+        assert!(normalize_crypto_symbol("btcusd").is_err());
+        assert!(normalize_crypto_symbol("BtcUsd").is_err());
+    }
+}

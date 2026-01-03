@@ -32,6 +32,7 @@
 //! # }
 //! ```
 
+use crate::application::market_data::spread_cache::SpreadCache;
 use crate::domain::trading::types::MarketEvent;
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -43,7 +44,6 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{self, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{debug, error, info, warn};
-use crate::application::market_data::spread_cache::SpreadCache;
 
 // WebSocket heartbeat and reconnection configuration
 const PING_INTERVAL_SECS: u64 = 20;
@@ -266,7 +266,7 @@ impl AlpacaWebSocketManager {
         state: &Arc<RwLock<ConnectionState>>,
         subscribed_symbols: &Arc<RwLock<Vec<String>>>,
         command_rx: &mut mpsc::Receiver<SubscriptionCommand>,
-        spread_cache: &Arc<SpreadCache>, // NEW  
+        spread_cache: &Arc<SpreadCache>, // NEW
     ) -> Result<bool> {
         // Connect to WebSocket
         let (ws_stream, _) = connect_async(ws_url)
@@ -334,7 +334,7 @@ impl AlpacaWebSocketManager {
                                         AlpacaMessage::Quote(quote) => {
                                             // Store real-time spread BEFORE creating event
                                             spread_cache.update(quote.symbol.clone(), quote.bid_price, quote.ask_price);
-                                            
+
                                             let mid_price = (quote.bid_price + quote.ask_price) / 2.0;
                                             let event = MarketEvent::Quote {
                                                 symbol: quote.symbol,
@@ -344,6 +344,23 @@ impl AlpacaWebSocketManager {
                                             let _ = event_tx.send(event);
                                         }
                                         AlpacaMessage::Trade(trade) => {
+                                            // For crypto, estimate realistic bid/ask spread from trade price
+                                            // BTC: ~0.02% (2 bps), ETH: ~0.04% (4 bps), others: ~0.08% (8 bps)
+                                            let spread_pct = if trade.symbol.starts_with("BTC") {
+                                                0.0002 // 2 bps
+                                            } else if trade.symbol.starts_with("ETH") {
+                                                0.0004 // 4 bps
+                                            } else {
+                                                0.0008 // 8 bps (conservative for altcoins)
+                                            };
+
+                                            let half_spread = trade.price * spread_pct / 2.0;
+                                            let synthetic_bid = trade.price - half_spread;
+                                            let synthetic_ask = trade.price + half_spread;
+
+                                            // Update spread cache with synthetic bid/ask
+                                            spread_cache.update(trade.symbol.clone(), synthetic_bid, synthetic_ask);
+
                                             let event = MarketEvent::Quote {
                                                 symbol: trade.symbol,
                                                 price: Decimal::from_f64_retain(trade.price).unwrap_or(Decimal::ZERO),

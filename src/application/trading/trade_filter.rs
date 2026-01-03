@@ -158,7 +158,10 @@ impl TradeFilter {
     }
 
     /// Evaluate costs using CostEvaluator (with real-time spreads if available)
-    pub fn evaluate_costs(&self, proposal: &TradeProposal) -> crate::application::monitoring::cost_evaluator::TradeCost {
+    pub fn evaluate_costs(
+        &self,
+        proposal: &TradeProposal,
+    ) -> crate::application::monitoring::cost_evaluator::TradeCost {
         self.cost_evaluator.evaluate(proposal)
     }
 }

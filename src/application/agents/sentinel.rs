@@ -57,8 +57,42 @@ impl Sentinel {
                             }
                         }
                         None => {
-                            warn!("Sentinel market stream ended.");
-                            return;
+                            warn!("Sentinel market stream ended. Attempting to reconnect...");
+                            
+                            // Attempt to reconnect with exponential backoff
+                            let mut reconnect_attempts = 0;
+                            const MAX_RECONNECT_ATTEMPTS: u32 = 3;
+                            
+                            while reconnect_attempts < MAX_RECONNECT_ATTEMPTS {
+                                reconnect_attempts += 1;
+                                let backoff_ms = 1000 * (2_u64.pow(reconnect_attempts - 1));
+                                
+                                warn!(
+                                    "Sentinel: Reconnection attempt {}/{} (waiting {}ms)...",
+                                    reconnect_attempts, MAX_RECONNECT_ATTEMPTS, backoff_ms
+                                );
+                                
+                                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                                
+                                match self.market_service.subscribe(current_symbols.clone()).await {
+                                    Ok(new_rx) => {
+                                        market_rx = new_rx;
+                                        info!("Sentinel: Successfully reconnected to market stream");
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "Sentinel: Reconnection attempt {}/{} failed: {}",
+                                            reconnect_attempts, MAX_RECONNECT_ATTEMPTS, e
+                                        );
+                                        
+                                        if reconnect_attempts >= MAX_RECONNECT_ATTEMPTS {
+                                            error!("Sentinel: Max reconnection attempts reached. Shutting down.");
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

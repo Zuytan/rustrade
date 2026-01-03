@@ -1,5 +1,5 @@
-use crate::domain::trading::types::TradeProposal;
 use crate::application::market_data::spread_cache::SpreadCache;
+use crate::domain::trading::types::TradeProposal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use std::sync::Arc;
@@ -106,41 +106,64 @@ impl CostEvaluator {
         // This represents the expected price impact when executing the order
         let estimated_slippage = trade_value * self.slippage_pct;
 
-        // Spread: Use REAL spread from cache if available, otherwise use default
-        let spread_bps = if let Some(ref cache) = self.spread_cache {
-            if let Some(real_spread_pct) = cache.get_spread_pct(&proposal.symbol) {
-                let real_bps = Decimal::from_f64(real_spread_pct * 10000.0).unwrap_or(self.default_spread_bps);
-                tracing::info!(
-                    "💰 CostEvaluator: Using REAL spread for {} = {:.2} bps (vs default {:.2} bps)",
-                    proposal.symbol, real_bps, self.default_spread_bps
-                );
-                real_bps
-            } else {
-                tracing::warn!(
-                    "⚠️  CostEvaluator: No real spread for {}, using DEFAULT {:.2} bps",
-                    proposal.symbol, self.default_spread_bps
-                );
-                self.default_spread_bps
-            }
+        // Maximum spread caps to prevent unrealistically wide spreads from low-liquidity periods
+        // Crypto altcoins: max 25 bps, Stocks: max 15 bps
+        let is_crypto = proposal.symbol.contains('/');
+        let max_spread_bps = if is_crypto {
+            Decimal::from(25) // 25 bps max for crypto
         } else {
-            tracing::warn!("⚠️  CostEvaluator: No SpreadCache!");
-            self.default_spread_bps
+            Decimal::from(15) // 15 bps max for stocks
         };
 
-        // Spread cost: trade_value * (spread_bps / 10000)
-        let spread_cost = trade_value * (spread_bps / Decimal::from(10000));
+        // Spread: Use REAL spread from cache if available, otherwise use default
+        let raw_spread_bps =
+            if let Some(ref cache) = self.spread_cache {
+                if let Some(real_spread_pct) = cache.get_spread_pct(&proposal.symbol) {
+                    Decimal::from_f64(real_spread_pct * 10000.0)
+                        .unwrap_or(self.default_spread_bps)
+                } else {
+                    tracing::debug!(
+                        "CostEvaluator: No real spread for {}, using DEFAULT {:.2} bps",
+                        proposal.symbol,
+                        self.default_spread_bps
+                    );
+                    self.default_spread_bps
+                }
+            } else {
+                self.default_spread_bps
+            };
+
+        // Apply spread cap
+        let capped = raw_spread_bps > max_spread_bps;
+        let spread_bps = if capped {
+            tracing::debug!(
+                "💰 CostEvaluator: {} spread {:.2} bps capped to {:.2} bps",
+                proposal.symbol, raw_spread_bps, max_spread_bps
+            );
+            max_spread_bps
+        } else {
+            raw_spread_bps
+        };
+
+        // HALF-SPREAD cost: A single trade direction only pays half the bid-ask spread
+        // When you BUY, you pay ask (mid + half_spread) instead of mid
+        // When you SELL, you receive bid (mid - half_spread) instead of mid
+        let half_spread_bps = spread_bps / Decimal::from(2);
+        let spread_cost = trade_value * (half_spread_bps / Decimal::from(10000));
 
         // Total cost is sum of all components
         let total_cost = commission + estimated_slippage + spread_cost;
 
         tracing::info!(
-            "💵 {} Cost Breakdown: Commission=${:.2}, Slippage=${:.2}, Spread=${:.2} ({:.1} bps), TOTAL=${:.2}",
+            "💵 {} Cost: Comm=${:.2}, Slip=${:.2}, Spread=${:.2} ({:.1} bps, half of {:.1}), TOTAL=${:.2}{}",
             proposal.symbol,
             commission.to_f64().unwrap_or(0.0),
             estimated_slippage.to_f64().unwrap_or(0.0),
             spread_cost.to_f64().unwrap_or(0.0),
+            half_spread_bps.to_f64().unwrap_or(0.0),
             spread_bps.to_f64().unwrap_or(0.0),
-            total_cost.to_f64().unwrap_or(0.0)
+            total_cost.to_f64().unwrap_or(0.0),
+            if capped { " [CAPPED]" } else { "" }
         );
 
         TradeCost {
@@ -284,11 +307,11 @@ mod tests {
         // Slippage: $1000 (trade value) * 0.001 = $1.00
         assert_eq!(costs.estimated_slippage, dec!(1.0));
 
-        // Spread: $1000 * (5 / 10000) = $0.50
-        assert_eq!(costs.spread_cost, dec!(0.5));
+        // Spread: $1000 * (5/2 / 10000) = $0.25 (HALF-SPREAD: single direction only)
+        assert_eq!(costs.spread_cost, dec!(0.25));
 
-        // Total: $0.05 + $1.00 + $0.50 = $1.55
-        assert_eq!(costs.total_cost, dec!(1.55));
+        // Total: $0.05 + $1.00 + $0.25 = $1.30
+        assert_eq!(costs.total_cost, dec!(1.30));
     }
 
     #[test]
@@ -340,10 +363,10 @@ mod tests {
         let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
-        // Total costs: $1.55
-        // Expected profit: $7.75
-        // Ratio: $7.75 / $1.55 = 5.0
-        let ratio = evaluator.get_profit_cost_ratio(&proposal, dec!(7.75));
+        // Total costs: $1.30 (with half-spread)
+        // Expected profit: $6.50
+        // Ratio: $6.50 / $1.30 = 5.0
+        let ratio = evaluator.get_profit_cost_ratio(&proposal, dec!(6.50));
         assert!((ratio - 5.0).abs() < 0.01); // Float comparison with tolerance
     }
 
@@ -372,11 +395,11 @@ mod tests {
         // Slippage: $50,000 * 0.001 = $50.00
         assert_eq!(costs.estimated_slippage, dec!(50.0));
 
-        // Spread: $50,000 * 0.0005 = $25.00
-        assert_eq!(costs.spread_cost, dec!(25.0));
+        // Spread: $50,000 * (5/2 / 10000) = $12.50 (HALF-SPREAD)
+        assert_eq!(costs.spread_cost, dec!(12.5));
 
-        // Total: $75.50
-        assert_eq!(costs.total_cost, dec!(75.5));
+        // Total: $0.50 + $50.00 + $12.50 = $63.00
+        assert_eq!(costs.total_cost, dec!(63.0));
     }
 
     #[test]

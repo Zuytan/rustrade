@@ -1,9 +1,11 @@
 use crate::application::agents::sentinel::SentinelCommand;
+use crate::domain::market::strategy_config::StrategyMode;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderSide;
 use crate::domain::trading::types::TradeProposal;
 use crossbeam_channel::Receiver;
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -24,9 +26,29 @@ pub struct UserAgent {
     pub market_data: std::collections::HashMap<String, Vec<Candle>>, // Store history
     pub selected_chart_tab: Option<String>, // Currently selected symbol for chart
     pub strategy_info: std::collections::HashMap<String, StrategyInfo>, // Strategy per symbol
-    
+    pub strategy_mode: StrategyMode,        // Added: Actual strategy mode from config
+
     // Log filtering
     pub log_level_filter: Option<String>, // None = All, Some("INFO"), Some("WARN"), Some("ERROR"), Some("DEBUG")
+}
+
+/// Direction of the market trend for a symbol
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TrendDirection {
+    Bullish,
+    Bearish,
+    Sideways,
+}
+
+impl TrendDirection {
+    /// Returns an emoji representation of the trend
+    pub fn emoji(&self) -> &'static str {
+        match self {
+            TrendDirection::Bullish => "📈",
+            TrendDirection::Bearish => "📉",
+            TrendDirection::Sideways => "➡️",
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -35,6 +57,8 @@ pub struct StrategyInfo {
     pub fast_sma: f64,
     pub slow_sma: f64,
     pub last_signal: Option<String>,
+    pub trend: TrendDirection,
+    pub current_price: Decimal,
 }
 
 impl UserAgent {
@@ -44,6 +68,7 @@ impl UserAgent {
         sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
         proposal_tx: mpsc::Sender<TradeProposal>,
         portfolio: Arc<RwLock<Portfolio>>,
+        strategy_mode: StrategyMode,
     ) -> Self {
         Self {
             log_rx,
@@ -57,6 +82,7 @@ impl UserAgent {
             market_data: std::collections::HashMap::new(),
             selected_chart_tab: None,
             strategy_info: std::collections::HashMap::new(),
+            strategy_mode,
             log_level_filter: None, // Show all logs by default
         }
     }
@@ -127,6 +153,25 @@ impl UserAgent {
         // 1. Logs
         // Drain all pending logs
         while let Ok(msg) = self.log_rx.try_recv() {
+            // Extract signal information from SignalGenerator logs
+            // Format: "SignalGenerator [StrategyName]: SYMBOL - REASON"
+            if msg.contains("SignalGenerator") && msg.contains(": ") {
+                if let Some(signal_part) = msg.split("SignalGenerator").nth(1) {
+                    // Extract symbol and reason
+                    if let Some(content) = signal_part.split(" - ").nth(1) {
+                        // Find the symbol (between]: and -)
+                        if let Some(symbol_section) = signal_part.split("]: ").nth(1) {
+                            if let Some(symbol) = symbol_section.split(" - ").next() {
+                                // Update strategy info with the signal reason
+                                if let Some(info) = self.strategy_info.get_mut(symbol) {
+                                    info.last_signal = Some(content.trim().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
             // Simple heuristic to extract "Sender" from log line if possible,
             // otherwise default to "System"
             // Log format assumed: "TIMESTAMP LEVEL TARGET: MESSAGE"
@@ -157,18 +202,79 @@ impl UserAgent {
                 entry.last().unwrap().symbol
             );
 
-            // Initialize strategy info if not present
-            if !self.strategy_info.contains_key(&candle.symbol) {
+            // Calculate SMAs and trend for this symbol
+            let (fast_sma_value, slow_sma_value, trend) = self.calculate_trend(&candle.symbol);
+
+            // Initialize or update strategy info
+            if let Some(info) = self.strategy_info.get_mut(&candle.symbol) {
+                // Update existing entry
+                info.fast_sma = fast_sma_value;
+                info.slow_sma = slow_sma_value;
+                info.trend = trend;
+                info.current_price = candle.close;
+            } else {
+                // Create new entry
                 self.strategy_info.insert(
                     candle.symbol.clone(),
                     StrategyInfo {
-                        mode: "DualSMA".to_string(),
-                        fast_sma: 20.0,
-                        slow_sma: 50.0,
+                        mode: self.strategy_mode.to_string(),
+                        fast_sma: fast_sma_value,
+                        slow_sma: slow_sma_value,
                         last_signal: None,
+                        trend,
+                        current_price: candle.close,
                     },
                 );
             }
         }
+    }
+
+    /// Calculate SMAs and trend direction for a symbol
+    fn calculate_trend(&self, symbol: &str) -> (f64, f64, TrendDirection) {
+        let fast_period = 20;
+        let slow_period = 50;
+
+        let candles = match self.market_data.get(symbol) {
+            Some(c) => c,
+            None => return (0.0, 0.0, TrendDirection::Sideways),
+        };
+
+        // Calculate fast SMA
+        let fast_sma = if candles.len() >= fast_period {
+            let sum: f64 = candles[candles.len() - fast_period..]
+                .iter()
+                .map(|c| c.close.to_f64().unwrap_or(0.0))
+                .sum();
+            sum / fast_period as f64
+        } else {
+            0.0
+        };
+
+        // Calculate slow SMA
+        let slow_sma = if candles.len() >= slow_period {
+            let sum: f64 = candles[candles.len() - slow_period..]
+                .iter()
+                .map(|c| c.close.to_f64().unwrap_or(0.0))
+                .sum();
+            sum / slow_period as f64
+        } else {
+            0.0
+        };
+
+        // Determine trend based on SMA relationship
+        let trend = if fast_sma == 0.0 || slow_sma == 0.0 {
+            TrendDirection::Sideways
+        } else {
+            let diff_pct = (fast_sma - slow_sma) / slow_sma * 100.0;
+            if diff_pct > 0.5 {
+                TrendDirection::Bullish
+            } else if diff_pct < -0.5 {
+                TrendDirection::Bearish
+            } else {
+                TrendDirection::Sideways
+            }
+        };
+
+        (fast_sma, slow_sma, trend)
     }
 }

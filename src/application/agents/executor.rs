@@ -129,6 +129,12 @@ mod tests {
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
             Ok(Vec::new())
         }
+        async fn get_open_orders(&self) -> Result<Vec<Order>> {
+            Ok(Vec::new())
+        }
+        async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+            Ok(())
+        }
         async fn subscribe_order_updates(
             &self,
         ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
@@ -148,6 +154,12 @@ mod tests {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
+            Err(anyhow::anyhow!("Simulated Failure"))
+        }
+        async fn get_open_orders(&self) -> Result<Vec<Order>> {
+            Err(anyhow::anyhow!("Simulated Failure"))
+        }
+        async fn cancel_order(&self, _order_id: &str) -> Result<()> {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
         async fn subscribe_order_updates(

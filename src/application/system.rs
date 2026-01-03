@@ -52,6 +52,7 @@ pub struct SystemHandle {
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub candle_rx: broadcast::Receiver<Candle>,
+    pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
 }
 
 pub struct Application {
@@ -64,6 +65,7 @@ pub struct Application {
     pub strategy_repository: Arc<dyn StrategyRepository>,
     pub adaptive_optimization_service: Option<Arc<AdaptiveOptimizationService>>,
     pub performance_monitor: Option<Arc<PerformanceMonitoringService>>,
+    pub spread_cache: Arc<SpreadCache>, // Shared spread cache from market data service
 }
 
 impl Application {
@@ -76,33 +78,40 @@ impl Application {
         let portfolio = Arc::new(RwLock::new(initial_portfolio));
 
         // 2. Initialize Infrastructure
-        let (market_service, execution_service): (
+        // For Alpaca, we need to capture the spread cache from the market service
+        let (market_service, execution_service, spread_cache): (
             Arc<dyn MarketDataService>,
             Arc<dyn ExecutionService>,
+            Arc<SpreadCache>,
         ) = match config.mode {
             Mode::Mock => {
                 info!("Using Mock services");
                 (
                     Arc::new(MockMarketDataService::new()),
                     Arc::new(MockExecutionService::new(portfolio.clone())),
+                    Arc::new(SpreadCache::new()), // Mock services use a fresh cache
                 )
             }
             Mode::Alpaca => {
                 info!("Using Alpaca services ({})", config.alpaca_base_url);
+                let alpaca_market_service = AlpacaMarketDataService::new(
+                    config.alpaca_api_key.clone(),
+                    config.alpaca_secret_key.clone(),
+                    config.alpaca_ws_url.clone(),
+                    config.alpaca_data_url.clone(),
+                    config.min_volume_threshold,
+                    config.asset_class,
+                );
+                // Extract the real spread cache that receives WebSocket updates
+                let spread_cache = alpaca_market_service.get_spread_cache();
                 (
-                    Arc::new(AlpacaMarketDataService::new(
-                        config.alpaca_api_key.clone(),
-                        config.alpaca_secret_key.clone(),
-                        config.alpaca_ws_url.clone(),
-                        config.alpaca_data_url.clone(),
-                        config.min_volume_threshold,
-                        config.asset_class, // Added
-                    )),
+                    Arc::new(alpaca_market_service),
                     Arc::new(AlpacaExecutionService::new(
                         config.alpaca_api_key.clone(),
                         config.alpaca_secret_key.clone(),
                         config.alpaca_base_url.clone(),
                     )),
+                    spread_cache,
                 )
             }
             Mode::Oanda => {
@@ -119,6 +128,7 @@ impl Application {
                         config.oanda_api_base_url.clone(),
                         config.oanda_account_id.clone(),
                     )),
+                    Arc::new(SpreadCache::new()), // OANDA doesn't have spread cache integration yet
                 )
             }
         };
@@ -205,6 +215,7 @@ impl Application {
             strategy_repository: strategy_repo,
             adaptive_optimization_service,
             performance_monitor,
+            spread_cache,
         })
     }
 
@@ -242,8 +253,8 @@ impl Application {
         // Broadcast channel for Candles (for UI)
         let (candle_tx, candle_rx) = broadcast::channel(100);
 
-        // Create SpreadCache (shared across agents for real-time cost tracking)
-        let spread_cache = Arc::new(SpreadCache::new());
+        // Use the shared SpreadCache from Application (populated by WebSocket for Alpaca mode)
+        let spread_cache = self.spread_cache.clone();
 
         // Create clones of Arc services for each task
         let market_service_for_sentinel = self.market_service.clone();
@@ -272,6 +283,7 @@ impl Application {
             proposal_tx: proposal_tx.clone(),
             portfolio: self.portfolio.clone(),
             candle_rx, // Move the receiver to the handle
+            strategy_mode: self.config.strategy_mode,
         };
 
         // Now use self members

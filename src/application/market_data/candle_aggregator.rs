@@ -1,6 +1,6 @@
+use crate::application::market_data::spread_cache::SpreadCache;
 use crate::domain::repositories::CandleRepository;
 use crate::domain::trading::types::Candle;
-use crate::application::market_data::spread_cache::SpreadCache;
 use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use rust_decimal::Decimal;
 use std::collections::HashMap;

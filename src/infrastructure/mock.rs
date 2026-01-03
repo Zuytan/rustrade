@@ -2,10 +2,10 @@ use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
 use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::broadcast;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     RwLock,
@@ -44,8 +44,6 @@ impl Default for MockMarketDataService {
 }
 
 impl MockMarketDataService {
-
-
     pub async fn publish(&self, event: MarketEvent) {
         if let MarketEvent::Quote { symbol, price, .. } = &event {
             self.current_prices

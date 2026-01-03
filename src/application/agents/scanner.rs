@@ -160,6 +160,12 @@ mod tests {
         async fn get_today_orders(&self) -> Result<Vec<Order>> {
             unimplemented!()
         }
+        async fn get_open_orders(&self) -> Result<Vec<Order>> {
+            unimplemented!()
+        }
+        async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+            unimplemented!()
+        }
         async fn subscribe_order_updates(
             &self,
         ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
@@ -217,7 +223,9 @@ mod tests {
         let update = cmd_rx.recv().await.expect("Should receive update");
 
         // Check for AAPL, GOOG (movers) and MSFT (held)
-        if let crate::application::agents::sentinel::SentinelCommand::UpdateSymbols(symbols) = update {
+        if let crate::application::agents::sentinel::SentinelCommand::UpdateSymbols(symbols) =
+            update
+        {
             assert!(symbols.contains(&"AAPL".to_string()));
             assert!(symbols.contains(&"GOOG".to_string()));
             assert!(symbols.contains(&"MSFT".to_string()));

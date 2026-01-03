@@ -279,6 +279,16 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn get_open_orders(
+            &self,
+        ) -> anyhow::Result<Vec<crate::domain::trading::types::Order>> {
+            Ok(Vec::new())
+        }
+
+        async fn cancel_order(&self, _order_id: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+
         async fn subscribe_order_updates(
             &self,
         ) -> anyhow::Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {

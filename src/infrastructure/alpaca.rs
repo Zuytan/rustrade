@@ -1,7 +1,7 @@
 use crate::config::AssetClass; // Added
 use crate::domain::ports::OrderUpdate; // Added
 use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::domain::trading::types::{MarketEvent, Order, OrderSide};
+use crate::domain::trading::types::{normalize_crypto_symbol, MarketEvent, Order, OrderSide};
 use crate::infrastructure::alpaca_trading_stream::AlpacaTradingStream; // Added
 use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
 use anyhow::{Context, Result};
@@ -15,7 +15,7 @@ use tokio::sync::{
     broadcast,
     mpsc::{self, Receiver},
 }; // Added broadcast
-use tracing::{debug, error, info, trace, warn}; // Restored imports
+use tracing::{debug, error, info, trace}; // Restored imports
 
 // ===== Market Data Service (WebSocket) =====
 
@@ -28,6 +28,7 @@ pub struct AlpacaMarketDataService {
     bar_cache: std::sync::RwLock<std::collections::HashMap<String, Vec<AlpacaBar>>>,
     min_volume_threshold: f64,
     asset_class: AssetClass, // Added
+    spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>, // Shared spread cache for real-time cost tracking
 }
 
 impl AlpacaMarketDataService {
@@ -48,12 +49,13 @@ impl AlpacaMarketDataService {
             .unwrap_or_else(|_| Client::new());
 
         // Create singleton WebSocket manager
-        let spread_cache = Arc::new(crate::application::market_data::spread_cache::SpreadCache::new());
+        let spread_cache =
+            Arc::new(crate::application::market_data::spread_cache::SpreadCache::new());
         let ws_manager = Arc::new(AlpacaWebSocketManager::new(
             api_key.clone(),
             api_secret.clone(),
             ws_url,
-            spread_cache,
+            spread_cache.clone(), // Clone for WebSocket manager
         ));
 
         Self {
@@ -65,7 +67,14 @@ impl AlpacaMarketDataService {
             bar_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
             min_volume_threshold,
             asset_class,
+            spread_cache, // Store for external access
         }
+    }
+
+    /// Get the shared spread cache for real-time bid/ask tracking
+    /// This should be shared with CostEvaluator to use real spreads instead of defaults
+    pub fn get_spread_cache(&self) -> Arc<crate::application::market_data::spread_cache::SpreadCache> {
+        self.spread_cache.clone()
     }
 }
 
@@ -82,10 +91,28 @@ impl MarketDataService for AlpacaMarketDataService {
         let (tx, rx) = mpsc::channel(100);
 
         tokio::spawn(async move {
-            while let Ok(event) = broadcast_rx.recv().await {
-                if tx.send(event).await.is_err() {
-                    // Receiver dropped, exit
-                    break;
+            loop {
+                match broadcast_rx.recv().await {
+                    Ok(event) => {
+                        if tx.send(event).await.is_err() {
+                            // Receiver dropped, exit
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        // Receiver fell behind, log and continue
+                        // This is common during high-activity periods
+                        tracing::warn!(
+                            "Market event broadcast receiver lagged, missed {} messages",
+                            n
+                        );
+                        // Continue receiving - don't break the loop
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        // Channel closed, exit gracefully
+                        tracing::debug!("Market event broadcast channel closed");
+                        break;
+                    }
                 }
             }
         });
@@ -281,9 +308,19 @@ impl MarketDataService for AlpacaMarketDataService {
             return Ok(std::collections::HashMap::new());
         }
 
+        // Detect if we're dealing with crypto symbols (contain '/')
+        let is_crypto = symbols.iter().any(|s| s.contains('/'));
+        
+        // For crypto, denormalize symbols (remove slashes) before API call
+        // Alpaca's snapshot API expects BTCUSD not BTC/USD
+        let api_symbols: Vec<String> = if is_crypto {
+            symbols.iter().map(|s| crate::domain::trading::types::denormalize_crypto_symbol(s)).collect()
+        } else {
+            symbols.clone()
+        };
+
         let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
-        // Join symbols with comma
-        let symbols_param = symbols.join(",");
+        let symbols_param = api_symbols.join(",");
 
         let response = self
             .client
@@ -324,7 +361,15 @@ impl MarketDataService for AlpacaMarketDataService {
 
         let mut prices = std::collections::HashMap::new();
 
-        for (sym, snapshot) in resp {
+        for (alp_sym, snapshot) in resp {
+            // Normalize the symbol back to internal format (BTCUSD -> BTC/USD)
+            let normalized_sym = if is_crypto {
+                crate::domain::trading::types::normalize_crypto_symbol(&alp_sym)
+                    .unwrap_or(alp_sym.clone())
+            } else {
+                alp_sym
+            };
+            
             let price_f64 = if let Some(trade) = snapshot.latest_trade {
                 trade.price
             } else if let Some(bar) = snapshot.prev_daily_bar {
@@ -335,7 +380,7 @@ impl MarketDataService for AlpacaMarketDataService {
 
             if price_f64 > 0.0 {
                 if let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64) {
-                    prices.insert(sym, dec);
+                    prices.insert(normalized_sym, dec);
                 }
             }
         }
@@ -675,6 +720,8 @@ struct AlpacaPosition {
     symbol: String,
     qty: String,
     avg_entry_price: String,
+    #[serde(default)]
+    asset_class: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -855,14 +902,20 @@ impl ExecutionService for AlpacaExecutionService {
                 portfolio.day_trades_count = account_resp.daytrade_count as u64;
 
                 for alp_pos in positions_resp {
-                    // Normalize symbol: Alpaca might return BTCUSD or BTC/USD.
-                    // We strip any / to be consistent if needed, or just keep it.
-                    // Let's try to match exactly first, but log if it's different.
+                    let alp_symbol = alp_pos.symbol.clone();
 
-                    let alp_symbol = alp_pos.symbol.clone(); // Define alp_symbol
+                    // Only normalize crypto symbols (BTCUSD -> BTC/USD)
+                    // Stock symbols like GOOGL should remain unchanged
+                    let normalized_symbol = if alp_pos.asset_class.as_deref() == Some("crypto") {
+                        normalize_crypto_symbol(&alp_symbol).map_err(|e| {
+                            anyhow::anyhow!("Symbol normalization failed for {}: {}", alp_symbol, e)
+                        })?
+                    } else {
+                        alp_symbol.clone()
+                    };
 
                     let pos = crate::domain::trading::portfolio::Position {
-                        symbol: alp_symbol.clone(),
+                        symbol: normalized_symbol.clone(),
                         quantity: alp_pos.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO),
                         average_price: alp_pos
                             .avg_entry_price
@@ -870,12 +923,7 @@ impl ExecutionService for AlpacaExecutionService {
                             .unwrap_or(Decimal::ZERO),
                     };
 
-                    // Log positions for debugging
-                    // info!("Alpaca Position: {} qty={}", alp_symbol, pos.quantity);
-
-                    // Store with and without slash to be safe?
-                    // Better: use a normalized key in the map or normalize during lookup.
-                    portfolio.positions.insert(alp_symbol, pos);
+                    portfolio.positions.insert(normalized_symbol, pos);
                 }
 
                 Ok(portfolio)
@@ -892,7 +940,9 @@ impl ExecutionService for AlpacaExecutionService {
     async fn get_open_orders(&self) -> Result<Vec<Order>> {
         let url = format!("{}/v2/orders", self.base_url);
 
-        let response = self.client.get(&url)
+        let response = self
+            .client
+            .get(&url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
             .query(&[("status", "open")])
@@ -901,31 +951,39 @@ impl ExecutionService for AlpacaExecutionService {
             .context("Failed to fetch open orders")?;
 
         if !response.status().is_success() {
-             let error_text = response.text().await.unwrap_or_default();
-             anyhow::bail!("Alpaca open orders fetch failed: {}", error_text);
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Alpaca open orders fetch failed: {}", error_text);
         }
 
-        let alpaca_orders: Vec<AlpacaOrder> = response.json().await.context("Failed to parse open orders")?;
+        let alpaca_orders: Vec<AlpacaOrder> = response
+            .json()
+            .await
+            .context("Failed to parse open orders")?;
 
-        let orders = alpaca_orders.into_iter().map(|ao| {
-             let side = match ao.side.as_str() {
-                 "buy" => OrderSide::Buy,
-                 "sell" => OrderSide::Sell,
-                 _ => OrderSide::Buy, // Fallback
-             };
-             
-             let qty = Decimal::from_str_exact(&ao.qty).unwrap_or(Decimal::ZERO);
-             
-             Order {
-                 id: ao.id,
-                 symbol: ao.symbol,
-                 side,
-                 price: Decimal::ZERO, // Open orders might contain limit price, but simple mapping for now
-                 quantity: qty,
-                 order_type: crate::domain::trading::types::OrderType::Market, // Simplified
-                 timestamp: chrono::DateTime::parse_from_rfc3339(&ao.created_at).unwrap_or_default().timestamp(),
-             }
-        }).collect();
+        let orders = alpaca_orders
+            .into_iter()
+            .map(|ao| {
+                let side = match ao.side.as_str() {
+                    "buy" => OrderSide::Buy,
+                    "sell" => OrderSide::Sell,
+                    _ => OrderSide::Buy, // Fallback
+                };
+
+                let qty = Decimal::from_str_exact(&ao.qty).unwrap_or(Decimal::ZERO);
+
+                Order {
+                    id: ao.id,
+                    symbol: ao.symbol,
+                    side,
+                    price: Decimal::ZERO, // Open orders might contain limit price, but simple mapping for now
+                    quantity: qty,
+                    order_type: crate::domain::trading::types::OrderType::Market, // Simplified
+                    timestamp: chrono::DateTime::parse_from_rfc3339(&ao.created_at)
+                        .unwrap_or_default()
+                        .timestamp(),
+                }
+            })
+            .collect();
 
         Ok(orders)
     }
@@ -933,7 +991,9 @@ impl ExecutionService for AlpacaExecutionService {
     async fn cancel_order(&self, order_id: &str) -> Result<()> {
         let url = format!("{}/v2/orders/{}", self.base_url, order_id);
 
-        let response = self.client.delete(&url)
+        let response = self
+            .client
+            .delete(&url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
             .send()
@@ -941,16 +1001,22 @@ impl ExecutionService for AlpacaExecutionService {
             .context("Failed to cancel order")?;
 
         if !response.status().is_success() {
-             // If 404, it might already be filled or canceled, consider success or ignore
-             if response.status().as_u16() == 404 {
-                 info!("AlpacaExecution: Order {} not found for cancellation (already closed?)", order_id);
-                 return Ok(());
-             }
-             let error_text = response.text().await.unwrap_or_default();
-             anyhow::bail!("Alpaca cancel order failed: {}", error_text);
+            // If 404, it might already be filled or canceled, consider success or ignore
+            if response.status().as_u16() == 404 {
+                info!(
+                    "AlpacaExecution: Order {} not found for cancellation (already closed?)",
+                    order_id
+                );
+                return Ok(());
+            }
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Alpaca cancel order failed: {}", error_text);
         }
-        
-        info!("AlpacaExecution: Order {} cancelled successfully.", order_id);
+
+        info!(
+            "AlpacaExecution: Order {} cancelled successfully.",
+            order_id
+        );
         Ok(())
     }
 
@@ -958,7 +1024,7 @@ impl ExecutionService for AlpacaExecutionService {
         // Only fetch closed orders for today (default status=closed, limit=500)
         // Alpaca defaults to open, use status=closed for "today's filled orders"
         let url = format!("{}/v2/orders", self.base_url);
-        
+
         let response = self
             .client
             .get(&url)

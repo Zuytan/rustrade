@@ -40,6 +40,14 @@ impl SpreadCache {
             0.0
         };
 
+        // Log unusually high spreads for investigation
+        if spread_bps > 50.0 {
+            tracing::debug!(
+                "SpreadCache: High spread detected for {} - bid={:.4}, ask={:.4}, spread={:.2} bps",
+                symbol, bid, ask, spread_bps
+            );
+        }
+
         let data = SpreadData {
             bid,
             ask,
@@ -88,12 +96,12 @@ mod tests {
     #[test]
     fn test_spread_calculation() {
         let cache = SpreadCache::new();
-        
+
         // BTC example: bid=88700, ask=88710
         cache.update("BTC/USD".to_string(), 88700.0, 88710.0);
-        
+
         let spread_pct = cache.get_spread_pct("BTC/USD").unwrap();
-        
+
         // Expected: (88710 - 88700) / 88705 * 100 = 0.0112%
         assert!((spread_pct - 0.000112).abs() < 0.000001);
     }
@@ -101,9 +109,9 @@ mod tests {
     #[test]
     fn test_spread_data_storage() {
         let cache = SpreadCache::new();
-        
+
         cache.update("ETH/USD".to_string(), 3000.0, 3001.0);
-        
+
         let data = cache.get_spread_data("ETH/USD").unwrap();
         assert_eq!(data.bid, 3000.0);
         assert_eq!(data.ask, 3001.0);
@@ -112,12 +120,12 @@ mod tests {
     #[test]
     fn test_stale_detection() {
         let cache = SpreadCache::new();
-        
+
         cache.update("AVAX/USD".to_string(), 13.5, 13.52);
-        
+
         // Fresh data
         assert!(!cache.is_stale("AVAX/USD", 60000)); // 60s threshold
-        
+
         // Non-existent symbol is stale
         assert!(cache.is_stale("UNKNOWN", 60000));
     }

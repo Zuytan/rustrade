@@ -652,7 +652,7 @@ impl RiskManager {
             true // Keep in pending
         });
     }
-    
+
     pub fn is_halted(&self) -> bool {
         self.halted
     }
@@ -696,15 +696,36 @@ impl RiskManager {
                         error!("RiskManager: Portfolio refresh failed: {}", e);
                     }
                 }
-                // Listen for Order Updates
-                Ok(update) = async {
+                // Listen for Order Updates (handle lag explicitly)
+                result = async {
                     if let Some(rx) = &mut order_update_rx {
                         rx.recv().await
                     } else {
                         std::future::pending().await
                     }
                 } => {
-                    self.handle_order_update(update);
+                    match result {
+                        Ok(update) => {
+                            self.handle_order_update(update);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            // Receiver fell behind - log and continue
+                            // This is CRITICAL: missed order updates mean pending orders won't cleanup
+                            warn!(
+                                "RiskManager: Order update receiver lagged, missed {} updates! Pending orders may be stale.",
+                                n
+                            );
+                            // Force an immediate portfolio refresh to reconcile state
+                            if let Err(e) = self.portfolio_state_manager.refresh().await {
+                                error!("RiskManager: Failed to refresh after lag: {}", e);
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            // Channel closed - disable receiver
+                            error!("RiskManager: Order update channel closed! Real-time tracking disabled.");
+                            order_update_rx = None;
+                        }
+                    }
                 }
                         _ = valuation_interval.tick() => {
                             if let Err(e) = self.update_portfolio_valuation().await {
