@@ -13,9 +13,11 @@ fn render_metric_card(
     subtitle: Option<&str>,
     value_color: egui::Color32,
 ) {
-    // Fixed width for uniform card sizing - increased for better fit
+    // Fixed size for ALL cards - no variation
+    let card_size = egui::vec2(190.0, 78.0);
+    
     ui.allocate_ui_with_layout(
-        egui::vec2(190.0, 78.0),
+        card_size,
         egui::Layout::top_down(egui::Align::LEFT),
         |ui| {
             egui::Frame::none()
@@ -24,7 +26,10 @@ fn render_metric_card(
                 .rounding(6.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
                 .show(ui, |ui| {
-                    ui.set_width(190.0);
+                    // Force exact dimensions
+                    ui.set_width(170.0);  // 190 - 20 (2x10 padding)
+                    ui.set_height(58.0);  // 78 - 20 (2x10 padding)
+                    
                     ui.vertical(|ui| {
                         // Icon and title in compact row
                         ui.horizontal(|ui| {
@@ -36,7 +41,7 @@ fn render_metric_card(
                                     .color(egui::Color32::from_gray(150)),
                             );
                         });
-                        ui.add_space(6.0);
+                        ui.add_space(4.0);
                         
                         // Value with consistent sizing
                         ui.label(
@@ -170,7 +175,7 @@ impl eframe::App for UserAgent {
                 .inner_margin(egui::Margin::symmetric(12.0, 8.0))
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
                     // Calculate metrics
                     let total_value = self.calculate_total_value();
                     let (cash, position_count, unrealized_pnl, unrealized_pct) = match self.portfolio.try_read() {
