@@ -1,0 +1,275 @@
+{
+    "language": {
+        "code": "en",
+        "name": "English",
+        "flag": "🇬🇧",
+        "native_name": "English"
+    },
+    "ui": {
+        "help_panel_title": "📚 Help Guide",
+        "help_button_label": "❓ Help",
+        "help_search_placeholder": "Search...",
+        "help_category_all": "All",
+        "metric_total_value": "Total Value",
+        "metric_cash": "Cash",
+        "metric_pnl_today": "P&L Today",
+        "metric_positions": "Positions",
+        "metric_win_rate": "Win Rate",
+        "section_positions": "📈 Positions",
+        "section_recent_activity": "🕒 Recent Activity",
+        "section_strategy": "⚙️ Strategy",
+        "section_system_logs": "📋 System Logs",
+        "section_portfolio_dashboard": "📊 Portfolio Dashboard",
+        "section_open_positions": "📈 Open Positions",
+        "show_logs": "▲ Show Logs",
+        "hide_logs": "▼ Hide Logs",
+        "no_positions": "None",
+        "no_activity": "No recent activity",
+        "messages": "messages",
+        "trades": "trades",
+        "strategy_mode": "Mode",
+        "risk_score": "Risk Score",
+        "header_symbol": "SYMBOL",
+        "header_quantity": "QTY",
+        "header_average": "AVG",
+        "header_current": "CURRENT",
+        "header_pnl_dollar": "P&L $",
+        "header_pnl_percent": "P&L %",
+        "header_trend": "TREND"
+    },
+    "help_categories": {
+        "abbreviations": "Abbreviations",
+        "strategies": "Strategies",
+        "indicators": "Indicators",
+        "risk_management": "Risk Management",
+        "order_types": "Order Types"
+    },
+    "help_topics": [
+        {
+            "id": "pnl",
+            "category": "abbreviations",
+            "title": "P&L",
+            "abbreviation": "P&L",
+            "full_name": "Profit and Loss",
+            "description": "The difference between the current price of an asset and its purchase price. A positive P&L indicates a gain, a negative P&L indicates a loss.",
+            "example": "If you buy a stock at $100 and it's now worth $110, your P&L is +$10 (+10%)"
+        },
+        {
+            "id": "sma",
+            "category": "abbreviations",
+            "title": "SMA",
+            "abbreviation": "SMA",
+            "full_name": "Simple Moving Average",
+            "description": "The average of closing prices over the last N periods. Used to identify the overall market trend.",
+            "example": "SMA 20 = average of the last 20 candles. If price is above SMA, trend is bullish."
+        },
+        {
+            "id": "ema",
+            "category": "abbreviations",
+            "title": "EMA",
+            "abbreviation": "EMA",
+            "full_name": "Exponential Moving Average",
+            "description": "Weighted average that gives more importance to recent prices. More reactive than SMA to price changes.",
+            "example": "EMA 50 reacts faster than SMA 50 to market reversals."
+        },
+        {
+            "id": "rsi",
+            "category": "abbreviations",
+            "title": "RSI",
+            "abbreviation": "RSI",
+            "full_name": "Relative Strength Index",
+            "description": "Momentum indicator that measures the speed and magnitude of price movements. Ranges from 0 to 100. Above 70 = overbought, below 30 = oversold.",
+            "example": "RSI at 80: the asset may be overbought, a bearish reversal is possible."
+        },
+        {
+            "id": "macd",
+            "category": "abbreviations",
+            "title": "MACD",
+            "abbreviation": "MACD",
+            "full_name": "Moving Average Convergence Divergence",
+            "description": "Trend indicator that shows the relationship between two moving averages. Used to identify momentum changes.",
+            "example": "When the MACD line crosses above the signal line, it's a potential buy signal."
+        },
+        {
+            "id": "atr",
+            "category": "abbreviations",
+            "title": "ATR",
+            "abbreviation": "ATR",
+            "full_name": "Average True Range",
+            "description": "Measure of an asset's volatility. The higher the ATR, the more volatile the asset (riskier but potentially more profitable).",
+            "example": "ATR of $5 means the price fluctuates an average of $5 per day."
+        },
+        {
+            "id": "qty",
+            "category": "abbreviations",
+            "title": "Qty",
+            "abbreviation": "Qty",
+            "full_name": "Quantity",
+            "description": "The number of shares or cryptocurrency units you own in a position.",
+            "example": "Qty: 10 AAPL = you own 10 Apple shares."
+        },
+        {
+            "id": "avg",
+            "category": "abbreviations",
+            "title": "Avg",
+            "abbreviation": "Avg",
+            "full_name": "Average Price",
+            "description": "The average price at which you bought your shares. If you buy multiple times, it's the weighted average.",
+            "example": "Buy 5 shares at $100 and 5 shares at $110 = average price of $105."
+        },
+        {
+            "id": "standard_strategy",
+            "category": "strategies",
+            "title": "Standard",
+            "full_name": "Standard Strategy (SMA 20/50)",
+            "description": "Basic strategy using two simple moving averages (20 and 50 periods). Buy signal when the fast SMA (20) crosses above the slow SMA (50) - called 'Golden Cross'.",
+            "example": "Ideal for beginners. Follows established trends without too much complexity."
+        },
+        {
+            "id": "advanced_strategy",
+            "category": "strategies",
+            "title": "Advanced",
+            "full_name": "Advanced Strategy (Triple Filter)",
+            "description": "Sophisticated strategy using three filters: EMA for trend, RSI for momentum, and signal confirmation. More selective than Standard, generates fewer but higher-quality signals.",
+            "example": "Combines EMA 50/150, RSI < 60 (avoids overbought), and waits for 2 confirmation candles."
+        },
+        {
+            "id": "dynamic_strategy",
+            "category": "strategies",
+            "title": "Dynamic",
+            "full_name": "Dynamic Strategy (Regime Adaptation)",
+            "description": "Smart strategy that automatically adapts to market regime. Uses TrendRiding in directional markets and Advanced in choppy markets.",
+            "example": "Automatically detects if the market is strongly trending or consolidating and adjusts its strategy."
+        },
+        {
+            "id": "trendriding_strategy",
+            "category": "strategies",
+            "title": "TrendRiding",
+            "full_name": "Trend Riding Strategy",
+            "description": "Aggressive strategy that seeks to capture large trends. Uses wide stops (4x ATR) to avoid being stopped out prematurely during minor corrections.",
+            "example": "Perfect for strong bull markets. Aims for significant gains (>5%)."
+        },
+        {
+            "id": "meanreversion_strategy",
+            "category": "strategies",
+            "title": "MeanReversion",
+            "full_name": "Mean Reversion Strategy",
+            "description": "Contrarian strategy that buys during temporary dips betting on a return to the mean. Uses Bollinger Bands to identify extremes.",
+            "example": "Buys when price touches the lower Bollinger Band, sells at the upper Band."
+        },
+        {
+            "id": "bullish_trend",
+            "category": "indicators",
+            "title": "Bullish Trend",
+            "full_name": "Bullish Trend 📈",
+            "description": "Indicates that the price is rising. The fast SMA is above the slow SMA. Generally a good time to buy or hold.",
+            "example": "Emoji 📈 displayed = price is rising steadily."
+        },
+        {
+            "id": "bearish_trend",
+            "category": "indicators",
+            "title": "Bearish Trend",
+            "full_name": "Bearish Trend 📉",
+            "description": "Indicates that the price is falling. The fast SMA is below the slow SMA. Better to avoid buying or consider selling.",
+            "example": "Emoji 📉 displayed = price is falling steadily."
+        },
+        {
+            "id": "sideways_market",
+            "category": "indicators",
+            "title": "Sideways Market",
+            "full_name": "Sideways Market ➡️",
+            "description": "Indicates that the price is oscillating without a clear trend. The SMAs are close to each other. Beware of false signals in this context.",
+            "example": "Emoji ➡️ displayed = market in consolidation, wait for a clear trend."
+        },
+        {
+            "id": "bollinger_bands",
+            "category": "indicators",
+            "title": "Bollinger Bands",
+            "abbreviation": "BB",
+            "full_name": "Bollinger Bands",
+            "description": "Two bands around a moving average that widen when volatility increases and narrow when it decreases. Used to identify price extremes.",
+            "example": "Price touching the upper band = potentially overbought. Lower band = potentially oversold."
+        },
+        {
+            "id": "circuit_breaker",
+            "category": "risk_management",
+            "title": "Circuit Breaker",
+            "full_name": "Circuit Breaker",
+            "description": "Safety mechanism that automatically stops trading in case of significant losses or system anomalies. Protection against crashes and malfunctions.",
+            "example": "If you lose 10% in one day, the circuit breaker can stop the bot and liquidate positions."
+        },
+        {
+            "id": "pdt",
+            "category": "risk_management",
+            "title": "PDT",
+            "abbreviation": "PDT",
+            "full_name": "Pattern Day Trader",
+            "description": "US rule that limits day trades (buy and sell same day) to 3 per 5-day period if your account is below $25,000. The bot automatically respects this limit.",
+            "example": "With a $5000 account, you can only make 3 round trips in the same day over 5 days."
+        },
+        {
+            "id": "drawdown",
+            "category": "risk_management",
+            "title": "Drawdown",
+            "full_name": "Drawdown (Maximum Loss)",
+            "description": "The largest loss suffered from the peak value of your portfolio. Key indicator of the risk taken by a strategy.",
+            "example": "Your account reaches $11,000, then drops to $9,500 = drawdown of 13.6%."
+        },
+        {
+            "id": "win_rate",
+            "category": "risk_management",
+            "title": "Win Rate",
+            "full_name": "Win Rate",
+            "description": "Percentage of winning trades compared to total trades executed. A good win rate is generally above 50%.",
+            "example": "15 winning trades out of 20 trades = win rate of 75%."
+        },
+        {
+            "id": "stop_loss",
+            "category": "risk_management",
+            "title": "Stop Loss",
+            "full_name": "Stop Loss Order",
+            "description": "Automatic sell order triggered when the price drops below a certain threshold. Protects against excessive losses.",
+            "example": "Buy at $100 with stop loss at $95 = maximum loss of $5 per share."
+        },
+        {
+            "id": "take_profit",
+            "category": "risk_management",
+            "title": "Take Profit",
+            "full_name": "Take Profit Order",
+            "description": "Automatic sell order triggered when the price reaches a profit target. Allows to secure profits.",
+            "example": "Buy at $100 with take profit at $110 = profit automatically locked at +10%."
+        },
+        {
+            "id": "market_order",
+            "category": "order_types",
+            "title": "Market Order",
+            "full_name": "Market Order",
+            "description": "Order executed immediately at the best available price. Guarantees execution but not the exact price.",
+            "example": "Used for emergency exits (stop loss) where speed is more important than price."
+        },
+        {
+            "id": "limit_order",
+            "category": "order_types",
+            "title": "Limit Order",
+            "full_name": "Limit Order",
+            "description": "Order that only executes if the price reaches or exceeds a specified price. Guarantees the price but not execution.",
+            "example": "Buy limit order at $100 = only executes if the price drops to $100 or below."
+        },
+        {
+            "id": "stop_order",
+            "category": "order_types",
+            "title": "Stop Order",
+            "full_name": "Stop Order",
+            "description": "Order that becomes a market order when a threshold price is reached. Used to limit losses.",
+            "example": "Stop at $95 on a position bought at $100 = automatic sale if price drops to $95."
+        },
+        {
+            "id": "trailing_stop",
+            "category": "order_types",
+            "title": "Trailing Stop",
+            "full_name": "Trailing Stop",
+            "description": "Stop loss that automatically rises with the price but never falls. Protects gains while letting profits run.",
+            "example": "Trailing stop at $5: if price rises from $100 to $120, stop rises from $95 to $115."
+        }
+    ]
+}

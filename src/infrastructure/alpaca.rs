@@ -93,7 +93,9 @@ impl AlpacaMarketDataService {
 
     /// Get the shared spread cache for real-time bid/ask tracking
     /// This should be shared with CostEvaluator to use real spreads instead of defaults
-    pub fn get_spread_cache(&self) -> Arc<crate::application::market_data::spread_cache::SpreadCache> {
+    pub fn get_spread_cache(
+        &self,
+    ) -> Arc<crate::application::market_data::spread_cache::SpreadCache> {
         self.spread_cache.clone()
     }
 }
@@ -142,7 +144,10 @@ impl MarketDataService for AlpacaMarketDataService {
 
     async fn get_top_movers(&self) -> Result<Vec<String>> {
         if self.asset_class == AssetClass::Crypto {
-            info!("MarketScanner: Scanning crypto top movers from universe of {} pairs", CRYPTO_UNIVERSE.len());
+            info!(
+                "MarketScanner: Scanning crypto top movers from universe of {} pairs",
+                CRYPTO_UNIVERSE.len()
+            );
             return self.get_crypto_top_movers().await;
         }
 
@@ -330,11 +335,14 @@ impl MarketDataService for AlpacaMarketDataService {
 
         // Detect if we're dealing with crypto symbols (contain '/')
         let is_crypto = symbols.iter().any(|s| s.contains('/'));
-        
+
         // For crypto, denormalize symbols (remove slashes) before API call
         // Alpaca's snapshot API expects BTCUSD not BTC/USD
         let api_symbols: Vec<String> = if is_crypto {
-            symbols.iter().map(|s| crate::domain::trading::types::denormalize_crypto_symbol(s)).collect()
+            symbols
+                .iter()
+                .map(|s| crate::domain::trading::types::denormalize_crypto_symbol(s))
+                .collect()
         } else {
             symbols.clone()
         };
@@ -389,7 +397,7 @@ impl MarketDataService for AlpacaMarketDataService {
             } else {
                 alp_sym
             };
-            
+
             let price_f64 = if let Some(trade) = snapshot.latest_trade {
                 trade.price
             } else if let Some(bar) = snapshot.prev_daily_bar {
@@ -427,12 +435,12 @@ impl MarketDataService for AlpacaMarketDataService {
             match repo.get_range(symbol, start_ts, end_ts).await {
                 Ok(cached_candles) => {
                     let cached_count = cached_candles.len();
-                    
+
                     if cached_count >= MIN_REQUIRED_BARS {
                         // Cache is sufficient - check if we need incremental update
                         if let Ok(Some(latest_ts)) = repo.get_latest_timestamp(symbol).await {
                             let latest_dt = chrono::Utc.timestamp_opt(latest_ts, 0).unwrap();
-                            
+
                             // If latest cache is recent enough (within requested range), use cache + incremental
                             if latest_dt < end && latest_dt >= start {
                                 info!(
@@ -442,7 +450,11 @@ impl MarketDataService for AlpacaMarketDataService {
 
                                 // Fetch only new data since last cached candle
                                 let new_start = latest_dt + chrono::Duration::seconds(60); // Start from next minute
-                                let api_result = self.fetch_historical_bars_internal(symbol, new_start, end, timeframe).await;
+                                let api_result = self
+                                    .fetch_historical_bars_internal(
+                                        symbol, new_start, end, timeframe,
+                                    )
+                                    .await;
 
                                 match api_result {
                                     Ok(new_bars) => {
@@ -453,41 +465,58 @@ impl MarketDataService for AlpacaMarketDataService {
 
                                         // Save new bars to database
                                         for bar in &new_bars {
-                                            let timestamp = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
-                                                .unwrap_or_default()
-                                                .timestamp();
+                                            let timestamp = chrono::DateTime::parse_from_rfc3339(
+                                                &bar.timestamp,
+                                            )
+                                            .unwrap_or_default()
+                                            .timestamp();
 
                                             let candle = crate::domain::trading::types::Candle {
                                                 symbol: symbol.to_string(),
-                                                open: Decimal::from_f64_retain(bar.open).unwrap_or(Decimal::ZERO),
-                                                high: Decimal::from_f64_retain(bar.high).unwrap_or(Decimal::ZERO),
-                                                low: Decimal::from_f64_retain(bar.low).unwrap_or(Decimal::ZERO),
-                                                close: Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO),
+                                                open: Decimal::from_f64_retain(bar.open)
+                                                    .unwrap_or(Decimal::ZERO),
+                                                high: Decimal::from_f64_retain(bar.high)
+                                                    .unwrap_or(Decimal::ZERO),
+                                                low: Decimal::from_f64_retain(bar.low)
+                                                    .unwrap_or(Decimal::ZERO),
+                                                close: Decimal::from_f64_retain(bar.close)
+                                                    .unwrap_or(Decimal::ZERO),
                                                 volume: bar.volume,
                                                 timestamp,
                                             };
 
                                             if let Err(e) = repo.save(&candle).await {
-                                                tracing::warn!("Failed to save candle to repository: {}", e);
+                                                tracing::warn!(
+                                                    "Failed to save candle to repository: {}",
+                                                    e
+                                                );
                                             }
                                         }
 
                                         // Convert new bars to candles and merge with cached
                                         let mut all_candles = cached_candles;
                                         for bar in new_bars {
-                                            let timestamp = chrono::DateTime::parse_from_rfc3339(&bar.timestamp)
-                                                .unwrap_or_default()
-                                                .timestamp();
+                                            let timestamp = chrono::DateTime::parse_from_rfc3339(
+                                                &bar.timestamp,
+                                            )
+                                            .unwrap_or_default()
+                                            .timestamp();
 
-                                            all_candles.push(crate::domain::trading::types::Candle {
-                                                symbol: symbol.to_string(),
-                                                open: Decimal::from_f64_retain(bar.open).unwrap_or(Decimal::ZERO),
-                                                high: Decimal::from_f64_retain(bar.high).unwrap_or(Decimal::ZERO),
-                                                low: Decimal::from_f64_retain(bar.low).unwrap_or(Decimal::ZERO),
-                                                close: Decimal::from_f64_retain(bar.close).unwrap_or(Decimal::ZERO),
-                                                volume: bar.volume,
-                                                timestamp,
-                                            });
+                                            all_candles.push(
+                                                crate::domain::trading::types::Candle {
+                                                    symbol: symbol.to_string(),
+                                                    open: Decimal::from_f64_retain(bar.open)
+                                                        .unwrap_or(Decimal::ZERO),
+                                                    high: Decimal::from_f64_retain(bar.high)
+                                                        .unwrap_or(Decimal::ZERO),
+                                                    low: Decimal::from_f64_retain(bar.low)
+                                                        .unwrap_or(Decimal::ZERO),
+                                                    close: Decimal::from_f64_retain(bar.close)
+                                                        .unwrap_or(Decimal::ZERO),
+                                                    volume: bar.volume,
+                                                    timestamp,
+                                                },
+                                            );
                                         }
 
                                         return Ok(all_candles);
@@ -519,13 +548,19 @@ impl MarketDataService for AlpacaMarketDataService {
                     }
                 }
                 Err(e) => {
-                    tracing::debug!("AlpacaMarketDataService: Cache query failed for {}: {}", symbol, e);
+                    tracing::debug!(
+                        "AlpacaMarketDataService: Cache query failed for {}: {}",
+                        symbol,
+                        e
+                    );
                 }
             }
         }
 
         // ========== FULL API LOAD (Fallback or No Cache) ==========
-        let api_result = self.fetch_historical_bars_internal(symbol, start, end, timeframe).await;
+        let api_result = self
+            .fetch_historical_bars_internal(symbol, start, end, timeframe)
+            .await;
 
         match api_result {
             Ok(alpaca_bars) => {
@@ -787,20 +822,20 @@ impl AlpacaMarketDataService {
     async fn get_crypto_top_movers(&self) -> Result<Vec<String>> {
         let now = chrono::Utc::now();
         let start = now - chrono::Duration::hours(24);
-        
+
         // Crypto bars API expects slash format (BTC/USD), unlike other Alpaca APIs
         let symbols: Vec<String> = CRYPTO_UNIVERSE.iter().map(|s| s.to_string()).collect();
         let symbols_param = symbols.join(",");
-        
+
         info!("MarketScanner: DEBUG - symbols_param = '{}'", symbols_param);
-        
-       let url = format!("{}/v1beta3/crypto/us/bars", self.data_base_url);
-        
+
+        let url = format!("{}/v1beta3/crypto/us/bars", self.data_base_url);
+
         info!(
             "MarketScanner: Fetching 24h bars for {} crypto pairs",
             CRYPTO_UNIVERSE.len()
         );
-        
+
         let response = self
             .client
             .get(&url)
@@ -816,30 +851,37 @@ impl AlpacaMarketDataService {
             .send()
             .await
             .context("Failed to fetch crypto bars for movers detection")?;
-        
+
         if !response.status().is_success() {
             let err = response.text().await.unwrap_or_default();
             error!("MarketScanner: Crypto bars fetch failed: {}", err);
             return Ok(vec![]); // Graceful degradation
         }
-        
+
         #[derive(Debug, Deserialize)]
         struct CryptoBarsResponse {
             bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
         }
-        
+
         let data: CryptoBarsResponse = response
             .json()
             .await
             .context("Failed to parse crypto bars response")?;
-        
-        info!("MarketScanner: API returned bars for {} symbols", data.bars.len());
+
+        info!(
+            "MarketScanner: API returned bars for {} symbols",
+            data.bars.len()
+        );
 
         let mut movers: Vec<(String, f64, f64)> = Vec::new();
-        
+
         for (symbol, bars) in data.bars {
-            info!("MarketScanner: Processing symbol '{}' with {} bars", symbol, bars.len());
-            
+            info!(
+                "MarketScanner: Processing symbol '{}' with {} bars",
+                symbol,
+                bars.len()
+            );
+
             if let Some(bar) = bars.first() {
                 // Calculate 24h percentage change
                 let change_pct = if bar.open != 0.0 {
@@ -847,17 +889,17 @@ impl AlpacaMarketDataService {
                 } else {
                     0.0
                 };
-                
+
                 let abs_change = change_pct.abs();
-                
+
                 // Filter by volume threshold
                 let has_volume = bar.volume >= self.min_volume_threshold;
-                
+
                 info!(
                     "MarketScanner: {} - change: {:.2}%, volume: {:.0}, threshold: {:.0}, pass: {}",
                     symbol, change_pct, bar.volume, self.min_volume_threshold, has_volume
                 );
-                
+
                 if has_volume && abs_change > 0.0 {
                     movers.push((symbol, abs_change, change_pct));
                 } else if !has_volume {
@@ -870,10 +912,10 @@ impl AlpacaMarketDataService {
                 info!("MarketScanner: {} - NO BARS in response", symbol);
             }
         }
-        
+
         // Sort by absolute change (descending)
         movers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         // Return top 5 movers
         let top_movers: Vec<String> = movers
             .into_iter()
@@ -886,12 +928,12 @@ impl AlpacaMarketDataService {
                 symbol
             })
             .collect();
-        
+
         info!(
             "MarketScanner: Found {} crypto top movers",
             top_movers.len()
         );
-        
+
         Ok(top_movers)
     }
 }

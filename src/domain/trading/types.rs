@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(denormalize_crypto_symbol("ETH/USDT"), "ETHUSDT");
         assert_eq!(denormalize_crypto_symbol("AVAX/USD"), "AVAXUSD");
         assert_eq!(denormalize_crypto_symbol("LINK/EUR"), "LINKEUR");
-        
+
         // Already denormalized (no slash)
         assert_eq!(denormalize_crypto_symbol("BTCUSD"), "BTCUSD");
         assert_eq!(denormalize_crypto_symbol("ETHUSDT"), "ETHUSDT");
@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn test_normalize_denormalize_roundtrip() {
         let symbols = vec!["BTCUSD", "ETHUSDT", "AVAXUSD", "LINKEUR"];
-        
+
         for symbol in symbols {
             let normalized = normalize_crypto_symbol(symbol).unwrap();
             let denormalized = denormalize_crypto_symbol(&normalized);

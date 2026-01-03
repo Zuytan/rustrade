@@ -71,13 +71,13 @@ pub struct UserAgent {
 
     // Log filtering
     pub log_level_filter: Option<String>, // None = All, Some("INFO"), Some("WARN"), Some("ERROR"), Some("DEBUG")
-    
+
     // Activity feed (max 20 events)
     pub activity_feed: VecDeque<ActivityEvent>,
-    
+
     // UI state
     pub logs_collapsed: bool,
-    
+
     // Portfolio metrics tracking
     pub total_trades: usize,
     pub winning_trades: usize,
@@ -210,7 +210,7 @@ impl UserAgent {
         while let Ok(msg) = self.log_rx.try_recv() {
             // Parse logs for activity events
             self.parse_log_for_activity(&msg);
-            
+
             // Extract signal information from SignalGenerator logs
             // Format: "SignalGenerator [StrategyName]: SYMBOL - REASON"
             if msg.contains("SignalGenerator") && msg.contains(": ") {
@@ -229,7 +229,7 @@ impl UserAgent {
                     }
                 }
             }
-            
+
             // Simple heuristic to extract "Sender" from log line if possible,
             // otherwise default to "System"
             // Log format assumed: "TIMESTAMP LEVEL TARGET: MESSAGE"
@@ -335,24 +335,31 @@ impl UserAgent {
 
         (fast_sma, slow_sma, trend)
     }
-    
+
     /// Add an activity event to the feed (max 20 events)
-    pub fn add_activity(&mut self, event_type: ActivityEventType, message: String, severity: EventSeverity) {
-        self.activity_feed.push_front(ActivityEvent::new(event_type, message, severity));
-        
+    pub fn add_activity(
+        &mut self,
+        event_type: ActivityEventType,
+        message: String,
+        severity: EventSeverity,
+    ) {
+        self.activity_feed
+            .push_front(ActivityEvent::new(event_type, message, severity));
+
         // Keep only last 20 events
         while self.activity_feed.len() > 20 {
             self.activity_feed.pop_back();
         }
     }
-    
+
     /// Calculate total portfolio value (cash + positions)
     pub fn calculate_total_value(&self) -> Decimal {
         if let Ok(pf) = self.portfolio.try_read() {
             let mut position_value = Decimal::ZERO;
             for (symbol, pos) in &pf.positions {
                 // Get current price from strategy_info
-                let current_price = self.strategy_info
+                let current_price = self
+                    .strategy_info
                     .get(symbol)
                     .map(|info| info.current_price)
                     .unwrap_or(pos.average_price);
@@ -363,7 +370,7 @@ impl UserAgent {
             Decimal::ZERO
         }
     }
-    
+
     /// Calculate win rate as a percentage
     pub fn calculate_win_rate(&self) -> f64 {
         if self.total_trades == 0 {
@@ -372,17 +379,20 @@ impl UserAgent {
             (self.winning_trades as f64 / self.total_trades as f64) * 100.0
         }
     }
-    
+
     /// Parse log messages to extract activity events
     fn parse_log_for_activity(&mut self, msg: &str) {
         // Check for order executions
         if msg.contains("Order") && (msg.contains("filled") || msg.contains("executed")) {
             if let Some(symbol) = self.extract_symbol_from_log(msg) {
                 let event_msg = format!("Trade executed: {}", symbol);
-                self.add_activity(ActivityEventType::TradeExecuted, event_msg, EventSeverity::Info);
+                self.add_activity(
+                    ActivityEventType::TradeExecuted,
+                    event_msg,
+                    EventSeverity::Info,
+                );
             }
         }
-        
         // Check for buy/sell signals
         else if msg.contains("SignalGenerator") {
             if msg.contains("BUY") || msg.contains("SELL") {
@@ -393,7 +403,6 @@ impl UserAgent {
                 }
             }
         }
-        
         // Check for filter blocks
         else if msg.contains("REJECT") || msg.contains("blocked") || msg.contains("filtered") {
             if let Some(symbol) = self.extract_symbol_from_log(msg) {
@@ -407,32 +416,33 @@ impl UserAgent {
                     "Filter"
                 };
                 let event_msg = format!("{} blocked: {}", symbol, reason);
-                self.add_activity(ActivityEventType::FilterBlock, event_msg, EventSeverity::Warning);
+                self.add_activity(
+                    ActivityEventType::FilterBlock,
+                    event_msg,
+                    EventSeverity::Warning,
+                );
             }
         }
-        
         // Check for strategy changes
         else if msg.contains("Strategy") && msg.contains("changed") {
             self.add_activity(
                 ActivityEventType::StrategyChange,
                 "Strategy configuration updated".to_string(),
-                EventSeverity::Info
+                EventSeverity::Info,
             );
         }
-        
         // Check for errors
         else if msg.contains("ERROR") {
             let short_msg = msg.chars().take(60).collect::<String>();
             self.add_activity(ActivityEventType::Alert, short_msg, EventSeverity::Error);
         }
-        
         // Check for warnings
         else if msg.contains("WARN") && (msg.contains("Circuit") || msg.contains("limit")) {
             let short_msg = msg.chars().take(60).collect::<String>();
             self.add_activity(ActivityEventType::Alert, short_msg, EventSeverity::Warning);
         }
     }
-    
+
     /// Extract symbol from log message (basic heuristic)
     fn extract_symbol_from_log(&self, msg: &str) -> Option<String> {
         // Try to find common symbol patterns (e.g., "BTC/USD", "AAPL")
@@ -440,7 +450,10 @@ impl UserAgent {
             // Check if it looks like a symbol
             if word.contains("/") && word.len() <= 10 {
                 // Crypto symbol like "BTC/USD"
-                return Some(word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/').to_string());
+                return Some(
+                    word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/')
+                        .to_string(),
+                );
             } else if word.chars().all(|c| c.is_uppercase()) && word.len() >= 2 && word.len() <= 5 {
                 // Stock symbol like "AAPL"
                 return Some(word.to_string());

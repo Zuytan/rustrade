@@ -10,7 +10,6 @@
 /// - ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in environment
 /// - ASSET_CLASS=crypto
 /// - Real Alpaca paper trading account
-
 use rustrade::application::agents::scanner::MarketScanner;
 use rustrade::application::agents::sentinel::SentinelCommand;
 use rustrade::config::AssetClass;
@@ -40,11 +39,7 @@ async fn test_crypto_scanner_integration() {
         AssetClass::Crypto,
     ));
 
-    let execution_service = Arc::new(AlpacaExecutionService::new(
-        api_key,
-        secret_key,
-        base_url,
-    ));
+    let execution_service = Arc::new(AlpacaExecutionService::new(api_key, secret_key, base_url));
 
     // Create command channel
     let (cmd_tx, mut cmd_rx) = mpsc::channel(10);
@@ -55,7 +50,7 @@ async fn test_crypto_scanner_integration() {
         execution_service as Arc<dyn rustrade::domain::ports::ExecutionService>,
         cmd_tx,
         Duration::from_secs(10), // Short interval for testing
-        true, // enabled
+        true,                    // enabled
     );
 
     // Start scanner in background
@@ -74,10 +69,13 @@ async fn test_crypto_scanner_integration() {
     match update {
         SentinelCommand::UpdateSymbols(symbols) => {
             println!("Received symbols: {:?}", symbols);
-            
+
             // Verify we got crypto symbols
-            assert!(!symbols.is_empty(), "Should have at least one crypto symbol");
-            
+            assert!(
+                !symbols.is_empty(),
+                "Should have at least one crypto symbol"
+            );
+
             // Verify symbols are in correct format (contain '/')
             for sym in &symbols {
                 if sym.contains("USD") {
@@ -88,7 +86,7 @@ async fn test_crypto_scanner_integration() {
                     );
                 }
             }
-            
+
             println!("✓ Crypto scanner test passed!");
             println!("✓ Found {} top movers", symbols.len());
         }
@@ -124,10 +122,10 @@ async fn test_crypto_movers_api_call() {
         Ok(movers) => {
             println!("Crypto top movers: {:?}", movers);
             println!("Found {} movers", movers.len());
-            
+
             // Verify we got some movers
             assert!(movers.len() <= 5, "Should return at most 5 movers");
-            
+
             // Verify format
             for mover in &movers {
                 if mover.contains("USD") {

@@ -116,29 +116,29 @@ impl CostEvaluator {
         };
 
         // Spread: Use REAL spread from cache if available, otherwise use default
-        let raw_spread_bps =
-            if let Some(ref cache) = self.spread_cache {
-                if let Some(real_spread_pct) = cache.get_spread_pct(&proposal.symbol) {
-                    Decimal::from_f64(real_spread_pct * 10000.0)
-                        .unwrap_or(self.default_spread_bps)
-                } else {
-                    tracing::debug!(
-                        "CostEvaluator: No real spread for {}, using DEFAULT {:.2} bps",
-                        proposal.symbol,
-                        self.default_spread_bps
-                    );
-                    self.default_spread_bps
-                }
+        let raw_spread_bps = if let Some(ref cache) = self.spread_cache {
+            if let Some(real_spread_pct) = cache.get_spread_pct(&proposal.symbol) {
+                Decimal::from_f64(real_spread_pct * 10000.0).unwrap_or(self.default_spread_bps)
             } else {
+                tracing::debug!(
+                    "CostEvaluator: No real spread for {}, using DEFAULT {:.2} bps",
+                    proposal.symbol,
+                    self.default_spread_bps
+                );
                 self.default_spread_bps
-            };
+            }
+        } else {
+            self.default_spread_bps
+        };
 
         // Apply spread cap
         let capped = raw_spread_bps > max_spread_bps;
         let spread_bps = if capped {
             tracing::debug!(
                 "💰 CostEvaluator: {} spread {:.2} bps capped to {:.2} bps",
-                proposal.symbol, raw_spread_bps, max_spread_bps
+                proposal.symbol,
+                raw_spread_bps,
+                max_spread_bps
             );
             max_spread_bps
         } else {

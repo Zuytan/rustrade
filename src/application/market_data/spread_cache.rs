@@ -44,7 +44,10 @@ impl SpreadCache {
         if spread_bps > 50.0 {
             tracing::debug!(
                 "SpreadCache: High spread detected for {} - bid={:.4}, ask={:.4}, spread={:.2} bps",
-                symbol, bid, ask, spread_bps
+                symbol,
+                bid,
+                ask,
+                spread_bps
             );
         }
 

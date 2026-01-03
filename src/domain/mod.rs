@@ -21,3 +21,6 @@ pub mod trading;
 
 // Domain-specific error types
 pub mod errors;
+
+// UI domain (help content, i18n)
+pub mod ui;

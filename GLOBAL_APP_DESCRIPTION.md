@@ -5,7 +5,69 @@ Développer un système multi-agents capable de surveiller le marché des action
 
 > 🚀 **Production Ready (v0.27.0 - Dec 2025):** **Phase 1 Critical Fixes Complete**. Élimination des race conditions critiques via PortfolioStateManager, prévention des fuites mémoire avec canaux bornés, et résilience API via Circuit Breaker. **125 tests unitaires passent**. Système prêt pour déploiement production.
 
-> 📘 **Nouveau (v0.31.0 - Jan 2026) :** **Incremental Candle Loading**. Optimisation majeure du chargement des données historiques : vérification de la base SQLite locale en premier, chargement incrémental des nouvelles données uniquement, et mode dégradé gracieux en cas d'échec API. Résultat : **80-90% de réduction du temps de démarrage** et meilleure résil ience pour les utilisateurs avec accès API limité.
+## Internationalisation (I18n) - Infrastructure Layer
+
+**Status (v0.32.0)** : Infrastructure domaine complète, intégration UI en cours.
+
+Le bot dispose d'une infrastructure d'internationalisation moderne prête pour une adoption mondiale :
+
+### Architecture Zero-Code-Change ✅
+- **Découverte Automatique** : Le système scanne automatiquement le dossier `translations/` au démarrage et charge tous les fichiers `.json` présents.
+- **Métadonnées Embarquées** : Chaque fichier de traduction contient ses propres métadonnées (code langue, nom, drapeau, nom natif), éliminant tout hardcoding dans le code Rust.
+- **API Dynamique** : `I18nService` expose `available_languages()` qui retourne toutes les langues découvertes, permettant une construction dynamique du sélecteur de langue UI.
+
+### Langues Supportées (v0.32.0) ✅
+- 🇫🇷 **Français** (`fr.json`) - Langue par défaut
+- 🇬🇧 **English** (`en.json`) - Traduction complète
+
+### Contenu Traduit ✅
+Chaque langue dispose de :
+1. **Labels UI** (30+ éléments) : Métriques du tableau de bord, sections, boutons, messages
+2. **Catégories d'Aide** (5 catégories) : Abréviations, Stratégies, Indicateurs, Gestion du Risque, Types d'Ordres
+3. **Topics d'Aide** (28+ topics détaillés) :
+   - **Abréviations Financières** : P&L, SMA, EMA, RSI, MACD, ATR, Qty, Avg
+   - **Stratégies de Trading** : Standard, Advanced, Dynamic, TrendRiding, MeanReversion
+   - **Indicateurs Techniques** : Tendances Haussière/Baissière/Latérale, Bollinger Bands
+   - **Concepts de Risque** : Circuit Breaker, PDT, Drawdown, Win Rate, Stop Loss, Take Profit
+   - **Types d'Ordres** : Market, Limit, Stop, Trailing Stop
+
+Chaque topic comprend : titre, abréviation (si applicable), nom complet, description détaillée, et exemple pratique.
+
+### Ajouter une Nouvelle Langue ✅
+Le processus est simplifié au maximum :
+1. Copier `translations/en.json` → `translations/xx.json` (xx = code ISO 639-1)
+2. Modifier les 4 lignes de métadonnées :
+   ```json
+   "language": {
+     "code": "es",
+     "name": "Spanish",
+     "flag": "🇪🇸",
+     "native_name": "Español"
+   }
+   ```
+3. Traduire toutes les valeurs (conserver les mêmes clés)
+4. Sauvegarder → La langue apparaît automatiquement au prochain démarrage
+
+**Aucune modification du code Rust n'est nécessaire.** Le système est conçu pour une contribution communautaire open-source.
+
+### Fichiers Concernés ✅
+- **Domain** : `src/domain/ui/i18n.rs` (service de chargement), `src/domain/ui/help_content.rs` (constantes)
+- **Traductions** : `translations/` (fr.json, en.json, README.md)
+- **Tests** : 3 tests unitaires pour auto-discovery, changement de langue, et chargement des topics
+
+### Roadmap UI (v0.33.0) 🔄
+L'intégration dans l'interface utilisateur est prévue pour la prochaine version :
+- **UserAgent Extension** : Ajout des champs `i18n: I18nService`, `help_panel_open: bool`, `help_search_query`, `selected_help_category`
+- **UI Localization** : Remplacement des strings hardcodés dans `ui.rs` par des appels `i18n.t("key")`
+- **Language Selector** : Menu déroulant avec drapeaux pour changer de langue dynamiquement
+- **Help Panel** : Panneau latéral coulissant avec recherche, catégories, et topics détaillés
+
+### Objectif à Long Terme
+Rendre Rustrade accessible mondialement avec support communautaire pour : ES (Espagnol), DE (Allemand), IT (Italien), PT (Portugais), JA (Japonais), ZH (Chinois), KO (Coréen), et plus encore.
+
+## Historique et Évolution
+
+> 📘 **Nouveau (v0.31.0 - Jan 2026) :** **Incremental Candle Loading**. Optimisation majeure du chargement des données historiques : vérification de la base SQLite locale en premier, chargement incrémental des nouvelles données uniquement, et mode dégradé gracieux en cas d'échec API. Résultat : **80-90% de réduction du temps de démarrage** et meilleure résilience pour les utilisateurs avec accès API limité.
 >
 > 📘 **Précédent (v0.30.0) :** **UI Reorganization Complete**. Interface redesignée avec 5 cartes métriques en haut (Total Value, Cash, P&L, Positions, Win Rate), nouveau layout 65/40 (charts/info panel), panneau latéral droit avec positions compactes + flux d'activité + statut stratégie, et logs repliables en bas. Meilleure hiérarchie d'information avec maximisation de l'espace graphique.
 >

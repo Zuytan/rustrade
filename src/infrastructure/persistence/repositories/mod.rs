@@ -184,14 +184,11 @@ impl CandleRepository for SqliteCandleRepository {
         Ok(candles)
     }
 
-
     async fn get_latest_timestamp(&self, symbol: &str) -> Result<Option<i64>> {
-        let row = sqlx::query(
-            "SELECT MAX(timestamp) as latest FROM candles WHERE symbol = ?"
-        )
-        .bind(symbol)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row = sqlx::query("SELECT MAX(timestamp) as latest FROM candles WHERE symbol = ?")
+            .bind(symbol)
+            .fetch_optional(&self.pool)
+            .await?;
 
         if let Some(row) = row {
             let latest: Option<i64> = row.try_get("latest").ok();

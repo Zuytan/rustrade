@@ -1,5 +1,25 @@
 # Rustrade - Historique des Versions
 
+## Version 0.32.0 (Janvier 2026) - I18n Infrastructure Layer
+- **Infrastructure d'Internationalisation**:
+  - **Système Zero-Code-Change**: Architecture complète permettant l'ajout de nouvelles langues sans modification du code Rust.
+  - **Auto-Discovery**: Scan automatique du dossier `translations/` au démarrage, chargement de tous les fichiers `.json`.
+  - **Métadonnées Embarquées**: Chaque langue contient son code, nom, drapeau, et nom natif dans le JSON (pas d'enum hardcodée).
+  - **Service Domain**: `I18nService` avec méthodes `available_languages()`, `set_language()`, `t()`, `help_topics()`, `search_help()`.
+- **Contenu Multilingue**:
+  - **Français** 🇫🇷 et **Anglais** 🇬🇧 : 28+ topics d'aide détaillés + 30+ labels UI traduits.
+  - **5 Catégories**: Abréviations, Stratégies, Indicateurs, Gestion du Risque, Types d'Ordres.
+  - **28 Topics**: P&L, SMA, EMA, RSI, MACD, ATR, strategies (Standard/Advanced/Dynamic/TrendRiding/MeanReversion), Bollinger Bands, Circuit Breaker, PDT, Drawdown, Win Rate, Stop Loss, Take Profit, ordre Market/Limit/Stop/Trailing.
+- **Fichiers**:
+  - **Domain**: `src/domain/ui/i18n.rs`, `src/domain/ui/help_content.rs`
+  - **Traductions**: `translations/fr.json`, `translations/en.json`, `translations/README.md`
+  - **Tests**: 3 tests unitaires (auto-discovery, language switching, translation loading)
+- **Documentation**:
+  - `translations/README.md`: Guide pour ajouter une langue en 4 étapes sans toucher au code
+  - Mise à jour `GLOBAL_APP_DESCRIPTION.md` avec section I18n détaillée
+- **Scope**: Infrastructure domaine/données uniquement. **UI integration (UserAgent, ui.rs, help panel) déférée à v0.33.0**.
+- **Tests**: Tous tests passants, code compile sans erreur.
+
 ## Version 0.31.0 (Janvier 2026) - Incremental Candle Loading Optimization
 - **Optimisation Majeure du Chargement des Données**:
   - **Chargement Hybride Intelligent**: Le `AlpacaMarketDataService` vérifie automatiquement la base SQLite locale avant de charger depuis l'API externe.
