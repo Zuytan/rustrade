@@ -223,7 +223,7 @@ impl eframe::App for UserAgent {
                     render_metric_card(
                         ui,
                         "💰",
-                        "Total Value",
+                        self.i18n.t("metric_total_value"),
                         &format!("${:.2}", total_value.to_f64().unwrap_or(0.0)),
                         None,
                         egui::Color32::from_gray(220),
@@ -235,7 +235,7 @@ impl eframe::App for UserAgent {
                     render_metric_card(
                         ui,
                         "💵",
-                        "Cash",
+                        self.i18n.t("metric_cash"),
                         &format!("${:.2}", cash.to_f64().unwrap_or(0.0)),
                         None,
                         egui::Color32::from_rgb(87, 171, 90),
@@ -258,7 +258,7 @@ impl eframe::App for UserAgent {
                     render_metric_card(
                         ui,
                         "📊",
-                        "P&L Today",
+                        self.i18n.t("metric_pnl_today"),
                         &format!(
                             "{}${:.2}",
                             pnl_sign,

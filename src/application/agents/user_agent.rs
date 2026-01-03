@@ -4,6 +4,7 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderSide;
 use crate::domain::trading::types::TradeProposal;
+use crate::domain::ui::I18nService;
 use chrono::{DateTime, Utc};
 use crossbeam_channel::Receiver;
 use rust_decimal::prelude::ToPrimitive;
@@ -81,6 +82,9 @@ pub struct UserAgent {
     // Portfolio metrics tracking
     pub total_trades: usize,
     pub winning_trades: usize,
+
+    // Internationalization
+    pub i18n: I18nService,
 }
 
 /// Direction of the market trend for a symbol
@@ -139,6 +143,7 @@ impl UserAgent {
             logs_collapsed: true, // Collapsed by default
             total_trades: 0,
             winning_trades: 0,
+            i18n: I18nService::new(), // Initialize i18n service
         }
     }
 
