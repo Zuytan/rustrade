@@ -17,7 +17,6 @@ use crate::domain::ports::{
     ExecutionService, ExpectancyEvaluator, FeatureEngineeringService, MarketDataService,
 };
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
-use crate::domain::trading::fees::{FeeConfig, FeeModel, StandardFeeModel};
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderStatus; // Added
 use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
@@ -248,7 +247,6 @@ pub struct Analyst {
     config: AnalystConfig,                      // Default config
     symbol_states: HashMap<String, SymbolContext>,
     candle_aggregator: CandleAggregator,
-    fee_model: Box<dyn FeeModel>,
     candle_repository: Option<Arc<dyn CandleRepository>>,
     strategy_repository: Option<Arc<dyn StrategyRepository>>, // Added
     win_rate_provider: Arc<dyn WinRateProvider>,              // Added
@@ -256,6 +254,7 @@ pub struct Analyst {
 
     trade_filter: crate::application::trading::trade_filter::TradeFilter,
 }
+
 
 impl Analyst {
     pub fn new(
@@ -265,14 +264,6 @@ impl Analyst {
         default_strategy: Arc<dyn TradingStrategy>,
         dependencies: AnalystDependencies,
     ) -> Self {
-        // Initialize Fee Model
-        let fee_config = FeeConfig {
-            maker_fee: Decimal::from_f64_retain(0.0).unwrap(), // Zero fees (Alpaca)
-            taker_fee: Decimal::from_f64_retain(0.0).unwrap(), // Zero fees (Alpaca)
-            slippage_pct: Decimal::from_f64_retain(config.slippage_pct).unwrap(),
-            commission_fixed: Decimal::from_f64_retain(config.commission_per_share).unwrap(),
-        };
-
         // Default to Static 50% if not provided (Conservative baseline)
         let win_rate_provider = dependencies
             .win_rate_provider
@@ -301,7 +292,6 @@ impl Analyst {
                 dependencies.candle_repository.clone(),
                 dependencies.spread_cache.clone(),
             ),
-            fee_model: Box::new(StandardFeeModel::new(fee_config)),
             candle_repository: dependencies.candle_repository,
             strategy_repository: dependencies.strategy_repository,
             win_rate_provider,

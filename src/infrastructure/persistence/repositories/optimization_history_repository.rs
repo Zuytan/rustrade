@@ -6,6 +6,13 @@ use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use sqlx::{Row, SqlitePool};
 
+/// Safely parse a Unix timestamp into a DateTime, handling invalid values
+fn parse_timestamp(ts: i64) -> Result<chrono::DateTime<chrono::Utc>> {
+    Utc.timestamp_opt(ts, 0)
+        .single()
+        .ok_or_else(|| anyhow::anyhow!("Invalid timestamp value: {}", ts))
+}
+
 pub struct SqliteOptimizationHistoryRepository {
     pool: SqlitePool,
 }
@@ -63,7 +70,7 @@ impl OptimizationHistoryRepository for SqliteOptimizationHistoryRepository {
             Ok(Some(OptimizationHistory {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
-                timestamp: Utc.timestamp_opt(row.try_get("timestamp")?, 0).unwrap(),
+                timestamp: parse_timestamp(row.try_get("timestamp")?)?,
                 parameters_json: row.try_get("parameters_json")?,
                 performance_metrics_json: row.try_get("performance_metrics_json")?,
                 market_regime,
@@ -100,7 +107,7 @@ impl OptimizationHistoryRepository for SqliteOptimizationHistoryRepository {
             history_list.push(OptimizationHistory {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
-                timestamp: Utc.timestamp_opt(row.try_get("timestamp")?, 0).unwrap(),
+                timestamp: parse_timestamp(row.try_get("timestamp")?)?,
                 parameters_json: row.try_get("parameters_json")?,
                 performance_metrics_json: row.try_get("performance_metrics_json")?,
                 market_regime,
@@ -119,5 +126,36 @@ impl OptimizationHistoryRepository for SqliteOptimizationHistoryRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_timestamp_valid() {
+        let ts = 1609459200; // 2021-01-01 00:00:00 UTC
+        let result = parse_timestamp(ts);
+        assert!(result.is_ok());
+        let dt = result.unwrap();
+        assert_eq!(dt.timestamp(), ts);
+    }
+
+    #[test]
+    fn test_parse_timestamp_invalid() {
+        // Timestamp out of valid range (i64::MAX causes ambiguity)
+        let invalid_ts = i64::MAX;
+        let result = parse_timestamp(invalid_ts);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid timestamp"));
+    }
+
+    #[test]
+    fn test_parse_timestamp_negative() {
+        // Negative timestamps are valid (before 1970)
+        let ts = -86400; // 1969-12-31
+        let result = parse_timestamp(ts);
+        assert!(result.is_ok());
     }
 }

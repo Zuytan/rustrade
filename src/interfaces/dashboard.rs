@@ -497,8 +497,7 @@ pub fn render_activity_feed(
                         .italics(),
                 );
             } else {
-                let mut i = 0;
-                for event in events {
+                for (i, event) in events.iter().enumerate() {
                     let icon = match event.event_type {
                         ActivityEventType::TradeExecuted => "✅",
                         ActivityEventType::Signal => "📣",
@@ -540,7 +539,6 @@ pub fn render_activity_feed(
                                 );
                             });
                         });
-                    i += 1;
                 }
             }
         });

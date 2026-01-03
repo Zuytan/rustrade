@@ -139,7 +139,9 @@ pub fn render_sidebar(
             };
 
             // Render content inside the frame
-            ui.allocate_ui_at_rect(rect, |ui| {
+            // Create a new UI at the desired position
+            let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+            child_ui.vertical(|ui| {
                 frame.show(ui, |ui| {
                     ui.centered_and_justified(|ui| {
                         ui.vertical_centered(|ui| {
