@@ -358,6 +358,86 @@ impl eframe::App for UserAgent {
                 });
             });
 
+        // --- 2.5 Help Panel (Conditional) ---
+        if self.help_panel_open {
+            egui::SidePanel::left("help_panel")
+                .default_width(400.0)
+                .min_width(300.0)
+                .max_width(600.0)
+                .resizable(true)
+                .frame(egui::Frame::none().fill(egui::Color32::from_rgb(22, 27, 34)))
+                .show(ctx, |ui| {
+                    ui.vertical(|ui| {
+                        ui.add_space(10.0);
+
+                        // Header
+                        ui.horizontal(|ui| {
+                            ui.heading(
+                                egui::RichText::new(self.i18n.t("help_panel_title"))
+                                    .size(18.0)
+                                    .strong(),
+                            );
+
+                            // Close button
+                            if ui.button(egui::RichText::new("✖").size(16.0)).clicked() {
+                                self.help_panel_open = false;
+                            }
+                        });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+
+                        // Help topics list
+                        egui::ScrollArea::vertical()
+                            .id_salt("help_topics_scroll")
+                            .show(ui, |ui| {
+                                for topic in self.i18n.help_topics() {
+                                    ui.group(|ui| {
+                                        ui.vertical(|ui| {
+                                            // Title
+                                            ui.label(
+                                                egui::RichText::new(&topic.title)
+                                                    .size(15.0)
+                                                    .strong()
+                                                    .color(egui::Color32::from_rgb(88, 166, 255)),
+                                            );
+
+                                            // Full name
+                                            ui.label(
+                                                egui::RichText::new(&topic.full_name)
+                                                    .size(13.0)
+                                                    .color(egui::Color32::from_gray(180)),
+                                            );
+
+                                            ui.add_space(5.0);
+
+                                            // Description
+                                            ui.label(
+                                                egui::RichText::new(&topic.description)
+                                                    .size(12.0)
+                                                    .color(egui::Color32::from_gray(200)),
+                                            );
+
+                                            // Example if available
+                                            if let Some(example) = &topic.example {
+                                                ui.add_space(5.0);
+                                                ui.label(
+                                                    egui::RichText::new(format!("💡 {}", example))
+                                                        .size(11.0)
+                                                        .italics()
+                                                        .color(egui::Color32::from_gray(150)),
+                                                );
+                                            }
+                                        });
+                                    });
+                                    ui.add_space(8.0);
+                                }
+                            });
+                    });
+                });
+        }
+
         // --- 3. Right Info Sidebar (40%) ---
         egui::SidePanel::right("info_panel")
             .default_width(ctx.screen_rect().width() * 0.35)
