@@ -52,6 +52,7 @@ async fn test_backtest_strategy_on_historical_data() {
         data_url,
         10000.0,
         AssetClass::Stock,
+        None,
     ));
 
     let mut portfolio = Portfolio::new();

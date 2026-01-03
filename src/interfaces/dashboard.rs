@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
     // --- Data Prep ---
     let total_value = agent.calculate_total_value();
-    let (cash, position_count, unrealized_pnl, unrealized_pct, market_value) = match agent.portfolio.try_read() {
+    let (_cash, position_count, unrealized_pnl, unrealized_pct, market_value) = match agent.portfolio.try_read() {
         Ok(pf) => {
             let mut cost_basis = rust_decimal::Decimal::ZERO;
             let mut mv = rust_decimal::Decimal::ZERO;
@@ -42,7 +42,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
         ui.vertical(|ui| {
              ui.horizontal(|ui| {
                  ui.heading(
-                    egui::RichText::new(format!("Total Value: ${:.2}", total_value.to_f64().unwrap_or(0.0)))
+                    egui::RichText::new(agent.i18n.tf("total_value_format", &[("amount", &format!("{:.2}", total_value.to_f64().unwrap_or(0.0)))]))
                         .size(28.0)
                         .strong()
                         .color(egui::Color32::WHITE)
@@ -64,7 +64,11 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                     .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                     .show(ui, |ui| {
                          ui.label(
-                             egui::RichText::new(format!("{}{:.2} ({:.2}%)", pnl_sign, unrealized_pnl.to_f64().unwrap_or(0.0).abs(), unrealized_pct))
+                             egui::RichText::new(agent.i18n.tf("pnl_pill_format", &[
+                                 ("amount", &format!("{:.2}", unrealized_pnl.to_f64().unwrap_or(0.0).abs())),
+                                 ("percent", &format!("{:.2}", unrealized_pct)),
+                                 ("sign", &pnl_sign.to_string())
+                             ]))
                                  .size(12.0)
                                  .strong()
                                  .color(pnl_color)
@@ -80,13 +84,13 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                  ui.horizontal(|ui| {
                      ui.label(egui::RichText::new("●").size(10.0).color(egui::Color32::GREEN));
                      ui.label(
-                         egui::RichText::new("System Status: Active - HFT Engine Running")
+                         egui::RichText::new(agent.i18n.tf("status_label", &[("status", &agent.i18n.t("status_active"))]))
                              .size(12.0)
                              .color(egui::Color32::from_gray(160))
                      );
                      ui.add_space(10.0);
                      ui.label(
-                         egui::RichText::new("Latency: 12ms")
+                         egui::RichText::new(agent.i18n.tf("latency_label", &[("ms", "12")]))
                             .size(12.0)
                             .color(egui::Color32::from_gray(100))
                      );
@@ -104,7 +108,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
         // Card 1: DAILY P&L (Active Blue Border Effect)
         let pnl_val = unrealized_pnl.to_f64().unwrap_or(0.0);
         let pnl_color = if pnl_val >= 0.0 { egui::Color32::from_rgb(0, 230, 118) } else { egui::Color32::from_rgb(255, 23, 68) };
-        
+        let pnl_arrow = if pnl_val >= 0.0 { "↗" } else { "↘" };
         columns[0].push_id("card_daily_pnl", |ui| {
             egui::Frame::none()
                 .fill(egui::Color32::from_rgb(22, 27, 34)) 
@@ -119,29 +123,35 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                 .inner_margin(16.0)
                 .show(ui, |ui| {
                      ui.set_min_height(100.0);
-                     ui.label(egui::RichText::new("DAILY P&L").size(12.0).color(egui::Color32::from_gray(140)).strong());
+                     ui.label(egui::RichText::new(agent.i18n.t("metric_daily_pnl")).size(12.0).color(egui::Color32::from_gray(140)).strong());
                      ui.add_space(8.0);
                      
                      ui.horizontal(|ui| {
-                         let sign = if pnl_val >= 0.0 { "+" } else { "" };
-                         ui.label(egui::RichText::new(format!("{}{:.2}", sign, pnl_val.abs())).size(28.0).strong().color(pnl_color));
+                         let sign = if pnl_val >= 0.0 { "+" } else { "-" };
+                         ui.label(egui::RichText::new(agent.i18n.tf("pnl_value_format", &[
+                             ("amount", &format!("{:.2}", pnl_val.abs())),
+                             ("sign", &sign.to_string())
+                         ])).size(28.0).strong().color(pnl_color));
                          ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                             ui.label(egui::RichText::new("↗").size(18.0).color(pnl_color));
+                             ui.label(egui::RichText::new(pnl_arrow).size(18.0).color(pnl_color));
                          });
                      });
                      ui.add_space(4.0);
-                     ui.label(egui::RichText::new("Last 24h").size(11.0).color(egui::Color32::from_gray(100)));
+                     ui.label(egui::RichText::new(agent.i18n.t("last_24h")).size(11.0).color(egui::Color32::from_gray(100)));
                 });
         });
 
         // Card 2: WIN RATE (Circle)
         columns[1].push_id("card_win_rate", |ui| {
-             render_start_card(ui, "WIN RATE", |ui| {
+             render_start_card(ui, agent.i18n.t("metric_win_rate"), |ui| {
                  ui.horizontal(|ui| {
                      // Text
                      ui.vertical(|ui| {
-                         ui.label(egui::RichText::new(format!("{:.1}%", win_rate)).size(28.0).strong().color(egui::Color32::from_rgb(56, 139, 253)));
-                         ui.label(egui::RichText::new(format!("{}/{} Trades", agent.winning_trades, agent.total_trades)).size(11.0).color(egui::Color32::from_gray(120)));
+                         ui.label(egui::RichText::new(agent.i18n.tf("percent_format", &[("value", &format!("{:.1}", win_rate))])).size(28.0).strong().color(egui::Color32::from_rgb(56, 139, 253)));
+                         ui.label(egui::RichText::new(agent.i18n.tf("trades_count_format", &[
+                             ("winning", &agent.winning_trades.to_string()),
+                             ("total", &agent.total_trades.to_string())
+                         ])).size(11.0).color(egui::Color32::from_gray(120)));
                      });
                      
                      // Donut Chart (Simulated)
@@ -159,11 +169,12 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
 
         // Card 3: OPEN POSITIONS (Icon)
         columns[2].push_id("card_open_pos", |ui| {
-             render_start_card(ui, "OPEN POSITIONS", |ui| {
+             render_start_card(ui, agent.i18n.t("metric_open_positions"), |ui| {
                  ui.horizontal(|ui| {
                      ui.vertical(|ui| {
                          ui.label(egui::RichText::new(format!("{}", position_count)).size(28.0).strong().color(egui::Color32::WHITE));
-                         ui.label(egui::RichText::new(format!("Total Volume: ${:.0}", market_value)).size(11.0).color(egui::Color32::from_gray(120)));
+                         ui.label(egui::RichText::new(agent.i18n.tf("total_volume_format", &[("amount", &format!("{:.0}", market_value.to_f64().unwrap_or(0.0)))]))
+                             .size(11.0).color(egui::Color32::from_gray(120)));
                      });
                      
                      ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -175,11 +186,11 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
 
         // Card 4: RISK SCORE (Shield)
         columns[3].push_id("card_risk", |ui| {
-             render_start_card(ui, "RISK SCORE", |ui| {
+             render_start_card(ui, agent.i18n.t("metric_risk_score"), |ui| {
                  ui.horizontal(|ui| {
                      ui.vertical(|ui| {
-                         ui.label(egui::RichText::new("Low").size(28.0).strong().color(egui::Color32::from_rgb(0, 230, 118)));
-                         ui.label(egui::RichText::new("2.4/10").size(11.0).color(egui::Color32::from_gray(120)));
+                         ui.label(egui::RichText::new(agent.i18n.t("risk_low")).size(28.0).strong().color(egui::Color32::from_rgb(0, 230, 118)));
+                         ui.label(egui::RichText::new(agent.i18n.tf("risk_score_label_short", &[("score", "2.4")])).size(11.0).color(egui::Color32::from_gray(120)));
                      });
                      
                      ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -223,22 +234,28 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
         
         ui.add_space(gap);
         
-        // --- RIGHT COLUMN: LIVE POSITIONS ---
+        // --- RIGHT COLUMN: MARKET & POSITIONS ---
         ui.allocate_ui_with_layout(
             egui::vec2(right_panel_width, available_height),
             egui::Layout::top_down(egui::Align::LEFT),
             |ui| {
-                 // Concept Art: "LIVE POSITIONS"
-                 ui.label(egui::RichText::new("LIVE POSITIONS").size(12.0).strong().color(egui::Color32::from_gray(160)));
+                 ui.label(egui::RichText::new(agent.i18n.t("market_and_positions")).size(12.0).strong().color(egui::Color32::from_gray(160)));
                  ui.add_space(10.0);
                  
                  egui::ScrollArea::vertical()
-                    .id_salt("live_pos_scroll")
+                    .id_salt("market_list_scroll")
                     .show(ui, |ui| {
+                        let mut symbols: Vec<_> = agent.market_data.keys().cloned().collect();
+                        symbols.sort();
+
                         if let Ok(pf) = agent.portfolio.try_read() {
-                            for (symbol, pos) in pf.positions.iter() {
-                                 // Position Card
-                                 render_position_card(ui, agent, symbol, pos);
+                            for symbol in symbols {
+                                 let pos = pf.positions.get(&symbol);
+                                 let is_selected = agent.selected_chart_tab.as_ref() == Some(&symbol);
+                                 
+                                 if render_symbol_card(ui, agent, &symbol, pos, is_selected).clicked() {
+                                     agent.selected_chart_tab = Some(symbol.clone());
+                                 }
                                  ui.add_space(8.0);
                             }
                         }
@@ -265,54 +282,100 @@ fn render_start_card(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&
         });
 }
 
-fn render_position_card(ui: &mut egui::Ui, agent: &UserAgent, symbol: &str, pos: &crate::domain::trading::portfolio::Position) {
-    let current_price = agent.strategy_info.get(symbol).map(|i| i.current_price).unwrap_or(pos.average_price);
-    let pnl = (pos.quantity * current_price) - (pos.quantity * pos.average_price);
-    let is_profit = pnl >= rust_decimal::Decimal::ZERO;
-    let pnl_color = if is_profit { egui::Color32::from_rgb(0, 230, 118) } else { egui::Color32::from_rgb(255, 23, 68) }; // Neon Green/Red
+fn render_symbol_card(
+    ui: &mut egui::Ui, 
+    agent: &UserAgent, 
+    symbol: &str, 
+    pos: Option<&crate::domain::trading::portfolio::Position>,
+    is_selected: bool
+) -> egui::Response {
+    let current_price = agent.strategy_info.get(symbol).map(|i| i.current_price).unwrap_or(
+        pos.map(|p| p.average_price).unwrap_or(rust_decimal::Decimal::ZERO)
+    );
     
-    egui::Frame::none()
-        .fill(egui::Color32::from_rgb(28, 33, 40))
-        .rounding(8.0)
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-             ui.set_width(ui.available_width());
+    let frame = if is_selected {
+        egui::Frame::none()
+            .fill(egui::Color32::from_rgb(28, 33, 40))
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(41, 121, 255))) // Blue Active Stroke
+            .shadow(egui::epaint::Shadow {
+                offset: [0.0, 2.0].into(),
+                blur: 10.0,
+                spread: 0.0,
+                color: egui::Color32::from_rgba_premultiplied(41, 121, 255, 25), // Blue Glow
+            })
+            .inner_margin(12.0)
+    } else {
+        egui::Frame::none()
+            .fill(egui::Color32::from_rgb(28, 33, 40))
+            .rounding(8.0)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
+            .inner_margin(12.0)
+    };
+
+    let response = frame.show(ui, |ui| {
+         ui.set_width(ui.available_width());
+         
+         // Header Row: Symbol + P&L or Trend
+         ui.horizontal(|ui| {
+             ui.label(egui::RichText::new(symbol).size(14.0).strong().color(egui::Color32::WHITE));
              
-             // Header Row: Symbol + P&L Pill
-             ui.horizontal(|ui| {
-                 ui.label(egui::RichText::new(symbol).size(14.0).strong().color(egui::Color32::WHITE));
-                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                      // Pill
-                      egui::Frame::none()
+             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                  if let Some(pos) = pos {
+                       let pnl = (pos.quantity * current_price) - (pos.quantity * pos.average_price);
+                       let is_profit = pnl >= rust_decimal::Decimal::ZERO;
+                       let pnl_color = if is_profit { egui::Color32::from_rgb(0, 230, 118) } else { egui::Color32::from_rgb(255, 23, 68) };
+                       
+                       egui::Frame::none()
                         .fill(pnl_color.linear_multiply(0.15))
                         .rounding(12.0)
                         .inner_margin(egui::Margin::symmetric(8.0, 2.0))
                         .show(ui, |ui| {
-                             ui.label(egui::RichText::new(format!("{}{:.2}", if is_profit { "+" } else { "" }, pnl))
+                             ui.label(egui::RichText::new(agent.i18n.tf("pnl_amount_format", &[
+                                 ("amount", &format!("{:.2}", pnl.to_f64().unwrap_or(0.0).abs())),
+                                 ("sign", &if is_profit { "+" } else { "-" }.to_string())
+                             ]))
                                 .size(11.0).strong().color(pnl_color));
                         });
-                 });
+                  } else if let Some(info) = agent.strategy_info.get(symbol) {
+                       ui.label(egui::RichText::new(info.trend.emoji()).size(14.0));
+                  }
              });
-             
-             ui.add_space(8.0);
-             
-             // Info Grid
+         });
+         
+         ui.add_space(4.0);
+         
+         if let Some(pos) = pos {
+             // Position Info Grid
              ui.columns(3, |cols| {
                  cols[0].vertical(|ui| {
-                     ui.label(egui::RichText::new("Size").size(10.0).color(egui::Color32::from_gray(120)));
-                     ui.label(egui::RichText::new(format!("{:.4} {}", pos.quantity, symbol.split('/').next().unwrap_or(""))).size(11.0).color(egui::Color32::from_gray(200)));
+                     ui.label(egui::RichText::new(agent.i18n.t("header_quantity")).size(10.0).color(egui::Color32::from_gray(120)));
+                     ui.label(egui::RichText::new(format!("{:.4}", pos.quantity)).size(11.0).color(egui::Color32::from_gray(200)));
                  });
                  cols[1].vertical(|ui| {
-                     ui.label(egui::RichText::new("Entry").size(10.0).color(egui::Color32::from_gray(120)));
-                     ui.label(egui::RichText::new(format!("${:.2}", pos.average_price)).size(11.0).color(egui::Color32::from_gray(200)));
+                     ui.label(egui::RichText::new(agent.i18n.t("header_average")).size(10.0).color(egui::Color32::from_gray(120)));
+                     ui.label(egui::RichText::new(agent.i18n.tf("currency_format", &[("amount", &format!("{:.2}", pos.average_price))]))
+                         .size(11.0).color(egui::Color32::from_gray(200)));
                  });
                  cols[2].vertical(|ui| {
-                     ui.label(egui::RichText::new("Current").size(10.0).color(egui::Color32::from_gray(120)));
-                     ui.label(egui::RichText::new(format!("${:.2}", current_price)).size(11.0).strong().color(egui::Color32::WHITE));
+                     ui.label(egui::RichText::new(agent.i18n.t("header_current")).size(10.0).color(egui::Color32::from_gray(120)));
+                     ui.label(egui::RichText::new(agent.i18n.tf("currency_format", &[("amount", &format!("{:.2}", current_price))]))
+                         .size(11.0).strong().color(egui::Color32::WHITE));
                  });
              });
-        });
+         } else {
+             // Watchlist Info (Single Row)
+             ui.horizontal(|ui| {
+                 ui.label(egui::RichText::new(agent.i18n.t("header_current")).size(10.0).color(egui::Color32::from_gray(120)));
+                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                     ui.label(egui::RichText::new(agent.i18n.tf("currency_format", &[("amount", &format!("{:.2}", current_price))]))
+                         .size(12.0).strong().color(egui::Color32::WHITE));
+                 });
+             });
+         }
+    }).response;
+
+    ui.interact(response.rect, response.id, egui::Sense::click())
 }
 
 /// Helper function to render a metric card (Concept Art Style)
@@ -494,60 +557,16 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
             agent.selected_chart_tab = Some(symbols[0].clone());
         }
 
-        // Enhanced Tab buttons with Segmented Control look
+        // --- Selection moved to right panel (no tabs here anymore) ---
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(agent.i18n.t("section_market"))
-                    .strong()
-                    .color(egui::Color32::from_gray(180)),
-            );
-            ui.add_space(12.0);
-            
-            ui.push_id("market_tabs", |ui| {
-                ui.style_mut().spacing.item_spacing.x = 0.0; // Connected buttons
-                
-                for (idx, symbol) in symbols.iter().enumerate() {
-                    let is_selected = agent.selected_chart_tab.as_ref() == Some(symbol);
-                    let is_first = idx == 0;
-                    let is_last = idx == symbols.len() - 1;
-
-                    // Get trend and price info
-                    let tab_label = if let Some(info) = agent.strategy_info.get(symbol) {
-                        format!(
-                            "{} {} ${:.2}",
-                            info.trend.emoji(),
-                            symbol,
-                            info.current_price.to_f64().unwrap_or(0.0)
-                        )
-                    } else {
-                        symbol.clone()
-                    };
-
-                    let rounding = if symbols.len() == 1 {
-                        egui::Rounding::same(6.0)
-                    } else if is_first {
-                         egui::Rounding { nw: 6.0, sw: 6.0, ne: 0.0, se: 0.0 }
-                    } else if is_last {
-                         egui::Rounding { nw: 0.0, sw: 0.0, ne: 6.0, se: 6.0 }
-                    } else {
-                        egui::Rounding::ZERO
-                    };
-
-                    let button = egui::Button::new(
-                        egui::RichText::new(&tab_label)
-                            .size(12.0)
-                            .color(if is_selected { egui::Color32::WHITE } else { egui::Color32::from_gray(170) })
-                    )
-                    .fill(if is_selected { egui::Color32::from_rgb(56, 139, 253) } else { egui::Color32::from_rgb(22, 27, 34) })
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
-                    .rounding(rounding)
-                    .min_size(egui::vec2(100.0, 28.0)); // Taller tabs
-
-                    if ui.add(button).clicked() {
-                        agent.selected_chart_tab = Some(symbol.clone());
-                    }
-                }
-            });
+            if let Some(selected_symbol) = &agent.selected_chart_tab {
+                 ui.label(
+                    egui::RichText::new(agent.i18n.tf("live_market_format", &[("symbol", selected_symbol)]))
+                        .strong()
+                        .size(16.0)
+                        .color(egui::Color32::WHITE),
+                );
+            }
         });
 
         ui.add_space(8.0);
@@ -567,7 +586,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                     ui.label(egui::RichText::new("⚙️ Strategy:").strong().color(egui::Color32::from_gray(160)));
+                                     ui.label(egui::RichText::new(agent.i18n.t("strategy_label")).strong().color(egui::Color32::from_gray(160)));
                                      
                                      let strategy_display = if strat_info.mode.to_lowercase() == "dynamicregime" {
                                          if let Some(signal) = &strat_info.last_signal {
@@ -633,10 +652,10 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                              plot_ui.box_plot(egui_plot::BoxPlot::new(box_elems).name(selected_symbol));
                              
                              if !fast_sma_points.is_empty() {
-                                 plot_ui.line(egui_plot::Line::new(fast_sma_points).color(egui::Color32::from_rgb(100, 200, 255)).name("SMA 20"));
+                                 plot_ui.line(egui_plot::Line::new(fast_sma_points).color(egui::Color32::from_rgb(100, 200, 255)).name(agent.i18n.t("sma_20_label")));
                              }
                              if !slow_sma_points.is_empty() {
-                                 plot_ui.line(egui_plot::Line::new(slow_sma_points).color(egui::Color32::from_rgb(255, 165, 0)).name("SMA 50"));
+                                 plot_ui.line(egui_plot::Line::new(slow_sma_points).color(egui::Color32::from_rgb(255, 165, 0)).name(agent.i18n.t("sma_50_label")));
                              }
                         });
                 }

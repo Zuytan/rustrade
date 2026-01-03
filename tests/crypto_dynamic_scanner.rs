@@ -37,6 +37,7 @@ async fn test_crypto_scanner_integration() {
         data_url,
         50000.0, // min volume threshold
         AssetClass::Crypto,
+        None,
     ));
 
     let execution_service = Arc::new(AlpacaExecutionService::new(api_key, secret_key, base_url));
@@ -115,6 +116,7 @@ async fn test_crypto_movers_api_call() {
         data_url,
         50000.0,
         AssetClass::Crypto,
+        None,
     );
 
     // Try to get top movers

@@ -102,7 +102,7 @@ impl eframe::App for UserAgent {
                       crate::interfaces::dashboard::render_chart_panel(self, ui);
                  }
                  crate::interfaces::ui_components::DashboardView::Portfolio => {
-                      ui.centered_and_justified(|ui| ui.label(egui::RichText::new("Portfolio View - Coming Soon").size(20.0).weak()));
+                      ui.centered_and_justified(|ui| ui.label(egui::RichText::new(self.i18n.t("portfolio_coming_soon")).size(20.0).weak()));
                  }
                  crate::interfaces::ui_components::DashboardView::Settings => {
                       crate::interfaces::ui_components::render_settings_view(ui, &mut self.settings_panel, &mut self.i18n);

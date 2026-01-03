@@ -1,5 +1,29 @@
 # Rustrade - Historique des Versions
 
+## Version 0.37.0 (Janvier 2026) - Dashboard Localization & Units
+- **Internationalisation (i18n)**:
+  - **Tableau de Bord Complet**: Localisation intégrale de tous les labels, headers et messages du dashboard.
+  - **Support Multi-langue**: Synchronisation parfaite entre `en.json` et `fr.json` pour les nouvelles clés UI.
+  - **Placeholders**: Localisation des messages d'attente (ex: Portfolio Coming Soon).
+- **Unités Financiales**:
+  - **Systématisation des Unités**: Ajout des symboles `$` et `%` sur toutes les métriques financières.
+  - **Formatage Paramétré**: Utilisation de `agent.i18n.tf` pour un formatage flexible des montants, pourcentages et signes (+/-).
+- **UI/UX**:
+  - **Cohérence Visuelle**: Les unités sont intégrées harmonieusement dans les cartes de métriques et les listes de positions.
+  - **SMA Labels**: Localisation des noms des moyennes mobiles dans le graphique.
+
+## Version 0.36.0 (Janvier 2026) - Immediate Warmup Loading
+- **Optimisation du Démarrage (Warmup)**:
+  - **Chargement Immédiat**: L'agent `Analyst` charge désormais les données historiques dès la souscription à un symbole, au lieu d'attendre le premier événement (Tick/Candle) en provenance du WebSocket.
+  - **Événement `SymbolSubscription`**: Ajout d'une nouvelle variante à `MarketEvent` pour signaler explicitement une nouvelle souscription.
+  - **Consolidation**: Centralisation de la logique d'initialisation et de warmup dans une méthode unique `ensure_symbol_initialized`.
+- **Infrastructure**:
+  - `AlpacaMarketDataService` émet maintenant un événement de souscription pour chaque symbole lors du démarrage ou d'un changement de watchlist.
+- **Robustesse**:
+  - Réduction du délai d'attente pour avoir des indicateurs valides (RSI, SMA, MACD) dès l'arrivée du premier tick réel.
+  - Amélioration de la réactivité du système en mode dynamique.
+- **Tests**: Addition d'un test dédié `test_immediate_warmup` pour vérifier le déclenchement du chargement.
+
 
 ## Version 0.35.0 (Janvier 2026) - Concept Art Layout Rework
 - **Refonte Layout Dashboard**:

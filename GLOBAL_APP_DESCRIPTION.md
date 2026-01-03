@@ -68,7 +68,11 @@ Rendre Rustrade accessible mondialement avec support communautaire pour : ES (Es
 
 ## Historique et Évolution
 
-> 📘 **Nouveau (v0.35.0 - Jan 2026) :** **Concept Art Layout Rework**. Refonte majeure du Dashboard pour s'aligner sur la vision artistique "Premium". Ajout d'une Top Bar "Total Value", grille de 4 cartes métriques spécialisées (Daily P&L Graph, Win Rate Donut, Risk Shield), et panneau latéral "Live Positions" dédié. Code factorisé et moderne.
+> 📘 **Nouveau (v0.37.0 - Jan 2026) :** **Dashboard Localization & Units**. Internationalisation complète du tableau de bord (Français/Anglais) et ajout systématique des unités financières ($ et %) sur toutes les métriques et listes d'actifs. Support des traductions paramétrées pour les formats de prix et P&L.
+>
+> 📘 **Précédent (v0.36.0 - Jan 2026) :** **Immediate Warmup Loading**. Refonte du processus de warmup pour charger les données historiques dès la souscription d'un symbole, sans attendre l'arrivée d'un premier événement WebSocket. Ajout de `MarketEvent::SymbolSubscription` et consolidation de la logique d'initialisation dans l'agent Analyst.
+>
+> 📘 **Précédent (v0.35.0 - Jan 2026) :** **Concept Art Layout Rework**. Refonte majeure du Dashboard pour s'aligner sur la vision artistique "Premium". Ajout d'une Top Bar "Total Value", grille de 4 cartes métriques spécialisées (Daily P&L Graph, Win Rate Donut, Risk Shield), et panneau latéral "Live Positions" dédié. Code factorisé et moderne.
 >
 > 📘 **Précédent (v0.33.0 - Jan 2026) :** **UI Refactoring for Settings Integration**. Refonte majeure de l'interface : nouveau panneau paramètres unifié avec onglets (Language, Help, Shortcuts, About), simplification de la barre supérieure (remplacement de 2 contrôles par 1 bouton ⚙️), ajout de raccourcis clavier (Ctrl+, / F1 / Ctrl+K), et architecture modulaire extensible via `ui_components.rs`. L'interface est maintenant prête pour l'ajout facile de futures fonctionnalités (thèmes, notifications, etc.).
 >

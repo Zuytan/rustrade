@@ -154,6 +154,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         strategy_repository: null_strategy_repo,
         adaptive_optimization_service: None,
         performance_monitor: None,
+        spread_cache: std::sync::Arc::new(rustrade::application::market_data::spread_cache::SpreadCache::new()),
     };
 
     // 4. Run Application (BACKGROUND)

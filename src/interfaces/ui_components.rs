@@ -165,6 +165,11 @@ pub fn render_sidebar(
                     });
                 });
             });
+            
+            // Global interaction over the whole rect (including text)
+            if ui.interact(rect, response.id, egui::Sense::click()).clicked() {
+                *current_view = view;
+            }
         });
 
         ui.add_space(12.0);

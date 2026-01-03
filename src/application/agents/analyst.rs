@@ -345,6 +345,10 @@ impl Analyst {
                         MarketEvent::Candle(candle) => {
                             self.process_candle(candle).await;
                         }
+                        MarketEvent::SymbolSubscription { symbol } => {
+                            info!("Analyst: Received immediate warmup request for {}", symbol);
+                            self.ensure_symbol_initialized(&symbol, chrono::Utc::now()).await;
+                        }
                     }
                 }
 
@@ -392,20 +396,12 @@ impl Analyst {
             warn!("Analyst: No UI candle broadcaster configured!");
         }
 
-        // 1. Get/Init Context
-        if !self.symbol_states.contains_key(&symbol) {
-            let (strategy, config) = self.resolve_strategy(&symbol).await;
-            let mut context = SymbolContext::new(config, strategy, self.win_rate_provider.clone());
-
-            // WARMUP: Fetch historical data to initialize indicators
-            let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
-                .unwrap_or_default()
-                .with_timezone(&chrono::Utc);
-            self.warmup_context(&mut context, &symbol, timestamp_dt)
-                .await;
-
-            self.symbol_states.insert(symbol.clone(), context);
-        }
+        // 1. Get/Init Context (Consolidated with ensure_symbol_initialized)
+        let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
+            .unwrap_or_default()
+            .with_timezone(&chrono::Utc);
+        
+        self.ensure_symbol_initialized(&symbol, timestamp_dt).await;
 
         let context = self.symbol_states.get_mut(&symbol).unwrap();
 
@@ -989,6 +985,26 @@ impl Analyst {
             }
         }
     }
+
+    async fn ensure_symbol_initialized(
+        &mut self,
+        symbol: &str,
+        end_time: chrono::DateTime<chrono::Utc>,
+    ) {
+        if !self.symbol_states.contains_key(symbol) {
+            info!(
+                "Analyst: Initializing context for {} (Warmup end: {})",
+                symbol, end_time
+            );
+            let (strategy, config) = self.resolve_strategy(symbol).await;
+            let mut context = SymbolContext::new(config, strategy, self.win_rate_provider.clone());
+
+            // WARMUP: Fetch historical data to initialize indicators
+            self.warmup_context(&mut context, symbol, end_time).await;
+
+            self.symbol_states.insert(symbol.to_string(), context);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1008,6 +1024,66 @@ mod tests {
                 .finish();
             let _ = tracing::subscriber::set_global_default(subscriber);
         });
+    }
+
+    #[tokio::test]
+    async fn test_immediate_warmup() {
+        setup_logging();
+        let (market_tx, market_rx) = mpsc::channel(10);
+        let (proposal_tx, _proposal_rx) = mpsc::channel(10);
+
+        use crate::domain::trading::portfolio::Portfolio;
+        let portfolio = Portfolio::new();
+        let portfolio_lock = Arc::new(RwLock::new(portfolio));
+        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
+            portfolio_lock,
+        ));
+
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
+        let config = AnalystConfig::default();
+        let strategy = crate::application::strategies::StrategyFactory::create(
+            crate::domain::market::strategy_config::StrategyMode::Advanced,
+            &config,
+        );
+
+        let mut analyst = Analyst::new(
+            market_rx,
+            proposal_tx,
+            config,
+            strategy,
+            AnalystDependencies {
+                execution_service: exec_service,
+                market_service: market_service,
+                candle_repository: None,
+                strategy_repository: None,
+                win_rate_provider: None,
+                ui_candle_tx: None,
+                spread_cache: Arc::new(
+                    crate::application::market_data::spread_cache::SpreadCache::new(),
+                ),
+            },
+        );
+
+        // Send subscription event
+        market_tx
+            .send(MarketEvent::SymbolSubscription {
+                symbol: "BTC/USD".to_string(),
+            })
+            .await
+            .unwrap();
+
+        // Run analyst briefly
+        tokio::select! {
+            _ = analyst.run() => {},
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
+        }
+
+        // Check if context was created
+        assert!(analyst.symbol_states.contains_key("BTC/USD"));
+        let _context = analyst.symbol_states.get("BTC/USD").unwrap();
+        // Warmup should have been attempted (even if it yielded 0 bars in mock)
+        // We can't easily check internal warmup state without exposing it, 
+        // but the presence of the context proves the branch was hit.
     }
 
     #[tokio::test]

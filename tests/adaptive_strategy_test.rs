@@ -47,6 +47,19 @@ impl CandleRepository for MockCandleRepo {
         Ok(filtered)
     }
 
+    async fn get_latest_timestamp(&self, _symbol: &str) -> anyhow::Result<Option<i64>> {
+        let store = self.candles.lock().unwrap();
+        Ok(store.last().map(|c| c.timestamp))
+    }
+
+    async fn count_candles(&self, _symbol: &str, start_ts: i64, end_ts: i64) -> anyhow::Result<usize> {
+        let store = self.candles.lock().unwrap();
+        Ok(store
+            .iter()
+            .filter(|c| c.timestamp >= start_ts && c.timestamp <= end_ts)
+            .count())
+    }
+
     async fn prune(&self, _days_retention: i64) -> anyhow::Result<u64> {
         Ok(0)
     }

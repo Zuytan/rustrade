@@ -63,6 +63,9 @@ pub enum MarketEvent {
         timestamp: i64,
     },
     Candle(Candle),
+    SymbolSubscription {
+        symbol: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -104,7 +104,7 @@ impl AlpacaMarketDataService {
 impl MarketDataService for AlpacaMarketDataService {
     async fn subscribe(&self, symbols: Vec<String>) -> Result<Receiver<MarketEvent>> {
         // Update subscription on the singleton WebSocket manager
-        self.ws_manager.update_subscription(symbols).await?;
+        self.ws_manager.update_subscription(symbols.clone()).await?;
 
         // Get a broadcast receiver from the manager
         let mut broadcast_rx = self.ws_manager.subscribe();
@@ -112,11 +112,21 @@ impl MarketDataService for AlpacaMarketDataService {
         // Convert broadcast to mpsc for API compatibility
         let (tx, rx) = mpsc::channel(100);
 
+        // Immediate Warmup: Send subscription events for each symbol BEFORE the loop
+        // This tells the Analyst to start loading historical data immediately
+        for symbol in symbols {
+            let _ = tx
+                .send(MarketEvent::SymbolSubscription { symbol })
+                .await;
+        }
+
+        let tx_forward = tx; // Rename for clarity in spawn
+
         tokio::spawn(async move {
             loop {
                 match broadcast_rx.recv().await {
                     Ok(event) => {
-                        if tx.send(event).await.is_err() {
+                        if tx_forward.send(event).await.is_err() {
                             // Receiver dropped, exit
                             break;
                         }
