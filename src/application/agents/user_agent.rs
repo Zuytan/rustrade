@@ -91,6 +91,10 @@ pub struct UserAgent {
     
     // Dashboard Navigation State
     pub current_view: crate::interfaces::ui_components::DashboardView,
+
+    // Performance & Risk metrics (Dynamic)
+    pub latency_ms: u64,
+    pub risk_score: u8,  // Risk appetite score (1-9)
 }
 
 /// Direction of the market trend for a symbol
@@ -130,6 +134,7 @@ impl UserAgent {
         proposal_tx: mpsc::Sender<TradeProposal>,
         portfolio: Arc<RwLock<Portfolio>>,
         strategy_mode: StrategyMode,
+        risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
     ) -> Self {
         Self {
             log_rx,
@@ -152,6 +157,8 @@ impl UserAgent {
             i18n: I18nService::new(), // Initialize i18n service
             settings_panel: crate::interfaces::ui_components::SettingsPanel::new(),
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
+            latency_ms: 12,    // Default initial value
+            risk_score: risk_appetite.map(|r| r.score()).unwrap_or(5),  // Use real risk score or default to 5 (balanced)
         }
     }
 
@@ -162,7 +169,7 @@ impl UserAgent {
             return None;
         }
 
-        self.chat_history.push(("User".to_string(), input.clone()));
+        self.chat_history.push((self.i18n.t("sender_user").to_string(), input.clone()));
         self.input_text.clear();
 
         // Simple Natural Language Parsing
@@ -170,12 +177,12 @@ impl UserAgent {
         match parts.as_slice() {
             ["stop"] | ["halt"] | ["panic"] => {
                 let _ = self.sentinel_cmd_tx.try_send(SentinelCommand::Shutdown);
-                Some("Sent SHUTDOWN command to Sentinel.".to_string())
+                Some(self.i18n.t("cmd_shutdown_sent").to_string())
             }
             ["status"] => {
                 // In a real agent, we might query the system.
                 // For now, we just print local state or rely on logs.
-                Some("Requesting system status... (check logs)".to_string())
+                Some(self.i18n.t("cmd_status_request").to_string())
             }
             ["buy", symbol, quantity] => {
                 self.handle_trade_command(symbol, quantity, OrderSide::Buy)
@@ -183,10 +190,7 @@ impl UserAgent {
             ["sell", symbol, quantity] => {
                 self.handle_trade_command(symbol, quantity, OrderSide::Sell)
             }
-            _ => Some(format!(
-                "Unknown command: '{}'. Try 'buy AAPL 10', 'status', or 'stop'.",
-                input
-            )),
+            _ => Some(self.i18n.tf("cmd_unknown", &[("input", &input)])),
         }
     }
 
@@ -203,16 +207,20 @@ impl UserAgent {
                 side,
                 order_type: crate::domain::trading::types::OrderType::Market, // Default to Market
                 price: Decimal::ZERO, // Ignored for Market orders
-                reason: "User Manual Command".to_string(),
+                reason: self.i18n.t("activity_user_command").to_string(),
                 timestamp: chrono::Utc::now().timestamp_millis(), // i64
             };
 
             match self.proposal_tx.try_send(proposal) {
-                Ok(_) => Some(format!("Sent {:?} proposal for {} {}", side, qty, symbol)),
-                Err(e) => Some(format!("Failed to send proposal: {}", e)),
+                Ok(_) => Some(self.i18n.tf("cmd_proposal_sent", &[
+                    ("side", &self.i18n.t(&format!("side_{}", side.to_string().to_lowercase())).to_string()),
+                    ("qty", &qty.to_string()),
+                    ("symbol", symbol)
+                ])),
+                Err(e) => Some(self.i18n.tf("cmd_proposal_failed", &[("error", &e.to_string())])),
             }
         } else {
-            Some(format!("Invalid quantity: {}", quantity_str))
+            Some(self.i18n.tf("cmd_invalid_qty", &[("qty", quantity_str)]))
         }
     }
 
@@ -247,7 +255,7 @@ impl UserAgent {
             // otherwise default to "System"
             // Log format assumed: "TIMESTAMP LEVEL TARGET: MESSAGE"
             // We'll just display the raw message for now, or parse it lightly.
-            self.chat_history.push(("System".to_string(), msg));
+            self.chat_history.push((self.i18n.t("sender_system").to_string(), msg));
         }
 
         // Keep history manageable
@@ -398,7 +406,7 @@ impl UserAgent {
         // Check for order executions
         if msg.contains("Order") && (msg.contains("filled") || msg.contains("executed")) {
             if let Some(symbol) = self.extract_symbol_from_log(msg) {
-                let event_msg = format!("Trade executed: {}", symbol);
+                let event_msg = self.i18n.tf("activity_trade_executed", &[("symbol", &symbol)]);
                 self.add_activity(
                     ActivityEventType::TradeExecuted,
                     event_msg,
@@ -410,8 +418,15 @@ impl UserAgent {
         else if msg.contains("SignalGenerator") {
             if msg.contains("BUY") || msg.contains("SELL") {
                 if let Some(symbol) = self.extract_symbol_from_log(msg) {
-                    let signal_type = if msg.contains("BUY") { "Buy" } else { "Sell" };
-                    let event_msg = format!("{} signal: {}", signal_type, symbol);
+                    let signal_type = if msg.contains("BUY") { 
+                        self.i18n.t("side_buy") 
+                    } else { 
+                        self.i18n.t("side_sell") 
+                    };
+                    let event_msg = self.i18n.tf("activity_signal", &[
+                        ("type", &signal_type.to_string()),
+                        ("symbol", &symbol)
+                    ]);
                     self.add_activity(ActivityEventType::Signal, event_msg, EventSeverity::Info);
                 }
             }
@@ -420,15 +435,18 @@ impl UserAgent {
         else if msg.contains("REJECT") || msg.contains("blocked") || msg.contains("filtered") {
             if let Some(symbol) = self.extract_symbol_from_log(msg) {
                 let reason = if msg.contains("RSI") {
-                    "RSI filter"
+                    self.i18n.t("filter_rsi")
                 } else if msg.contains("cost") || msg.contains("Cost") {
-                    "Cost filter"
+                    self.i18n.t("filter_cost")
                 } else if msg.contains("risk") || msg.contains("Risk") {
-                    "Risk filter"
+                    self.i18n.t("filter_risk")
                 } else {
-                    "Filter"
+                    self.i18n.t("filter_generic")
                 };
-                let event_msg = format!("{} blocked: {}", symbol, reason);
+                let event_msg = self.i18n.tf("activity_blocked", &[
+                    ("symbol", &symbol),
+                    ("reason", &reason.to_string())
+                ]);
                 self.add_activity(
                     ActivityEventType::FilterBlock,
                     event_msg,
@@ -440,7 +458,7 @@ impl UserAgent {
         else if msg.contains("Strategy") && msg.contains("changed") {
             self.add_activity(
                 ActivityEventType::StrategyChange,
-                "Strategy configuration updated".to_string(),
+                self.i18n.t("activity_strategy_updated").to_string(),
                 EventSeverity::Info,
             );
         }

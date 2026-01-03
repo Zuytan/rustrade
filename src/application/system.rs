@@ -53,6 +53,7 @@ pub struct SystemHandle {
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub candle_rx: broadcast::Receiver<Candle>,
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
+    pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
 }
 
 pub struct Application {
@@ -287,6 +288,7 @@ impl Application {
             portfolio: self.portfolio.clone(),
             candle_rx, // Move the receiver to the handle
             strategy_mode: self.config.strategy_mode,
+            risk_appetite: self.config.risk_appetite,
         };
 
         // Now use self members

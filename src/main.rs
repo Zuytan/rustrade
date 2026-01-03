@@ -130,6 +130,7 @@ fn main() -> anyhow::Result<()> {
         system_handle.proposal_tx,
         system_handle.portfolio,
         system_handle.strategy_mode,
+        system_handle.risk_appetite,
     );
 
     // 6. Run UI (Blocks Main Thread)

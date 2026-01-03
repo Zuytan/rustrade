@@ -74,7 +74,7 @@ pub fn render_sidebar(
 
         ui.add_space(8.0);
         ui.label(
-            egui::RichText::new("Rustrade")
+            egui::RichText::new(i18n.t("app_name"))
                 .size(11.0)
                 .strong()
                 .color(egui::Color32::from_rgb(205, 217, 229)),
@@ -488,7 +488,7 @@ pub fn render_about_tab(ui: &mut egui::Ui, i18n: &I18nService) {
 
         // App name
         ui.label(
-            egui::RichText::new("Rustrade")
+            egui::RichText::new(i18n.t("app_name"))
                 .size(24.0)
                 .strong()
                 .color(egui::Color32::from_rgb(88, 166, 255)),
@@ -529,21 +529,21 @@ pub fn render_about_tab(ui: &mut egui::Ui, i18n: &I18nService) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("🦀").size(14.0));
             ui.label(
-                egui::RichText::new("Rust")
+                egui::RichText::new(i18n.t("tech_rust"))
                     .size(11.0)
                     .color(egui::Color32::from_gray(180)),
             );
             ui.label(egui::RichText::new("•").color(egui::Color32::from_gray(100)));
             ui.label(egui::RichText::new("🎨").size(14.0)); // Theme/UI
             ui.label(
-                egui::RichText::new("egui")
+                egui::RichText::new(i18n.t("tech_egui"))
                     .size(11.0)
                     .color(egui::Color32::from_gray(180)),
             );
             ui.label(egui::RichText::new("•").color(egui::Color32::from_gray(100)));
             ui.label(egui::RichText::new("⚡").size(14.0)); // High Voltage (Speed)
             ui.label(
-                egui::RichText::new("Tokio")
+                egui::RichText::new(i18n.t("tech_tokio"))
                     .size(11.0)
                     .color(egui::Color32::from_gray(180)),
             );

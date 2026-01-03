@@ -90,7 +90,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                      );
                      ui.add_space(10.0);
                      ui.label(
-                         egui::RichText::new(agent.i18n.tf("latency_label", &[("ms", "12")]))
+                         egui::RichText::new(agent.i18n.tf("latency_label", &[("ms", &agent.latency_ms.to_string())]))
                             .size(12.0)
                             .color(egui::Color32::from_gray(100))
                      );
@@ -190,7 +190,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                  ui.horizontal(|ui| {
                      ui.vertical(|ui| {
                          ui.label(egui::RichText::new(agent.i18n.t("risk_low")).size(28.0).strong().color(egui::Color32::from_rgb(0, 230, 118)));
-                         ui.label(egui::RichText::new(agent.i18n.tf("risk_score_label_short", &[("score", "2.4")])).size(11.0).color(egui::Color32::from_gray(120)));
+                         ui.label(egui::RichText::new(agent.i18n.tf("risk_score_label_short", &[("score", &agent.risk_score.to_string())])).size(11.0).color(egui::Color32::from_gray(120)));
                      });
                      
                      ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -248,7 +248,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                         let mut symbols: Vec<_> = agent.market_data.keys().cloned().collect();
                         symbols.sort();
 
-                        if let Ok(pf) = agent.portfolio.try_read() {
+                         if let Ok(pf) = agent.portfolio.try_read() {
                             for symbol in symbols {
                                  let pos = pf.positions.get(&symbol);
                                  let is_selected = agent.selected_chart_tab.as_ref() == Some(&symbol);
@@ -260,6 +260,12 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                             }
                         }
                     });
+
+                 ui.add_space(20.0);
+                 ui.label(egui::RichText::new(agent.i18n.t("section_recent_activity")).size(12.0).strong().color(egui::Color32::from_gray(160)));
+                 ui.add_space(10.0);
+                 
+                 render_activity_feed(ui, &agent.activity_feed, &agent.i18n);
             }
         );
     });
@@ -478,6 +484,7 @@ pub fn render_metric_card(
 pub fn render_activity_feed(
     ui: &mut egui::Ui,
     events: &VecDeque<ActivityEvent>,
+    i18n: &crate::domain::ui::I18nService,
 ) {
     egui::ScrollArea::vertical()
         .id_salt("activity_feed_scroll")
@@ -485,7 +492,7 @@ pub fn render_activity_feed(
         .show(ui, |ui| {
             if events.is_empty() {
                 ui.label(
-                    egui::RichText::new("No recent activity")
+                    egui::RichText::new(i18n.t("no_activity"))
                         .color(egui::Color32::from_gray(120))
                         .italics(),
                 );
@@ -590,15 +597,18 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                                      
                                      let strategy_display = if strat_info.mode.to_lowercase() == "dynamicregime" {
                                          if let Some(signal) = &strat_info.last_signal {
-                                             if signal.contains("Dynamic (Trend)") { "Dynamic (Trend)".to_string() }
-                                             else if signal.contains("Dynamic (Choppy)") { "Dynamic (Choppy)".to_string() }
-                                             else { "Dynamic".to_string() }
-                                         } else { "Dynamic".to_string() }
+                                             if signal.contains("Dynamic (Trend)") { agent.i18n.t("dynamic_trend").to_string() }
+                                             else if signal.contains("Dynamic (Choppy)") { agent.i18n.t("dynamic_choppy").to_string() }
+                                             else { agent.i18n.t("dynamic").to_string() }
+                                         } else { agent.i18n.t("dynamic").to_string() }
                                      } else { strat_info.mode.clone() };
 
                                      ui.label(egui::RichText::new(&strategy_display).color(egui::Color32::from_rgb(88, 166, 255)));
                                      ui.separator();
-                                     ui.label(egui::RichText::new(format!("SMA: {}/{}", strat_info.fast_sma, strat_info.slow_sma)).color(egui::Color32::from_gray(160)).size(11.0));
+                                     ui.label(egui::RichText::new(agent.i18n.tf("sma_label", &[
+                                         ("fast", &strat_info.fast_sma.to_string()),
+                                         ("slow", &strat_info.slow_sma.to_string())
+                                     ])).color(egui::Color32::from_gray(160)).size(11.0));
                                 });
                             });
                          ui.add_space(6.0);
@@ -753,7 +763,11 @@ pub fn render_logs_panel(agent: &mut UserAgent, ctx: &egui::Context) {
                         for (sender, msg) in &agent.chat_history {
                             // Apply log level filter
                             if let Some(ref filter_level) = agent.log_level_filter {
-                                if sender == "System" {
+                                // Check if sender is a system message (matches any of the system sender keys)
+                                let is_system = sender == agent.i18n.t("sender_system") 
+                                    || sender == agent.i18n.t("sender_system_error") 
+                                    || sender == agent.i18n.t("sender_system_warn");
+                                if is_system {
                                     if !msg.contains(filter_level.as_str()) {
                                         continue;
                                     }
@@ -761,26 +775,25 @@ pub fn render_logs_panel(agent: &mut UserAgent, ctx: &egui::Context) {
                             }
 
                             ui.horizontal_wrapped(|ui| {
-                                let (label_text, color) = match sender.as_str() {
-                                    "User" => {
-                                        ("User >", egui::Color32::from_rgb(100, 200, 255))
+                                let (label_key, color) = match sender.as_str() {
+                                    s if s == agent.i18n.t("sender_user") => {
+                                        ("sender_user", egui::Color32::from_rgb(100, 200, 255))
                                     }
-                                    "Agent" => {
-                                        ("Agent <", egui::Color32::from_rgb(255, 200, 100))
+                                    s if s == agent.i18n.t("sender_agent") => {
+                                        ("sender_agent", egui::Color32::from_rgb(255, 200, 100))
                                     }
-                                    "System" => {
+                                    _ => {
                                         if msg.contains("ERROR") {
-                                            ("System !", egui::Color32::from_rgb(255, 80, 80))
+                                            ("sender_system_error", egui::Color32::from_rgb(255, 80, 80))
                                         } else if msg.contains("WARN") {
-                                            ("System ?", egui::Color32::from_rgb(255, 255, 100))
+                                            ("sender_system_warn", egui::Color32::from_rgb(255, 255, 100))
                                         } else {
-                                            ("System ·", egui::Color32::from_rgb(150, 150, 150))
+                                            ("sender_system", egui::Color32::from_rgb(150, 150, 150))
                                         }
                                     }
-                                    _ => ("Unknown", egui::Color32::GRAY),
                                 };
                                 ui.label(
-                                    egui::RichText::new(label_text)
+                                    egui::RichText::new(agent.i18n.t(label_key))
                                         .color(color)
                                         .strong()
                                         .size(10.0),
@@ -825,7 +838,7 @@ pub fn render_logs_panel(agent: &mut UserAgent, ctx: &egui::Context) {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
-                        egui::RichText::new(format!("{} messages", agent.chat_history.len()))
+                        egui::RichText::new(agent.i18n.tf("messages_count", &[("count", &agent.chat_history.len().to_string())]))
                             .size(10.0)
                             .color(egui::Color32::from_gray(140)),
                     );
