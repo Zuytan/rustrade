@@ -26,7 +26,7 @@
         "hide_logs": "▼ Hide Logs",
         "no_positions": "None",
         "no_activity": "No recent activity",
-        "no_candles": "No candles yet for",
+        "no_candles": "No candles yet for {symbol}",
         "waiting_market_data": "⏳ Waiting for market data... (Charts will appear when candles are received)",
         "messages": "messages",
         "trades": "trades",

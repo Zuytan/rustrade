@@ -26,7 +26,7 @@
         "hide_logs": "▼ Masquer Journaux",
         "no_positions": "Aucune",
         "no_activity": "Aucune activité récente",
-        "no_candles": "Pas encore de bougies pour",
+        "no_candles": "Pas encore de bougies pour {symbol}",
         "waiting_market_data": "⏳ En attente des données de marché... (Les graphiques apparaîtront à la réception des bougies)",
         "messages": "messages",
         "trades": "trades",

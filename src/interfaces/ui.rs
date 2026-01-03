@@ -300,9 +300,12 @@ impl eframe::App for UserAgent {
                         "🎯",
                         self.i18n.t("metric_win_rate"),
                         &format!("{:.1}%", win_rate),
-                        Some(&format!(
-                            "{}/{} trades",
-                            self.winning_trades, self.total_trades
+                        Some(&self.i18n.tf(
+                            "trades_format",
+                            &[
+                                ("winning", &self.winning_trades.to_string()),
+                                ("total", &self.total_trades.to_string()),
+                            ],
                         )),
                         win_rate_color,
                     );
@@ -460,14 +463,18 @@ impl eframe::App for UserAgent {
                             );
                             ui.add_space(4.0);
                             ui.label(
-                                egui::RichText::new("Risk Score: 6/10")
-                                    .color(egui::Color32::from_gray(180))
-                                    .size(11.0),
+                                egui::RichText::new(
+                                    self.i18n.tf("risk_score_label", &[("score", "6")]),
+                                )
+                                .color(egui::Color32::from_gray(180))
+                                .size(11.0),
                             );
                             ui.label(
-                                egui::RichText::new("SMA: 20/50")
-                                    .color(egui::Color32::from_gray(180))
-                                    .size(11.0),
+                                egui::RichText::new(
+                                    self.i18n.tf("sma_label", &[("fast", "20"), ("slow", "50")]),
+                                )
+                                .color(egui::Color32::from_gray(180))
+                                .size(11.0),
                             );
                         });
                 });
@@ -483,7 +490,10 @@ impl eframe::App for UserAgent {
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.heading(egui::RichText::new("📊 Portfolio Dashboard").size(18.0));
+                        ui.heading(
+                            egui::RichText::new(self.i18n.t("section_portfolio_dashboard"))
+                                .size(18.0),
+                        );
                         ui.add_space(10.0);
 
                         match self.portfolio.try_read() {
@@ -506,51 +516,95 @@ impl eframe::App for UserAgent {
 
                                 let unrealized_pnl = market_value - cost_basis;
                                 let unrealized_pct = if cost_basis > rust_decimal::Decimal::ZERO {
-                                    (unrealized_pnl / cost_basis * rust_decimal::Decimal::from(100)).to_f64().unwrap_or(0.0)
+                                    (unrealized_pnl / cost_basis * rust_decimal::Decimal::from(100))
+                                        .to_f64()
+                                        .unwrap_or(0.0)
                                 } else {
                                     0.0
                                 };
 
                                 // Push metrics to the right
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    // Cash
-                                    ui.label(
-                                        egui::RichText::new(format!("Cash: ${:.2}", pf.cash.to_f64().unwrap_or(0.0)))
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        // Cash
+                                        ui.label(
+                                            egui::RichText::new(self.i18n.tf(
+                                                "cash_label",
+                                                &[(
+                                                    "amount",
+                                                    &format!(
+                                                        "${:.2}",
+                                                        pf.cash.to_f64().unwrap_or(0.0)
+                                                    ),
+                                                )],
+                                            ))
                                             .strong()
                                             .color(egui::Color32::from_rgb(87, 171, 90))
-                                            .size(15.0)
-                                    );
-                                    ui.separator();
+                                            .size(15.0),
+                                        );
+                                        ui.separator();
 
-                                    // Value
-                                    ui.label(
-                                        egui::RichText::new(format!("Value: ${:.2}", market_value.to_f64().unwrap_or(0.0)))
+                                        // Value
+                                        ui.label(
+                                            egui::RichText::new(self.i18n.tf(
+                                                "value_label",
+                                                &[(
+                                                    "amount",
+                                                    &format!(
+                                                        "${:.2}",
+                                                        market_value.to_f64().unwrap_or(0.0)
+                                                    ),
+                                                )],
+                                            ))
                                             .color(egui::Color32::from_gray(200))
-                                            .size(14.0)
-                                    );
-                                    ui.separator();
+                                            .size(14.0),
+                                        );
+                                        ui.separator();
 
-                                    // Unrealized P&L display
-                                    let pnl_color = if unrealized_pnl >= rust_decimal::Decimal::ZERO {
-                                        egui::Color32::from_rgb(87, 171, 90)
-                                    } else {
-                                        egui::Color32::from_rgb(248, 81, 73)
-                                    };
-                                    let pnl_sign = if unrealized_pnl >= rust_decimal::Decimal::ZERO { "+" } else { "" };
+                                        // Unrealized P&L display
+                                        let pnl_color =
+                                            if unrealized_pnl >= rust_decimal::Decimal::ZERO {
+                                                egui::Color32::from_rgb(87, 171, 90)
+                                            } else {
+                                                egui::Color32::from_rgb(248, 81, 73)
+                                            };
+                                        let pnl_sign =
+                                            if unrealized_pnl >= rust_decimal::Decimal::ZERO {
+                                                "+"
+                                            } else {
+                                                ""
+                                            };
 
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "P&L: {}${:.2} ({}{}%)",
-                                            pnl_sign,
-                                            unrealized_pnl.to_f64().unwrap_or(0.0).abs(),
-                                            pnl_sign,
-                                            format!("{:.2}", unrealized_pct.abs())
-                                        ))
-                                        .strong()
-                                        .color(pnl_color)
-                                        .size(14.0)
-                                    );
-                                });
+                                        ui.label(
+                                            egui::RichText::new(
+                                                self.i18n.tf(
+                                                    "pnl_label",
+                                                    &[
+                                                        ("sign", pnl_sign),
+                                                        (
+                                                            "amount",
+                                                            &format!(
+                                                                "${:.2}",
+                                                                unrealized_pnl
+                                                                    .to_f64()
+                                                                    .unwrap_or(0.0)
+                                                                    .abs()
+                                                            ),
+                                                        ),
+                                                        (
+                                                            "percent",
+                                                            &format!("{:.2}", unrealized_pct.abs()),
+                                                        ),
+                                                    ],
+                                                ),
+                                            )
+                                            .strong()
+                                            .color(pnl_color)
+                                            .size(14.0),
+                                        );
+                                    },
+                                );
                             }
                             Err(_) => {
                                 ui.spinner();
@@ -566,108 +620,257 @@ impl eframe::App for UserAgent {
                     // Enhanced Positions Table
                     if !pf.positions.is_empty() {
                         ui.collapsing(
-                            egui::RichText::new(format!("📈 Open Positions ({})", pf.positions.len()))
-                                .size(15.0)
-                                .strong(),
+                            egui::RichText::new(self.i18n.tf(
+                                "positions_count",
+                                &[("count", &pf.positions.len().to_string())],
+                            ))
+                            .size(15.0)
+                            .strong(),
                             |ui| {
-                            egui::Frame::none()
-                                .fill(egui::Color32::from_rgb(22, 27, 34))
-                                .inner_margin(egui::Margin::same(10.0))
-                                .rounding(6.0)
-                                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
-                                .show(ui, |ui| {
-                                egui::ScrollArea::vertical()
-                                    .max_height(180.0)
+                                egui::Frame::none()
+                                    .fill(egui::Color32::from_rgb(22, 27, 34))
+                                    .inner_margin(egui::Margin::same(10.0))
+                                    .rounding(6.0)
+                                    .stroke(egui::Stroke::new(
+                                        1.0,
+                                        egui::Color32::from_rgb(48, 54, 61),
+                                    ))
                                     .show(ui, |ui| {
-                                        egui::Grid::new("positions_grid")
-                                            .striped(true)
-                                            .spacing([10.0, 8.0])
-                                            .show(ui, |ui| {
-                                                // Enhanced Header
-                                                ui.label(egui::RichText::new(self.i18n.t("header_symbol")).strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new(self.i18n.t("header_quantity")).strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new(self.i18n.t("header_average")).strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new(self.i18n.t("header_current")).strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new(self.i18n.t("header_pnl_dollar")).strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new(self.i18n.t("header_pnl_percent")).strong().color(egui::Color32::from_gray(160)));
-                                                ui.label(egui::RichText::new(self.i18n.t("header_trend")).strong().color(egui::Color32::from_gray(160)));
-                                                ui.end_row();
-
-                                                // Rows
-                                                for (symbol, pos) in &pf.positions {
-                                                    // Get current price and trend from strategy_info
-                                                    let (current_price, trend_emoji) = if let Some(info) = self.strategy_info.get(symbol) {
-                                                        (info.current_price, info.trend.emoji())
-                                                    } else {
-                                                        (pos.average_price, "➡️")
-                                                    };
-
-                                                    let cost_basis = pos.quantity * pos.average_price;
-                                                    let market_value = pos.quantity * current_price;
-                                                    let pnl = market_value - cost_basis;
-                                                    let pnl_pct = if cost_basis > rust_decimal::Decimal::ZERO {
-                                                        (pnl / cost_basis * rust_decimal::Decimal::from(100)).to_f64().unwrap_or(0.0)
-                                                    } else {
-                                                        0.0
-                                                    };
-
-                                                    // P&L color
-                                                    let pnl_color = if pnl >= rust_decimal::Decimal::ZERO {
-                                                        egui::Color32::from_rgb(87, 171, 90)
-                                                    } else {
-                                                        egui::Color32::from_rgb(248, 81, 73)
-                                                    };
-                                                    let pnl_sign = if pnl >= rust_decimal::Decimal::ZERO { "+" } else { "" };
-
-                                                    // Symbol (fixed width)
-                                                    ui.add_sized([90.0, 20.0], egui::Label::new(
-                                                        egui::RichText::new(symbol)
+                                        egui::ScrollArea::vertical().max_height(180.0).show(
+                                            ui,
+                                            |ui| {
+                                                egui::Grid::new("positions_grid")
+                                                    .striped(true)
+                                                    .spacing([10.0, 8.0])
+                                                    .show(ui, |ui| {
+                                                        // Enhanced Header
+                                                        ui.label(
+                                                            egui::RichText::new(
+                                                                self.i18n.t("header_symbol"),
+                                                            )
                                                             .strong()
-                                                            .color(egui::Color32::from_rgb(255, 212, 59))
-                                                    ));
-                                                    // Quantity (fixed width)
-                                                    ui.add_sized([70.0, 20.0], egui::Label::new(
-                                                        egui::RichText::new(format!("{:.4}", pos.quantity.to_f64().unwrap_or(0.0)))
-                                                            .color(egui::Color32::from_gray(200))
-                                                    ));
-                                                    // Average price (fixed width)
-                                                    ui.add_sized([70.0, 20.0], egui::Label::new(
-                                                        egui::RichText::new(format!("${:.2}", pos.average_price.to_f64().unwrap_or(0.0)))
-                                                            .color(egui::Color32::from_gray(180))
-                                                    ));
-                                                    // Current price (fixed width)
-                                                    ui.add_sized([70.0, 20.0], egui::Label::new(
-                                                        egui::RichText::new(format!("${:.2}", current_price.to_f64().unwrap_or(0.0)))
+                                                            .color(egui::Color32::from_gray(160)),
+                                                        );
+                                                        ui.label(
+                                                            egui::RichText::new(
+                                                                self.i18n.t("header_quantity"),
+                                                            )
                                                             .strong()
-                                                            .color(egui::Color32::from_gray(220))
-                                                    ));
-                                                    // P&L $ (fixed width)
-                                                    ui.add_sized([80.0, 20.0], egui::Label::new(
-                                                        egui::RichText::new(format!("{}${:.2}", pnl_sign, pnl.to_f64().unwrap_or(0.0).abs()))
+                                                            .color(egui::Color32::from_gray(160)),
+                                                        );
+                                                        ui.label(
+                                                            egui::RichText::new(
+                                                                self.i18n.t("header_average"),
+                                                            )
                                                             .strong()
-                                                            .color(pnl_color)
-                                                    ));
-                                                    // P&L % (fixed width)
-                                                    ui.add_sized([80.0, 20.0], egui::Label::new(
-                                                        egui::RichText::new(format!("{}{}%", pnl_sign, format!("{:.2}", pnl_pct.abs())))
+                                                            .color(egui::Color32::from_gray(160)),
+                                                        );
+                                                        ui.label(
+                                                            egui::RichText::new(
+                                                                self.i18n.t("header_current"),
+                                                            )
                                                             .strong()
-                                                            .color(pnl_color)
-                                                    ));
-                                                    // Trend (fixed width)
-                                                    ui.add_sized([50.0, 20.0], egui::Label::new(
-                                                        egui::RichText::new(trend_emoji).size(14.0)
-                                                    ));
-                                                    ui.end_row();
-                                                }
-                                            });
-                                });
-                            });
-                        });
+                                                            .color(egui::Color32::from_gray(160)),
+                                                        );
+                                                        ui.label(
+                                                            egui::RichText::new(
+                                                                self.i18n.t("header_pnl_dollar"),
+                                                            )
+                                                            .strong()
+                                                            .color(egui::Color32::from_gray(160)),
+                                                        );
+                                                        ui.label(
+                                                            egui::RichText::new(
+                                                                self.i18n.t("header_pnl_percent"),
+                                                            )
+                                                            .strong()
+                                                            .color(egui::Color32::from_gray(160)),
+                                                        );
+                                                        ui.label(
+                                                            egui::RichText::new(
+                                                                self.i18n.t("header_trend"),
+                                                            )
+                                                            .strong()
+                                                            .color(egui::Color32::from_gray(160)),
+                                                        );
+                                                        ui.end_row();
+
+                                                        // Rows
+                                                        for (symbol, pos) in &pf.positions {
+                                                            // Get current price and trend from strategy_info
+                                                            let (current_price, trend_emoji) =
+                                                                if let Some(info) =
+                                                                    self.strategy_info.get(symbol)
+                                                                {
+                                                                    (
+                                                                        info.current_price,
+                                                                        info.trend.emoji(),
+                                                                    )
+                                                                } else {
+                                                                    (pos.average_price, "➡️")
+                                                                };
+
+                                                            let cost_basis =
+                                                                pos.quantity * pos.average_price;
+                                                            let market_value =
+                                                                pos.quantity * current_price;
+                                                            let pnl = market_value - cost_basis;
+                                                            let pnl_pct = if cost_basis
+                                                                > rust_decimal::Decimal::ZERO
+                                                            {
+                                                                (pnl / cost_basis
+                                                                    * rust_decimal::Decimal::from(
+                                                                        100,
+                                                                    ))
+                                                                .to_f64()
+                                                                .unwrap_or(0.0)
+                                                            } else {
+                                                                0.0
+                                                            };
+
+                                                            // P&L color
+                                                            let pnl_color = if pnl
+                                                                >= rust_decimal::Decimal::ZERO
+                                                            {
+                                                                egui::Color32::from_rgb(87, 171, 90)
+                                                            } else {
+                                                                egui::Color32::from_rgb(248, 81, 73)
+                                                            };
+                                                            let pnl_sign = if pnl
+                                                                >= rust_decimal::Decimal::ZERO
+                                                            {
+                                                                "+"
+                                                            } else {
+                                                                ""
+                                                            };
+
+                                                            // Symbol (fixed width)
+                                                            ui.add_sized(
+                                                                [90.0, 20.0],
+                                                                egui::Label::new(
+                                                                    egui::RichText::new(symbol)
+                                                                        .strong()
+                                                                        .color(
+                                                                            egui::Color32::from_rgb(
+                                                                                255, 212, 59,
+                                                                            ),
+                                                                        ),
+                                                                ),
+                                                            );
+                                                            // Quantity (fixed width)
+                                                            ui.add_sized(
+                                                                [70.0, 20.0],
+                                                                egui::Label::new(
+                                                                    egui::RichText::new(format!(
+                                                                        "{:.4}",
+                                                                        pos.quantity
+                                                                            .to_f64()
+                                                                            .unwrap_or(0.0)
+                                                                    ))
+                                                                    .color(
+                                                                        egui::Color32::from_gray(
+                                                                            200,
+                                                                        ),
+                                                                    ),
+                                                                ),
+                                                            );
+                                                            // Average price (fixed width)
+                                                            ui.add_sized(
+                                                                [70.0, 20.0],
+                                                                egui::Label::new(
+                                                                    egui::RichText::new(format!(
+                                                                        "${:.2}",
+                                                                        pos.average_price
+                                                                            .to_f64()
+                                                                            .unwrap_or(0.0)
+                                                                    ))
+                                                                    .color(
+                                                                        egui::Color32::from_gray(
+                                                                            180,
+                                                                        ),
+                                                                    ),
+                                                                ),
+                                                            );
+                                                            // Current price (fixed width)
+                                                            ui.add_sized(
+                                                                [70.0, 20.0],
+                                                                egui::Label::new(
+                                                                    egui::RichText::new(format!(
+                                                                        "${:.2}",
+                                                                        current_price
+                                                                            .to_f64()
+                                                                            .unwrap_or(0.0)
+                                                                    ))
+                                                                    .strong()
+                                                                    .color(
+                                                                        egui::Color32::from_gray(
+                                                                            220,
+                                                                        ),
+                                                                    ),
+                                                                ),
+                                                            );
+                                                            // P&L $ (fixed width)
+                                                            ui.add_sized(
+                                                                [80.0, 20.0],
+                                                                egui::Label::new(
+                                                                    egui::RichText::new(format!(
+                                                                        "{}${:.2}",
+                                                                        pnl_sign,
+                                                                        pnl.to_f64()
+                                                                            .unwrap_or(0.0)
+                                                                            .abs()
+                                                                    ))
+                                                                    .strong()
+                                                                    .color(pnl_color),
+                                                                ),
+                                                            );
+                                                            // P&L % (fixed width)
+                                                            ui.add_sized(
+                                                                [80.0, 20.0],
+                                                                egui::Label::new(
+                                                                    egui::RichText::new(format!(
+                                                                        "{}{}%",
+                                                                        pnl_sign,
+                                                                        format!(
+                                                                            "{:.2}",
+                                                                            pnl_pct.abs()
+                                                                        )
+                                                                    ))
+                                                                    .strong()
+                                                                    .color(pnl_color),
+                                                                ),
+                                                            );
+                                                            // Trend (fixed width)
+                                                            ui.add_sized(
+                                                                [50.0, 20.0],
+                                                                egui::Label::new(
+                                                                    egui::RichText::new(
+                                                                        trend_emoji,
+                                                                    )
+                                                                    .size(14.0),
+                                                                ),
+                                                            );
+                                                            ui.end_row();
+                                                        }
+                                                    });
+                                            },
+                                        );
+                                    });
+                            },
+                        );
                         ui.add_space(12.0);
                     } else {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("📈 Open Positions:").size(15.0).strong());
-                            ui.label(egui::RichText::new("None").italics().color(egui::Color32::from_gray(120)));
+                            ui.label(
+                                egui::RichText::new(self.i18n.t("section_open_positions"))
+                                    .size(15.0)
+                                    .strong(),
+                            );
+                            ui.label(
+                                egui::RichText::new(self.i18n.t("no_positions"))
+                                    .italics()
+                                    .color(egui::Color32::from_gray(120)),
+                            );
                         });
                         ui.add_space(12.0);
                     }
@@ -685,7 +888,7 @@ impl eframe::App for UserAgent {
 
             if symbols.is_empty() {
                 ui.centered_and_justified(|ui| {
-                    ui.label("⏳ Waiting for market data... (Charts will appear when candles are received)");
+                    ui.label(self.i18n.t("waiting_market_data"));
                 });
             } else {
                 // Ensure we have a selected tab
@@ -697,14 +900,19 @@ impl eframe::App for UserAgent {
 
                 // Enhanced Tab buttons with better styling
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("📊 Market:").strong().color(egui::Color32::from_gray(180)));
+                    ui.label(
+                        egui::RichText::new(self.i18n.t("section_market"))
+                            .strong()
+                            .color(egui::Color32::from_gray(180)),
+                    );
                     ui.add_space(8.0);
                     for symbol in &symbols {
                         let is_selected = self.selected_chart_tab.as_ref() == Some(symbol);
 
                         // Get trend and price info
                         let tab_label = if let Some(info) = self.strategy_info.get(symbol) {
-                            format!("{} {} ${:.2}",
+                            format!(
+                                "{} {} ${:.2}",
                                 info.trend.emoji(),
                                 symbol,
                                 info.current_price.to_f64().unwrap_or(0.0)
@@ -713,24 +921,27 @@ impl eframe::App for UserAgent {
                             symbol.clone()
                         };
 
-                        let button = egui::Button::new(
-                            egui::RichText::new(&tab_label)
-                                .size(12.0)
-                                .color(if is_selected { egui::Color32::WHITE } else { egui::Color32::from_gray(180) })
-                        )
-                        .fill(if is_selected {
-                            egui::Color32::from_rgb(56, 139, 253)
-                        } else {
-                            egui::Color32::from_rgb(22, 27, 34)
-                        })
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            if is_selected {
-                                egui::Color32::from_rgb(88, 166, 255)
+                        let button =
+                            egui::Button::new(egui::RichText::new(&tab_label).size(12.0).color(
+                                if is_selected {
+                                    egui::Color32::WHITE
+                                } else {
+                                    egui::Color32::from_gray(180)
+                                },
+                            ))
+                            .fill(if is_selected {
+                                egui::Color32::from_rgb(56, 139, 253)
                             } else {
-                                egui::Color32::from_rgb(48, 54, 61)
-                            }
-                        ));
+                                egui::Color32::from_rgb(22, 27, 34)
+                            })
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                if is_selected {
+                                    egui::Color32::from_rgb(88, 166, 255)
+                                } else {
+                                    egui::Color32::from_rgb(48, 54, 61)
+                                },
+                            ));
 
                         if ui.add(button).clicked() {
                             self.selected_chart_tab = Some(symbol.clone());
@@ -746,7 +957,7 @@ impl eframe::App for UserAgent {
                 if let Some(selected_symbol) = &self.selected_chart_tab {
                     if let Some(candles) = self.market_data.get(selected_symbol) {
                         if candles.is_empty() {
-                            ui.label(format!("No candles yet for {}", selected_symbol));
+                            ui.label(self.i18n.tf("no_candles", &[("symbol", selected_symbol)]));
                         } else {
                             // Enhanced Strategy Info Panel
                             if let Some(strat_info) = self.strategy_info.get(selected_symbol) {
@@ -754,60 +965,70 @@ impl eframe::App for UserAgent {
                                     .fill(egui::Color32::from_rgb(22, 27, 34))
                                     .inner_margin(egui::Margin::symmetric(10.0, 8.0))
                                     .rounding(6.0)
-                                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
+                                    .stroke(egui::Stroke::new(
+                                        1.0,
+                                        egui::Color32::from_rgb(48, 54, 61),
+                                    ))
                                     .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("⚙️ Strategy:").strong().color(egui::Color32::from_gray(160)));
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                egui::RichText::new("⚙️ Strategy:")
+                                                    .strong()
+                                                    .color(egui::Color32::from_gray(160)),
+                                            );
 
-                                    // If dynamic strategy, try to extract current regime from last signal
-                                    let strategy_display = if strat_info.mode.to_lowercase() == "dynamicregime" {
-                                        if let Some(signal) = &strat_info.last_signal {
-                                            // Extract regime from signal reason
-                                            if signal.contains("Dynamic (Trend)") {
-                                                "Dynamic (Trend)".to_string()
-                                            } else if signal.contains("Dynamic (Choppy)") {
-                                                "Dynamic (Choppy)".to_string()
+                                            // If dynamic strategy, try to extract current regime from last signal
+                                            let strategy_display = if strat_info.mode.to_lowercase()
+                                                == "dynamicregime"
+                                            {
+                                                if let Some(signal) = &strat_info.last_signal {
+                                                    // Extract regime from signal reason
+                                                    if signal.contains("Dynamic (Trend)") {
+                                                        "Dynamic (Trend)".to_string()
+                                                    } else if signal.contains("Dynamic (Choppy)") {
+                                                        "Dynamic (Choppy)".to_string()
+                                                    } else {
+                                                        "Dynamic".to_string()
+                                                    }
+                                                } else {
+                                                    "Dynamic".to_string()
+                                                }
                                             } else {
-                                                "Dynamic".to_string()
-                                            }
-                                        } else {
-                                            "Dynamic".to_string()
-                                        }
-                                    } else {
-                                        strat_info.mode.clone()
-                                    };
+                                                strat_info.mode.clone()
+                                            };
 
-                                    ui.label(
-                                        egui::RichText::new(&strategy_display)
-                                            .color(egui::Color32::from_rgb(88, 166, 255))
-                                    );
-                                    ui.separator();
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "SMA: {}/{}",
-                                            strat_info.fast_sma as i32, strat_info.slow_sma as i32
-                                        ))
-                                        .color(egui::Color32::from_gray(160))
-                                        .size(11.0),
-                                    );
-                                    if let Some(signal) = &strat_info.last_signal {
-                                        ui.separator();
-                                        let signal_color = if signal.contains("Buy")
-                                            || signal.contains("Golden")
-                                        {
-                                            egui::Color32::from_rgb(87, 171, 90)
-                                        } else {
-                                            egui::Color32::from_rgb(248, 81, 73)
-                                        };
-                                        ui.label(
-                                            egui::RichText::new(signal)
-                                                .color(signal_color)
-                                                .size(11.0)
-                                                .strong(),
-                                        );
-                                    }
-                                });
-                                });
+                                            ui.label(
+                                                egui::RichText::new(&strategy_display)
+                                                    .color(egui::Color32::from_rgb(88, 166, 255)),
+                                            );
+                                            ui.separator();
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "SMA: {}/{}",
+                                                    strat_info.fast_sma as i32,
+                                                    strat_info.slow_sma as i32
+                                                ))
+                                                .color(egui::Color32::from_gray(160))
+                                                .size(11.0),
+                                            );
+                                            if let Some(signal) = &strat_info.last_signal {
+                                                ui.separator();
+                                                let signal_color = if signal.contains("Buy")
+                                                    || signal.contains("Golden")
+                                                {
+                                                    egui::Color32::from_rgb(87, 171, 90)
+                                                } else {
+                                                    egui::Color32::from_rgb(248, 81, 73)
+                                                };
+                                                ui.label(
+                                                    egui::RichText::new(signal)
+                                                        .color(signal_color)
+                                                        .size(11.0)
+                                                        .strong(),
+                                                );
+                                            }
+                                        });
+                                    });
                                 ui.add_space(6.0);
                             }
 
@@ -818,7 +1039,7 @@ impl eframe::App for UserAgent {
                                     candles.len()
                                 ))
                                 .size(14.0)
-                                .color(egui::Color32::from_gray(180))
+                                .color(egui::Color32::from_gray(180)),
                             );
                             ui.add_space(5.0);
 
@@ -956,36 +1177,40 @@ impl eframe::App for UserAgent {
                                 ui.add(button).clicked()
                             };
 
-                        if filter_button(ui, "All", self.log_level_filter.is_none()) {
+                        if filter_button(
+                            ui,
+                            self.i18n.t("filter_all"),
+                            self.log_level_filter.is_none(),
+                        ) {
                             self.log_level_filter = None;
                         }
                         if filter_button(
                             ui,
-                            "INFO",
-                            self.log_level_filter == Some("INFO".to_string()),
+                            self.i18n.t("filter_info"),
+                            self.log_level_filter == Some(self.i18n.t("filter_info").to_string()),
                         ) {
-                            self.log_level_filter = Some("INFO".to_string());
+                            self.log_level_filter = Some(self.i18n.t("filter_info").to_string());
                         }
                         if filter_button(
                             ui,
-                            "WARN",
-                            self.log_level_filter == Some("WARN".to_string()),
+                            self.i18n.t("filter_warn"),
+                            self.log_level_filter == Some(self.i18n.t("filter_warn").to_string()),
                         ) {
-                            self.log_level_filter = Some("WARN".to_string());
+                            self.log_level_filter = Some(self.i18n.t("filter_warn").to_string());
                         }
                         if filter_button(
                             ui,
-                            "ERROR",
-                            self.log_level_filter == Some("ERROR".to_string()),
+                            self.i18n.t("filter_error"),
+                            self.log_level_filter == Some(self.i18n.t("filter_error").to_string()),
                         ) {
-                            self.log_level_filter = Some("ERROR".to_string());
+                            self.log_level_filter = Some(self.i18n.t("filter_error").to_string());
                         }
                         if filter_button(
                             ui,
-                            "DEBUG",
-                            self.log_level_filter == Some("DEBUG".to_string()),
+                            self.i18n.t("filter_debug"),
+                            self.log_level_filter == Some(self.i18n.t("filter_debug").to_string()),
                         ) {
-                            self.log_level_filter = Some("DEBUG".to_string());
+                            self.log_level_filter = Some(self.i18n.t("filter_debug").to_string());
                         }
                     });
 
