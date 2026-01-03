@@ -309,6 +309,52 @@ impl eframe::App for UserAgent {
                         )),
                         win_rate_color,
                     );
+
+                    // Spacer to push controls to the right
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Help button
+                        if ui
+                            .button(
+                                egui::RichText::new(self.i18n.t("help_button_label")).size(13.0),
+                            )
+                            .clicked()
+                        {
+                            self.help_panel_open = !self.help_panel_open;
+                        }
+
+                        ui.add_space(4.0);
+
+                        // Language selector
+                        let current_lang = self.i18n.current_language_info();
+                        let button_text = if let Some(lang) = current_lang {
+                            format!("{} {}", lang.flag, lang.code.to_uppercase())
+                        } else {
+                            "🌐 Lang".to_string()
+                        };
+
+                        egui::ComboBox::from_id_source("language_selector")
+                            .selected_text(egui::RichText::new(button_text).size(12.0))
+                            .show_ui(ui, |ui| {
+                                let languages: Vec<_> =
+                                    self.i18n.available_languages().iter().cloned().collect();
+                                let current_code = self.i18n.current_language_code().to_string();
+
+                                for lang in languages {
+                                    let label = format!(
+                                        "{} {} - {}",
+                                        lang.flag,
+                                        lang.code.to_uppercase(),
+                                        lang.name
+                                    );
+                                    if ui
+                                        .selectable_label(current_code == lang.code, label)
+                                        .clicked()
+                                    {
+                                        self.i18n.set_language(&lang.code);
+                                    }
+                                }
+                            });
+                    });
                 });
             });
 
@@ -577,28 +623,26 @@ impl eframe::App for UserAgent {
                                             };
 
                                         ui.label(
-                                            egui::RichText::new(
-                                                self.i18n.tf(
-                                                    "pnl_label",
-                                                    &[
-                                                        ("sign", pnl_sign),
-                                                        (
-                                                            "amount",
-                                                            &format!(
+                                            egui::RichText::new(self.i18n.tf(
+                                                "pnl_label",
+                                                &[
+                                                    ("sign", pnl_sign),
+                                                    (
+                                                        "amount",
+                                                        &format!(
                                                                 "${:.2}",
                                                                 unrealized_pnl
                                                                     .to_f64()
                                                                     .unwrap_or(0.0)
                                                                     .abs()
                                                             ),
-                                                        ),
-                                                        (
-                                                            "percent",
-                                                            &format!("{:.2}", unrealized_pct.abs()),
-                                                        ),
-                                                    ],
-                                                ),
-                                            )
+                                                    ),
+                                                    (
+                                                        "percent",
+                                                        &format!("{:.2}", unrealized_pct.abs()),
+                                                    ),
+                                                ],
+                                            ))
                                             .strong()
                                             .color(pnl_color)
                                             .size(14.0),

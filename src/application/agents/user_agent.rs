@@ -85,6 +85,9 @@ pub struct UserAgent {
 
     // Internationalization
     pub i18n: I18nService,
+
+    // Help panel state
+    pub help_panel_open: bool,
 }
 
 /// Direction of the market trend for a symbol
@@ -144,6 +147,7 @@ impl UserAgent {
             total_trades: 0,
             winning_trades: 0,
             i18n: I18nService::new(), // Initialize i18n service
+            help_panel_open: false,
         }
     }
 
