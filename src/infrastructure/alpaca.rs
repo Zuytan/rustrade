@@ -645,14 +645,17 @@ impl AlpacaMarketDataService {
         let now = chrono::Utc::now();
         let start = now - chrono::Duration::hours(24);
         
+        // Crypto bars API expects slash format (BTC/USD), unlike other Alpaca APIs
         let symbols: Vec<String> = CRYPTO_UNIVERSE.iter().map(|s| s.to_string()).collect();
         let symbols_param = symbols.join(",");
         
-        let url = format!("{}/v1beta3/crypto/us/bars", self.data_base_url);
+        info!("MarketScanner: DEBUG - symbols_param = '{}'", symbols_param);
+        
+       let url = format!("{}/v1beta3/crypto/us/bars", self.data_base_url);
         
         info!(
             "MarketScanner: Fetching 24h bars for {} crypto pairs",
-            symbols.len()
+            CRYPTO_UNIVERSE.len()
         );
         
         let response = self
@@ -687,9 +690,13 @@ impl AlpacaMarketDataService {
             .await
             .context("Failed to parse crypto bars response")?;
         
+        info!("MarketScanner: API returned bars for {} symbols", data.bars.len());
+
         let mut movers: Vec<(String, f64, f64)> = Vec::new();
         
         for (symbol, bars) in data.bars {
+            info!("MarketScanner: Processing symbol '{}' with {} bars", symbol, bars.len());
+            
             if let Some(bar) = bars.first() {
                 // Calculate 24h percentage change
                 let change_pct = if bar.open != 0.0 {
@@ -703,18 +710,21 @@ impl AlpacaMarketDataService {
                 // Filter by volume threshold
                 let has_volume = bar.volume >= self.min_volume_threshold;
                 
+                info!(
+                    "MarketScanner: {} - change: {:.2}%, volume: {:.0}, threshold: {:.0}, pass: {}",
+                    symbol, change_pct, bar.volume, self.min_volume_threshold, has_volume
+                );
+                
                 if has_volume && abs_change > 0.0 {
-                    debug!(
-                        "MarketScanner: {} - 24h change: {:.2}%, volume: {:.0}",
-                        symbol, change_pct, bar.volume
-                    );
                     movers.push((symbol, abs_change, change_pct));
                 } else if !has_volume {
-                    debug!(
-                        "MarketScanner: {} excluded - volume {:.0} < threshold {:.0}",
+                    info!(
+                        "MarketScanner: {} FILTERED OUT - volume {:.0} < threshold {:.0}",
                         symbol, bar.volume, self.min_volume_threshold
                     );
                 }
+            } else {
+                info!("MarketScanner: {} - NO BARS in response", symbol);
             }
         }
         

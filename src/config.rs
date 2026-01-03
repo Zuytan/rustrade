@@ -143,11 +143,24 @@ impl Config {
         let oanda_api_key = env::var("OANDA_API_KEY").unwrap_or_default();
         let oanda_account_id = env::var("OANDA_ACCOUNT_ID").unwrap_or_default();
 
-        let symbols_str = env::var("SYMBOLS").unwrap_or_else(|_| "AAPL".to_string());
-        let symbols: Vec<String> = symbols_str
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
+        // Load dynamic mode early to determine SYMBOLS default
+        let dynamic_symbol_mode = env::var("DYNAMIC_SYMBOL_MODE")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse::<bool>()
+            .unwrap_or(false);
+
+        // In dynamic mode use empty default (scanner discovers symbols)
+        // In static mode default to AAPL for backward compatibility
+        let symbols_default = if dynamic_symbol_mode { "" } else { "AAPL" };
+        let symbols_str = env::var("SYMBOLS").unwrap_or_else(|_| symbols_default.to_string());
+        let symbols: Vec<String> = if symbols_str.is_empty() {
+            vec![]
+        } else {
+            symbols_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
+        };
 
         let max_positions = env::var("MAX_POSITIONS")
             .unwrap_or_else(|_| "5".to_string())
