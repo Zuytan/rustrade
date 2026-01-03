@@ -5,7 +5,9 @@ Développer un système multi-agents capable de surveiller le marché des action
 
 > 🚀 **Production Ready (v0.27.0 - Dec 2025):** **Phase 1 Critical Fixes Complete**. Élimination des race conditions critiques via PortfolioStateManager, prévention des fuites mémoire avec canaux bornés, et résilience API via Circuit Breaker. **125 tests unitaires passent**. Système prêt pour déploiement production.
 
-> 📘 **Nouveau (v0.29.3) :** **UI Temps Réel Améliorée**. Affichage des gains/pertes hypothétiques (P&L) par position avec prix actuel, pourcentage de gain/perte, et indicateurs de tendance visuels (📈📉➡️) basés sur les SMAs.
+> 📘 **Nouveau (v0.29.4) :** **Scanner Crypto Top Movers**. Support complet du mode dynamique pour les cryptomonnaies avec analyse automatique des variations 24h sur 10 paires majeures (BTC/USD, ETH/USD, AVAX/USD, etc.), filtrage par volume, et sélection des top 5 movers par volatilité absolue.
+>
+> 📘 **Précédent (v0.29.3) :** **UI Temps Réel Améliorée**. Affichage des gains/pertes hypothétiques (P&L) par position avec prix actuel, pourcentage de gain/perte, et indicateurs de tendance visuels (📈📉➡️) basés sur les SMAs.
 >
 > 📘 **Précédent (v0.29.0) :** **Interface Agentique Native**. Transformation en application Desktop interactive. Chat avec l'agent ("buy AAPL 10", "stop"), visualisation temps réel du portefeuille et logs système intégrés via `eframe` et `egui`.
 >
@@ -106,7 +108,8 @@ Le bot intègre désormais un système d'optimisation en boucle fermée qui ajus
 - **Responsabilités**:
     - Scanner périodiquement le marché (API Top Movers).
     - Identifier les actifs les plus volatils (Gainers).
-    - **Filtrage Qualitatif** : Exclure les penny stocks (<$5), warrants et units pour assurer une meilleure liquidité et sécurité.
+    - **Filtrage Qualitatif (Stocks)** : Exclure les penny stocks (<$5), warrants et units pour assurer une meilleure liquidité et sécurité.
+    - **Scanner Crypto Dédié (v0.29.4)** : Pour les cryptomonnaies, analyse d'un univers de 10 paires majeures (BTC/USD, ETH/USD, AVAX/USD, SOL/USD, etc.) en calculant les variations 24h et en retournant les top 5 movers par volatilité.
     - Ordonner au Sentinel de changer de cible.
 
 ### 3. Agent "Analyst" (Strategy)

@@ -1,5 +1,21 @@
 # Rustrade - Historique des Versions
 
+## Version 0.29.4 (Janvier 2026) - Crypto Top Movers Scanner
+- **Mode Dynamique Crypto Activé**:
+  - **Scanner Crypto Dédié**: Implémentation d'un scanner de top movers spécialisé pour les cryptomonnaies dans `AlpacaMarketDataService`.
+  - **Univers Crypto Hardcodé**: Analyse de 10 paires majeures (BTC/USD, ETH/USD, AVAX/USD, SOL/USD, MATIC/USD, LINK/USD, UNI/USD, AAVE/USD, DOT/USD, ATOM/USD).
+  - **Calcul de Volatilité 24h**: Récupération des barres journalières via l'API `/v1beta3/crypto/us/bars` Alpaca et calcul des variations de prix (close - open).
+  - **Filtrage par Volume**: Respect du seuil `MIN_VOLUME_THRESHOLD` (défaut: 50,000) pour éliminer les paires à faible liquidité.
+  - **Top 5 Movers**: Tri par variation absolue (descending) et sélection des 5 cryptos les plus volatiles.
+- **Infrastructure**:
+  - **Méthode `get_crypto_top_movers()`**: Nouvelle méthode privée dans `AlpacaMarketDataService` pour la logique crypto.
+  - **Constante `CRYPTO_UNIVERSE`**: Définition centralisée de l'univers crypto scannable.
+  - **Graceful Degradation**: Retourne une liste vide en cas d'échec API sans bloquer le système.
+- **Tests**:
+  - **Test d'Intégration**: Nouveau fichier `tests/crypto_dynamic_scanner.rs` avec deux cas de test (scanner complet + appel API).
+  - **Compilation Validée**: 142 tests unitaires passent sans erreur.
+- **Compatibilité**: Mode stock (actions) inchangé, activation crypto via `ASSET_CLASS=crypto` et `DYNAMIC_SYMBOL_MODE=true`.
+
 ## Version 0.29.3 (Janvier 2026) - Enhanced UI with P&L and Trends
 - **Real-Time P&L Display**:
   - **Portfolio Header**: Affiche le P&L non-réalisé total avec couleur (vert = profit, rouge = perte) et pourcentage.

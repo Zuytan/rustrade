@@ -17,6 +17,23 @@ use tokio::sync::{
 }; // Added broadcast
 use tracing::{debug, error, info, trace}; // Restored imports
 
+// ===== Constants =====
+
+/// Major crypto pairs to scan for top movers
+/// Since Alpaca doesn't provide a movers API for crypto, we maintain a curated list
+const CRYPTO_UNIVERSE: &[&str] = &[
+    "BTC/USD",
+    "ETH/USD",
+    "AVAX/USD",
+    "SOL/USD",
+    "MATIC/USD",
+    "LINK/USD",
+    "UNI/USD",
+    "AAVE/USD",
+    "DOT/USD",
+    "ATOM/USD",
+];
+
 // ===== Market Data Service (WebSocket) =====
 
 pub struct AlpacaMarketDataService {
@@ -122,8 +139,8 @@ impl MarketDataService for AlpacaMarketDataService {
 
     async fn get_top_movers(&self) -> Result<Vec<String>> {
         if self.asset_class == AssetClass::Crypto {
-            info!("MarketScanner: Top movers not fully supported for Crypto in this version. Returning empty list.");
-            return Ok(vec![]);
+            info!("MarketScanner: Scanning crypto top movers from universe of {} pairs", CRYPTO_UNIVERSE.len());
+            return self.get_crypto_top_movers().await;
         }
 
         // Alpaca Data v1beta1 Screener Movers endpoint
@@ -620,6 +637,109 @@ impl AlpacaMarketDataService {
         );
 
         Ok(result)
+    }
+
+    /// Get top crypto movers by analyzing 24-hour price changes
+    /// Since Alpaca doesn't provide a movers API for crypto, we scan a curated universe
+    async fn get_crypto_top_movers(&self) -> Result<Vec<String>> {
+        let now = chrono::Utc::now();
+        let start = now - chrono::Duration::hours(24);
+        
+        let symbols: Vec<String> = CRYPTO_UNIVERSE.iter().map(|s| s.to_string()).collect();
+        let symbols_param = symbols.join(",");
+        
+        let url = format!("{}/v1beta3/crypto/us/bars", self.data_base_url);
+        
+        info!(
+            "MarketScanner: Fetching 24h bars for {} crypto pairs",
+            symbols.len()
+        );
+        
+        let response = self
+            .client
+            .get(&url)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .query(&[
+                ("symbols", &symbols_param),
+                ("timeframe", &"1Day".to_string()),
+                ("start", &start.to_rfc3339()),
+                ("end", &now.to_rfc3339()),
+                ("limit", &"1".to_string()),
+            ])
+            .send()
+            .await
+            .context("Failed to fetch crypto bars for movers detection")?;
+        
+        if !response.status().is_success() {
+            let err = response.text().await.unwrap_or_default();
+            error!("MarketScanner: Crypto bars fetch failed: {}", err);
+            return Ok(vec![]); // Graceful degradation
+        }
+        
+        #[derive(Debug, Deserialize)]
+        struct CryptoBarsResponse {
+            bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
+        }
+        
+        let data: CryptoBarsResponse = response
+            .json()
+            .await
+            .context("Failed to parse crypto bars response")?;
+        
+        let mut movers: Vec<(String, f64, f64)> = Vec::new();
+        
+        for (symbol, bars) in data.bars {
+            if let Some(bar) = bars.first() {
+                // Calculate 24h percentage change
+                let change_pct = if bar.open != 0.0 {
+                    ((bar.close - bar.open) / bar.open) * 100.0
+                } else {
+                    0.0
+                };
+                
+                let abs_change = change_pct.abs();
+                
+                // Filter by volume threshold
+                let has_volume = bar.volume >= self.min_volume_threshold;
+                
+                if has_volume && abs_change > 0.0 {
+                    debug!(
+                        "MarketScanner: {} - 24h change: {:.2}%, volume: {:.0}",
+                        symbol, change_pct, bar.volume
+                    );
+                    movers.push((symbol, abs_change, change_pct));
+                } else if !has_volume {
+                    debug!(
+                        "MarketScanner: {} excluded - volume {:.0} < threshold {:.0}",
+                        symbol, bar.volume, self.min_volume_threshold
+                    );
+                }
+            }
+        }
+        
+        // Sort by absolute change (descending)
+        movers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        // Return top 5 movers
+        let top_movers: Vec<String> = movers
+            .into_iter()
+            .take(5)
+            .map(|(symbol, abs_change, change_pct)| {
+                info!(
+                    "MarketScanner: Top mover {} - 24h change: {:.2}% (abs: {:.2}%)",
+                    symbol, change_pct, abs_change
+                );
+                symbol
+            })
+            .collect();
+        
+        info!(
+            "MarketScanner: Found {} crypto top movers",
+            top_movers.len()
+        );
+        
+        Ok(top_movers)
     }
 }
 
