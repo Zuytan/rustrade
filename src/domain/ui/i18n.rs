@@ -124,6 +124,21 @@ impl I18nService {
             .unwrap_or(category_key)
     }
 
+    /// Translate with format parameters
+    /// Usage: i18n.tf("pnl_label", &[("sign", "+"), ("amount", "10.50"), ("percent", "5.2")])
+    /// Template in JSON: "P&L: {sign}{amount} ({sign}{percent}%)"
+    pub fn tf(&self, key: &str, params: &[(&str, &str)]) -> String {
+        let template = self.t(key);
+        let mut result = template.to_string();
+
+        for (placeholder, value) in params {
+            let placeholder_pattern = format!("{{{}}}", placeholder);
+            result = result.replace(&placeholder_pattern, value);
+        }
+
+        result
+    }
+
     /// Get all help topics for current language
     pub fn help_topics(&self) -> Vec<&HelpTopicData> {
         self.translations
