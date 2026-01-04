@@ -8,6 +8,13 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use sqlx::{Row, SqlitePool};
 
+/// Safely parse a Unix timestamp into a DateTime, handling invalid values
+fn parse_timestamp(ts: i64) -> Result<chrono::DateTime<chrono::Utc>> {
+    Utc.timestamp_opt(ts, 0)
+        .single()
+        .ok_or_else(|| anyhow::anyhow!("Invalid timestamp value: {}", ts))
+}
+
 pub struct SqlitePerformanceSnapshotRepository {
     pool: SqlitePool,
 }
@@ -65,7 +72,7 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
             Ok(Some(PerformanceSnapshot {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
-                timestamp: Utc.timestamp_opt(row.try_get("timestamp")?, 0).unwrap(),
+                timestamp: parse_timestamp(row.try_get("timestamp")?)?,
                 equity: Decimal::from_f64(equity_f64).unwrap_or_default(),
                 drawdown_pct: row.try_get("drawdown_pct")?,
                 sharpe_rolling_30d: row.try_get("sharpe_rolling_30d")?,
@@ -102,7 +109,7 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
             snapshots.push(PerformanceSnapshot {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
-                timestamp: Utc.timestamp_opt(row.try_get("timestamp")?, 0).unwrap(),
+                timestamp: parse_timestamp(row.try_get("timestamp")?)?,
                 equity: Decimal::from_f64(equity_f64).unwrap_or_default(),
                 drawdown_pct: row.try_get("drawdown_pct")?,
                 sharpe_rolling_30d: row.try_get("sharpe_rolling_30d")?,

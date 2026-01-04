@@ -373,12 +373,12 @@ impl Analyst {
 
     /// Detect market regime for current symbol
     async fn detect_market_regime(
-        &self,
+        repo: &Option<Arc<dyn CandleRepository>>,
         symbol: &str,
         candle_timestamp: i64,
         context: &SymbolContext,
     ) -> MarketRegime {
-        if let Some(repo) = &self.candle_repository {
+        if let Some(repo) = repo {
             let end_ts = candle_timestamp;
             let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
             
@@ -394,7 +394,6 @@ impl Analyst {
 
     /// Generate trading signal from strategy
     fn generate_trading_signal(
-        &self,
         context: &mut SymbolContext,
         symbol: &str,
         price: Decimal,
@@ -415,7 +414,8 @@ impl Analyst {
 
     /// Build trade proposal from signal
     async fn build_trade_proposal(
-        &self,
+        config: &AnalystConfig,
+        execution_service: &Arc<dyn ExecutionService>,
         symbol: String,
         side: OrderSide,
         price: Decimal,
@@ -424,8 +424,8 @@ impl Analyst {
     ) -> Option<TradeProposal> {
         // Calculate quantity
         let quantity = Self::calculate_trade_quantity(
-            &self.config,
-            &self.execution_service,
+            config,
+            execution_service,
             &symbol,
             price,
         )
@@ -475,25 +475,8 @@ impl Analyst {
 
         let context = self.symbol_states.get_mut(&symbol).unwrap();
 
-        // 1.5 Measure Regime (Moved up for Strategy Selection)
-
-        // We need regime to select strategy BEFORE generating signal
-        // This repeats code from step 7 (expectancy). We should consolidate.
-
-        let mut regime = MarketRegime::unknown();
-        if let Some(repo) = &self.candle_repository {
-            let end_ts = candle.timestamp;
-            // Use smaller window for regime detection? Or same?
-            // Detector uses what it's given.
-            // Let's use 60 days for robust regime, or stick to what we had.
-            let start_ts = end_ts - (30 * 24 * 60 * 60);
-            if let Ok(candles) = repo.get_range(&symbol, start_ts, end_ts).await {
-                regime = context
-                    .regime_detector
-                    .detect(&candles)
-                    .unwrap_or(MarketRegime::unknown());
-            }
-        }
+        // 1.5 Detect Market Regime
+        let regime = Self::detect_market_regime(&self.candle_repository, &symbol, candle.timestamp, context).await;
 
         // 1.6 Adaptive Strategy Switching (Phase 3)
         if context.config.strategy_mode
@@ -654,29 +637,20 @@ impl Analyst {
             }
         }
 
-        // 5. Strategy Check via SignalGenerator
+        // 5. Generate Trading Signal
         if !trailing_stop_triggered {
-            let strategy_signal = context.signal_generator.generate_signal(
+            signal = Self::generate_trading_signal(
+                context,
                 &symbol,
                 price,
                 timestamp,
-                &context.last_features,
-                &context.strategy,
-                context.config.sma_threshold,
                 has_position,
-                context.last_macd_histogram, // Pass tracked previous value
             );
 
-            if let Some(strat_sig) = strategy_signal {
-                signal = Some(strat_sig);
-            }
-
             // RSI Filtering (Strategic Tuning)
-            // Block BUY signals if RSI is too high (Overbought) to prevent buying local tops
             if let Some(OrderSide::Buy) = signal {
                 if let Some(rsi) = context.last_features.rsi {
                     if rsi > context.config.rsi_threshold {
-                        // Only block if we are strictly above the threshold
                         info!(
                             "Analyst: Buy signal BLOCKED for {} - RSI {:.2} > {:.2} (Overbought)",
                             symbol, rsi, context.config.rsi_threshold
@@ -715,125 +689,89 @@ impl Analyst {
             // 7. Execution Logic (Expectancy & Quantity)
             context.position_manager.last_signal_time = timestamp;
 
-            // Calculate Market Regime and Expectancy (only if we have historical data)
-            // Try to recalculate with fresh data, fallback to cache if calculation fails
-            let mut risk_ratio = context.cached_reward_risk_ratio; // Start with cached value as fallback
-            let mut expectancy_value = 0.0;
-            let mut should_validate_expectancy = false;
+            // Use already calculated regime for expectancy
+            let expectancy = context
+                .expectancy_evaluator
+                .evaluate(&symbol, price, &regime)
+                .await;
 
-            if let Some(repo) = &self.candle_repository {
-                let end_ts = candle.timestamp;
-                let start_ts = end_ts - (30 * 24 * 60 * 60);
-                let candles = repo
-                    .get_range(&symbol, start_ts, end_ts)
-                    .await
-                    .unwrap_or_default();
-
-                // Only recalculate if we have enough data
-                if candles.len() >= 20 {
-                    let regime = context
-                        .regime_detector
-                        .detect(&candles)
-                        .unwrap_or(MarketRegime::unknown());
-
-                    let expectancy = context
-                        .expectancy_evaluator
-                        .evaluate(&symbol, price, &regime)
-                        .await;
-
-                    expectancy_value = expectancy.expected_value;
-                    should_validate_expectancy = true;
-
-                    // Use fresh calculation if valid (> 0), otherwise keep cached value
-                    if expectancy.reward_risk_ratio > 0.0 {
-                        risk_ratio = expectancy.reward_risk_ratio;
-                    }
-                }
-            }
+            let risk_ratio = if expectancy.reward_risk_ratio > 0.0 {
+                expectancy.reward_risk_ratio
+            } else {
+                context.cached_reward_risk_ratio
+            };
 
             // Validate using calculated or cached ratio
             if !self.trade_filter.validate_expectancy(&symbol, risk_ratio) {
                 return;
             }
 
-            let quantity = Self::calculate_trade_quantity(
+            // Phase 2: Check minimum hold time for sell signals
+            if !self.trade_filter.validate_min_hold_time(
+                side,
+                &symbol,
+                timestamp,
+                context.last_entry_time,
+                context.min_hold_time_ms,
+            ) {
+                return;
+            }
+
+            let order_type = match side {
+                OrderSide::Buy => crate::domain::trading::types::OrderType::Limit,
+                OrderSide::Sell => crate::domain::trading::types::OrderType::Market,
+            };
+
+            let reason = format!(
+                "Strategy: {} (Regime: {})",
+                context.active_strategy_mode, regime.regime_type
+            );
+
+            let mut proposal = match Self::build_trade_proposal(
                 &context.config,
                 &self.execution_service,
-                &symbol,
+                symbol.clone(),
+                side,
                 price,
-            )
-            .await;
+                timestamp,
+                reason,
+            ).await {
+                Some(p) => p,
+                None => return,
+            };
+            
+            proposal.order_type = order_type;
 
-            if quantity > Decimal::ZERO {
-                // Phase 2: Check minimum hold time for sell signals
-                // DELEGATED TO TRADE FILTER
-                if !self.trade_filter.validate_min_hold_time(
-                    side,
-                    &symbol,
-                    timestamp,
-                    context.last_entry_time,
-                    context.min_hold_time_ms,
-                ) {
-                    return;
-                }
+            // ============ COST-AWARE TRADING FILTER ============
+            let atr = context.last_features.atr.unwrap_or(0.0);
+            
+            info!(
+                "Analyst [{}]: Calculating Profit Expectancy - ATR=${:.4}, Multiplier={:.2}, Quantity={}",
+                symbol, atr, context.config.profit_target_multiplier, proposal.quantity
+            );
 
-                let order_type = match side {
-                    OrderSide::Buy => crate::domain::trading::types::OrderType::Limit,
-                    OrderSide::Sell => crate::domain::trading::types::OrderType::Market,
-                };
-
-                let proposal = TradeProposal {
-                    symbol: symbol.clone(),
-                    side,
-                    price,
-                    quantity,
-                    order_type,
-                    reason: format!(
-                        "Strategy: {} (Regime: {})",
-                        context.active_strategy_mode, regime.regime_type
-                    ),
-                    timestamp,
-                };
-
-                // ============ COST-AWARE TRADING FILTER ============
-                // Only validate profitability if we have expectancy data (or should we always?)
-                // Original logic only checked if should_validate_expectancy was true AND checked specific logic
-                // Now we Delegate to TradeFilter.
-
-                // Calculate expected profit (using Helper)
-                let atr = context.last_features.atr.unwrap_or(0.0);
-
-                // Log ATR context
-                info!(
-                    "Analyst [{}]: Calculating Profit Expectancy - ATR=${:.4}, Multiplier={:.2}, Quantity={}",
-                    symbol, atr, context.config.profit_target_multiplier, quantity
-                );
-
-                let expected_profit = if should_validate_expectancy {
-                    Decimal::from_f64_retain(expectancy_value).unwrap_or(Decimal::ZERO) * quantity
-                } else {
-                    // Fallback if no expectancy? OLD used to skip.
-                    // The cost filter uses ATR based profit.
-                    self.trade_filter.calculate_expected_profit(
-                        &proposal,
-                        atr,
-                        context.config.profit_target_multiplier,
-                    )
-                };
-
-                // Get ACCURATE cost from CostEvaluator (with real-time spreads!)
-                let costs = self.trade_filter.evaluate_costs(&proposal);
-                let estimated_cost = costs.total_cost;
-
-                if !self.trade_filter.validate_profitability(
+            // Use fresh expectancy value if available
+            let expected_profit = if expectancy.expected_value > 0.0 {
+                Decimal::from_f64_retain(expectancy.expected_value).unwrap_or(Decimal::ZERO) * proposal.quantity
+            } else {
+                self.trade_filter.calculate_expected_profit(
                     &proposal,
-                    expected_profit,
-                    estimated_cost,
-                    context.config.min_profit_ratio,
-                    &symbol,
-                ) {
-                    return;
-                }
+                    atr,
+                    context.config.profit_target_multiplier,
+                )
+            };
+
+            let costs = self.trade_filter.evaluate_costs(&proposal);
+            
+            if !self.trade_filter.validate_profitability(
+                &proposal,
+                expected_profit,
+                costs.total_cost,
+                context.config.min_profit_ratio,
+                &symbol,
+            ) {
+                return;
+            }
                 // ====================================================
 
                 match self.proposal_tx.try_send(proposal) {
@@ -871,7 +809,6 @@ impl Analyst {
                 }
             }
         }
-    }
 
     async fn calculate_trade_quantity(
         config: &AnalystConfig,

@@ -67,6 +67,7 @@ pub struct CandleAggregator {
     builders: HashMap<String, CandleBuilder>,
     _timeframe: Duration, // e.g., 1 minute
     repository: Option<Arc<dyn CandleRepository>>,
+    #[allow(dead_code)]
     spread_cache: Arc<SpreadCache>, // Store real-time bid/ask spreads
 }
 

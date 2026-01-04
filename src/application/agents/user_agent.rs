@@ -95,6 +95,10 @@ pub struct UserAgent {
     // Performance & Risk metrics (Dynamic)
     pub latency_ms: u64,
     pub risk_score: u8,  // Risk appetite score (1-9)
+
+    // Phase 4: Analytics State
+    pub monte_carlo_result: Option<crate::domain::performance::monte_carlo::MonteCarloResult>,
+    pub correlation_matrix: std::collections::HashMap<(String, String), f64>,
 }
 
 /// Direction of the market trend for a symbol
@@ -159,6 +163,8 @@ impl UserAgent {
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
             latency_ms: 12,    // Default initial value
             risk_score: risk_appetite.map(|r| r.score()).unwrap_or(5),  // Use real risk score or default to 5 (balanced)
+            monte_carlo_result: None,
+            correlation_matrix: std::collections::HashMap::new(),
         }
     }
 

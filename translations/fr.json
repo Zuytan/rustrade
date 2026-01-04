@@ -14,6 +14,7 @@
         "nav_dashboard": "Tableau de Bord",
         "nav_charts": "Graphiques",
         "nav_portfolio": "Portefeuille",
+        "nav_analytics": "Analytique",
         "nav_settings": "Paramètres",
         "total_value_format": "Valeur Totale: ${amount}",
         "pnl_pill_format": "{sign}{amount} ({sign}{percent}%)",
@@ -126,7 +127,16 @@
         "tech_rust": "Rust",
         "tech_egui": "egui",
         "tech_tokio": "Tokio",
-        "portfolio_coming_soon": "Vue Portefeuille - Bientôt disponible"
+        "portfolio_coming_soon": "Vue Portefeuille - Bientôt disponible",
+        "analytics_title": "Analyses Quantitatives",
+        "monte_carlo_title": "Simulation de Monte Carlo",
+        "correlation_title": "Matrice de Corrélation des Actifs",
+        "run_simulation": "Lancer 10k Itérations",
+        "prob_profit": "Prob. de Profit",
+        "expected_dd": "Drawdown Max (Moyen)",
+        "final_equity": "Équité Finale (Médiane)",
+        "correlation_description": "Relation historique des prix entre vos actifs suivis (Coefficient de Pearson).",
+        "monte_carlo_description": "Projection probabiliste de votre trajectoire d'équité basée sur vos performances actuelles."
     },
     "help_categories": {
         "abbreviations": "Abréviations",

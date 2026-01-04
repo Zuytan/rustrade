@@ -59,6 +59,89 @@ impl AlpacaMarketDataService {
         asset_class: AssetClass, // Added
         candle_repository: Option<Arc<dyn crate::domain::repositories::CandleRepository>>,
     ) -> Self {
+        Self::builder()
+            .api_key(api_key)
+            .api_secret(api_secret)
+            .ws_url(ws_url)
+            .data_base_url(data_base_url)
+            .min_volume_threshold(min_volume_threshold)
+            .asset_class(asset_class)
+            .candle_repository(candle_repository)
+            .build()
+    }
+
+    pub fn builder() -> AlpacaMarketDataServiceBuilder {
+        AlpacaMarketDataServiceBuilder::default()
+    }
+
+    /// Get the shared spread cache for real-time bid/ask tracking
+    /// This should be shared with CostEvaluator to use real spreads instead of defaults
+    pub fn get_spread_cache(
+        &self,
+    ) -> Arc<crate::application::market_data::spread_cache::SpreadCache> {
+        self.spread_cache.clone()
+    }
+}
+
+#[derive(Default)]
+pub struct AlpacaMarketDataServiceBuilder {
+    api_key: Option<String>,
+    api_secret: Option<String>,
+    ws_url: Option<String>,
+    data_base_url: Option<String>,
+    min_volume_threshold: Option<f64>,
+    asset_class: Option<AssetClass>,
+    candle_repository: Option<Option<Arc<dyn crate::domain::repositories::CandleRepository>>>,
+}
+
+impl AlpacaMarketDataServiceBuilder {
+    pub fn api_key(mut self, api_key: String) -> Self {
+        self.api_key = Some(api_key);
+        self
+    }
+
+    pub fn api_secret(mut self, api_secret: String) -> Self {
+        self.api_secret = Some(api_secret);
+        self
+    }
+
+    pub fn ws_url(mut self, ws_url: String) -> Self {
+        self.ws_url = Some(ws_url);
+        self
+    }
+
+    pub fn data_base_url(mut self, data_base_url: String) -> Self {
+        self.data_base_url = Some(data_base_url);
+        self
+    }
+
+    pub fn min_volume_threshold(mut self, threshold: f64) -> Self {
+        self.min_volume_threshold = Some(threshold);
+        self
+    }
+
+    pub fn asset_class(mut self, asset_class: AssetClass) -> Self {
+        self.asset_class = Some(asset_class);
+        self
+    }
+
+    pub fn candle_repository(
+        mut self,
+        repo: Option<Arc<dyn crate::domain::repositories::CandleRepository>>,
+    ) -> Self {
+        self.candle_repository = Some(repo);
+        self
+    }
+
+    pub fn build(self) -> AlpacaMarketDataService {
+        let api_key = self.api_key.expect("api_key is required");
+        let api_secret = self.api_secret.expect("api_secret is required");
+        let ws_url = self.ws_url.expect("ws_url is required");
+        let data_base_url = self.data_base_url.expect("data_base_url is required");
+        let min_volume_threshold = self.min_volume_threshold.unwrap_or(0.0);
+        let asset_class = self.asset_class.unwrap_or(AssetClass::Stock);
+        let candle_repository = self.candle_repository.flatten();
+
         // Configure client with connection pool limits
         let client = Client::builder()
             .pool_max_idle_per_host(5)
@@ -74,10 +157,10 @@ impl AlpacaMarketDataService {
             api_key.clone(),
             api_secret.clone(),
             ws_url,
-            spread_cache.clone(), // Clone for WebSocket manager
+            spread_cache.clone(),
         ));
 
-        Self {
+        AlpacaMarketDataService {
             client,
             api_key,
             api_secret,
@@ -86,17 +169,9 @@ impl AlpacaMarketDataService {
             bar_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
             min_volume_threshold,
             asset_class,
-            spread_cache, // Store for external access
+            spread_cache,
             candle_repository,
         }
-    }
-
-    /// Get the shared spread cache for real-time bid/ask tracking
-    /// This should be shared with CostEvaluator to use real spreads instead of defaults
-    pub fn get_spread_cache(
-        &self,
-    ) -> Arc<crate::application::market_data::spread_cache::SpreadCache> {
-        self.spread_cache.clone()
     }
 }
 
@@ -449,7 +524,12 @@ impl MarketDataService for AlpacaMarketDataService {
                     if cached_count >= MIN_REQUIRED_BARS {
                         // Cache is sufficient - check if we need incremental update
                         if let Ok(Some(latest_ts)) = repo.get_latest_timestamp(symbol).await {
-                            let latest_dt = chrono::Utc.timestamp_opt(latest_ts, 0).unwrap();
+                            let latest_dt = chrono::Utc
+                                .timestamp_opt(latest_ts, 0)
+                                .single()
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("Invalid timestamp in candle cache: {}", latest_ts)
+                                })?;
 
                             // If latest cache is recent enough (within requested range), use cache + incremental
                             if latest_dt < end && latest_dt >= start {

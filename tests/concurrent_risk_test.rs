@@ -36,6 +36,7 @@ async fn test_concurrent_proposals_respect_limits() {
         sector_provider: None,
         allow_pdt_risk: false,
         pending_order_ttl_ms: None,
+        correlation_config: rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
     };
 
     let state_manager = Arc::new(PortfolioStateManager::new(
@@ -53,6 +54,7 @@ async fn test_concurrent_proposals_respect_limits() {
         AssetClass::Stock,
         risk_config,
         None, // performance_monitor
+        None, // correlation_service
     );
 
     // Start RiskManager in background
@@ -154,6 +156,7 @@ async fn test_backpressure_drops_excess_proposals() {
         false,
         AssetClass::Stock,
         risk_config,
+        None,
         None,
     );
 

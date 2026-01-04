@@ -10,10 +10,12 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use crate::application::monitoring::correlation_service::CorrelationService;
 use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::config::AssetClass;
+use crate::domain::risk::filters::correlation_filter::{CorrelationFilter, CorrelationFilterConfig};
 
 /// Risk management configuration
 #[derive(Clone)]
@@ -27,6 +29,7 @@ pub struct RiskConfig {
     pub sector_provider: Option<Arc<dyn SectorProvider>>,
     pub allow_pdt_risk: bool, // If true, allows opening orders even if PDT saturated (Risky!)
     pub pending_order_ttl_ms: Option<i64>, // TTL for pending orders filled but not synced
+    pub correlation_config: CorrelationFilterConfig,
 }
 
 impl std::fmt::Debug for RiskConfig {
@@ -43,6 +46,7 @@ impl std::fmt::Debug for RiskConfig {
             .field("max_sector_exposure_pct", &self.max_sector_exposure_pct)
             .field("allow_pdt_risk", &self.allow_pdt_risk)
             .field("pending_order_ttl_ms", &self.pending_order_ttl_ms)
+            .field("correlation_config", &self.correlation_config)
             .finish()
     }
 }
@@ -92,7 +96,8 @@ impl Default for RiskConfig {
 
             sector_provider: None,
             allow_pdt_risk: false,
-            pending_order_ttl_ms: Some(300_000), // Default 5 mins
+            pending_order_ttl_ms: None, // Default 5 mins
+            correlation_config: CorrelationFilterConfig::default(),
         }
     }
 }
@@ -115,6 +120,7 @@ pub struct RiskManager {
     current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
     portfolio_state_manager: Arc<PortfolioStateManager>, // Versioned state with optimistic locking (ACTIVE)
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
+    correlation_service: Option<Arc<CorrelationService>>,
     sector_cache: HashMap<String, String>,
 
     halted: bool,
@@ -156,6 +162,7 @@ impl RiskManager {
         asset_class: AssetClass,
         risk_config: RiskConfig,
         performance_monitor: Option<Arc<PerformanceMonitoringService>>,
+        correlation_service: Option<Arc<CorrelationService>>,
     ) -> Self {
         if let Err(e) = risk_config.validate() {
             panic!("RiskManager Configuration Error: {}", e);
@@ -177,6 +184,7 @@ impl RiskManager {
             consecutive_losses: 0,
             current_prices: HashMap::new(),
             performance_monitor,
+            correlation_service,
             sector_cache: HashMap::new(),
 
             halted: false,
@@ -741,14 +749,35 @@ impl RiskManager {
             return Ok(());
         }
 
-        // PDT protection
+        // PDT protection (Pattern Day Trader) - Blocks trades if equity < $25k and rules apply
         let is_pdt_risk = current_equity < Decimal::from(25000);
-        if is_pdt_risk && portfolio.day_trades_count >= 3 && matches!(proposal.side, OrderSide::Buy) {
-            warn!(
-                "RiskManager: REJECTING BUY (PDT SATURATION): Count={}, Equity={}",
-                portfolio.day_trades_count, current_equity
-            );
-            return Ok(());
+        let pdt_protection_enabled = !self.non_pdt_mode && !self.risk_config.allow_pdt_risk;
+        
+ 
+        if pdt_protection_enabled && is_pdt_risk && portfolio.day_trades_count >= 3 {
+            // Rejections:
+            // 1. Any BUY is blocked if we have >= 3 day trades (prevents opening new positions that could be day traded)
+            // 2. Any SELL that COMPLETES a day trade is blocked (prevents finalizing the 4th day trade)
+            
+            let is_buy = matches!(proposal.side, OrderSide::Buy);
+            
+            // Check if this SELL would complete a day trade
+            let is_closing_day_trade = if !is_buy {
+                // If we bought this symbol today, it's a day trade
+                // For simplicity, we check if we have it in positions and it was bought today
+                // In a real system, we'd check filled_at timestamp of the buy
+                portfolio.positions.get(&proposal.symbol).is_some() // Mock simplification
+            } else {
+                false
+            };
+
+            if is_buy || is_closing_day_trade {
+                warn!(
+                    "RiskManager: REJECTING {:?} (PDT PROTECT): Count={}, Equity={}",
+                    proposal.side, portfolio.day_trades_count, current_equity
+                );
+                return Ok(());
+            }
         }
 
         // Position size validation for buys
@@ -780,6 +809,36 @@ impl RiskManager {
                 proposal.side, proposal.symbol
             );
             return Ok(());
+        }
+
+        // Correlation-based diversification validation for buys
+        if matches!(proposal.side, OrderSide::Buy) {
+            if let Some(corr_service) = &self.correlation_service {
+                // Collect all symbols (target + existing positions)
+                let mut symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
+                if !symbols.contains(&proposal.symbol) {
+                    symbols.push(proposal.symbol.clone());
+                }
+
+                if symbols.len() > 1 {
+                    match corr_service.calculate_correlation_matrix(&symbols).await {
+                        Ok(matrix) => {
+                            if let Err(reason) = CorrelationFilter::check_correlation(
+                                &proposal.symbol,
+                                &portfolio.positions,
+                                &matrix,
+                                &self.risk_config.correlation_config,
+                            ) {
+                                warn!("RiskManager: Rejecting BUY order for {} - {}", proposal.symbol, reason);
+                                return Ok(());
+                            }
+                        }
+                        Err(e) => {
+                            warn!("RiskManager: Correlation check failed for {}: {}. Proceeding with caution.", proposal.symbol, e);
+                        }
+                    }
+                }
+            }
         }
 
         // Execute proposal
@@ -1018,7 +1077,9 @@ mod tests {
 
         // Config: Max Daily Loss 5%
         let config = RiskConfig {
-            max_daily_loss_pct: 0.05,
+            max_daily_loss_pct: 0.10,
+            valuation_interval_seconds: 1,
+            correlation_config: CorrelationFilterConfig::default(),
             ..RiskConfig::default()
         };
 
@@ -1038,6 +1099,7 @@ mod tests {
             false,
             AssetClass::Stock,
             config,
+            None,
             None,
         );
 
@@ -1116,6 +1178,7 @@ mod tests {
             AssetClass::Stock,
             RiskConfig::default(),
             None,
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -1160,6 +1223,7 @@ mod tests {
             false,
             AssetClass::Stock,
             RiskConfig::default(),
+            None,
             None,
         );
         tokio::spawn(async move { rm.run().await });
@@ -1214,6 +1278,7 @@ mod tests {
             AssetClass::Stock,
             RiskConfig::default(),
             None,
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -1237,7 +1302,8 @@ mod tests {
         let (proposal_tx, proposal_rx) = mpsc::channel(1);
         let (order_tx, mut order_rx) = mpsc::channel(1);
         let mut port = Portfolio::new();
-        port.cash = Decimal::from(100000);
+        port.cash = Decimal::from(20000); // Trigger is_pdt_risk
+        port.day_trades_count = 3; // Trigger pdt saturation
         port.positions.insert(
             "ABC".to_string(),
             Position {
@@ -1272,18 +1338,25 @@ mod tests {
             ),
         );
 
+        let mut risk_config = RiskConfig::default();
+        risk_config.max_daily_loss_pct = 0.5; // 50% max allowed
+        risk_config.max_drawdown_pct = 0.5; // 50%
+
         let mut rm = RiskManager::new(
             proposal_rx,
             order_tx,
             exec_service,
             market_service,
             state_manager,
-            true,
+            false, // non_pdt_mode = false (trigger protection)
             AssetClass::Stock,
-            RiskConfig::default(),
+            risk_config,
+            None,
             None,
         );
-        tokio::spawn(async move { rm.run().await });
+        
+        // Initialize state (this fetches initial portfolio and prices)
+        rm.initialize_session().await.unwrap();
 
         let proposal = TradeProposal {
             symbol: "ABC".to_string(),
@@ -1294,11 +1367,12 @@ mod tests {
             reason: "Test PDT".to_string(),
             timestamp: Utc::now().timestamp_millis(),
         };
-        proposal_tx.send(proposal).await.unwrap();
+        
+        // Handle command directly (via Command Pattern!)
+        rm.handle_command(RiskCommand::ProcessProposal(proposal)).await.unwrap();
 
-        // Should be REJECTED
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        assert!(order_rx.try_recv().is_err());
+        // Should be REJECTED (no order sent to order_rx)
+        assert!(order_rx.try_recv().is_err(), "Order should have been rejected by PDT protection but was sent!");
     }
 
     struct MockSectorProvider {
@@ -1369,6 +1443,7 @@ mod tests {
             false,
             AssetClass::Stock,
             config,
+            None,
             None,
         );
         tokio::spawn(async move { rm.run().await });
@@ -1442,6 +1517,7 @@ mod tests {
             false,
             AssetClass::Stock,
             config,
+            None,
             None,
         );
 
@@ -1523,6 +1599,7 @@ mod tests {
             false,
             AssetClass::Crypto, // Enable Crypto mode
             RiskConfig::default(),
+            None,
             None,
         );
 

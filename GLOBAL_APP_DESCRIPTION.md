@@ -3,7 +3,7 @@
 ## Objectif du Projet
 Développer un système multi-agents capable de surveiller le marché des actions et ETF (via Alpaca) et Forex/CFDs (via OANDA), d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
 
-> 🚀 **Production Ready (v0.27.0 - Dec 2025):** **Phase 1 Critical Fixes Complete**. Élimination des race conditions critiques via PortfolioStateManager, prévention des fuites mémoire avec canaux bornés, et résilience API via Circuit Breaker. **125 tests unitaires passent**. Système prêt pour déploiement production.
+> 🚀 **Production Ready (v0.38.1 - Jan 2026):** **Phase 4.5 Integration Complete**. Ajout du filtre de corrélation dynamique pour une diversification optimale et protection contre le risque systémiques sur clusters d'actifs. **152 tests unitaires passent**.
 
 ## Internationalisation (I18n) - Infrastructure Layer
 
@@ -68,7 +68,9 @@ Rendre Rustrade accessible mondialement avec support communautaire pour : ES (Es
 
 ## Historique et Évolution
 
-> 📘 **Nouveau (v0.37.0 - Jan 2026) :** **Dashboard Localization & Units**. Internationalisation complète du tableau de bord (Français/Anglais) et ajout systématique des unités financières ($ et %) sur toutes les métriques et listes d'actifs. Support des traductions paramétrées pour les formats de prix et P&L.
+> 📘 **Nouveau (v0.38.0 - Jan 2026) :** **Architectural Refactoring (Phase 2)**. Refonte structurelle majeure via les patterns Command (`RiskManager`), Pipeline (`Analyst`), Builder (`AlpacaService`) et Abstract Factory (`ServiceFactory`). Modularité accrue, testabilité renforcée et build 100% Clean (0 warnings). **149 tests unitaires passent**.
+>
+> 📘 **Précédent (v0.37.0 - Jan 2026) :** **Dashboard Localization & Units**. Internationalisation complète du tableau de bord (Français/Anglais) et ajout systématique des unités financières ($ et %) sur toutes les métriques et listes d'actifs. Support des traductions paramétrées pour les formats de prix et P&L.
 >
 > 📘 **Précédent (v0.36.0 - Jan 2026) :** **Immediate Warmup Loading**. Refonte du processus de warmup pour charger les données historiques dès la souscription d'un symbole, sans attendre l'arrivée d'un premier événement WebSocket. Ajout de `MarketEvent::SymbolSubscription` et consolidation de la logique d'initialisation dans l'agent Analyst.
 >
@@ -148,6 +150,7 @@ Pour garantir la viabilité économique des stratégies, le bot intègre désorm
 
 - **Gestion des Risques** : Le Risk Manager surveille l'exposition par secteur (Tech, Energy, Crypto, etc.).
 - **Plafond d'Exposition** : Si un secteur dépasse `MAX_SECTOR_EXPOSURE_PCT` (ex: 30% du portefeuille), tout nouvel achat dans ce secteur est bloqué, forçant la diversification vers d'autres opportunités.
+- **Filtre de Corrélation (v0.38.1)** : Empêche la concentration excessive sur des actifs hautement corrélés. Calcule dynamiquement la matrice de corrélation de Pearson entre le nouvel actif et les positions existantes via `CorrelationService`. Rejette l'ordre si la corrélation dépasse `MAX_CORRELATION_THRESHOLD` (défaut: 0.85).
 
 ## Optimisation Adaptative (Adaptive Optimization)
 

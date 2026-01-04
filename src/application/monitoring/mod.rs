@@ -5,3 +5,4 @@ pub mod feature_engineering_service;
 pub mod performance_monitoring_service;
 pub mod portfolio_state_manager;
 pub mod strategy_validator;
+pub mod correlation_service;

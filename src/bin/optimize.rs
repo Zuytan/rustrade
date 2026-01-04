@@ -152,15 +152,17 @@ async fn main() -> Result<()> {
     let asset_class = rustrade::config::AssetClass::from_str(&asset_class_str)
         .unwrap_or(rustrade::config::AssetClass::Stock);
 
-    let market_service = Arc::new(AlpacaMarketDataService::new(
-        api_key,
-        api_secret,
-        ws_url,
-        data_url,
-        10000.0,
-        asset_class,
-        None, // No caching needed for optimization
-    ));
+    let market_service = Arc::new(
+        AlpacaMarketDataService::builder()
+            .api_key(api_key)
+            .api_secret(api_secret)
+            .ws_url(ws_url)
+            .data_base_url(data_url)
+            .min_volume_threshold(10000.0)
+            .asset_class(asset_class)
+            .candle_repository(None) // No caching needed for optimization
+            .build(),
+    );
 
     // Execution service factory - creates fresh portfolio for each run
     let execution_service_factory: Arc<

@@ -51,6 +51,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
         max_sector_exposure_pct: 1.0,
         sector_provider: None,
         allow_pdt_risk: false,
+        correlation_config: rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
     };
 
     let mut risk_manager = RiskManager::new(
@@ -62,6 +63,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
         true, // Non-PDT
         rustrade::config::AssetClass::Stock,
         config,
+        None,
         None,
     );
 

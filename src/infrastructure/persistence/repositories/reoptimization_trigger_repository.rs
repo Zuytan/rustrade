@@ -5,6 +5,13 @@ use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use sqlx::{Row, SqlitePool};
 
+/// Safely parse a Unix timestamp into a DateTime, handling invalid values
+fn parse_timestamp(ts: i64) -> Result<chrono::DateTime<chrono::Utc>> {
+    Utc.timestamp_opt(ts, 0)
+        .single()
+        .ok_or_else(|| anyhow::anyhow!("Invalid timestamp value: {}", ts))
+}
+
 pub struct SqliteReoptimizationTriggerRepository {
     pool: SqlitePool,
 }
@@ -59,7 +66,7 @@ impl ReoptimizationTriggerRepository for SqliteReoptimizationTriggerRepository {
             triggers.push(ReoptimizationTrigger {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
-                timestamp: Utc.timestamp_opt(row.try_get("timestamp")?, 0).unwrap(),
+                timestamp: parse_timestamp(row.try_get("timestamp")?)?,
                 trigger_reason,
                 status: row.try_get("status")?,
                 result_json: row.try_get("result_json")?,

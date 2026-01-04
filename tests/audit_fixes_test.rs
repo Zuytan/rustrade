@@ -49,6 +49,7 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         sector_provider: None,
         allow_pdt_risk: false,
         pending_order_ttl_ms: None,
+        correlation_config: rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
     };
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
@@ -62,6 +63,7 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         false, // non_pdt_mode
         AssetClass::Stock,
         risk_config,
+        None,
         None,
     );
 
@@ -179,6 +181,7 @@ async fn test_pending_order_ttl_cleanup() {
         false,
         AssetClass::Stock,
         risk_config,
+        None,
         None,
     );
 

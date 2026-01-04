@@ -138,15 +138,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   MACD Rising Required: {}", config.macd_requires_rising);
     println!("{}", "=".repeat(95));
 
-    let market_service = Arc::new(AlpacaMarketDataService::new(
-        api_key,
-        api_secret,
-        ws_url,
-        data_url,
-        app_config.min_volume_threshold, // Use configured threshold
-        app_config.asset_class,          // Added
-        None,                            // No caching needed for benchmarks
-    ));
+    let market_service = Arc::new(
+        AlpacaMarketDataService::builder()
+            .api_key(api_key)
+            .api_secret(api_secret)
+            .ws_url(ws_url)
+            .data_base_url(data_url)
+            .min_volume_threshold(app_config.min_volume_threshold)
+            .asset_class(app_config.asset_class)
+            .candle_repository(None) // No caching needed for benchmarks
+            .build(),
+    );
 
     // Determine target symbols and dates
     let targets: Vec<String>;

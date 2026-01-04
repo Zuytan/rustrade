@@ -1,5 +1,27 @@
 # Rustrade - Historique des Versions
 
+## Version 0.38.1 (Janvier 2026) - RiskManagement: Correlation Filter
+- **CorrelationFilter Implementation**:
+  - **Filtre de Diversification**: Rejet automatique des ordres BUY si l'actif est trop corrélé (>0.85) avec les positions existantes.
+  - **CorrelationService**: Calcul de la matrice de corrélation de Pearson basée sur 30 jours de données historiques (CandleRepository).
+  - **Integration RiskManager**: Injection de dépendance du service de corrélation et validation pré-trade.
+- **Verification & Hardening**:
+  - **Unit Tests**: 3 tests dédiés pour la validation de la logique de filtrage (acceptation, rejet, données manquantes).
+  - **Clean Build**: Mise à jour de tous les tests d'intégration pour supporter la nouvelle signature du `RiskManager`.
+- **Tests**: Passage à **152 tests unitaires** 100% passants.
+
+## Version 0.38.0 (Janvier 2026) - Architectural Refactoring (Phase 2)
+- **Design Patterns Implementation**:
+  - **Command Pattern (RiskManager)**: Isolation de la logique dans `commands.rs`, réduction de la complexité cyclomatique de 25 à 5.
+  - **Pipeline Pattern (Analyst)**: Extraction du feature engineering, signal generation et position management.
+  - **Fluent Builder**: `AlpacaMarketDataServiceBuilder` pour une configuration extensible et lisible.
+  - **Abstract Factory**: `ServiceFactory` pour centraliser la création des services multi-broker (Alpaca/Mock).
+- **Hardening & Verification**:
+  - **PDT Protection**: Refonte complète de la sécurité Pattern Day Trader avec tests unitaires robustes.
+  - **Borrow Checker**: Résolution structurelle des conflits d'emprunt dans les boucles d'analyse haute fréquence.
+  - **Zéro Warning**: Nettoyage intégral des warnings Clippy et suppression du code mort.
+- **Tests**: Passage à **149 tests unitaires** 100% passants.
+
 ## Version 0.37.0 (Janvier 2026) - Dashboard Localization & Units
 - **Internationalisation (i18n)**:
   - **Tableau de Bord Complet**: Localisation intégrale de tous les labels, headers et messages du dashboard.

@@ -5,6 +5,7 @@ pub mod circuit_breaker;
 pub mod event_bus;
 pub mod mock;
 pub mod oanda;
+pub mod factory;
 pub mod repositories;
 
 pub use event_bus::EventBus;

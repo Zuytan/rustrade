@@ -14,7 +14,10 @@ use crate::application::{
         sentinel::{Sentinel, SentinelCommand}, // Added SentinelCommand
     },
     market_data::spread_cache::SpreadCache,
-    monitoring::performance_monitoring_service::PerformanceMonitoringService,
+    monitoring::{
+        correlation_service::CorrelationService,
+        performance_monitoring_service::PerformanceMonitoringService,
+    },
     optimization::{
         adaptive_optimization_service::AdaptiveOptimizationService,
         optimizer::{GridSearchOptimizer, ParameterGrid},
@@ -33,13 +36,9 @@ use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRep
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::TradeProposal; // Added TradeProposal import
-use crate::infrastructure::alpaca::{
-    AlpacaExecutionService, AlpacaMarketDataService, AlpacaSectorProvider,
-};
-use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
-use crate::infrastructure::oanda::{
-    OandaExecutionService, OandaMarketDataService, OandaSectorProvider,
-};
+use crate::infrastructure::alpaca::AlpacaSectorProvider;
+use crate::infrastructure::factory::ServiceFactory;
+use crate::infrastructure::oanda::OandaSectorProvider;
 use crate::infrastructure::persistence::database::Database;
 use crate::infrastructure::persistence::repositories::{
     SqliteCandleRepository, SqliteOptimizationHistoryRepository, SqliteOrderRepository,
@@ -89,62 +88,12 @@ impl Application {
 
         let candle_repo = Arc::new(SqliteCandleRepository::new(db.pool.clone()));
 
-        // 3. Initialize Infrastructure Services
-        // For Alpaca, we need to capture the spread cache from the market service
-        let (market_service, execution_service, spread_cache): (
-            Arc<dyn MarketDataService>,
-            Arc<dyn ExecutionService>,
-            Arc<SpreadCache>,
-        ) = match config.mode {
-            Mode::Mock => {
-                info!("Using Mock services");
-                (
-                    Arc::new(MockMarketDataService::new()),
-                    Arc::new(MockExecutionService::new(portfolio.clone())),
-                    Arc::new(SpreadCache::new()), // Mock services use a fresh cache
-                )
-            }
-            Mode::Alpaca => {
-                info!("Using Alpaca services ({})", config.alpaca_base_url);
-                let alpaca_market_service = AlpacaMarketDataService::new(
-                    config.alpaca_api_key.clone(),
-                    config.alpaca_secret_key.clone(),
-                    config.alpaca_ws_url.clone(),
-                    config.alpaca_data_url.clone(),
-                    config.min_volume_threshold,
-                    config.asset_class,
-                    Some(candle_repo.clone()), // Pass repository for intelligent caching
-                );
-                // Extract the real spread cache that receives WebSocket updates
-                let spread_cache = alpaca_market_service.get_spread_cache();
-                (
-                    Arc::new(alpaca_market_service),
-                    Arc::new(AlpacaExecutionService::new(
-                        config.alpaca_api_key.clone(),
-                        config.alpaca_secret_key.clone(),
-                        config.alpaca_base_url.clone(),
-                    )),
-                    spread_cache,
-                )
-            }
-            Mode::Oanda => {
-                info!("Using OANDA services ({})", config.oanda_api_base_url);
-                (
-                    Arc::new(OandaMarketDataService::new(
-                        config.oanda_api_key.clone(),
-                        config.oanda_stream_base_url.clone(),
-                        config.oanda_api_base_url.clone(),
-                        config.oanda_account_id.clone(),
-                    )),
-                    Arc::new(OandaExecutionService::new(
-                        config.oanda_api_key.clone(),
-                        config.oanda_api_base_url.clone(),
-                        config.oanda_account_id.clone(),
-                    )),
-                    Arc::new(SpreadCache::new()), // OANDA doesn't have spread cache integration yet
-                )
-            }
-        };
+        // 3. Initialize Infrastructure Services (Using Factory)
+        let (market_service, execution_service, spread_cache) = ServiceFactory::create_services(
+            &config,
+            Some(candle_repo.clone()),
+            portfolio.clone(),
+        );
 
         // 4. Initialize remaining Persistence repositories
         let order_repo = Arc::new(SqliteOrderRepository::new(db.pool.clone()));
@@ -280,6 +229,12 @@ impl Application {
         let order_repo_for_executor = self.order_repository.clone();
 
         let candle_repo = self.candle_repository.clone(); // Option<Arc<..>> impls Clone
+
+        let correlation_service = if let Some(repo) = &candle_repo {
+            Some(Arc::new(CorrelationService::new(repo.clone())))
+        } else {
+            None
+        };
 
         // Return handle BEFORE moving self members, so we clone what we need.
         let system_handle = SystemHandle {
@@ -448,6 +403,9 @@ impl Application {
             sector_provider,
             pending_order_ttl_ms: self.config.pending_order_ttl_ms,
             allow_pdt_risk: false, // Safer default
+            correlation_config: crate::domain::risk::filters::correlation_filter::CorrelationFilterConfig {
+                max_correlation_threshold: 0.85, // Default threshold
+            },
         };
 
         // Create portfolio state manager for versioned state access
@@ -471,6 +429,7 @@ impl Application {
             self.config.asset_class,
             risk_config,
             self.performance_monitor.clone(),
+            correlation_service,
         );
 
         let mut order_throttler = OrderThrottler::new(
