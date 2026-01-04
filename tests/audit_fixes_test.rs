@@ -1,4 +1,3 @@
-use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::risk_manager::{RiskConfig, RiskManager};

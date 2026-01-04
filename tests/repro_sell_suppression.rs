@@ -1,11 +1,8 @@
-use async_trait::async_trait;
-use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rustrade::application::agents::analyst::{Analyst, AnalystConfig, AnalystDependencies};
 use rustrade::application::strategies::{AnalysisContext, Signal, TradingStrategy};
-use rustrade::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
 use rustrade::domain::trading::portfolio::{Portfolio, Position};
-use rustrade::domain::trading::types::{FeatureSet, MarketEvent, Order, OrderSide, TradeProposal};
+use rustrade::domain::trading::types::{MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -77,7 +74,7 @@ async fn test_sell_signal_suppression() {
         dependencies,
     );
 
-    let handle = tokio::spawn(async move {
+    let _handle = tokio::spawn(async move {
         let mut a = analyst;
         a.run().await;
     });

@@ -994,7 +994,7 @@ mod tests {
     use crate::domain::trading::types::{OrderSide, OrderType};
     use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
     use chrono::Utc;
-    use rust_decimal::prelude::FromPrimitive;
+    
     use rust_decimal::Decimal;
     use tokio::sync::{mpsc, RwLock};
 
@@ -1301,7 +1301,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pdt_protection_rejection() {
-        let (proposal_tx, proposal_rx) = mpsc::channel(1);
+        let (_proposal_tx, proposal_rx) = mpsc::channel(1);
         let (order_tx, mut order_rx) = mpsc::channel(1);
         let mut port = Portfolio::new();
         port.cash = Decimal::from(20000); // Trigger is_pdt_risk
