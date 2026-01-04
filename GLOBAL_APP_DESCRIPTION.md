@@ -20,7 +20,13 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.40.0)
+## Latest Updates (Version 0.40.1)
+- **RiskAppetite Propagation Fix**: Fixed `DynamicRegimeStrategy` to properly receive all risk_appetite parameters:
+  - Added `DynamicRegimeConfig` struct for full parameter support.
+  - `StrategyFactory` and `system.rs` now pass `macd_requires_rising`, `trend_tolerance_pct`, `macd_min_threshold`, `adx_threshold` to Dynamic strategy.
+  - Previously hardcoded conservative defaults now respect user's configured risk profile.
+
+## Version 0.40.0
 - **ADX Integration**: implemented Average Directional Index (ADX) to filter out weak trends in `AdvancedTripleFilterStrategy`.
   - Configurable `ADX_PERIOD` and `ADX_THRESHOLD`.
   - Manual ADX implementation for precision.

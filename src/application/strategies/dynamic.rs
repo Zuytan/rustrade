@@ -1,6 +1,43 @@
 use super::advanced::{AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy};
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
 
+/// Configuration for Dynamic Regime Strategy
+/// 
+/// These parameters are derived from RiskAppetite when available
+#[derive(Debug, Clone)]
+pub struct DynamicRegimeConfig {
+    pub fast_period: usize,
+    pub slow_period: usize,
+    pub sma_threshold: f64,
+    pub trend_sma_period: usize,
+    pub rsi_threshold: f64,
+    pub trend_divergence_threshold: f64,
+    // Risk-appetite adaptive parameters
+    pub signal_confirmation_bars: usize,
+    pub macd_requires_rising: bool,
+    pub trend_tolerance_pct: f64,
+    pub macd_min_threshold: f64,
+    pub adx_threshold: f64,
+}
+
+impl Default for DynamicRegimeConfig {
+    fn default() -> Self {
+        Self {
+            fast_period: 20,
+            slow_period: 60,
+            sma_threshold: 0.001,
+            trend_sma_period: 200,
+            rsi_threshold: 75.0,
+            trend_divergence_threshold: 0.005,
+            signal_confirmation_bars: 1,
+            macd_requires_rising: true,
+            trend_tolerance_pct: 0.0,
+            macd_min_threshold: 0.0,
+            adx_threshold: 25.0,
+        }
+    }
+}
+
 /// Dynamic Regime Detection Strategy
 ///
 /// Adapts behavior based on market regime:
@@ -13,6 +50,31 @@ pub struct DynamicRegimeStrategy {
 }
 
 impl DynamicRegimeStrategy {
+    /// Creates a new DynamicRegimeStrategy with full configuration
+    /// 
+    /// Use this constructor when you have risk_appetite parameters available
+    pub fn with_config(config: DynamicRegimeConfig) -> Self {
+        Self {
+            advanced_strategy: AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
+                fast_period: config.fast_period,
+                slow_period: config.slow_period,
+                sma_threshold: config.sma_threshold,
+                trend_sma_period: config.trend_sma_period,
+                rsi_threshold: config.rsi_threshold,
+                signal_confirmation_bars: config.signal_confirmation_bars,
+                macd_requires_rising: config.macd_requires_rising,
+                trend_tolerance_pct: config.trend_tolerance_pct,
+                macd_min_threshold: config.macd_min_threshold,
+                adx_threshold: config.adx_threshold,
+            }),
+            trend_divergence_threshold: config.trend_divergence_threshold,
+        }
+    }
+
+    /// Creates a new DynamicRegimeStrategy with basic parameters (legacy compatibility)
+    /// 
+    /// Deprecated: Use with_config() for proper risk_appetite support
+    #[deprecated(note = "Use with_config() for proper risk_appetite support")]
     pub fn new(
         fast_period: usize,
         slow_period: usize,
@@ -21,21 +83,15 @@ impl DynamicRegimeStrategy {
         rsi_threshold: f64,
         trend_divergence_threshold: f64,
     ) -> Self {
-        Self {
-            advanced_strategy: AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
-                fast_period,
-                slow_period,
-                sma_threshold,
-                trend_sma_period,
-                rsi_threshold,
-                signal_confirmation_bars: 1, // conservative default
-                macd_requires_rising: true,  // conservative default
-                trend_tolerance_pct: 0.0,    // strict default
-                macd_min_threshold: 0.0,     // neutral default
-                adx_threshold: 25.0,
-            }),
+        Self::with_config(DynamicRegimeConfig {
+            fast_period,
+            slow_period,
+            sma_threshold,
+            trend_sma_period,
+            rsi_threshold,
             trend_divergence_threshold,
-        }
+            ..Default::default()
+        })
     }
 
     fn detect_regime(&self, ctx: &AnalysisContext) -> MarketRegime {
@@ -143,7 +199,15 @@ mod tests {
 
     #[test]
     fn test_strong_trend_buy_signal() {
-        let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
+        let strategy = DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
+            fast_period: 20,
+            slow_period: 60,
+            sma_threshold: 0.001,
+            trend_sma_period: 200,
+            rsi_threshold: 75.0,
+            trend_divergence_threshold: 0.005,
+            ..Default::default()
+        });
         // Large divergence = strong trend
         let ctx = create_test_context(105.0, 100.0, 110.0, 95.0, false);
 
@@ -157,7 +221,15 @@ mod tests {
 
     #[test]
     fn test_strong_trend_hold_through_pullback() {
-        let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
+        let strategy = DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
+            fast_period: 20,
+            slow_period: 60,
+            sma_threshold: 0.001,
+            trend_sma_period: 200,
+            rsi_threshold: 75.0,
+            trend_divergence_threshold: 0.005,
+            ..Default::default()
+        });
         // Large divergence but death cross with price still above trend
         let mut ctx = create_test_context(98.0, 100.0, 102.0, 95.0, true);
         ctx.has_position = true;
@@ -173,7 +245,15 @@ mod tests {
 
     #[test]
     fn test_choppy_uses_advanced_filters() {
-        let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
+        let strategy = DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
+            fast_period: 20,
+            slow_period: 60,
+            sma_threshold: 0.001,
+            trend_sma_period: 200,
+            rsi_threshold: 75.0,
+            trend_divergence_threshold: 0.005,
+            ..Default::default()
+        });
         // Small divergence = choppy market
         let ctx = create_test_context(100.2, 100.0, 105.0, 95.0, false);
 

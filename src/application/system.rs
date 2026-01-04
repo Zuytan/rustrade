@@ -37,6 +37,7 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::TradeProposal; // Added TradeProposal import
 use crate::infrastructure::alpaca::AlpacaSectorProvider;
+use crate::infrastructure::binance::BinanceSectorProvider;
 use crate::infrastructure::factory::ServiceFactory;
 use crate::infrastructure::oanda::OandaSectorProvider;
 use crate::infrastructure::persistence::database::Database;
@@ -331,14 +332,20 @@ impl Application {
                 }),
             ),
             crate::domain::market::strategy_config::StrategyMode::Dynamic => {
-                Arc::new(DynamicRegimeStrategy::new(
-                    self.config.fast_sma_period,
-                    self.config.slow_sma_period,
-                    self.config.sma_threshold,
-                    self.config.trend_sma_period,
-                    self.config.rsi_threshold,
-                    self.config.trend_divergence_threshold,
-                ))
+                Arc::new(DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
+                    fast_period: analyst_config.fast_sma_period,
+                    slow_period: analyst_config.slow_sma_period,
+                    sma_threshold: analyst_config.sma_threshold,
+                    trend_sma_period: analyst_config.trend_sma_period,
+                    rsi_threshold: analyst_config.rsi_threshold,
+                    trend_divergence_threshold: analyst_config.trend_divergence_threshold,
+                    // Risk-appetite adaptive parameters
+                    signal_confirmation_bars: analyst_config.signal_confirmation_bars,
+                    macd_requires_rising: analyst_config.macd_requires_rising,
+                    trend_tolerance_pct: analyst_config.trend_tolerance_pct,
+                    macd_min_threshold: analyst_config.macd_min_threshold,
+                    adx_threshold: analyst_config.adx_threshold,
+                }))
             }
             crate::domain::market::strategy_config::StrategyMode::TrendRiding => {
                 Arc::new(TrendRidingStrategy::new(
@@ -394,6 +401,7 @@ impl Application {
             ))),
             Mode::Mock => None,
             Mode::Oanda => Some(Arc::new(OandaSectorProvider)),
+            Mode::Binance => Some(Arc::new(BinanceSectorProvider)),
         };
 
         let risk_config = crate::application::risk_management::risk_manager::RiskConfig {

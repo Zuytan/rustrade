@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.40.0"
+version = "0.40.1"
 edition = "2024"
 
 [dev-dependencies]
@@ -32,3 +32,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 url = "2.5.7"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
+# Binance API dependencies
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"

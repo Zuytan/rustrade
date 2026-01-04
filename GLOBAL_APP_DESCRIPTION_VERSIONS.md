@@ -1,5 +1,22 @@
 # Rustrade - Historique des Versions
 
+## Version 0.40.1 (Janvier 2026) - RiskAppetite Propagation Fix
+- **Correction Critique DynamicRegimeStrategy**:
+  - **Problème Identifié**: La stratégie `DynamicRegimeStrategy` ignorait les paramètres de `risk_appetite` et utilisait des valeurs hardcodées conservatrices.
+  - **Solution**: Ajout d'une struct `DynamicRegimeConfig` pour passer tous les paramètres adaptatifs.
+  - **Nouveau Constructeur**: `with_config()` remplace `new()` (deprecated) pour support complet du risk appetite.
+- **Paramètres Propagés**:
+  - `macd_requires_rising`: Adapté au profil de risque (strict pour conservateur, permissif pour agressif).
+  - `trend_tolerance_pct`: Tolérance de déviation de la tendance (0% conservateur → 5% agressif).
+  - `macd_min_threshold`: Seuil minimum MACD (+0.01 conservateur → -0.02 agressif).
+  - `adx_threshold`: Seuil de force de tendance.
+  - `signal_confirmation_bars`: Nombre de barres de confirmation.
+- **Fichiers Modifiés**:
+  - `src/application/strategies/dynamic.rs`: Ajout `DynamicRegimeConfig` et `with_config()`.
+  - `src/application/strategies/mod.rs`: Export de `DynamicRegimeConfig`, utilisation de `with_config()`.
+  - `src/application/system.rs`: Passage des paramètres complets au lieu de l'ancien constructeur.
+- **Validation**: Compilation sans warnings, tous tests passants.
+
 ## Version 0.40.0 (Janvier 2026) - ADX Integration & Trend Filtering
 - **ADX Implementation**:
   - **Manual Calculation**: Implémentation manuelle de l'indicateur ADX (Wilder's Smoothing) dans `FeatureEngineeringService` suite à son absence dans la crate `ta`.
