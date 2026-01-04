@@ -367,6 +367,86 @@ impl Analyst {
         }
     }
 
+    // ============================================================================
+    // PIPELINE HANDLERS (Phase 2.2)
+    // ============================================================================
+
+    /// Detect market regime for current symbol
+    async fn detect_market_regime(
+        &self,
+        symbol: &str,
+        candle_timestamp: i64,
+        context: &SymbolContext,
+    ) -> MarketRegime {
+        if let Some(repo) = &self.candle_repository {
+            let end_ts = candle_timestamp;
+            let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
+            
+            if let Ok(candles) = repo.get_range(symbol, start_ts, end_ts).await {
+                return context
+                    .regime_detector
+                    .detect(&candles)
+                    .unwrap_or(MarketRegime::unknown());
+            }
+        }
+        MarketRegime::unknown()
+    }
+
+    /// Generate trading signal from strategy
+    fn generate_trading_signal(
+        &self,
+        context: &mut SymbolContext,
+        symbol: &str,
+        price: Decimal,
+        timestamp: i64,
+        has_position: bool,
+    ) -> Option<OrderSide> {
+        context.signal_generator.generate_signal(
+            symbol,
+            price,
+            timestamp,
+            &context.last_features,
+            &context.strategy,
+            context.config.sma_threshold,
+            has_position,
+            context.last_macd_histogram,
+        )
+    }
+
+    /// Build trade proposal from signal
+    async fn build_trade_proposal(
+        &self,
+        symbol: String,
+        side: OrderSide,
+        price: Decimal,
+        timestamp: i64,
+        reason: String,
+    ) -> Option<TradeProposal> {
+        // Calculate quantity
+        let quantity = Self::calculate_trade_quantity(
+            &self.config,
+            &self.execution_service,
+            &symbol,
+            price,
+        )
+        .await;
+
+        if quantity <= Decimal::ZERO {
+            debug!("Analyst [{}]: Quantity is ZERO. Skipping proposal.", symbol);
+            return None;
+        }
+
+        Some(TradeProposal {
+            symbol,
+            side,
+            price,
+            quantity,
+            order_type: crate::domain::trading::types::OrderType::Market,
+            reason,
+            timestamp,
+        })
+    }
+
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
         let price = candle.close;
