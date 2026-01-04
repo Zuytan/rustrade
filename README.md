@@ -1,5 +1,10 @@
 # RustTrade Agentic Bot 🦀
 
+
+> [!WARNING]
+> **This project is not production-ready and should not be used with real money.**
+> Using this trading bot involves significant financial risks. Use it only in simulation mode (Paper Trading) or for educational purposes.
+
 A high-performance, multi-agent algorithmic trading system built in Rust. Capable of real-time market surveillance, trend analysis, and autonomous execution.
 
 ## 🚀 Key Features
