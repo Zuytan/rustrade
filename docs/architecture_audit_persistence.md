@@ -63,4 +63,12 @@ Pour rétablir la conformité DDD et la flexibilité de l'architecture, les acti
     *   Mettre à jour `Application::build` pour injecter l'implémentation concrète via l'interface abstraite.
 
 ## 5. Conclusion
-L'implémentation fonctionnelle est bonne (le code SQL et la logique asynchrone semblent corrects), mais l'intégration architecturale est à refaire pour respecter les règles du projet ("You always need to use Domain Driven Design").
+
+## 6. Résolution (Mise à jour v0.17.0 - Janvier 2026) -> **RESOLU** ✅
+
+Suite à cet audit, un refactoring complet a été effectué dans la version 0.17.0 :
+1.  **DIP Respecté** : `Executor` et `Analyst` ne dépendent plus que des traits `TradeRepository` et `CandleRepository`.
+2.  **Infrastructure Isolée** : L'injection de dépendance se fait au démarrage (`Application::build`).
+3.  **Repositories** : Les implémentations SQLite (`SqliteOrderRepository`) implémentent désormais correctement les traits du Domaine.
+
+L'architecture est maintenant conforme aux principes DDD.

@@ -38,7 +38,20 @@ Pour éviter d'acheter lors de faux départs, nous activons parfois un "Mode Ava
 3.  **Expert de l'Accélération (MACD)** : "La hausse est-elle franche ?"
     *   *Règle* : On vérifie que le mouvement a du "peps" (momentum positif).
 
-**Résultat** : Le robot trade moins souvent, mais ses coups sont plus sûrs.
+4.  **Expert de la Puissance (ADX)** : "La tendance est-elle solide ?"
+    *   *Règle* : Même si le prix monte, si le mouvement est mou (ADX faible), on s'abstient. On ne trade que les vraies tendances fortes.
+
+**Résultat** : Le robot trade moins souvent, mais ses coups sont beaucoup plus sûrs.
+
+---
+
+## 3b. Interface Graphique (Nouveau)
+
+Désormais, **Rustrade** n'est plus une simple ligne de commande noire. Il possède une **interface visuelle complète** (Dashboard) qui vous permet de :
+*   Voir les graphiques de prix et les indicateurs en temps réel.
+*   Suivre vos gains et pertes (P&L) à la seconde près.
+*   Changer la langue (Français 🇫🇷 / Anglais 🇬🇧) instantanément.
+*   Surveiller le score de risque et les alertes de sécurité.
 
 ---
 
