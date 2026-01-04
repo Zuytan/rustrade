@@ -1,12 +1,32 @@
-/target
-/target
+# --- SECURITY ---
+# Ignore all environment files (API keys, secrets)
 .env
 .env.*
-!.env.example
-results.json
-rustrade.db*
+*.env
+alpaca.env
+crypto.env
+oanda.env
 
-# Benchmark and optimization results
+# --- RUST ---
+/target
+Cargo.lock.bak
+**/*.rs.bk
+
+# --- DATABASE & DATA ---
+rustrade.db*
+results.json
 benchmark_results/
 optimization*.json
+check_output.txt
+
+# --- OS & TOOLS ---
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- TEMP ---
 /tmp/
+log/*.log
+*.log
