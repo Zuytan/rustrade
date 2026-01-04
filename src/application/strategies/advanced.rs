@@ -21,7 +21,8 @@ pub struct AdvancedTripleFilterStrategy {
     // Risk-based adaptive filters
     macd_requires_rising: bool,
     trend_tolerance_pct: f64,
-    macd_min_threshold: f64,
+    pub macd_min_threshold: f64,
+    pub adx_threshold: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +36,7 @@ pub struct AdvancedTripleFilterConfig {
     pub macd_requires_rising: bool,
     pub trend_tolerance_pct: f64,
     pub macd_min_threshold: f64,
+    pub adx_threshold: f64,
 }
 
 impl Default for AdvancedTripleFilterConfig {
@@ -49,6 +51,7 @@ impl Default for AdvancedTripleFilterConfig {
             macd_requires_rising: true,
             trend_tolerance_pct: 0.0,
             macd_min_threshold: 0.0,
+            adx_threshold: 25.0,
         }
     }
 }
@@ -68,6 +71,7 @@ impl AdvancedTripleFilterStrategy {
             macd_requires_rising: config.macd_requires_rising,
             trend_tolerance_pct: config.trend_tolerance_pct,
             macd_min_threshold: config.macd_min_threshold,
+            adx_threshold: config.adx_threshold,
         }
     }
 
@@ -114,16 +118,42 @@ impl AdvancedTripleFilterStrategy {
         // Passed all checks
         true
     }
+
+    fn adx_filter(&self, ctx: &AnalysisContext, side: OrderSide) -> bool {
+         match side {
+            OrderSide::Buy => {
+                // Require strong trend for buying
+                ctx.adx > self.adx_threshold
+            }
+            OrderSide::Sell => {
+                 // Sells can happen in weak trends (e.g. stop loss or reversal)
+                 // But generally we want to exit if trend breaks.
+                 // For now, let's keep it asymmetric like other filters: stricter on Entry.
+                 true
+            }
+        }
+    }
 }
 
 impl TradingStrategy for AdvancedTripleFilterStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
-        // First, get base SMA signal
+        // First, check ADX for general trend strength (Fail-Fast)
+        // We only block Entries (Buys) on weak trend.
+        // Existing positions might need to be closed even in weak trend.
+        
         let sma_signal = self.sma_strategy.analyze(ctx)?;
 
         // Apply filters based on signal type
         match sma_signal.side {
             OrderSide::Buy => {
+                 if !self.adx_filter(ctx, OrderSide::Buy) {
+                    tracing::info!(
+                        "AdvancedFilter [{}]: BUY BLOCKED - Weak Trend (ADX={:.2} <= threshold={:.2})",
+                        ctx.symbol, ctx.adx, self.adx_threshold
+                    );
+                    return None;
+                }
+
                 // All filters must pass for buy signals
                 if !self.trend_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
@@ -198,8 +228,9 @@ mod tests {
             last_macd_histogram: Some(0.1),
             atr: 1.0,
             bb_lower: 0.0,
-            bb_middle: 0.0,
             bb_upper: 0.0,
+            bb_middle: 0.0,
+            adx: 26.0, // Strong trend by default
             has_position: false,
             timestamp: 0,
         }
@@ -217,6 +248,7 @@ mod tests {
             macd_requires_rising: true,
             trend_tolerance_pct: 0.0,
             macd_min_threshold: 0.0,
+            adx_threshold: 25.0,
         });
         let ctx = create_test_context();
 
@@ -240,6 +272,7 @@ mod tests {
             macd_requires_rising: true,
             trend_tolerance_pct: 0.0,
             macd_min_threshold: 0.0,
+            adx_threshold: 25.0,
         });
         let mut ctx = create_test_context();
         ctx.rsi = 80.0; // Overbought
@@ -261,6 +294,7 @@ mod tests {
             macd_requires_rising: true,
             trend_tolerance_pct: 0.0,
             macd_min_threshold: 0.0,
+            adx_threshold: 25.0,
         });
         let mut ctx = create_test_context();
         ctx.price_f64 = 95.0; // Below trend SMA of 100
@@ -282,6 +316,7 @@ mod tests {
             macd_requires_rising: true,
             trend_tolerance_pct: 0.0,
             macd_min_threshold: 0.0,
+            adx_threshold: 25.0,
         });
         let mut ctx = create_test_context();
         ctx.macd_histogram = -0.1; // Negative
@@ -303,6 +338,7 @@ mod tests {
             macd_requires_rising: true,
             trend_tolerance_pct: 0.0,
             macd_min_threshold: 0.0,
+            adx_threshold: 25.0,
         });
         let mut ctx = create_test_context();
         ctx.fast_sma = 98.0; // Below slow SMA
@@ -314,5 +350,37 @@ mod tests {
         assert!(signal.is_some());
         let sig = signal.unwrap();
         assert!(matches!(sig.side, OrderSide::Sell));
+    }
+
+    #[test]
+    fn test_advanced_buy_rejected_weak_trend_adx() {
+        let strategy = AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
+            fast_period: 20,
+            slow_period: 60,
+            sma_threshold: 0.001,
+            trend_sma_period: 200,
+            rsi_threshold: 75.0,
+            signal_confirmation_bars: 1,
+            macd_requires_rising: false,
+            trend_tolerance_pct: 0.0,
+            macd_min_threshold: 0.0,
+            adx_threshold: 25.0,
+        });
+        let mut ctx = create_test_context();
+        ctx.adx = 20.0; // Weak trend (< 25.0)
+
+        // Ensure others pass
+        ctx.price_f64 = 105.0;
+        ctx.trend_sma = 100.0;
+        ctx.rsi = 50.0;
+        ctx.macd_histogram = 0.5;
+
+        // Force SMA cross signal
+        ctx.fast_sma = 101.0;
+        ctx.slow_sma = 100.0; // Golden cross
+
+        let signal = strategy.analyze(&ctx);
+
+        assert!(signal.is_none(), "Should reject buy when ADX is weak");
     }
 }

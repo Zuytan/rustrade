@@ -94,6 +94,7 @@ mod tests {
             bb_lower: lower,
             bb_middle: middle,
             bb_upper: upper,
+            adx: 0.0,
             has_position: has_pos,
             timestamp: 0,
         }

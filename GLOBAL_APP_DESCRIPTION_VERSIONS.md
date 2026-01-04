@@ -1,5 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.40.0 (Janvier 2026) - ADX Integration & Trend Filtering
+- **ADX Implementation**:
+  - **Manual Calculation**: Implémentation manuelle de l'indicateur ADX (Wilder's Smoothing) dans `FeatureEngineeringService` suite à son absence dans la crate `ta`.
+  - **Enhanced Input**: Refactoring du service pour consommer des structures `Candle` complètes (High/Low/Close) au lieu du seul prix de clôture.
+- **Improved Filtering**:
+  - **Triple Filter Strategy**: Ajout d'une condition stricte `ADX > Threshold` (défaut 25.0) pour valider les signaux d'achat.
+  - **Objective**: Élimination des faux positifs en marchés sans tendance (choppy/sideways).
+- **Configuration**:
+  - Ajout des paramètres `ADX_PERIOD` et `ADX_THRESHOLD` exposés via variables d'environnement.
+- **Validation**:
+  - **Tests**: Validation via tests unitaires dédiés (`test_advanced_buy_rejected_weak_trend_adx`) et tests d'intégration.
+  - **Compilation**: Résolution de toutes les erreurs de compilation liées à la nouvelle signature du service.
+
 ## Version 0.39.0 (Janvier 2026) - Rust 2024 Edition & Dependencies Modernization
 - **Rust Edition Upgrade**:
   - **Edition 2024**: Mise à jour de l'édition Rust de 2021 à 2024 pour bénéficier des dernières fonctionnalités et garanties de sécurité.

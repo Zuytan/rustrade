@@ -81,6 +81,8 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         trend_tolerance_pct: 0.0,
         macd_min_threshold: 0.0,
         profit_target_multiplier: 1.5,
+        adx_period: 14,
+        adx_threshold: 25.0,
     };
 
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));

@@ -92,6 +92,8 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         trend_tolerance_pct: 0.0,
         macd_min_threshold: 0.0,
         profit_target_multiplier: 1.5,
+        adx_period: 14,
+        adx_threshold: 25.0,
     });
 
     config.mode = Mode::Mock;

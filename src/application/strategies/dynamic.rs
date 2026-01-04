@@ -32,6 +32,7 @@ impl DynamicRegimeStrategy {
                 macd_requires_rising: true,  // conservative default
                 trend_tolerance_pct: 0.0,    // strict default
                 macd_min_threshold: 0.0,     // neutral default
+                adx_threshold: 25.0,
             }),
             trend_divergence_threshold,
         }
@@ -116,6 +117,7 @@ mod tests {
         slow_sma: f64,
         price: f64,
         trend_sma: f64,
+        has_position: bool,
     ) -> AnalysisContext {
         AnalysisContext {
             symbol: "TEST".to_string(),
@@ -133,7 +135,8 @@ mod tests {
             bb_lower: 0.0,
             bb_middle: 0.0,
             bb_upper: 0.0,
-            has_position: false,
+            adx: 0.0,
+            has_position,
             timestamp: 0,
         }
     }
@@ -142,7 +145,7 @@ mod tests {
     fn test_strong_trend_buy_signal() {
         let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
         // Large divergence = strong trend
-        let ctx = create_test_context(105.0, 100.0, 110.0, 95.0);
+        let ctx = create_test_context(105.0, 100.0, 110.0, 95.0, false);
 
         let signal = strategy.analyze(&ctx);
 
@@ -156,7 +159,7 @@ mod tests {
     fn test_strong_trend_hold_through_pullback() {
         let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
         // Large divergence but death cross with price still above trend
-        let mut ctx = create_test_context(98.0, 100.0, 102.0, 95.0);
+        let mut ctx = create_test_context(98.0, 100.0, 102.0, 95.0, true);
         ctx.has_position = true;
 
         let signal = strategy.analyze(&ctx);
@@ -172,7 +175,7 @@ mod tests {
     fn test_choppy_uses_advanced_filters() {
         let strategy = DynamicRegimeStrategy::new(20, 60, 0.001, 200, 75.0, 0.005);
         // Small divergence = choppy market
-        let ctx = create_test_context(100.2, 100.0, 105.0, 95.0);
+        let ctx = create_test_context(100.2, 100.0, 105.0, 95.0, false);
 
         let signal = strategy.analyze(&ctx);
 

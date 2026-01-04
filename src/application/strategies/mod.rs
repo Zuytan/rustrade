@@ -38,6 +38,7 @@ impl StrategyFactory {
                     macd_requires_rising: config.macd_requires_rising,
                     trend_tolerance_pct: config.trend_tolerance_pct,
                     macd_min_threshold: config.macd_min_threshold,
+                    adx_threshold: config.adx_threshold,
                 },
             )),
             StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::new(

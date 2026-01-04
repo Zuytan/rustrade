@@ -52,6 +52,7 @@ impl SignalGenerator {
             bb_lower: features.bb_lower.unwrap_or(0.0),
             bb_upper: features.bb_upper.unwrap_or(0.0),
             bb_middle: features.bb_middle.unwrap_or(0.0),
+            adx: features.adx.unwrap_or(0.0),
             has_position,
             timestamp,
         };

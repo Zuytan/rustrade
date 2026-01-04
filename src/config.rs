@@ -117,6 +117,8 @@ pub struct Config {
     pub trend_tolerance_pct: f64,
     pub macd_min_threshold: f64,
     pub profit_target_multiplier: f64,
+    pub adx_period: usize,
+    pub adx_threshold: f64,
 }
 
 impl Config {
@@ -513,6 +515,14 @@ impl Config {
             trend_tolerance_pct: final_trend_tolerance_pct,
             macd_min_threshold: final_macd_min_threshold,
             profit_target_multiplier: final_profit_target_multiplier,
+            adx_period: env::var("ADX_PERIOD")
+                .unwrap_or_else(|_| "14".to_string())
+                .parse::<usize>()
+                .unwrap_or(14),
+            adx_threshold: env::var("ADX_THRESHOLD")
+                .unwrap_or_else(|_| "25.0".to_string())
+                .parse::<f64>()
+                .unwrap_or(25.0),
             spread_bps,
             min_profit_ratio: final_min_profit_ratio,
             portfolio_staleness_ms,

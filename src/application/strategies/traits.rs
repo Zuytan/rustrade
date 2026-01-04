@@ -23,6 +23,7 @@ pub struct AnalysisContext {
     pub bb_lower: f64,
     pub bb_upper: f64,
     pub bb_middle: f64,
+    pub adx: f64,
 
     // Position state
     pub has_position: bool,

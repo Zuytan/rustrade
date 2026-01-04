@@ -74,10 +74,10 @@ impl SymbolContext {
         }
     }
 
-    pub fn update(&mut self, price: f64) {
+    pub fn update(&mut self, candle: &crate::domain::trading::types::Candle) {
         // Store previous MACD histogram before updating features
         self.last_macd_histogram = self.last_features.macd_hist;
-        self.last_features = self.feature_service.update(price);
+        self.last_features = self.feature_service.update(candle);
     }
 }
 
@@ -123,6 +123,8 @@ pub struct AnalystConfig {
     pub macd_requires_rising: bool, // Whether MACD must be rising for buy signals
     pub trend_tolerance_pct: f64,   // Percentage tolerance for trend filter
     pub macd_min_threshold: f64,    // Minimum MACD histogram threshold
+    pub adx_period: usize,
+    pub adx_threshold: f64,
 }
 
 impl Default for AnalystConfig {
@@ -167,6 +169,8 @@ impl Default for AnalystConfig {
             macd_requires_rising: false,
             trend_tolerance_pct: 0.02,
             macd_min_threshold: 0.0,
+            adx_period: 14,
+            adx_threshold: 25.0,
         }
     }
 }
@@ -213,6 +217,8 @@ impl From<crate::config::Config> for AnalystConfig {
             macd_requires_rising: config.macd_requires_rising,
             trend_tolerance_pct: config.trend_tolerance_pct,
             macd_min_threshold: config.macd_min_threshold,
+            adx_period: config.adx_period,
+            adx_threshold: config.adx_threshold,
         }
     }
 }
@@ -499,7 +505,7 @@ impl Analyst {
         }
 
         // 2. Update Indicators via Service
-        context.update(price_f64);
+        context.update(&candle);
 
         // 3. Sync with Portfolio
 
@@ -919,7 +925,7 @@ impl Analyst {
 
                 for candle in &bars {
                     // Update context (features + indicators)
-                    context.update(candle.close.to_f64().unwrap_or(0.0));
+                    context.update(candle);
                 }
 
                 debug!(
@@ -1150,7 +1156,10 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+
             profit_target_multiplier: 1.5,
+            adx_period: 14,
+            adx_threshold: 25.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1259,6 +1268,8 @@ mod tests {
 
             macd_min_threshold: 0.0,
             profit_target_multiplier: 1.5,
+            adx_period: 14,
+            adx_threshold: 25.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1383,6 +1394,8 @@ mod tests {
 
             macd_min_threshold: 0.0,
             profit_target_multiplier: 1.5,
+            adx_period: 14,
+            adx_threshold: 25.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1499,6 +1512,8 @@ mod tests {
 
             macd_min_threshold: 0.0,
             profit_target_multiplier: 1.5,
+            adx_period: 14,
+            adx_threshold: 25.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1621,6 +1636,8 @@ mod tests {
 
             macd_min_threshold: 0.0,
             profit_target_multiplier: 1.5,
+            adx_period: 14,
+            adx_threshold: 25.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1757,7 +1774,10 @@ mod tests {
             trend_tolerance_pct: 0.0,
 
             macd_min_threshold: 0.0,
+
             profit_target_multiplier: 1.5,
+            adx_period: 14,
+            adx_threshold: 25.0,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1891,10 +1911,13 @@ mod tests {
             macd_requires_rising: true,
 
             trend_tolerance_pct: 0.0,
-
             macd_min_threshold: 0.0,
             profit_target_multiplier: 1.5,
+            adx_period: 14,
+            adx_threshold: 25.0,
         };
+
+
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
             config.slow_sma_period,

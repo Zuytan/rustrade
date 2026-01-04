@@ -144,6 +144,8 @@ impl GridSearchOptimizer {
                                     trend_tolerance_pct: 0.0,   // Strict default for grid search
                                     macd_min_threshold: 0.0,    // Neutral default for grid search
                                     profit_target_multiplier: 1.5, // Conservative default
+                                    adx_period: 14,
+                                    adx_threshold: 25.0,
                                 });
                             }
                         }
@@ -379,6 +381,8 @@ mod tests {
                 trend_tolerance_pct: 0.0,
                 macd_min_threshold: 0.0,
                 profit_target_multiplier: 1.5,
+                adx_period: 14,
+                adx_threshold: 25.0,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

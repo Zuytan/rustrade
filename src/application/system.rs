@@ -304,6 +304,8 @@ impl Application {
             trend_tolerance_pct: self.config.trend_tolerance_pct,
             macd_min_threshold: self.config.macd_min_threshold,
             profit_target_multiplier: self.config.profit_target_multiplier,
+            adx_period: self.config.adx_period,
+            adx_threshold: self.config.adx_threshold,
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
@@ -325,6 +327,7 @@ impl Application {
                     macd_requires_rising: analyst_config.macd_requires_rising,
                     trend_tolerance_pct: analyst_config.trend_tolerance_pct,
                     macd_min_threshold: analyst_config.macd_min_threshold,
+                    adx_threshold: analyst_config.adx_threshold,
                 }),
             ),
             crate::domain::market::strategy_config::StrategyMode::Dynamic => {

@@ -181,6 +181,7 @@ pub struct FeatureSet {
     pub atr: Option<f64>,
     pub ema_fast: Option<f64>,
     pub ema_slow: Option<f64>,
+    pub adx: Option<f64>,
 }
 
 // ===== Symbol Normalization =====

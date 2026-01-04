@@ -47,7 +47,7 @@ pub struct OrderUpdate {
 
 #[async_trait]
 pub trait FeatureEngineeringService: Send + Sync {
-    fn update(&mut self, price: f64) -> crate::domain::trading::types::FeatureSet;
+    fn update(&mut self, candle: &crate::domain::trading::types::Candle) -> crate::domain::trading::types::FeatureSet;
 }
 
 #[async_trait]

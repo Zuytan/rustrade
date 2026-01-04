@@ -180,6 +180,8 @@ impl Simulator {
             trend_tolerance_pct: self.config.trend_tolerance_pct,
             macd_min_threshold: self.config.macd_min_threshold,
             profit_target_multiplier: self.config.profit_target_multiplier,
+            adx_period: self.config.adx_period,
+            adx_threshold: self.config.adx_threshold,
         };
 
         // Use Advanced strategy for simulations
@@ -194,6 +196,7 @@ impl Simulator {
                 macd_requires_rising: sim_config.macd_requires_rising,
                 trend_tolerance_pct: sim_config.trend_tolerance_pct,
                 macd_min_threshold: sim_config.macd_min_threshold,
+                adx_threshold: sim_config.adx_threshold,
             },
         ));
 

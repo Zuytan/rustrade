@@ -86,6 +86,7 @@ mod tests {
             bb_lower: 0.0,
             bb_middle: 0.0,
             bb_upper: 0.0,
+            adx: 0.0,
             has_position,
             timestamp: 0,
         }
