@@ -2,6 +2,7 @@
 # Ignore all environment files (API keys, secrets)
 .env
 .env.*
+!.env.example
 *.env
 alpaca.env
 crypto.env
