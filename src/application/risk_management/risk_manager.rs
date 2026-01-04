@@ -504,11 +504,13 @@ impl RiskManager {
                 }
 
                 // 6. Check Risks (Async check)
-                // 6. Check Risks (Async check)
-                if let Some(reason) = self.check_circuit_breaker(current_equity) {
-                    tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
-                    self.halted = true;
-                    self.liquidate_portfolio(&reason).await;
+                // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
+                if !self.halted {
+                    if let Some(reason) = self.check_circuit_breaker(current_equity) {
+                        tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
+                        self.halted = true;
+                        self.liquidate_portfolio(&reason).await;
+                    }
                 }
 
                 // 7. Capture performance snapshot if monitor available
