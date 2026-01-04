@@ -1,48 +1,58 @@
 # RustTrade Agentic Bot 🦀
 
-
 > [!WARNING]
 > **This project is not production-ready and should not be used with real money.**
 > Using this trading bot involves significant financial risks. Use it only in simulation mode (Paper Trading) or for educational purposes.
 
-A high-performance, multi-agent algorithmic trading system built in Rust. Capable of real-time market surveillance, trend analysis, and autonomous execution.
+A high-performance, multi-agent algorithmic trading system built in Rust. Capable of real-time market surveillance, trend analysis, and autonomous execution. Now featuring a full **Native Desktop Interface**.
 
 ## 🚀 Key Features
-- **Multi-Agent Architecture**: 6 specialized agents (Sentinel, Scanner, Analyst, Risk Manager, Order Throttler, Executor)
-- **5 Trading Strategies**: Standard Dual SMA, Advanced Triple Filter, Dynamic Regime Adaptive, Trend Riding, Mean Reversion
-- **Real-Time Market Analysis**: WebSocket streaming with intelligent candle aggregation
-- **Advanced Risk Management**: Circuit breakers, PDT protection, trailing stops (ATR-based)
-- **Backtesting & Optimization**: 
-  - Historical backtesting with S&P500 benchmark comparison
-  - Alpha/Beta calculation vs market
-  - Grid search parameter optimization
-  - Comprehensive performance metrics (Sharpe, Sortino, Calmar)
-- **Safety Features**: 
-  - Strict `Decimal` arithmetic (no floating-point errors)
-  - Multi-level safeguards (Position sizing, Max drawdown, Daily loss limits)
-  - Order throttling and cooldown periods
+
+### 🧠 Intelligent Agents
+- **Multi-Agent Architecture**: 6 specialized agents (Sentinel, Scanner, Analyst, Risk Manager, Order Throttler, Executor).
+- **Regime Detection**: Automatically detects Bull, Bear, Sideways, and Volatile market regimes.
+- **Dynamic Scanning**: Real-time discovery of "Top Movers" and volatility opportunities (Stocks & Crypto).
+
+### 🖥️ Native User Interface (New)
+- **High-Performance Dashboard**: Built with `egui` (0.31) for zero-latency monitoring.
+- **Real-Time Visuals**: Live charts, interactive metric cards, and scrolling activity feed.
+- **Internationalization (i18n)**: Fully localized in **English** 🇬🇧 and **French** 🇫🇷.
+- **Manual Control**: "Panic Button" and manual strategy overrides directly from the UI.
+
+### 📈 Trading Strategies
+- **Standard**: Dual SMA Crossover (Golden/Death Cross).
+- **Advanced**: Triple Filter System (SMA Trend + RSI Momentum + MACD + **ADX Trend Strength**).
+- **Dynamic**: Automatically switches strategies based on Market Regime (e.g., Trend Riding vs Mean Reversion).
+- **Trend Riding**: Long-term trend following with trailing stops.
+- **Mean Reversion**: Contrarian strategy for overbought/oversold conditions (BB + RSI).
+
+### 🛡️ Advanced Risk Management
+- **Correlation Filters**: Prevents exposure to highly correlated assets (Pearson matrix).
+- **Sector Exposure Limits**: Caps risk per industry sector.
+- **Circuit Breakers**: Daily Loss Limit, Max Drawdown Halt, Composite Risk Score.
+- **PDT Protection**: Pattern Day Trader safeguards for accounts < $25k.
+
+### 🔬 Backtesting & Optimization
+- **Historical Backtesting**: Simulate strategies against past data with S&P500 benchmark comparison.
+- **Grid Search Optimizer**: Systematically find best parameters (Sharpe, Sortino, Calmar optimization).
+- **Performance Metrics**: Calculates Alpha, Beta, Win Rate, and Risk-Adjusted Returns.
 
 ## 🛠️ Technical Stack
 
 ### Core
-- **Language**: Rust 2021 Edition
+- **Language**: **Rust 2024 Edition** 🦀
 - **Runtime**: `tokio` (Asynchronous I/O, Channels, Actors)
-- **Architecture**: Hexagonal (Ports & Adapters) + Actor Model
+- **Database**: `sqlx` (SQLite 0.8) for local persistence of trades and candles
+- **GUI**: `egui` 0.31 + `eframe` (Immediate Mode GUI)
 
 ### Data & Networking
-- **Market Data**: Alpaca API v2 (WebSocket & REST)
+- **Market Data**: Alpaca API v2 (WebSocket & REST), OANDA (Forex), Polygon
 - **WebSockets**: `tokio-tungstenite`
-- **HTTP Client**: `reqwest`
 - **Serialization**: `serde`, `serde_json`
 
 ### Intelligence & Math
-- **Technical Indicators**: `ta` crate (SMA, RSI, MACD, etc.)
+- **Technical Indicators**: `ta` crate + Custom Implementations (ADX, Pivots)
 - **Financial Math**: `rust_decimal` (Fixed-point arithmetic for zero precision loss)
-- **Time**: `chrono` (UTC handling)
-
-### Observability
-- **Logging**: `tracing` (Structured logging)
-- **Error Handling**: `anyhow`
 
 ## ⚙️ Configuration
 
@@ -53,63 +63,29 @@ The application is configured primarily via environment variables. You can set t
 |----------|---------|-------------|
 | `MODE` | `mock` | Trading mode: `mock`, `alpaca`, `oanda`. |
 | `ASSET_CLASS` | `stock` | Asset class: `stock` or `crypto`. |
-| `SYMBOLS` | `AAPL` | Comma-separated list of symbols to trade (e.g., `AAPL,TSLA`). |
 | `ALPACA_API_KEY` | - | Your Alpaca API Key. |
 | `ALPACA_SECRET_KEY` | - | Your Alpaca Secret Key. |
-| `ALPACA_BASE_URL` | Paper URL | Alpaca API URL (Paper or Live). |
-| `ALPACA_DATA_URL` | Data URL | Alpaca Data API URL. |
-| `ALPACA_WS_URL` | Stream URL | Alpaca WebSocket URL. |
-| `OANDA_API_KEY` | - | OANDA API Key (if mode is `oanda`). |
-| `OANDA_ACCOUNT_ID` | - | OANDA Account ID. |
 
-### Architecture & System
+### Risk Management
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORTFOLIO_STALENESS_MS` | `5000` | Max age of portfolio data before refresh (ms). |
-| `MAX_ORDERS_PER_MINUTE` | `10` | Rate limiting for API calls. |
-| `ORDER_COOLDOWN_SECONDS` | `300` | Minimum time between trades. |
-| `NON_PDT_MODE` | `true` | If `true`, avoids Day Trading rules (PDT). |
-
-### Risk Management (or use `RISK_APPETITE_SCORE`)
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RISK_APPETITE_SCORE` | - | **Master Override**. Integer 1-9. Sets risk profile (1=Safe, 9=Aggressive). |
-| `RISK_PER_TRADE_PERCENT` | `0.015` | % of capital risked per trade (1.5%). |
-| `MAX_POSITION_SIZE_PCT` | `0.1` | Max size of a single position as % of portfolio. |
-| `MAX_SECTOR_EXPOSURE_PCT` | `0.30` | Max exposure to a single sector. |
+| `RISK_APPETITE_SCORE` | - | **Master Override** (1-9). Sets risk profile automatically. |
 | `MAX_DAILY_LOSS_PCT` | `0.02` | Max daily loss before "Kill Switch" (2%). |
 | `MAX_DRAWDOWN_PCT` | `0.1` | Max total drawdown allowed (10%). |
-| `TRAILING_STOP_ATR_MULTIPLIER`| `5.0` | Multiplier for ATR-based trailing stops. |
-| `MAX_POSITION_VALUE_USD` | `5000.0` | Hard cap on position value in USD. |
-| `CONSECUTIVE_LOSS_LIMIT` | `3` | Stop trading a symbol after N losses. |
+| `MAX_SECTOR_EXPOSURE_PCT` | `0.30` | Max exposure to a single sector. |
 
-### Trading Strategy Parameters
+### Strategy Parameters
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STRATEGY_MODE` | `standard` | Strategy: `standard`, `advanced`, `dynamic`, `trendriding`, `meanreversion`. |
-| `EMA_FAST_PERIOD` | `50` | Fast EMA period (Trend Riding). |
-| `EMA_SLOW_PERIOD` | `150` | Slow EMA period (Trend Riding). |
-| `RSI_PERIOD` | `14` | RSI calculation period. |
+| `STRATEGY_MODE` | `standard` | `standard`, `advanced`, `dynamic`, `trendriding`, `meanreversion`. |
+| `ADX_PERIOD` | `14` | ADX smoothing period. |
+| `ADX_THRESHOLD` | `25.0` | Minimum trend strength for entry. |
 | `RSI_THRESHOLD` | `75.0` | RSI Overbought threshold. |
-| `TAKE_PROFIT_PCT` | `0.05` | Target profit percentage (5%). |
-| `MIN_PROFIT_RATIO` | `2.0` | Minimum Reward/Risk ratio to enter trade. |
-| `SPREAD_BPS` | `5.0` | Estimated spread in basis points for cost calculation. |
-| `SLIPPAGE_PCT` | `0.001` | Estimated slippage (0.1%). |
-| `COMMISSION_PER_SHARE` | `0.001` | Estimated commission per share. |
-
-### Dynamic & Adaptive Mode
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DYNAMIC_SYMBOL_MODE` | `false` | Enable automatic symbol discovery. |
-| `DYNAMIC_SCAN_INTERVAL_MINUTES`| `5` | How often to scan for new "Top Movers". |
-| `ADAPTIVE_OPTIMIZATION_ENABLED`| `false` | Enable self-optimization. |
-| `MIN_VOLUME_THRESHOLD` | `50000` | Min volume for tradeable assets. |
-| `SIGNAL_CONFIRMATION_BARS` | `2` | Number of bars to confirm a signal. |
 
 ## 📚 Documentation
 - [Global App Description](GLOBAL_APP_DESCRIPTION.md): Full architecture details.
-- [Strategy Guide](docs/guide_strategie_simplifie.md): Simplified explanation of trading logic.
-- [Walkthrough](walkthrough.md): Usage guide for Benchmark and Backtesting tools.
+- [Version History](GLOBAL_APP_DESCRIPTION_VERSIONS.md): Changelog.
+- [Walkthrough](walkthrough.md): Guide for Benchmark and Backtesting tools.
 
 ## ⚡ Quick Start
 
@@ -117,52 +93,21 @@ The application is configured primarily via environment variables. You can set t
 - Rust (Cargo)
 - Alpaca API Keys (Paper Trading)
 
-### Running the Bot
+### Running the Desktop App
 ```bash
 # 1. Configure Credentials
 cp .env.example .env
-
-# 2. Run (Mock Mode)
 # Edit .env with your Alpaca API keys
 
-# 2. Run with a strategy
-cargo run --bin rustrade -- --strategy advanced
-
-# Available strategies: standard, advanced, dynamic, trendriding, meanreversion
+# 2. Launch the UI
+cargo run --bin rustrade
 ```
 
-### Backtest a Strategy
-
+### Backtesting CLI
 ```bash
-# Single backtest with alpha/beta vs S&P500
-cargo run --bin benchmark -- \
-  --symbol NVDA \
-  --start 2020-01-01 \
-  --end 2024-12-31 \
-  --strategy trendriding
+# Backtest a strategy
+cargo run --bin benchmark -- --symbol NVDA --start 2023-01-01 --end 2023-12-31 --strategy advanced
 
-# Batch mode (30-day windows)
-cargo run --bin benchmark -- \
-  --symbol TSLA \
-  --start 2023-01-01 \
-  --end 2023-12-31 \
-  --strategy advanced \
-  --batch-days 30
-```
-
-### Optimize Strategy Parameters
-
-```bash
-# Create parameter grid (grid.toml already exists)
-# Run optimization
-cargo run --bin optimize -- \
-  --symbol NVDA \
-  --start 2020-01-01 \
-  --end 2023-12-31 \
-  --grid-config grid.toml \
-  --output nvda_best_params.json \
-  --top-n 10
-
-# View results
-cat nvda_best_params.json | jq '.[0]'  # Best configuration
+# Optimize parameters
+cargo run --bin optimize -- --symbol TSLA --grid-config grid.toml
 ```
