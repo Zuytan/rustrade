@@ -209,6 +209,8 @@ Le bot intègre désormais un système d'optimisation en boucle fermée qui ajus
     - **Gestion Sectorielle Dynamique (v0.18.0)** : Plus de `sector_map` manuel. Utilise un `SectorProvider` (via Alpaca Asset API) pour identifier le secteur de chaque actif en temps réel et garantir la diversification.
     - **Protection PDT (v0.26.0)**: Blocage strict des ouvertures de positions si le compteur de Day Trades est saturé (>=3) sur un compte < $25k. Utilise la donnée officielle du courtier.
     - **Valuation Temps Réel**: Surveillance continue de l'équité pour déclenchement immédiat des Circuit Breakers.
+    - **Internationalization (v0.28.0)**: Systematic removal of hardcoded strings, support for parameterized translations (`tf()`), and dynamic language switching in the UI.
+    - **Security & Privacy Audit (v0.29.0)**: Comprehensive audit to prepare for public GitHub release. Exhaustive `.gitignore` implementation and removal of sensitive environment files from git tracking.
     - **Active Liquidation (v0.22.0)**: Si un Circuit Breaker est déclenché, le Risk Manager envoie immédiatement des ordres de vente pour TOUTES les positions, bypassant les protections PDT. Objectif: "Cash is King" pendant un krach.
     - **Flash Crash Protection (v0.24.0)** : Utilisation d'ordres **Limit Marketables** (avec tolérance de slippage de 5%) lors des liquidations d'urgence pour éviter les exécutons à prix aberrant sur les carnets d'ordres vides.
     - **Session Continue (Crypto)** : Gestion spécifique des actifs `Crypto` avec réinitialisation automatique des compteurs de perte journalière ("Daily Loss") à 00:00 UTC.

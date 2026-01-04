@@ -1,5 +1,11 @@
 # Rustrade - Historique des Versions
 
+## v0.29.0 - Security & Privacy Audit (2026-01-04)
+- **Codebase Security Audit**: Scanned for sensitive data and API keys.
+- **Git Tracking Remediation**: Removed `alpaca.env`, `crypto.env`, and `.env` from git tracking index to prevent secret leakage.
+- **Exhaustive Gitignore**: Implemented a robust `.gitignore` covering environment files, local databases, and IDE-specific metadata.
+- **Public Release Preparation**: Verified project structure for public GitHub compatibility.
+
 ## Version 0.38.1 (Janvier 2026) - RiskManagement: Correlation Filter
 - **CorrelationFilter Implementation**:
   - **Filtre de Diversification**: Rejet automatique des ordres BUY si l'actif est trop corrélé (>0.85) avec les positions existantes.
