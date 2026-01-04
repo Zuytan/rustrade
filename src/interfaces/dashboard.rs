@@ -1,4 +1,3 @@
-use crate::domain::performance::monte_carlo::MonteCarloResult;
 use crate::application::agents::user_agent::{UserAgent, ActivityEventType, EventSeverity, ActivityEvent};
 use eframe::egui;
 use egui_plot::{BoxElem, BoxSpread, Legend, Plot};
@@ -59,10 +58,10 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                 };
                 let pnl_sign = if unrealized_pnl >= rust_decimal::Decimal::ZERO { "+" } else { "" };
                 
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(pnl_color.linear_multiply(0.15))
-                    .rounding(12.0)
-                    .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                    .corner_radius(12)
+                    .inner_margin(egui::Margin::symmetric(8, 4))
                     .show(ui, |ui| {
                          ui.label(
                              egui::RichText::new(agent.i18n.tf("pnl_pill_format", &[
@@ -111,17 +110,17 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
         let pnl_color = if pnl_val >= 0.0 { egui::Color32::from_rgb(0, 230, 118) } else { egui::Color32::from_rgb(255, 23, 68) };
         let pnl_arrow = if pnl_val >= 0.0 { "↗" } else { "↘" };
         columns[0].push_id("card_daily_pnl", |ui| {
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(egui::Color32::from_rgb(22, 27, 34)) 
-                .rounding(10.0)
+                .corner_radius(10)
                 .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(41, 121, 255))) // Blue Active Stroke
                 .shadow(egui::epaint::Shadow {
-                    offset: [0.0, 4.0].into(),
-                    blur: 15.0,
-                    spread: 0.0,
+                    offset: [0, 4],
+                    blur: 15,
+                    spread: 0,
                     color: egui::Color32::from_rgba_premultiplied(41, 121, 255, 40), // Blue Glow
                 })
-                .inner_margin(16.0)
+                .inner_margin(16)
                 .show(ui, |ui| {
                      ui.set_min_height(100.0);
                      ui.label(egui::RichText::new(agent.i18n.t("metric_daily_pnl")).size(12.0).color(egui::Color32::from_gray(140)).strong());
@@ -221,11 +220,11 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
             egui::vec2(chart_width, available_height),
             egui::Layout::top_down(egui::Align::LEFT),
             |ui| {
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(egui::Color32::from_rgb(22, 27, 34))
-                    .rounding(10.0)
+                    .corner_radius(10)
                     .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
-                    .inner_margin(12.0)
+                    .inner_margin(12)
                     .show(ui, |ui| {
                         ui.set_min_size(ui.available_size());
                         render_chart_panel(agent, ui);
@@ -275,11 +274,11 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
 // --- Helpers ---
 
 fn render_start_card(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(egui::Color32::from_rgb(22, 27, 34))
-        .rounding(10.0)
+        .corner_radius(10)
         .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
-        .inner_margin(16.0)
+        .inner_margin(16)
         .show(ui, |ui| {
             ui.set_min_height(100.0);
             ui.set_width(ui.available_width());
@@ -301,23 +300,23 @@ fn render_symbol_card(
     );
     
     let frame = if is_selected {
-        egui::Frame::none()
+        egui::Frame::NONE
             .fill(egui::Color32::from_rgb(28, 33, 40))
-            .rounding(8.0)
+            .corner_radius(8)
             .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(41, 121, 255))) // Blue Active Stroke
             .shadow(egui::epaint::Shadow {
-                offset: [0.0, 2.0].into(),
-                blur: 10.0,
-                spread: 0.0,
+                offset: [0, 2],
+                blur: 10,
+                spread: 0,
                 color: egui::Color32::from_rgba_premultiplied(41, 121, 255, 25), // Blue Glow
             })
-            .inner_margin(12.0)
+            .inner_margin(12)
     } else {
-        egui::Frame::none()
+        egui::Frame::NONE
             .fill(egui::Color32::from_rgb(28, 33, 40))
-            .rounding(8.0)
+            .corner_radius(8)
             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
-            .inner_margin(12.0)
+            .inner_margin(12)
     };
 
     let response = frame.show(ui, |ui| {
@@ -333,10 +332,10 @@ fn render_symbol_card(
                        let is_profit = pnl >= rust_decimal::Decimal::ZERO;
                        let pnl_color = if is_profit { egui::Color32::from_rgb(0, 230, 118) } else { egui::Color32::from_rgb(255, 23, 68) };
                        
-                       egui::Frame::none()
+                       egui::Frame::NONE
                         .fill(pnl_color.linear_multiply(0.15))
-                        .rounding(12.0)
-                        .inner_margin(egui::Margin::symmetric(8.0, 2.0))
+                        .corner_radius(12)
+                        .inner_margin(egui::Margin::symmetric(8, 2))
                         .show(ui, |ui| {
                              ui.label(egui::RichText::new(agent.i18n.tf("pnl_amount_format", &[
                                  ("amount", &format!("{:.2}", pnl.to_f64().unwrap_or(0.0).abs())),
@@ -399,14 +398,14 @@ pub fn render_metric_card(
     let card_size = egui::vec2(190.0, 100.0);
 
     ui.allocate_ui_with_layout(card_size, egui::Layout::top_down(egui::Align::LEFT), |ui| {
-        egui::Frame::none()
+        egui::Frame::NONE
             .fill(egui::Color32::from_rgb(22, 27, 34)) // Dark Card BG
-            .inner_margin(egui::Margin::same(12.0))
-            .rounding(8.0)
+            .inner_margin(egui::Margin::same(12))
+            .corner_radius(8)
             .shadow(egui::epaint::Shadow {
-                offset: [0.0, 4.0].into(),
-                blur: 16.0,
-                spread: 0.0,
+                offset: [0, 4],
+                blur: 16,
+                spread: 0,
                 color: egui::Color32::from_black_alpha(100),
             })
             // Top Accent Line
@@ -521,10 +520,10 @@ pub fn render_activity_feed(
                         egui::Color32::TRANSPARENT
                     };
                     
-                    egui::Frame::none()
+                    egui::Frame::NONE
                         .fill(bg_color)
-                        .inner_margin(4.0)
-                        .rounding(2.0)
+                        .inner_margin(4)
+                        .corner_radius(2)
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new(icon).size(12.0));
@@ -585,10 +584,10 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                 } else {
                      // Info Panel
                     if let Some(strat_info) = agent.strategy_info.get(selected_symbol) {
-                         egui::Frame::none()
+                         egui::Frame::NONE
                             .fill(egui::Color32::from_rgb(22, 27, 34))
-                            .inner_margin(egui::Margin::symmetric(10.0, 8.0))
-                            .rounding(6.0)
+                            .inner_margin(egui::Margin::symmetric(10, 8))
+                            .corner_radius(6)
                             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
@@ -812,9 +811,9 @@ pub fn render_logs_panel(agent: &mut UserAgent, ctx: &egui::Context) {
     egui::TopBottomPanel::bottom("logs_toggle")
         .exact_height(25.0)
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(egui::Color32::from_rgb(22, 27, 34))
-                .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+                .inner_margin(egui::Margin::symmetric(8, 4)),
         )
         .show(ctx, |ui| {
             ui.horizontal(|ui| {

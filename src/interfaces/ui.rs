@@ -34,15 +34,15 @@ impl eframe::App for UserAgent {
 
         // Deep Shadows for "Card" effect
         visuals.window_shadow = egui::epaint::Shadow {
-            offset: [0.0, 4.0].into(),
-            blur: 15.0,
-            spread: 0.0,
+            offset: [0, 4],
+            blur: 15,
+            spread: 0,
             color: egui::Color32::from_black_alpha(160),
         };
         visuals.popup_shadow = egui::epaint::Shadow {
-            offset: [0.0, 8.0].into(),
-            blur: 20.0,
-            spread: 0.0,
+            offset: [0, 8],
+            blur: 20,
+            spread: 0,
             color: egui::Color32::from_black_alpha(180),
         };
 
@@ -76,7 +76,7 @@ impl eframe::App for UserAgent {
         egui::SidePanel::left("sidebar_panel")
             .exact_width(100.0)
             .frame(
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(egui::Color32::from_rgb(10, 12, 16))
                     .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(40, 44, 52)))
             )
@@ -89,9 +89,9 @@ impl eframe::App for UserAgent {
         // --- 4. Central Panel ---
         egui::CentralPanel::default()
             .frame(
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(egui::Color32::from_rgb(10, 12, 16))
-                    .inner_margin(egui::Margin::same(24.0)) // Increased Margin for breathing room
+                    .inner_margin(egui::Margin::same(24)) // Increased Margin for breathing room
             )
             .show(ctx, |ui| {
              match self.current_view {

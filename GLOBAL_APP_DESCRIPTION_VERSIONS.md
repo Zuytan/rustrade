@@ -1,5 +1,28 @@
 # Rustrade - Historique des Versions
 
+## Version 0.39.0 (Janvier 2026) - Rust 2024 Edition & Dependencies Modernization
+- **Rust Edition Upgrade**:
+  - **Edition 2024**: Mise à jour de l'édition Rust de 2021 à 2024 pour bénéficier des dernières fonctionnalités et garanties de sécurité.
+  - **Safety Requirements**: Adaptation aux nouvelles exigences de sécurité Rust 2024 pour la manipulation des variables d'environnement.
+- **Dependencies Update**:
+  - **egui/eframe**: Mise à jour de 0.30 → 0.31 avec refonte complète des APIs Frame, Margin et Shadow.
+  - **sqlx**: Migration de 0.7 → 0.8 pour support amélioré des dernières bases de données.
+  - **tokio**: Mise à jour de 1.48 → 1.49 pour corrections de bugs et optimisations runtime.
+  - **toml**: Passage de 0.8 → 0.9 pour support de la spécification TOML 1.1.0.
+- **Breaking Changes Resolution**:
+  - **Frame API**: Remplacement de `Frame::none()` par `Frame::NONE` et `.rounding()` par `.corner_radius()`.
+  - **Margin/Shadow Types**: Conversion systématique de `f64` vers `i8`/`u8` dans toutes les définitions de marges et ombres.
+  - **Unsafe Blocks**: Encapsulation de tous les appels `env::set_var`/`env::remove_var` dans des blocs `unsafe` conformément aux exigences Rust 2024.
+- **Files Modified**:
+  - **UI Layer**: `dashboard.rs`, `ui.rs`, `ui_components.rs` - 13 fonctions refactorisées.
+  - **Tests**: `config_tests.rs` - 22 blocs `unsafe` ajoutés pour conformité.
+- **Verification**:
+  - **Compilation**: 0 erreurs, 0 warnings.
+  - **Tests**: 152 tests unitaires passants (1 test préexistant défaillant non lié à cette modernisation).
+- **Documentation**:
+  - Mise à jour `GLOBAL_APP_DESCRIPTION.md` avec mention Rust 2024.
+  - Création de `walkthrough.md` détaillant tous les changements et justifications techniques.
+
 ## v0.29.0 - Security & Privacy Audit (2026-01-04)
 - **Codebase Security Audit**: Scanned for sensitive data and API keys.
 - **Git Tracking Remediation**: Removed `alpaca.env`, `crypto.env`, and `.env` from git tracking index to prevent secret leakage.

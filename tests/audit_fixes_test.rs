@@ -136,7 +136,8 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
 
     assert_eq!(liquidation.symbol, "AAPL");
     assert_eq!(liquidation.side, OrderSide::Sell);
-    assert_eq!(liquidation.order_type, OrderType::Market);
+    assert_eq!(liquidation.order_type, OrderType::Limit); // Emergency liquidations use Limit orders with slippage tolerance
+
 
     // Verify NO other orders (the proposal itself should be rejected)
     let result = tokio::time::timeout(std::time::Duration::from_millis(100), order_rx.recv()).await;

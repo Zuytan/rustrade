@@ -87,11 +87,11 @@ pub fn render_sidebar(
                 egui::Stroke::NONE
             };
 
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(bg_color)
-                .rounding(8.0)
+                .corner_radius(8)
                 .stroke(stroke)
-                .inner_margin(egui::Margin::symmetric(0.0, 12.0))
+                .inner_margin(egui::Margin::symmetric(0, 12))
                 .show(ui, |ui| {
                     ui.set_width(80.0);
                     if ui.vertical_centered(|ui| {

@@ -3,7 +3,7 @@
 ## Objectif du Projet
 Développer un système multi-agents capable de surveiller le marché des actions et ETF (via Alpaca) et Forex/CFDs (via OANDA), d'analyser les tendances en temps réel et d'exécuter des ordres de manière autonome avec une gestion d'état ultra-précise et sécurisée.
 
-> 🚀 **Production Ready (v0.38.1 - Jan 2026):** **Phase 4.5 Integration Complete**. Ajout du filtre de corrélation dynamique pour une diversification optimale et protection contre le risque systémiques sur clusters d'actifs. **152 tests unitaires passent**.
+> 🚀 **Production Ready (v0.39.0 - Jan 2026):** **Rust Edition 2024 + Dependencies Modernization**. Passage à l'édition Rust 2024, mise à jour de `egui/eframe` 0.30 → 0.31, `sqlx` 0.7 → 0.8, et autres dépendances majeures. Adaptation complète aux nouvelles APIs et exigences de sécurité. **152 tests unitaires passent**.
 
 ## Internationalisation (I18n) - Infrastructure Layer
 
