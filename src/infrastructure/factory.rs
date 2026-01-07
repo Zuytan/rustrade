@@ -6,6 +6,7 @@ use crate::domain::repositories::CandleRepository;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::application::market_data::spread_cache::SpreadCache;
 use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
+use crate::infrastructure::binance::{BinanceExecutionService, BinanceMarketDataService};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::oanda::{OandaExecutionService, OandaMarketDataService};
 
@@ -68,6 +69,29 @@ impl ServiceFactory {
                         config.oanda_account_id.clone(),
                     )),
                     Arc::new(SpreadCache::new()),
+                )
+            }
+            Mode::Binance => {
+                let market_service = BinanceMarketDataService::builder()
+                    .api_key(config.binance_api_key.clone())
+                    .api_secret(config.binance_secret_key.clone())
+                    .base_url(config.binance_base_url.clone())
+                    .ws_url(config.binance_ws_url.clone())
+                    .candle_repository(candle_repo)
+                    .build();
+
+                let spread_cache = market_service.get_spread_cache();
+
+                let execution_service = BinanceExecutionService::new(
+                    config.binance_api_key.clone(),
+                    config.binance_secret_key.clone(),
+                    config.binance_base_url.clone(),
+                );
+
+                (
+                    Arc::new(market_service),
+                    Arc::new(execution_service),
+                    spread_cache,
                 )
             }
         }

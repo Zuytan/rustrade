@@ -11,6 +11,7 @@ pub enum Mode {
     Mock,
     Alpaca,
     Oanda,
+    Binance,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +40,8 @@ impl std::str::FromStr for Mode {
             "mock" => Ok(Mode::Mock),
             "alpaca" => Ok(Mode::Alpaca),
             "oanda" => Ok(Mode::Oanda),
-            _ => anyhow::bail!("Invalid MODE: {}. Must be 'mock', 'alpaca' or 'oanda'", s),
+            "binance" => Ok(Mode::Binance),
+            _ => anyhow::bail!("Invalid MODE: {}. Must be 'mock', 'alpaca', 'oanda', or 'binance'", s),
         }
     }
 }
@@ -58,6 +60,11 @@ pub struct Config {
     pub oanda_stream_base_url: String,
     pub oanda_api_key: String,
     pub oanda_account_id: String,
+    // Binance Config
+    pub binance_api_key: String,
+    pub binance_secret_key: String,
+    pub binance_base_url: String,
+    pub binance_ws_url: String,
     pub symbols: Vec<String>,
     pub max_positions: usize,
     pub initial_cash: Decimal,
@@ -144,6 +151,14 @@ impl Config {
             .unwrap_or_else(|_| "https://stream-fxpractice.oanda.com".to_string());
         let oanda_api_key = env::var("OANDA_API_KEY").unwrap_or_default();
         let oanda_account_id = env::var("OANDA_ACCOUNT_ID").unwrap_or_default();
+
+        let binance_api_key = env::var("BINANCE_API_KEY").unwrap_or_default();
+        let binance_secret_key = env::var("BINANCE_SECRET_KEY").unwrap_or_default();
+        let binance_base_url = env::var("BINANCE_BASE_URL")
+            .unwrap_or_else(|_| "https://api.binance.com".to_string());
+        let binance_ws_url = env::var("BINANCE_WS_URL")
+            .unwrap_or_else(|_| "wss://stream.binance.com:9443".to_string());
+
 
         // Load dynamic mode early to determine SYMBOLS default
         let dynamic_symbol_mode = env::var("DYNAMIC_SYMBOL_MODE")
@@ -465,6 +480,10 @@ impl Config {
             oanda_stream_base_url,
             oanda_api_key,
             oanda_account_id,
+            binance_api_key,
+            binance_secret_key,
+            binance_base_url,
+            binance_ws_url,
             symbols,
             max_positions,
             initial_cash: Decimal::from_f64(initial_cash).unwrap_or(Decimal::from(100000)),

@@ -1,6 +1,8 @@
 pub mod alpaca;
 pub mod alpaca_trading_stream;
 pub mod alpaca_websocket;
+pub mod binance;
+pub mod binance_websocket;
 pub mod circuit_breaker;
 pub mod event_bus;
 pub mod mock;

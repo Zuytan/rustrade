@@ -1,7 +1,7 @@
 # Rustrade Application Description
 
 ## Overview
-Rustrade is a high-performance, algorithmic trading bot written in Rust, designed for reliability, concurrency, and modularity. It supports multiple asset classes (Stocks, Crypto) and brokers (Alpaca, OANDA, Mock).
+Rustrade is a high-performance, algorithmic trading bot written in Rust, designed for reliability, concurrency, and modularity. It supports multiple asset classes (Stocks, Crypto) and brokers (Alpaca, OANDA, Binance, Mock).
 
 ## Core Features
 - **Multi-Strategy Engine**: Supports Standard (Dual SMA), Advanced (Triple Filter: SMA+RSI+MACD+ADX), Dynamic Regime Adaptive, and Mean Reversion strategies.
@@ -20,7 +20,17 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.40.1)
+## Latest Updates (Version 0.41.0)
+- **Binance Integration**: Added Binance as a third broker option for cryptocurrency trading:
+  - Implemented `BinanceMarketDataService` with REST API and WebSocket support.
+  - Implemented `BinanceExecutionService` with HMAC-SHA256 authentication.
+  - Added `BinanceSectorProvider` for crypto categorization (Layer1, DeFi, Layer2, etc.).
+  - Symbol normalization support (BTCUSDT ↔ BTC/USDT).
+  - Top movers scanner using 24h ticker API.
+  - Candle caching integration for historical data.
+  - Configuration via `MODE=binance` environment variable.
+
+## Version 0.40.1
 - **RiskAppetite Propagation Fix**: Fixed `DynamicRegimeStrategy` to properly receive all risk_appetite parameters:
   - Added `DynamicRegimeConfig` struct for full parameter support.
   - `StrategyFactory` and `system.rs` now pass `macd_requires_rising`, `trend_tolerance_pct`, `macd_min_threshold`, `adx_threshold` to Dynamic strategy.

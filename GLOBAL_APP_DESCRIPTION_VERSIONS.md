@@ -1,5 +1,40 @@
 # Rustrade - Historique des Versions
 
+## Version 0.41.0 (Janvier 2026) - Binance Integration
+- **Intégration Binance**: Ajout de Binance comme troisième courtier pour le trading de cryptomonnaies:
+  - **BinanceMarketDataService**: Implémentation complète du trait `MarketDataService` avec support REST API et WebSocket.
+    - `get_top_movers()`: Scanner de top movers utilisant l'API 24h ticker (filtrage par volume > 10M USDT).
+    - `get_prices()`: Récupération des prix actuels via l'endpoint `/api/v3/ticker/price`.
+    - `get_historical_bars()`: Récupération des klines (candlesticks) avec caching intelligent via `CandleRepository`.
+    - `subscribe()`: Streaming temps réel via WebSocket combiné (`btcusdt@trade/ethusdt@trade`).
+  - **BinanceExecutionService**: Implémentation du trait `ExecutionService` avec authentification HMAC-SHA256.
+    - `execute()`: Placement d'ordres Market/Limit avec signature cryptographique.
+    - `get_portfolio()`: Récupération des balances de compte (USDT + positions crypto).
+    - `get_open_orders()`: Requête des ordres actifs.
+    - Stubs: `get_today_orders()`, `cancel_order()`, `subscribe_order_updates()` (User Data Stream non implémenté).
+  - **BinanceSectorProvider**: Catégorisation des cryptos (Layer1, DeFi, Layer2, Stablecoin, Other).
+  - **BinanceWebSocketManager**: Gestion des streams WebSocket avec reconnexion automatique (backoff exponentiel).
+- **Normalisation des Symboles**: Support bidirectionnel BTCUSDT ↔ BTC/USDT via fonctions existantes.
+- **Configuration**: Activation via `MODE=binance` avec variables d'environnement dédiées:
+  - `BINANCE_API_KEY`, `BINANCE_SECRET_KEY`
+  - `BINANCE_BASE_URL` (défaut: `https://api.binance.com`)
+  - `BINANCE_WS_URL` (défaut: `wss://stream.binance.com:9443`)
+- **Dépendances**: Ajout de `hmac`, `sha2`, `hex` pour la génération de signatures.
+- **Fichiers Créés**:
+  - `src/infrastructure/binance.rs` (~750 LOC)
+  - `src/infrastructure/binance_websocket.rs` (~220 LOC)
+- **Fichiers Modifiés**:
+  - `src/config.rs`: Ajout de `Mode::Binance` et champs de configuration.
+  - `src/infrastructure/factory.rs`: Branche `Mode::Binance` pour instanciation des services.
+  - `src/application/system.rs`: Intégration de `BinanceSectorProvider`.
+  - `Cargo.toml`: Ajout des dépendances cryptographiques.
+- **Tests**: 3 tests unitaires (normalisation symboles, signature HMAC) - 100% passants.
+- **Limitations Connues**:
+  - User Data Stream non implémenté (pas de mises à jour temps réel des ordres).
+  - `cancel_order()` et `get_today_orders()` nécessitent le paramètre symbol (stubs).
+  - Ordres Stop/Stop-Limit non testés.
+- **Total**: ~1026 lignes de nouveau code.
+
 ## Version 0.40.1 (Janvier 2026) - RiskAppetite Propagation Fix
 - **Correction Critique DynamicRegimeStrategy**:
   - **Problème Identifié**: La stratégie `DynamicRegimeStrategy` ignorait les paramètres de `risk_appetite` et utilisait des valeurs hardcodées conservatrices.
