@@ -20,7 +20,13 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.42.0)
+## Latest Updates (Version 0.43.0)
+- **Dynamic Dashboard Metrics**: User Interface now reflects real-time trading statistics:
+  - **Dynamic Win Rate**: Replaced static chart with dynamic arc visualization based on portfolio history.
+  - **Monte Carlo Integration**: Simulation uses actual Average Win/Loss percentages derived from closed trades.
+  - **Risk Score Display**: Dynamic "Low/Medium/High" label and color coding based on risk appetite configuration.
+
+## Version 0.42.0
 - **Multi-Timeframe Analysis Infrastructure**: Added comprehensive multi-timeframe support:
   - New domain types: `Timeframe` enum (1Min, 5Min, 15Min, 1Hour, 4Hour, 1Day) with API conversions for Alpaca, Binance, and OANDA.
   - `TimeframeCandle` struct for aggregated OHLCV data across timeframes.

@@ -159,9 +159,35 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                          let (rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 40.0), egui::Sense::hover());
                          ui.painter().circle_stroke(rect.center(), 18.0, egui::Stroke::new(4.0, egui::Color32::from_gray(40))); // Track
                          
-                         // Arc (Arc simulation)
-                         // For full implementation we need complex path, simple circle for now
-                         ui.painter().circle_stroke(rect.center(), 18.0, egui::Stroke::new(4.0, egui::Color32::from_rgb(56, 139, 253))); // Progress
+                         // Arc based on actual win rate
+                         let center = rect.center();
+                         let radius = 18.0;
+                         let start_angle = -90.0_f32.to_radians(); // Start from top
+                         let sweep_angle = (360.0 * (win_rate / 100.0)) as f32;
+                         let _end_angle = start_angle + sweep_angle.to_radians();
+                         
+                         // Helper to get point on circle
+                         let get_point = |angle: f32| -> egui::Pos2 {
+                             egui::pos2(
+                                 center.x + radius * angle.cos(),
+                                 center.y + radius * angle.sin()
+                             )
+                         };
+                         
+                         // Draw arc path
+                         if win_rate > 0.0 {
+                             use egui::epaint::PathShape;
+                             // Approximate arc with lines (simple way)
+                             let mut points = Vec::new();
+                             let steps = 32;
+                             for i in 0..=steps {
+                                 let t = i as f32 / steps as f32;
+                                 let angle = start_angle + t * sweep_angle.to_radians();
+                                 points.push(get_point(angle));
+                             }
+                             
+                             ui.painter().add(PathShape::line(points, egui::Stroke::new(4.0, egui::Color32::from_rgb(56, 139, 253))));
+                         }
                      });
                  });
              });
@@ -189,7 +215,12 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
              render_start_card(ui, agent.i18n.t("metric_risk_score"), |ui| {
                  ui.horizontal(|ui| {
                      ui.vertical(|ui| {
-                         ui.label(egui::RichText::new(agent.i18n.t("risk_low")).size(28.0).strong().color(egui::Color32::from_rgb(0, 230, 118)));
+                         let (label_key, color) = match agent.risk_score {
+                             1..=3 => ("risk_low", egui::Color32::from_rgb(0, 230, 118)),      // Green
+                             4..=7 => ("risk_medium", egui::Color32::from_rgb(255, 212, 59)),   // Yellow
+                             _ => ("risk_high", egui::Color32::from_rgb(255, 23, 68)),          // Red
+                         };
+                         ui.label(egui::RichText::new(agent.i18n.t(label_key)).size(28.0).strong().color(color));
                          ui.label(egui::RichText::new(agent.i18n.tf("risk_score_label_short", &[("score", &agent.risk_score.to_string())])).size(11.0).color(egui::Color32::from_gray(120)));
                      });
                      
@@ -872,13 +903,15 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.button(egui::RichText::new(agent.i18n.t("run_simulation")).strong()).clicked() {
                                     // Trigger simulation
+                                    let (avg_win, avg_loss) = agent.calculate_trade_statistics();
+                                    
                                     let config = crate::domain::performance::monte_carlo::MonteCarloConfig {
                                         iterations: 10000,
                                         steps: 100,
                                         initial_equity: agent.calculate_total_value(),
                                         win_rate: agent.calculate_win_rate() / 100.0,
-                                        avg_win_pct: 0.02, // Mock for now, should come from metrics
-                                        avg_loss_pct: 0.015,
+                                        avg_win_pct: avg_win,
+                                        avg_loss_pct: avg_loss,
                                     };
                                     agent.monte_carlo_result = Some(crate::domain::performance::monte_carlo::MonteCarloEngine::simulate(&config));
                                 }

@@ -1,5 +1,11 @@
 # Rustrade - Historique des Versions
 
+## Version 0.43.0 (Janvier 2026) - Dynamic Dashboard Metrics
+- **Dynamic Win Rate**: Replaced static chart with real-time visualization of win rate percentage.
+- **Monte Carlo Integration**: Connected simulation to actual trade history statistics (avg win/loss %) instead of hardcoded values.
+- **User Agent Updates**: Added `calculate_trade_statistics` to derive performance metrics from portfolio history.
+- **Verification**: Validated with compilation and logic checks.
+
 ## Version 0.42.0 (Janvier 2026) - Multi-Timeframe Analysis Infrastructure
 - **Infrastructure Multi-Timeframe Complète**: Ajout d'un système complet d'analyse multi-timeframe pour améliorer la détection de tendances et la confirmation de signaux:
   - **Nouveaux Types Domaine**:

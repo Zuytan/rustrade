@@ -407,6 +407,57 @@ impl UserAgent {
         }
     }
 
+    /// Calculate average win and loss percentages based on trade history
+    /// Returns (avg_win_pct, avg_loss_pct) as decimals (e.g. 0.05 for 5%)
+    pub fn calculate_trade_statistics(&self) -> (f64, f64) {
+        if let Ok(pf) = self.portfolio.try_read() {
+            let mut total_win_pct = 0.0;
+            let mut total_loss_pct = 0.0;
+            let mut win_count = 0;
+            let mut loss_count = 0;
+
+            for trade in &pf.trade_history {
+                if trade.exit_price.is_none() {
+                    continue;
+                }
+
+                let entry_val = trade.entry_price.to_f64().unwrap_or(0.0);
+                if entry_val == 0.0 { continue; }
+
+                // PnL percentage relative to entry price
+                // For LONG: (exit - entry) / entry
+                // For SHORT: (entry - exit) / entry
+                // This is equivalent to trade.pnl / (entry * quantity), but per unit is simpler
+                let pnl_per_unit = if trade.side == OrderSide::Buy {
+                     trade.exit_price.unwrap().to_f64().unwrap_or(0.0) - entry_val
+                } else {
+                     entry_val - trade.exit_price.unwrap().to_f64().unwrap_or(0.0)
+                };
+
+                let pct = pnl_per_unit / entry_val;
+
+                if pct > 0.0 {
+                    total_win_pct += pct;
+                    win_count += 1;
+                } else {
+                    total_loss_pct += pct.abs();
+                    loss_count += 1;
+                }
+            }
+
+            let avg_win = if win_count > 0 { total_win_pct / win_count as f64 } else { 0.0 };
+            let avg_loss = if loss_count > 0 { total_loss_pct / loss_count as f64 } else { 0.0 };
+            
+            // Return safe defaults if no history yet to avoid flat lines in Monte Carlo
+            let safe_win = if avg_win == 0.0 { 0.02 } else { avg_win };
+            let safe_loss = if avg_loss == 0.0 { 0.015 } else { avg_loss };
+
+            (safe_win, safe_loss)
+        } else {
+            (0.02, 0.015)
+        }
+    }
+
     /// Parse log messages to extract activity events
     fn parse_log_for_activity(&mut self, msg: &str) {
         // Check for order executions
