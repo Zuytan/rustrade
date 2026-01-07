@@ -169,7 +169,8 @@ fn ui_setting_with_hint(ui: &mut egui::Ui, label: &str, value: &mut String, hint
         ui.label(egui::RichText::new("(?)").weak().size(10.0)).on_hover_text(hint);
         
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-             ui.add(egui::TextEdit::singleline(value).desired_width(60.0));
+             // Increased width for better visibility on larger screens
+             ui.add(egui::TextEdit::singleline(value).desired_width(120.0));
         });
     });
 }
@@ -257,7 +258,10 @@ pub fn render_settings_view(
 
         ui.separator();
 
-        ui.vertical(|ui| {
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
+            // Force full width expansion
+            ui.set_min_width(ui.available_width());
+            
             match panel.active_tab {
                 SettingsTab::SystemConfig => {
                     ui.heading(i18n.t("settings_system_config_title"));
@@ -344,7 +348,7 @@ pub fn render_settings_view(
                                 i18n.t("settings_risk_consecutive_loss_hint"));
                         });
                         
-                        ui.add_space(10.0);
+                        ui.add_space(15.0);
                         
                         // --- Strategy Group ---
                         ui.group(|ui| {
