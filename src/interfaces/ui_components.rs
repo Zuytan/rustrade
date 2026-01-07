@@ -282,22 +282,28 @@ pub fn render_settings_view(
                     ui.separator();
                     ui.add_space(10.0);
 
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    // Reserve space for the Save button footer
+                    let footer_height = 50.0;
+                    let available_height = ui.available_height() - footer_height;
+
+                    egui::ScrollArea::vertical()
+                         .max_height(available_height)
+                         .show(ui, |ui| {
                         
                         // --- SIMPLE MODE ---
                         if panel.config_mode == ConfigMode::Simple {
                             ui.group(|ui| {
                                 ui.heading(i18n.t("settings_risk_score_label"));
                                 ui.label(egui::RichText::new(i18n.t("settings_risk_score_hint")).weak().size(11.0));
-                                ui.add_space(10.0);
+                                ui.add_space(15.0);
                                 
                                 let mut score_f32 = panel.risk_score as f32;
-                                if ui.add(egui::Slider::new(&mut score_f32, 1.0..=10.0).step_by(1.0).text("Score")).changed() {
+                                if ui.add(egui::Slider::new(&mut score_f32, 1.0..=10.0).step_by(1.0).show_value(true)).changed() {
                                     panel.risk_score = score_f32 as u8;
                                     panel.update_from_score(panel.risk_score);
                                 }
                                 
-                                ui.add_space(5.0);
+                                ui.add_space(15.0);
                                 
                                 // Show derived profile badge
                                 if let Ok(appetite) = RiskAppetite::new(panel.risk_score) {
@@ -375,8 +381,11 @@ pub fn render_settings_view(
                         } // End else Advanced Mode
 
                         ui.add_space(20.0);
+                    }); // Close ScrollArea
+
+                    ui.add_space(10.0);
                         
-                        if ui.button(egui::RichText::new(i18n.t("settings_save_button")).size(16.0)).clicked() {
+                    if ui.button(egui::RichText::new(i18n.t("settings_save_button")).size(16.0)).clicked() {
                              // --- Parse Values ---
                              let max_pos = panel.max_position_size_pct.parse::<f64>().unwrap_or(0.10);
                              let max_loss = panel.max_daily_loss_pct.parse::<f64>().unwrap_or(0.02);
@@ -422,7 +431,6 @@ pub fn render_settings_view(
                              // Feedback
                              // We could set a flag to show a "Saved" message briefly.
                         }
-                    });
                 }
                 SettingsTab::Language => {
                     ui.heading(i18n.t("tab_language"));
