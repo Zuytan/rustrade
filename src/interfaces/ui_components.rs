@@ -3,8 +3,9 @@ use eframe::egui;
 use tokio::sync::mpsc::Sender;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::application::agents::analyst::AnalystCommand;
-use crate::application::agents::analyst::AnalystConfig; // Need default or similar
+use crate::application::agents::analyst::AnalystConfig; 
 use crate::application::risk_management::risk_manager::RiskConfig;
+use crate::domain::risk::risk_appetite::{RiskAppetite, RiskProfile};
 
 
 /// Settings tab enumeration
@@ -49,9 +50,18 @@ impl DashboardView {
     }
 }
 
+/// Configuration Mode
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum ConfigMode {
+    Simple,
+    Advanced,
+}
+
 /// Settings Panel state
 pub struct SettingsPanel {
     pub active_tab: SettingsTab,
+    pub config_mode: ConfigMode, // NEW
+    pub risk_score: u8,          // NEW: 1-10
     
     // --- Risk Management ---
     pub max_position_size_pct: String,
@@ -80,8 +90,10 @@ pub struct SettingsPanel {
 
 impl SettingsPanel {
     pub fn new() -> Self {
-        Self {
+        let mut panel = Self {
             active_tab: SettingsTab::SystemConfig, 
+            config_mode: ConfigMode::Simple, // Default to simple for novices
+            risk_score: 5,                   // Default balanced score
             
             // Risk Defaults
             max_position_size_pct: "0.10".to_string(), 
@@ -89,7 +101,7 @@ impl SettingsPanel {
             max_drawdown_pct: "0.05".to_string(),
             consecutive_loss_limit: "3".to_string(),
             
-            // Strategy Defaults (Standard/Analyst Defaults)
+            // Strategy Defaults
             fast_sma_period: "10".to_string(),
             slow_sma_period: "20".to_string(),
             rsi_period: "14".to_string(),
@@ -101,6 +113,50 @@ impl SettingsPanel {
             
             sma_threshold: "0.001".to_string(),
             profit_target_multiplier: "2.0".to_string(),
+        };
+        // Initialize strings based on default risk score
+        panel.update_from_score(5); 
+        panel
+    }
+    
+    /// Updates all text fields based on the selected risk score (Logic mirroring RiskAppetite domain)
+    pub fn update_from_score(&mut self, score: u8) {
+        if let Ok(risk) = RiskAppetite::new(score) {
+            // -- Risk --
+            self.max_position_size_pct = format!("{:.2}", risk.calculate_max_position_size_pct());
+            
+            // Derived Risk Params (not strictly in RiskAppetite struct but inferred logic)
+            // Conservative (1) -> Lower Daily Loss (1%), Aggressive (10) -> Higher (5%)
+            let max_daily_loss = 0.01 + (score as f64 - 1.0) * (0.04 / 9.0);
+            self.max_daily_loss_pct = format!("{:.2}", max_daily_loss);
+            
+            // Max Drawdown: Cons 3% -> Aggr 15%
+            let max_dd = 0.03 + (score as f64 - 1.0) * (0.12 / 9.0);
+            self.max_drawdown_pct = format!("{:.2}", max_dd);
+            
+            // Consecutive Loss: Cons 2 -> Aggr 6
+            let cons_loss = 2 + ((score as f64 - 1.0) * (4.0 / 9.0)).round() as usize;
+            self.consecutive_loss_limit = cons_loss.to_string();
+
+            // -- Strategy --
+            self.rsi_threshold = format!("{:.1}", risk.calculate_rsi_threshold());
+            self.macd_min_threshold = format!("{:.3}", risk.calculate_macd_min_threshold());
+            self.min_profit_ratio = format!("{:.2}", risk.calculate_min_profit_ratio());
+            self.profit_target_multiplier = format!("{:.2}", risk.calculate_profit_target_multiplier());
+            
+            // Inferred Strategy Params
+            // ADX: Cons 30 (High quality) -> Aggr 15 (Chop)
+            let adx = 30.0 - (score as f64 - 1.0) * (15.0 / 9.0);
+            self.adx_threshold = format!("{:.1}", adx);
+            
+            // SMA: Cons Slower (20/50) -> Aggr Faster (5/15)
+            // Linear interp for Fast: 20 -> 5
+            let fast = 20.0 - (score as f64 - 1.0) * (15.0 / 9.0);
+            // Linear interp for Slow: 50 -> 15
+            let slow = 50.0 - (score as f64 - 1.0) * (35.0 / 9.0);
+            
+            self.fast_sma_period = format!("{}", fast.round() as usize);
+            self.slow_sma_period = format!("{}", slow.round() as usize);
         }
     }
 }
@@ -208,7 +264,61 @@ pub fn render_settings_view(
                     ui.label(egui::RichText::new(i18n.t("settings_config_description")).weak().size(12.0));
                     ui.add_space(10.0);
                     
+                    // --- Mode Toggle ---
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(format!("{} ", i18n.t("settings_mode_label"))).strong());
+                        if ui.selectable_label(panel.config_mode == ConfigMode::Simple, i18n.t("settings_mode_simple")).clicked() {
+                            panel.config_mode = ConfigMode::Simple;
+                            // Re-sync values when switching back to simple to ensure consistency? 
+                            // No, let users keep custom if they switch to advanced, but maybe reset if they switch to simple?
+                            // For now, simple mode just drives the values.
+                            panel.update_from_score(panel.risk_score);
+                        }
+                        if ui.selectable_label(panel.config_mode == ConfigMode::Advanced, i18n.t("settings_mode_advanced")).clicked() {
+                            panel.config_mode = ConfigMode::Advanced;
+                        }
+                    });
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
                     egui::ScrollArea::vertical().show(ui, |ui| {
+                        
+                        // --- SIMPLE MODE ---
+                        if panel.config_mode == ConfigMode::Simple {
+                            ui.group(|ui| {
+                                ui.heading(i18n.t("settings_risk_score_label"));
+                                ui.label(egui::RichText::new(i18n.t("settings_risk_score_hint")).weak().size(11.0));
+                                ui.add_space(10.0);
+                                
+                                let mut score_f32 = panel.risk_score as f32;
+                                if ui.add(egui::Slider::new(&mut score_f32, 1.0..=10.0).step_by(1.0).text("Score")).changed() {
+                                    panel.risk_score = score_f32 as u8;
+                                    panel.update_from_score(panel.risk_score);
+                                }
+                                
+                                ui.add_space(5.0);
+                                
+                                // Show derived profile badge
+                                if let Ok(appetite) = RiskAppetite::new(panel.risk_score) {
+                                    let (profile_text, color) = match appetite.profile() {
+                                        RiskProfile::Conservative => ("Conservative (Prudent)", egui::Color32::from_rgb(100, 200, 100)), // Green
+                                        RiskProfile::Balanced => ("Balanced (Équilibré)", egui::Color32::from_rgb(200, 200, 100)),     // Yellow
+                                        RiskProfile::Aggressive => ("Aggressive (Agressif)", egui::Color32::from_rgb(200, 100, 100)),   // Red
+                                    };
+                                    
+                                    ui.horizontal(|ui| {
+                                        ui.label("Profile:");
+                                        ui.colored_label(color, egui::RichText::new(profile_text).strong());
+                                    });
+                                    
+                                    ui.add_space(5.0);
+                                    ui.label(format!("Risk per Trade: {:.1}%", appetite.calculate_risk_per_trade_percent() * 100.0));
+                                    ui.label(format!("Max Drawdown: {:.1}%", panel.max_drawdown_pct.parse::<f64>().unwrap_or(0.0) * 100.0));
+                                }
+                            });
+                        } else {
+                            // --- ADVANCED MODE (Standard View) ---
                         
                         // --- Risk Management Group ---
                         ui.group(|ui| {
@@ -253,15 +363,16 @@ pub fn render_settings_view(
                                     i18n.t("settings_strat_macd_min_hint"));
                             });
                             
-                            ui.collapsing(i18n.t("settings_subgroup_advanced"), |ui| {
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_adx_thresh"), &mut panel.adx_threshold, 
-                                    i18n.t("settings_strat_adx_thresh_hint"));
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_min_rr"), &mut panel.min_profit_ratio, 
-                                    i18n.t("settings_strat_min_rr_hint"));
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_profit_mult"), &mut panel.profit_target_multiplier, 
-                                    i18n.t("settings_strat_profit_mult_hint"));
+                                ui.collapsing(i18n.t("settings_subgroup_advanced"), |ui| {
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_adx_thresh"), &mut panel.adx_threshold, 
+                                        i18n.t("settings_strat_adx_thresh_hint"));
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_min_rr"), &mut panel.min_profit_ratio, 
+                                        i18n.t("settings_strat_min_rr_hint"));
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_profit_mult"), &mut panel.profit_target_multiplier, 
+                                        i18n.t("settings_strat_profit_mult_hint"));
+                                });
                             });
-                        });
+                        } // End else Advanced Mode
 
                         ui.add_space(20.0);
                         

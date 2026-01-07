@@ -170,7 +170,12 @@
         "settings_strat_min_rr": "Min Reward/Risk:",
         "settings_strat_min_rr_hint": "Minimum expected profit relative to risk required to take a trade (e.g. 1.5).",
         "settings_strat_profit_mult": "Profit Target (x ATR):",
-        "settings_strat_profit_mult_hint": "Take profit level calculated as a multiple of Average True Range (Vol)."
+        "settings_strat_profit_mult_hint": "Take profit level calculated as a multiple of Average True Range (Vol).",
+        "settings_mode_label": "Configuration Mode:",
+        "settings_mode_simple": "Start (Simple)",
+        "settings_mode_advanced": "Expert (Advanced)",
+        "settings_risk_score_label": "Risk Appetite Score (1-10):",
+        "settings_risk_score_hint": "Global setting that scales all risk and strategy parameters. 1 = Conservative, 10 = Aggressive."
     },
     "help_categories": {
         "abbreviations": "Abbreviations",

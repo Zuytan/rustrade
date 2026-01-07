@@ -20,8 +20,11 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.45.0)
-- **Dynamic Configuration System**: Runtime adjustment of Risk and Strategy parameters without restarting the bot.
+## Latest Updates (Version 0.46.0)
+- **Unified Configuration Modes**: Two distinct modes for system configuration:
+  - **Simple (Novice)**: Single "Risk Appetite Score" (1-10) slider that auto-tunes all 12+ deeply technical parameters. Includes "Conservative", "Balanced", and "Aggressive" profile visualizers.
+  - **Advanced (Expert)**: Full granular control over every parameter (SMA periods, RSI thresholds, etc.).
+- **Dynamic Configuration System**: Runtime adjustment of Risk and Strategy parameters without restarting.
 - **System Config UI**: New settings tab with granular controls (Risk Limits, SMA Periods, RSI Thresholds, etc.).
 - **Internationalization (I18n)**: Full localization of the new configuration UI including helpful tooltips for every parameter.
 - **Market Sentiment Analysis**: Integrated "Fear & Greed Index" (Crypto) analysis. Risk Manager automatically reduces position sizing by 50% during "Extreme Fear" periods. "Market Mood" is visualized on the Dashboard with dynamic color coding.

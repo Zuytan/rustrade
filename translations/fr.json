@@ -170,7 +170,12 @@
         "settings_strat_min_rr": "Ratio Rendement/Risque Min:",
         "settings_strat_min_rr_hint": "Profit espéré minimum par rapport au risque pris pour accepter un trade (ex: 1.5).",
         "settings_strat_profit_mult": "Objectif Profit (x ATR):",
-        "settings_strat_profit_mult_hint": "Niveau de prise de profit calculé comme un multiple de l'ATR (Volatilité)."
+        "settings_strat_profit_mult_hint": "Niveau de prise de profit calculé comme un multiple de l'ATR (Volatilité).",
+        "settings_mode_label": "Mode de Configuration :",
+        "settings_mode_simple": "Débutant (Simple)",
+        "settings_mode_advanced": "Expert (Avancé)",
+        "settings_risk_score_label": "Appétit au Risque (1-10) :",
+        "settings_risk_score_hint": "Réglage global qui ajuste tous les paramètres de risque et de stratégie. 1 = Prudent, 10 = Agressif."
     },
     "help_categories": {
         "abbreviations": "Abréviations",

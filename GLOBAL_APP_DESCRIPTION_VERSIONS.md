@@ -1,5 +1,24 @@
 # Rustrade - Historique des Versions
 
+## Version 0.46.0 (Janvier 2026) - Simple & Advanced Configuration Modes
+- **Dual-Mode Configuration UI**:
+  - **Objectif**: Simplifier l'expérience pour les utilisateurs novices tout en conservant la puissance pour les experts.
+  - **Mode Simple**: 
+    - Contrôle unique via "Risk Appetite Score" (1-10).
+    - Feedback visuel en temps réel du profil (Prudent, Équilibré, Agressif) avec code couleur.
+    - Affichage en lecture seule des paramètres clés dérivés (Risk per Trade, Max Drawdown).
+  - **Mode Avancé**:
+    - Accès complet et granulaire aux 12+ paramètres système.
+    - Interface inchangée par rapport à la v0.45.0.
+- **Auto-Tuning Logic**:
+  - Le slider de risque ajuste automatiquement (interpolation linéaire) :
+    - Risk Params: Max Position, Stop Loss, Risk per Trade.
+    - Strategy Params: RSI Thresholds, SMA Periods, ADX Thresholds, Profit Targets.
+  - Basé sur le moteur `RiskAppetite` existant du domaine.
+- **UX Improvements**:
+  - Toggle clair "Simple / Advanced" en haut du panneau.
+  - Persistance des choix (le mode reste actif).
+
 ## Version 0.45.0 (Janvier 2026) - Dynamic Configuration & I18n UI
 - **Dynamic Configuration System**:
   - **Runtime Updates**: Modification des paramètres critiques (Risk & Strategy) sans redémarrage.
