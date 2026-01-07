@@ -3,7 +3,7 @@ use crate::domain::ports::{ExecutionService, MarketDataService};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{self, Duration};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct MarketScanner {
     market_service: Arc<dyn MarketDataService>,
@@ -81,6 +81,7 @@ impl MarketScanner {
 
             // 3. Send Update
             if !symbols.is_empty() {
+                info!("MarketScanner: Sending {} symbols to Sentinel: {:?}", symbols.len(), symbols);
                 if let Err(e) = self
                     .sentinel_cmd_tx
                     .send(SentinelCommand::UpdateSymbols(symbols))
@@ -89,6 +90,8 @@ impl MarketScanner {
                     error!("MarketScanner: Failed to update Sentinel: {}", e);
                     break;
                 }
+            } else {
+                warn!("MarketScanner: No top movers found, nothing to send to Sentinel");
             }
 
             // Wait for next interval

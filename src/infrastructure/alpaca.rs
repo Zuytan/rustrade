@@ -982,17 +982,26 @@ impl AlpacaMarketDataService {
 
                 let abs_change = change_pct.abs();
 
-                // Filter by volume threshold
+                // Filter by volume threshold (but allow zero-volume in Paper Trading mode)
                 let has_volume = bar.volume >= self.min_volume_threshold;
+                let is_zero_volume = bar.volume == 0.0;
 
                 info!(
                     "MarketScanner: {} - change: {:.2}%, volume: {:.0}, threshold: {:.0}, pass: {}",
                     symbol, change_pct, bar.volume, self.min_volume_threshold, has_volume
                 );
 
-                if has_volume && abs_change > 0.0 {
+                // Include symbol if it has sufficient volume OR if volume is zero (Paper Trading limitation)
+                // In Paper Trading, Alpaca often returns 0 volume for crypto, so we fall back to price change only
+                if abs_change > 0.0 && (has_volume || is_zero_volume) {
+                    if is_zero_volume {
+                        tracing::debug!(
+                            "MarketScanner: {} included despite zero volume (Paper Trading fallback)",
+                            symbol
+                        );
+                    }
                     movers.push((symbol, abs_change, change_pct));
-                } else if !has_volume {
+                } else if !has_volume && !is_zero_volume {
                     info!(
                         "MarketScanner: {} FILTERED OUT - volume {:.0} < threshold {:.0}",
                         symbol, bar.volume, self.min_volume_threshold
