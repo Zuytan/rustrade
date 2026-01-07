@@ -22,7 +22,11 @@ use crate::application::{
         adaptive_optimization_service::AdaptiveOptimizationService,
         optimizer::{GridSearchOptimizer, ParameterGrid},
     },
-    risk_management::{order_throttler::OrderThrottler, risk_manager::RiskManager},
+    risk_management::{
+        order_throttler::OrderThrottler,
+        risk_manager::RiskManager,
+        commands::RiskCommand,
+    },
     strategies::*,
 };
 use crate::config::{Config, Mode};
@@ -36,6 +40,7 @@ use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRep
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::TradeProposal; // Added TradeProposal import
+use crate::domain::sentiment::Sentiment; // Added Sentiment import
 use crate::infrastructure::alpaca::AlpacaSectorProvider;
 use crate::infrastructure::binance::BinanceSectorProvider;
 use crate::infrastructure::factory::ServiceFactory;
@@ -46,12 +51,15 @@ use crate::infrastructure::persistence::repositories::{
     SqlitePerformanceSnapshotRepository, SqliteReoptimizationTriggerRepository,
     SqliteStrategyRepository,
 };
+use crate::infrastructure::sentiment::alternative_me::AlternativeMeSentimentProvider;
+use crate::domain::sentiment::SentimentProvider;
 
 pub struct SystemHandle {
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub candle_rx: broadcast::Receiver<Candle>,
+    pub sentiment_rx: broadcast::Receiver<Sentiment>, // Added sentiment rx
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
 }
@@ -203,9 +211,13 @@ impl Application {
         let (order_tx, order_rx) = mpsc::channel(50); // Low throughput: approved orders
         let (throttled_order_tx, throttled_order_rx) = mpsc::channel(50); // Low throughput: throttled orders
         let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(10); // Very low: control commands
+        let (risk_cmd_tx, risk_cmd_rx) = mpsc::channel(10); // Low: risk updates
 
         // Broadcast channel for Candles (for UI)
         let (candle_tx, candle_rx) = broadcast::channel(100);
+
+        // Broadcast channel for Sentiment (for UI)
+        let (sentiment_broadcast_tx, sentiment_broadcast_rx) = broadcast::channel(1);
 
         // Use the shared SpreadCache from Application (populated by WebSocket for Alpaca mode)
         let spread_cache = self.spread_cache.clone();
@@ -243,6 +255,7 @@ impl Application {
             proposal_tx: proposal_tx.clone(),
             portfolio: self.portfolio.clone(),
             candle_rx, // Move the receiver to the handle
+            sentiment_rx: sentiment_broadcast_rx, // Move the receiver to the handle
             strategy_mode: self.config.strategy_mode,
             risk_appetite: self.config.risk_appetite,
         };
@@ -432,6 +445,7 @@ impl Application {
 
         let mut risk_manager = RiskManager::new(
             proposal_rx,
+            risk_cmd_rx,
             order_tx,
             execution_service_for_risk,
             market_service_for_risk,
@@ -463,6 +477,39 @@ impl Application {
         tokio::spawn(async move { risk_manager.run().await });
         tokio::spawn(async move { order_throttler.run().await });
         tokio::spawn(async move { executor.run().await });
+
+        // Spawn Sentiment Polling Task
+        let sentiment_tx = risk_cmd_tx.clone();
+        let asset_class = self.config.asset_class;
+        tokio::spawn(async move {
+            // Only poll for Crypto for now as we use Alternative.me
+            // In future we can add VIX for stocks
+            if asset_class == crate::config::AssetClass::Crypto {
+                info!("Starting Sentiment Polling Task (Alternative.me)...");
+                let provider = AlternativeMeSentimentProvider::new();
+                
+                // Initial fetch
+                if let Ok(sentiment) = provider.fetch_sentiment().await {
+                    let _ = sentiment_tx.send(RiskCommand::UpdateSentiment(sentiment.clone())).await;
+                    let _ = sentiment_broadcast_tx.send(sentiment);
+                }
+
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(4 * 3600)).await; // Every 4 hours
+                    match provider.fetch_sentiment().await {
+                        Ok(sentiment) => {
+                            if let Err(e) = sentiment_tx.send(RiskCommand::UpdateSentiment(sentiment.clone())).await {
+                                error!("Failed to send sentiment update: {}", e);
+                            }
+                             let _ = sentiment_broadcast_tx.send(sentiment);
+                        }
+                        Err(e) => {
+                            warn!("Failed to fetch sentiment: {}", e);
+                        }
+                    }
+                }
+            }
+        });
 
         // Spawn Adaptive Optimization Task
         let adaptive_service = self.adaptive_optimization_service.clone();

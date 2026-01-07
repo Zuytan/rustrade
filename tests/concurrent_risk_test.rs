@@ -44,8 +44,10 @@ async fn test_concurrent_proposals_respect_limits() {
         5000, // 5s staleness
     ));
 
+    let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
         proposal_rx,
+        dummy_cmd_rx,
         order_tx,
         mock_exec.clone(),
         mock_market,
@@ -147,8 +149,10 @@ async fn test_backpressure_drops_excess_proposals() {
     let risk_config = RiskConfig::default();
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
+    let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
         proposal_rx,
+        dummy_cmd_rx,
         order_tx,
         mock_exec,
         mock_market,

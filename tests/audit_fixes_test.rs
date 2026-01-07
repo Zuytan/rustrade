@@ -53,8 +53,10 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
+    let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
         proposal_rx,
+        dummy_cmd_rx,
         order_tx,
         mock_exec.clone(),
         mock_market.clone(),
@@ -172,8 +174,10 @@ async fn test_pending_order_ttl_cleanup() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
+    let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
         proposal_rx,
+        dummy_cmd_rx,
         order_tx,
         mock_exec.clone(),
         mock_market.clone(),

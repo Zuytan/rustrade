@@ -1,5 +1,6 @@
 use crate::domain::ports::OrderUpdate;
 use crate::domain::trading::types::TradeProposal;
+use crate::domain::sentiment::Sentiment;
 
 /// Command abstraction for RiskManager operations
 /// 
@@ -18,6 +19,9 @@ pub enum RiskCommand {
     
     /// Validate and potentially execute a trade proposal from Analyst
     ProcessProposal(TradeProposal),
+
+    /// Update market sentiment state
+    UpdateSentiment(Sentiment),
 }
 
 impl RiskCommand {
@@ -28,6 +32,7 @@ impl RiskCommand {
             Self::ValuationTick => "ValuationTick",
             Self::RefreshPortfolio => "RefreshPortfolio",
             Self::ProcessProposal(_) => "ProcessProposal",
+            Self::UpdateSentiment(_) => "UpdateSentiment",
         }
     }
 }

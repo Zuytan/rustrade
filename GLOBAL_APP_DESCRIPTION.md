@@ -20,7 +20,10 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.43.0)
+## Latest Updates (Version 0.44.0)
+- **Market Sentiment Analysis**: Integrated "Fear & Greed Index" (Crypto) analysis. Risk Manager automatically reduces position sizing by 50% during "Extreme Fear" periods. "Market Mood" is visualized on the Dashboard with dynamic color coding.
+
+## Version 0.43.0
 - **Dynamic Dashboard Metrics**: User Interface now reflects real-time trading statistics:
   - **Dynamic Win Rate**: Replaced static chart with dynamic arc visualization based on portfolio history.
   - **Monte Carlo Integration**: Simulation uses actual Average Win/Loss percentages derived from closed trades.

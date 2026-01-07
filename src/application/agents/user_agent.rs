@@ -4,6 +4,7 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderSide;
 use crate::domain::trading::types::TradeProposal;
+use crate::domain::sentiment::Sentiment;
 use crate::domain::ui::I18nService;
 use chrono::{DateTime, Utc};
 use crossbeam_channel::Receiver;
@@ -57,6 +58,7 @@ impl ActivityEvent {
 pub struct UserAgent {
     pub log_rx: Receiver<String>,
     pub candle_rx: broadcast::Receiver<Candle>,
+    pub sentiment_rx: broadcast::Receiver<Sentiment>,
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub portfolio: Arc<RwLock<Portfolio>>,
@@ -95,6 +97,7 @@ pub struct UserAgent {
     // Performance & Risk metrics (Dynamic)
     pub latency_ms: u64,
     pub risk_score: u8,  // Risk appetite score (1-9)
+    pub market_sentiment: Option<Sentiment>,
 
     // Phase 4: Analytics State
     pub monte_carlo_result: Option<crate::domain::performance::monte_carlo::MonteCarloResult>,
@@ -134,6 +137,7 @@ impl UserAgent {
     pub fn new(
         log_rx: Receiver<String>,
         candle_rx: broadcast::Receiver<Candle>,
+        sentiment_rx: broadcast::Receiver<Sentiment>,
         sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
         proposal_tx: mpsc::Sender<TradeProposal>,
         portfolio: Arc<RwLock<Portfolio>>,
@@ -143,6 +147,7 @@ impl UserAgent {
         Self {
             log_rx,
             candle_rx,
+            sentiment_rx,
             sentinel_cmd_tx,
             proposal_tx,
             portfolio,
@@ -163,6 +168,7 @@ impl UserAgent {
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
             latency_ms: 12,    // Default initial value
             risk_score: risk_appetite.map(|r| r.score()).unwrap_or(5),  // Use real risk score or default to 5 (balanced)
+            market_sentiment: None,
             monte_carlo_result: None,
             correlation_matrix: std::collections::HashMap::new(),
         }
@@ -267,6 +273,12 @@ impl UserAgent {
         // Keep history manageable
         if self.chat_history.len() > 1000 {
             self.chat_history.drain(0..100);
+        }
+
+        // 1.5 Sentiment Updates
+        if let Ok(sentiment) = self.sentiment_rx.try_recv() {
+             debug!("UserAgent: Received new sentiment: {} ({})", sentiment.value, sentiment.classification);
+             self.market_sentiment = Some(sentiment);
         }
 
         // 2. Candles

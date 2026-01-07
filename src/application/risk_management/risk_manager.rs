@@ -1,4 +1,5 @@
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate, SectorProvider};
+use crate::domain::sentiment::{Sentiment, SentimentClassification};
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, OrderSide, OrderStatus, OrderType, TradeProposal};
 use chrono::Utc;
@@ -104,6 +105,7 @@ impl Default for RiskConfig {
 
 pub struct RiskManager {
     proposal_rx: Receiver<TradeProposal>,
+    external_cmd_rx: Receiver<RiskCommand>,
     order_tx: Sender<Order>,
     execution_service: Arc<dyn ExecutionService>,
     market_service: Arc<dyn MarketDataService>,
@@ -127,6 +129,7 @@ pub struct RiskManager {
     pending_orders: HashMap<String, PendingOrder>,
     pending_reservations:
         HashMap<String, crate::application::monitoring::portfolio_state_manager::ReservationToken>, // Exposure reservations
+    current_sentiment: Option<Sentiment>,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +157,7 @@ impl RiskManager {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         proposal_rx: Receiver<TradeProposal>,
+        external_cmd_rx: Receiver<RiskCommand>,
         order_tx: Sender<Order>,
         execution_service: Arc<dyn ExecutionService>,
         market_service: Arc<dyn MarketDataService>,
@@ -169,6 +173,7 @@ impl RiskManager {
         }
         Self {
             proposal_rx,
+            external_cmd_rx,
             order_tx,
             execution_service,
             market_service,
@@ -190,6 +195,7 @@ impl RiskManager {
             halted: false,
             pending_orders: HashMap::new(),
             pending_reservations: HashMap::new(),
+            current_sentiment: None,
         }
     }
 
@@ -228,20 +234,38 @@ impl RiskManager {
     fn validate_position_size(
         &self,
         _symbol: &str,
-        new_usd_exposure: Decimal,
-        current_equity: Decimal,
+        exposure: Decimal,
+        equity: Decimal,
+        side: OrderSide,
     ) -> bool {
-        if current_equity <= Decimal::ZERO {
+        if equity <= Decimal::ZERO {
             return true;
         }
 
-        let position_pct = (new_usd_exposure / current_equity).to_f64().unwrap_or(0.0);
+        // Apply Sentiment-based Risk Adjustment
+        let mut adjusted_max_pos_pct = self.risk_config.max_position_size_pct;
 
-        if position_pct > self.risk_config.max_position_size_pct {
+        if let Some(sentiment) = &self.current_sentiment {
+            // In Extreme Fear, we reduce position size by 50% for Long positions
+            // Unless we are Shorting (if we supported shorting, which we don't fully yet)
+            // But checking 'side' is good practice.
+            if side == OrderSide::Buy && sentiment.classification == SentimentClassification::ExtremeFear {
+                adjusted_max_pos_pct *= 0.5;
+                debug!(
+                    "RiskManager: Extreme Fear ({}) detected. Reducing max position size to {:.2}%",
+                    sentiment.value,
+                    adjusted_max_pos_pct * 100.0
+                );
+            }
+        }
+
+        let position_pct = (exposure / equity).to_f64().unwrap_or(0.0);
+
+        if position_pct > adjusted_max_pos_pct {
             warn!(
-                "RiskManager: Rejecting because Position size ({:.2}%) > Limit ({:.2}%)",
+                "RiskManager: Rejecting because Position size ({:.2}%) > Limit ({:.2}%) [Sentiment Adjusted]",
                 position_pct * 100.0,
-                self.risk_config.max_position_size_pct * 100.0
+                adjusted_max_pos_pct * 100.0
             );
             return false;
         }
@@ -679,7 +703,14 @@ impl RiskManager {
             RiskCommand::ValuationTick => self.cmd_handle_valuation().await,
             RiskCommand::RefreshPortfolio => self.cmd_handle_refresh().await,
             RiskCommand::ProcessProposal(proposal) => self.cmd_handle_proposal(proposal).await,
+            RiskCommand::UpdateSentiment(sentiment) => self.cmd_handle_update_sentiment(sentiment).await,
         }
+    }
+    
+    async fn cmd_handle_update_sentiment(&mut self, sentiment: Sentiment) -> Result<(), Box<dyn std::error::Error>> {
+        info!("RiskManager: Received Market Sentiment: {} ({})", sentiment.value, sentiment.classification);
+        self.current_sentiment = Some(sentiment);
+        Ok(())
     }
 
     /// Handle portfolio refresh command
@@ -793,7 +824,7 @@ impl RiskManager {
             let total_qty = self.get_projected_quantity(&proposal.symbol, current_pos_qty) + proposal.quantity;
             let total_exposure = total_qty * proposal.price;
 
-            if !self.validate_position_size(&proposal.symbol, total_exposure, current_equity) {
+            if !self.validate_position_size(&proposal.symbol, total_exposure, current_equity, proposal.side) {
                 warn!(
                     "RiskManager: Rejecting {:?} order for {} - Position size limit",
                     proposal.side, proposal.symbol
@@ -978,6 +1009,13 @@ impl RiskManager {
                         error!("RiskManager: Proposal processing failed: {}", e);
                     }
                 }
+
+                // External commands (Sentiment, etc.)
+                Some(cmd) = self.external_cmd_rx.recv() => {
+                    if let Err(e) = self.handle_command(cmd).await {
+                        error!("RiskManager: External command processing failed: {}", e);
+                    }
+                }
             }
         }
     }
@@ -996,6 +1034,7 @@ mod tests {
     use chrono::Utc;
     
     use rust_decimal::Decimal;
+    use rust_decimal::prelude::FromPrimitive;
     use tokio::sync::{mpsc, RwLock};
 
     use std::sync::Mutex;
@@ -1092,8 +1131,10 @@ mod tests {
             ),
         );
 
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
             proposal_rx,
+            dummy_cmd_rx,
             order_tx,
             exec_service,
             market_service,
@@ -1170,8 +1211,10 @@ mod tests {
             ),
         );
 
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
             proposal_rx,
+            dummy_cmd_rx,
             order_tx,
             exec_service,
             market_service,
@@ -1216,8 +1259,10 @@ mod tests {
             ),
         );
 
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
             proposal_rx,
+            dummy_cmd_rx,
             order_tx,
             exec_service,
             market_service,
@@ -1270,8 +1315,10 @@ mod tests {
             ),
         );
 
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
             proposal_rx,
+            dummy_cmd_rx,
             order_tx,
             exec_service,
             market_service,
@@ -1344,8 +1391,10 @@ mod tests {
         risk_config.max_daily_loss_pct = 0.5; // 50% max allowed
         risk_config.max_drawdown_pct = 0.5; // 50%
 
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
             proposal_rx,
+            dummy_cmd_rx,
             order_tx,
             exec_service,
             market_service,
@@ -1436,8 +1485,10 @@ mod tests {
             ),
         );
 
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
             proposal_rx,
+            dummy_cmd_rx,
             order_tx,
             exec_service,
             market_service,
@@ -1510,8 +1561,10 @@ mod tests {
             ),
         );
 
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
             proposal_rx,
+            dummy_cmd_rx,
             order_tx,
             exec_service,
             market_service,
@@ -1592,8 +1645,10 @@ mod tests {
             ),
         );
 
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
             proposal_rx,
+            dummy_cmd_rx,
             order_tx,
             exec_service,
             market_service,
@@ -1623,5 +1678,100 @@ mod tests {
             Utc::now().date_naive(),
             "Should update reset date to today"
         );
+    }
+
+    #[tokio::test]
+    async fn test_sentiment_risk_adjustment() {
+        let (proposal_tx, proposal_rx) = mpsc::channel(1);
+        let (risk_cmd_tx, risk_cmd_rx) = mpsc::channel(1);
+        let (order_tx, mut order_rx) = mpsc::channel(1);
+
+        // Portfolio: $10,000 Cash
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(10000);
+        let portfolio = Arc::new(RwLock::new(port));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+        let market_service = Arc::new(MockMarketDataService::new());
+
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
+
+        let mut risk_config = RiskConfig::default();
+        risk_config.max_position_size_pct = 0.10; // 10% normally ($1000)
+
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            risk_cmd_rx,
+            order_tx,
+            exec_service,
+            market_service,
+            state_manager,
+            false,
+            AssetClass::Crypto,
+            risk_config,
+            None,
+            None,
+        );
+        tokio::spawn(async move { rm.run().await });
+
+        // 1. Inject Sentiment: Extreme Fear (20)
+        let sentiment = Sentiment {
+            value: 20,
+            classification: SentimentClassification::from_score(20),
+            timestamp: Utc::now(),
+            source: "Test".to_string(),
+        };
+        risk_cmd_tx.send(RiskCommand::UpdateSentiment(sentiment)).await.unwrap();
+        
+        // Wait for processing
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // 2. Proposal: Buy $600 worth (6%)
+        // Normal Limit: $1000 (10%) -> Would Pass
+        // Extreme Fear Limit: $500 (5%) -> Should Fail
+        let proposal = TradeProposal {
+            symbol: "BTC".to_string(),
+            side: OrderSide::Buy,
+            price: Decimal::from(60000),
+            quantity: Decimal::from_f64(0.01).unwrap(), // $600
+            order_type: OrderType::Market,
+            reason: "Test Sentiment".to_string(),
+            timestamp: 0,
+        };
+        proposal_tx.send(proposal).await.unwrap();
+
+        // 3. Verify Rejection
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(order_rx.try_recv().is_err(), "Should be rejected due to Sentiment adjustment");
+
+        // 4. Inject Sentiment: Greed (60)
+         let sentiment_greed = Sentiment {
+            value: 60,
+            classification: SentimentClassification::from_score(60),
+            timestamp: Utc::now(),
+            source: "Test".to_string(),
+        };
+        risk_cmd_tx.send(RiskCommand::UpdateSentiment(sentiment_greed)).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // 5. Resend Proposal (Should Pass now, limit is back to 10%)
+        let proposal2 = TradeProposal {
+            symbol: "BTC".to_string(),
+            side: OrderSide::Buy,
+            price: Decimal::from(60000),
+            quantity: Decimal::from_f64(0.01).unwrap(), // $600 < $1000
+            order_type: OrderType::Market,
+            reason: "Test Sentiment Greed".to_string(),
+            timestamp: 0,
+        };
+        proposal_tx.send(proposal2).await.unwrap();
+
+        // 6. Verify Acceptance
+        let order = order_rx.recv().await.expect("Should be approved in Greed mode");
+        assert_eq!(order.symbol, "BTC");
     }
 }

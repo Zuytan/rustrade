@@ -1,5 +1,22 @@
 # Rustrade - Historique des Versions
 
+## Version 0.44.0 (Janvier 2026) - Market Sentiment Analysis
+- **Market Sentiment Integration**: Intégration de l'indice "Fear & Greed" pour ajuster dynamiquement la prise de risque.
+  - **Source Externe**: Connecteur API pour `alternative.me` (Crypto Fear & Greed Index).
+  - **Sentiment Provider**: Abstraction `SentimentProvider` permettant d'ajouter facilement d'autres sources (e.g., VIX pour Stocks).
+  - **Classification**: Normalisation du score (0-100) en 5 catégories (Extreme Fear à Extreme Greed).
+- **Risk Management Adaptatif**:
+  - Le `RiskManager` écoute les changements de sentiment en temps réel.
+  - **Protection "Extreme Fear"**: Réduction automatique de la taille maximale des positions (`max_position_size_pct`) de **50%** lors des périodes de peur extrême.
+- **Tableau de Bord enrichi**:
+  - **Widget "Market Mood"**: Nouvelle carte métrique affichant la jauge de sentiment, le score et la classification avec code couleur dynamique.
+- **Architecture**:
+  - Flux de données unilatéral: `System` (Poll) -> `Broadcast` -> `RiskManager` / `UserAgent`.
+  - Tests d'intégration (`test_sentiment_risk_adjustment`) validant l'impact du sentiment sur l'acceptation des ordres.
+- **Verification**:
+  - 100% Tests Passants.
+  - Documentation complète dans `walkthrough.md`.
+
 ## Version 0.43.0 (Janvier 2026) - Dynamic Dashboard Metrics
 - **Dynamic Win Rate**: Replaced static chart with real-time visualization of win rate percentage.
 - **Monte Carlo Integration**: Connected simulation to actual trade history statistics (avg win/loss %) instead of hardcoded values.

@@ -126,6 +126,7 @@ fn main() -> anyhow::Result<()> {
     let agent = UserAgent::new(
         log_rx,
         system_handle.candle_rx,
+        system_handle.sentiment_rx,
         system_handle.sentinel_cmd_tx,
         system_handle.proposal_tx,
         system_handle.portfolio,

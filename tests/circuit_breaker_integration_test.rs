@@ -53,8 +53,10 @@ async fn test_circuit_breaker_triggers_on_crash() {
         correlation_config: rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
     };
 
+    let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
         proposal_rx,
+        dummy_cmd_rx,
         order_tx,
         execution_service.clone(),
         market_service.clone(),

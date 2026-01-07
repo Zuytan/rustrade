@@ -5,6 +5,7 @@ use chrono::{TimeZone, Utc};
 use rust_decimal::prelude::ToPrimitive;
 use std::collections::VecDeque;
 
+
 /// Renders the main Dashboard content (Concept Art Layout)
 pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
     // --- Data Prep ---
@@ -102,9 +103,9 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
     ui.add_space(20.0);
 
     // ---------------------------------------------------------
-    // 2. METRICS CARDS (4 Columns)
+    // 2. METRICS CARDS (5 Columns)
     // ---------------------------------------------------------
-    ui.columns(4, |columns| {
+    ui.columns(5, |columns| {
         // Card 1: DAILY P&L (Active Blue Border Effect)
         let pnl_val = unrealized_pnl.to_f64().unwrap_or(0.0);
         let pnl_color = if pnl_val >= 0.0 { egui::Color32::from_rgb(0, 230, 118) } else { egui::Color32::from_rgb(255, 23, 68) };
@@ -226,6 +227,40 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                      
                      ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                          ui.label(egui::RichText::new("🛡").size(24.0).color(egui::Color32::from_gray(100)));
+                     });
+                 });
+             });
+        });
+
+
+        // Card 5: MARKET MOOD (Brain/Thermometer)
+        columns[4].push_id("card_market_mood", |ui| {
+             render_start_card(ui, "MARKET MOOD", |ui| {
+                 ui.horizontal(|ui| {
+                     ui.vertical(|ui| {
+                         if let Some(sentiment) = &agent.market_sentiment {
+                             let color = egui::Color32::from_hex(sentiment.classification.color_hex()).unwrap_or(egui::Color32::GRAY);
+                             
+                             ui.label(egui::RichText::new(sentiment.classification.to_string()).size(22.0).strong().color(color));
+                             
+                             // Progress Bar / Gauge representation
+                             let (rect, _resp) = ui.allocate_at_least(egui::vec2(100.0, 6.0), egui::Sense::hover());
+                             ui.painter().rect_filled(rect, 3.0, egui::Color32::from_gray(40));
+                             
+                             let progress_width = 100.0 * (sentiment.value as f32 / 100.0);
+                             let progress_rect = egui::Rect::from_min_size(rect.min, egui::vec2(progress_width, 6.0));
+                             ui.painter().rect_filled(progress_rect, 3.0, color);
+
+                             ui.add_space(4.0);
+                             ui.label(egui::RichText::new(format!("Index: {}", sentiment.value)).size(11.0).color(egui::Color32::from_gray(120)));
+                         } else {
+                             ui.label(egui::RichText::new("Loading...").size(22.0).strong().color(egui::Color32::GRAY));
+                             ui.label(egui::RichText::new("Waiting for data").size(11.0).color(egui::Color32::from_gray(120)));
+                         }
+                     });
+                     
+                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                         ui.label(egui::RichText::new("🌡").size(24.0).color(egui::Color32::from_gray(100)));
                      });
                  });
              });
