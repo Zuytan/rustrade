@@ -259,8 +259,9 @@ pub fn render_settings_view(
         ui.separator();
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
-            // Force full width expansion
+            // Force full width AND height expansion
             ui.set_min_width(ui.available_width());
+            ui.set_min_height(ui.available_height());
             
             match panel.active_tab {
                 SettingsTab::SystemConfig => {
@@ -268,17 +269,34 @@ pub fn render_settings_view(
                     ui.label(egui::RichText::new(i18n.t("settings_config_description")).weak().size(12.0));
                     ui.add_space(10.0);
                     
-                    // --- Mode Toggle ---
+                    // --- Mode Toggle (Custom Buttons for Contrast) ---
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(format!("{} ", i18n.t("settings_mode_label"))).strong());
-                        if ui.selectable_label(panel.config_mode == ConfigMode::Simple, i18n.t("settings_mode_simple")).clicked() {
+                        
+                        // Simple Mode Button
+                        let simple_active = panel.config_mode == ConfigMode::Simple;
+                        let simple_btn = egui::Button::new(
+                            egui::RichText::new(i18n.t("settings_mode_simple"))
+                                .color(if simple_active { egui::Color32::WHITE } else { egui::Color32::from_gray(200) })
+                                .strong()
+                        )
+                        .fill(if simple_active { egui::Color32::from_rgb(41, 121, 255) } else { egui::Color32::from_rgb(40, 44, 52) });
+
+                        if ui.add(simple_btn).clicked() {
                             panel.config_mode = ConfigMode::Simple;
-                            // Re-sync values when switching back to simple to ensure consistency? 
-                            // No, let users keep custom if they switch to advanced, but maybe reset if they switch to simple?
-                            // For now, simple mode just drives the values.
                             panel.update_from_score(panel.risk_score);
                         }
-                        if ui.selectable_label(panel.config_mode == ConfigMode::Advanced, i18n.t("settings_mode_advanced")).clicked() {
+
+                        // Advanced Mode Button
+                        let advanced_active = panel.config_mode == ConfigMode::Advanced;
+                        let advanced_btn = egui::Button::new(
+                            egui::RichText::new(i18n.t("settings_mode_advanced"))
+                                .color(if advanced_active { egui::Color32::WHITE } else { egui::Color32::from_gray(200) })
+                                .strong()
+                        )
+                        .fill(if advanced_active { egui::Color32::from_rgb(41, 121, 255) } else { egui::Color32::from_rgb(40, 44, 52) });
+
+                        if ui.add(advanced_btn).clicked() {
                             panel.config_mode = ConfigMode::Advanced;
                         }
                     });
@@ -292,6 +310,7 @@ pub fn render_settings_view(
 
                     egui::ScrollArea::vertical()
                          .max_height(available_height)
+                         .id_salt("settings_scroll") // Unique ID
                          .show(ui, |ui| {
                         
                         // --- SIMPLE MODE ---
