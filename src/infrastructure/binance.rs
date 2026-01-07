@@ -1,4 +1,3 @@
-use crate::config::AssetClass;
 use crate::domain::ports::OrderUpdate;
 use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
 use crate::domain::trading::portfolio::Portfolio;
@@ -43,6 +42,7 @@ const CRYPTO_UNIVERSE: &[&str] = &[
 pub struct BinanceMarketDataService {
     client: Client,
     api_key: String,
+    #[allow(dead_code)]
     api_secret: String,
     base_url: String,
     ws_manager: Arc<BinanceWebSocketManager>,

@@ -46,7 +46,8 @@ impl Default for DynamicRegimeConfig {
 #[derive(Debug, Clone)]
 pub struct DynamicRegimeStrategy {
     advanced_strategy: AdvancedTripleFilterStrategy,
-    trend_divergence_threshold: f64,
+    #[allow(dead_code)]
+    trend_divergence_threshold: f64, // Legacy field, now using ADX-based regime detection
 }
 
 impl DynamicRegimeStrategy {
@@ -95,14 +96,13 @@ impl DynamicRegimeStrategy {
     }
 
     fn detect_regime(&self, ctx: &AnalysisContext) -> MarketRegime {
-        // Calculate divergence between fast and slow SMA as % of price
-        let divergence = if ctx.price_f64 > 0.0 {
-            (ctx.fast_sma - ctx.slow_sma).abs() / ctx.price_f64
-        } else {
-            0.0
-        };
-
-        if divergence > self.trend_divergence_threshold {
+        // Use highest available timeframe ADX for more reliable regime detection
+        // Higher timeframes give better signal for overall market regime
+        let adx = ctx.get_highest_timeframe_adx();
+        
+        // ADX-based regime detection (more reliable than SMA divergence)
+        // ADX > threshold = Strong Trend, otherwise Choppy
+        if adx > self.advanced_strategy.adx_threshold {
             MarketRegime::StrongTrend
         } else {
             MarketRegime::Choppy
@@ -191,9 +191,10 @@ mod tests {
             bb_lower: 0.0,
             bb_middle: 0.0,
             bb_upper: 0.0,
-            adx: 0.0,
+            adx: 30.0, // Strong trend for dynamic strategy tests
             has_position,
             timestamp: 0,
+            timeframe_features: None,
         }
     }
 
@@ -254,8 +255,9 @@ mod tests {
             trend_divergence_threshold: 0.005,
             ..Default::default()
         });
-        // Small divergence = choppy market
-        let ctx = create_test_context(100.2, 100.0, 105.0, 95.0, false);
+        // Small divergence = choppy market, and override ADX to be low
+        let mut ctx = create_test_context(100.2, 100.0, 105.0, 95.0, false);
+        ctx.adx = 20.0; // Low ADX = choppy market
 
         let signal = strategy.analyze(&ctx);
 

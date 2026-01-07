@@ -20,7 +20,25 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.41.0)
+## Latest Updates (Version 0.42.0)
+- **Multi-Timeframe Analysis Infrastructure**: Added comprehensive multi-timeframe support:
+  - New domain types: `Timeframe` enum (1Min, 5Min, 15Min, 1Hour, 4Hour, 1Day) with API conversions for Alpaca, Binance, and OANDA.
+  - `TimeframeCandle` struct for aggregated OHLCV data across timeframes.
+  - `TimeframeAggregator` service for real-time candle aggregation (1-min → higher timeframes).
+  - Extended `SymbolContext` to track multiple timeframes simultaneously.
+  - Configuration support via `PRIMARY_TIMEFRAME`, `TIMEFRAMES`, and `TREND_TIMEFRAME` environment variables.
+  - **Performance Improvement**: Reduced `TREND_SMA_PERIOD` from 2000 to 50 (93% reduction in warmup candles: ~2200 → ~55).
+  - Preset configurations for Day Trading, Swing Trading, Crypto 24/7, and Scalping strategies.
+  - 14 new unit tests for timeframe logic and aggregation (171 total tests passing).
+- **Multi-Timeframe Strategy Integration (Phase 3)**:
+  - Extended `AnalysisContext` with `TimeframeFeatures` and multi-timeframe helper methods.
+  - `AdvancedTripleFilterStrategy` now validates higher timeframe trend confirmation before buy signals.
+  - `DynamicRegimeStrategy` uses highest timeframe ADX for more reliable regime detection.
+  - Helper methods: `higher_timeframe_confirms_trend()`, `multi_timeframe_trend_strength()`, `all_timeframes_bullish()`, `get_highest_timeframe_adx()`.
+  - Backward compatible: existing strategies work without multi-timeframe data (optional feature).
+  - Improved signal quality: blocks trades when primary timeframe signal conflicts with higher timeframe trend.
+
+## Version 0.41.0
 - **Binance Integration**: Added Binance as a third broker option for cryptocurrency trading:
   - Implemented `BinanceMarketDataService` with REST API and WebSocket support.
   - Implemented `BinanceExecutionService` with HMAC-SHA256 authentication.

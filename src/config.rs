@@ -126,6 +126,10 @@ pub struct Config {
     pub profit_target_multiplier: f64,
     pub adx_period: usize,
     pub adx_threshold: f64,
+    // Multi-Timeframe Configuration
+    pub primary_timeframe: crate::domain::market::timeframe::Timeframe,
+    pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
+    pub trend_timeframe: crate::domain::market::timeframe::Timeframe,
 }
 
 impl Config {
@@ -234,7 +238,7 @@ impl Config {
         let strategy_mode = StrategyMode::from_str(&strategy_mode_str)?;
 
         let trend_sma_period = env::var("TREND_SMA_PERIOD")
-            .unwrap_or_else(|_| "2000".to_string())
+            .unwrap_or_else(|_| "50".to_string()) // Changed from 2000 to 50
             .parse::<usize>()
             .context("Failed to parse TREND_SMA_PERIOD")?;
 
@@ -468,6 +472,35 @@ impl Config {
             .parse::<u64>()
             .unwrap_or(2000);
 
+        let adx_period = env::var("ADX_PERIOD")
+            .unwrap_or_else(|_| "14".to_string())
+            .parse::<usize>()
+            .unwrap_or(14);
+
+        let adx_threshold = env::var("ADX_THRESHOLD")
+            .unwrap_or_else(|_| "25.0".to_string())
+            .parse::<f64>()
+            .unwrap_or(25.0);
+
+        // Multi-Timeframe Configuration
+        let primary_timeframe = env::var("PRIMARY_TIMEFRAME")
+            .unwrap_or_else(|_| "1Min".to_string())
+            .parse::<crate::domain::market::timeframe::Timeframe>()
+            .context("Failed to parse PRIMARY_TIMEFRAME")?;
+
+        let timeframes_str = env::var("TIMEFRAMES")
+            .unwrap_or_else(|_| "1Min,5Min,15Min,1Hour".to_string());
+        let enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe> = timeframes_str
+            .split(',')
+            .map(|s| s.trim().parse())
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to parse TIMEFRAMES")?;
+
+        let trend_timeframe = env::var("TREND_TIMEFRAME")
+            .unwrap_or_else(|_| "1Hour".to_string())
+            .parse::<crate::domain::market::timeframe::Timeframe>()
+            .context("Failed to parse TREND_TIMEFRAME")?;
+
         Ok(Config {
             mode,
             asset_class,
@@ -534,18 +567,15 @@ impl Config {
             trend_tolerance_pct: final_trend_tolerance_pct,
             macd_min_threshold: final_macd_min_threshold,
             profit_target_multiplier: final_profit_target_multiplier,
-            adx_period: env::var("ADX_PERIOD")
-                .unwrap_or_else(|_| "14".to_string())
-                .parse::<usize>()
-                .unwrap_or(14),
-            adx_threshold: env::var("ADX_THRESHOLD")
-                .unwrap_or_else(|_| "25.0".to_string())
-                .parse::<f64>()
-                .unwrap_or(25.0),
+            adx_period,
+            adx_threshold,
             spread_bps,
             min_profit_ratio: final_min_profit_ratio,
             portfolio_staleness_ms,
             portfolio_refresh_interval_ms,
+            primary_timeframe,
+            enabled_timeframes,
+            trend_timeframe,
         })
     }
 }

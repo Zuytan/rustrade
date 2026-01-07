@@ -9,6 +9,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, warn};
 
 pub struct BinanceWebSocketManager {
+    #[allow(dead_code)]
     api_key: String,
     ws_url: String,
     spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
@@ -157,7 +158,7 @@ impl BinanceWebSocketManager {
     fn handle_message(
         text: &str,
         event_tx: &broadcast::Sender<MarketEvent>,
-        spread_cache: &Arc<crate::application::market_data::spread_cache::SpreadCache>,
+        _spread_cache: &Arc<crate::application::market_data::spread_cache::SpreadCache>,
     ) -> Result<()> {
         #[derive(Debug, Deserialize)]
         struct StreamMessage {
@@ -194,7 +195,7 @@ impl BinanceWebSocketManager {
                 .and_then(Decimal::from_f64_retain)
                 .unwrap_or(Decimal::ZERO);
 
-            let quantity = trade
+            let _quantity = trade
                 .quantity
                 .parse::<f64>()
                 .ok()

@@ -182,6 +182,8 @@ pub struct FeatureSet {
     pub ema_fast: Option<f64>,
     pub ema_slow: Option<f64>,
     pub adx: Option<f64>,
+    /// The timeframe these indicators were calculated on
+    pub timeframe: Option<crate::domain::market::timeframe::Timeframe>,
 }
 
 // ===== Symbol Normalization =====

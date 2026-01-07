@@ -55,6 +55,7 @@ impl SignalGenerator {
             adx: features.adx.unwrap_or(0.0),
             has_position,
             timestamp,
+            timeframe_features: None, // Will be populated by Analyst when multi-timeframe is enabled
         };
 
         if let Some(strategy_signal) = strategy.analyze(&analysis_ctx) {

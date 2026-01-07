@@ -97,6 +97,7 @@ mod tests {
             adx: 0.0,
             has_position: has_pos,
             timestamp: 0,
+            timeframe_features: None,
         }
     }
 

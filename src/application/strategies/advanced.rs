@@ -133,6 +133,37 @@ impl AdvancedTripleFilterStrategy {
             }
         }
     }
+
+    fn multi_timeframe_trend_filter(&self, ctx: &AnalysisContext, side: OrderSide) -> bool {
+        // If no multi-timeframe data available, fall back to single timeframe check
+        if ctx.timeframe_features.is_none() {
+            return self.trend_filter(ctx, side);
+        }
+        
+        match side {
+            OrderSide::Buy => {
+                // For buy signals, check if higher timeframes confirm bullish trend
+                // We check 1Hour and 4Hour if available
+                use crate::domain::market::timeframe::Timeframe;
+                
+                // Check 1Hour timeframe first (most common for day trading)
+                if !ctx.higher_timeframe_confirms_trend(OrderSide::Buy, Timeframe::OneHour) {
+                    return false;
+                }
+                
+                // Also check 4Hour if it's in the enabled timeframes
+                if !ctx.higher_timeframe_confirms_trend(OrderSide::Buy, Timeframe::FourHour) {
+                    return false;
+                }
+                
+                true
+            }
+            OrderSide::Sell => {
+                // For sell signals, we're more permissive (already have position)
+                true
+            }
+        }
+    }
 }
 
 impl TradingStrategy for AdvancedTripleFilterStrategy {
@@ -150,6 +181,15 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                     tracing::info!(
                         "AdvancedFilter [{}]: BUY BLOCKED - Weak Trend (ADX={:.2} <= threshold={:.2})",
                         ctx.symbol, ctx.adx, self.adx_threshold
+                    );
+                    return None;
+                }
+
+                // Multi-timeframe trend confirmation (Phase 3)
+                if !self.multi_timeframe_trend_filter(ctx, OrderSide::Buy) {
+                    tracing::info!(
+                        "AdvancedFilter [{}]: BUY BLOCKED - Higher timeframe trend not confirmed",
+                        ctx.symbol
                     );
                     return None;
                 }
@@ -233,6 +273,7 @@ mod tests {
             adx: 26.0, // Strong trend by default
             has_position: false,
             timestamp: 0,
+            timeframe_features: None,
         }
     }
 

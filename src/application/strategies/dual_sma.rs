@@ -89,6 +89,7 @@ mod tests {
             adx: 0.0,
             has_position,
             timestamp: 0,
+            timeframe_features: None,
         }
     }
 

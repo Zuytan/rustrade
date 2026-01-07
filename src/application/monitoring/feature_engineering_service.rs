@@ -185,6 +185,7 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             ema_fast: Some(self.ema_fast.next(price)),
             ema_slow: Some(self.ema_slow.next(price)),
             adx: Some(self.adx.next(high, low, price)),
+            timeframe: Some(crate::domain::market::timeframe::Timeframe::OneMin), // Primary timeframe
         }
     }
 }

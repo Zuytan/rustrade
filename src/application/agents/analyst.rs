@@ -34,7 +34,7 @@ pub struct SymbolContext {
     pub position_manager: PositionManager,
     pub strategy: Arc<dyn TradingStrategy>, // Per-symbol strategy
     pub config: AnalystConfig,              // Per-symbol config
-    pub last_features: FeatureSet,
+    pub last_features: FeatureSet,          // Primary timeframe features
     pub regime_detector: MarketRegimeDetector,
     pub expectancy_evaluator: Box<dyn ExpectancyEvaluator>,
     pub taken_profit: bool, // Track if partial profit has been taken for current position
@@ -44,6 +44,10 @@ pub struct SymbolContext {
     pub last_macd_histogram: Option<f64>, // Track previous MACD histogram for rising/falling detection
     pub cached_reward_risk_ratio: f64,    // Calculated during warmup, used for trade filtering
     pub warmup_succeeded: bool,           // Track if historical warmup was successful
+    // Multi-timeframe support
+    pub timeframe_aggregator: crate::application::market_data::timeframe_aggregator::TimeframeAggregator,
+    pub timeframe_features: std::collections::HashMap<crate::domain::market::timeframe::Timeframe, FeatureSet>,
+    pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
 }
 
 impl SymbolContext {
@@ -51,6 +55,7 @@ impl SymbolContext {
         config: AnalystConfig,
         strategy: Arc<dyn TradingStrategy>,
         win_rate_provider: Arc<dyn WinRateProvider>,
+        enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     ) -> Self {
         let min_hold_time_ms = config.min_hold_time_minutes * 60 * 1000;
 
@@ -71,6 +76,10 @@ impl SymbolContext {
             last_macd_histogram: None,
             cached_reward_risk_ratio: 1.0, // Default safe value, will be updated during warmup
             warmup_succeeded: false,       // Will be set to true if warmup completes
+            // Multi-timeframe initialization
+            timeframe_aggregator: crate::application::market_data::timeframe_aggregator::TimeframeAggregator::new(),
+            timeframe_features: std::collections::HashMap::new(),
+            enabled_timeframes,
         }
     }
 
@@ -259,6 +268,8 @@ pub struct Analyst {
     ui_candle_tx: Option<broadcast::Sender<Candle>>,          // Added for UI streaming
 
     trade_filter: crate::application::trading::trade_filter::TradeFilter,
+    // Multi-timeframe configuration
+    enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
 }
 
 
@@ -286,6 +297,10 @@ impl Analyst {
         let trade_filter =
             crate::application::trading::trade_filter::TradeFilter::new(cost_evaluator.clone());
 
+        // Extract enabled timeframes from config (will be passed from system.rs)
+        // For now, default to primary timeframe only to maintain backward compatibility
+        let enabled_timeframes = vec![crate::domain::market::timeframe::Timeframe::OneMin];
+
         Self {
             market_rx,
             proposal_tx,
@@ -303,6 +318,7 @@ impl Analyst {
             win_rate_provider,
             ui_candle_tx: dependencies.ui_candle_tx,
             trade_filter,
+            enabled_timeframes,
         }
     }
 
@@ -1010,7 +1026,12 @@ impl Analyst {
                 symbol, end_time
             );
             let (strategy, config) = self.resolve_strategy(symbol).await;
-            let mut context = SymbolContext::new(config, strategy, self.win_rate_provider.clone());
+            let mut context = SymbolContext::new(
+                config,
+                strategy,
+                self.win_rate_provider.clone(),
+                self.enabled_timeframes.clone(),
+            );
 
             // WARMUP: Fetch historical data to initialize indicators
             self.warmup_context(&mut context, symbol, end_time).await;
