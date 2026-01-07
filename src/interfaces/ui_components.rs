@@ -1,5 +1,6 @@
 use crate::domain::ui::I18nService;
 use eframe::egui;
+use tracing::error;
 use tokio::sync::mpsc::Sender;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::application::agents::analyst::AnalystCommand;
@@ -164,15 +165,19 @@ impl SettingsPanel {
 /// Helper to render a setting row with a label, input field, and tooltip hint
 fn ui_setting_with_hint(ui: &mut egui::Ui, label: &str, value: &mut String, hint: &str) {
     ui.horizontal(|ui| {
-        let _label_response = ui.label(label);
-        // Add a (?) hint icon or just attach tooltip to label
-        ui.label(egui::RichText::new("(?)").weak().size(10.0)).on_hover_text(hint);
+        // Larger text for labels to fill space better
+        let _label_response = ui.label(egui::RichText::new(label).size(14.0));
+        
+        // Add a (?) hint icon
+        ui.label(egui::RichText::new("(?)").weak().size(12.0)).on_hover_text(hint);
         
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-             // Increased width for better visibility on larger screens
-             ui.add(egui::TextEdit::singleline(value).desired_width(120.0));
+             // Substantially larger input field (200px)
+             ui.add(egui::TextEdit::singleline(value).font(egui::TextStyle::Heading).desired_width(200.0));
         });
     });
+    // Add significant vertical spacing between rows
+    ui.add_space(20.0); 
 }
 
 pub fn render_sidebar(
@@ -259,19 +264,20 @@ pub fn render_settings_view(
         ui.separator();
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
-            // Force full width AND height expansion
+            // Only force width, let height be natural
             ui.set_min_width(ui.available_width());
-            ui.set_min_height(ui.available_height());
             
             match panel.active_tab {
                 SettingsTab::SystemConfig => {
-                    ui.heading(i18n.t("settings_system_config_title"));
-                    ui.label(egui::RichText::new(i18n.t("settings_config_description")).weak().size(12.0));
-                    ui.add_space(10.0);
+                    // --- Header Section ---
+                    ui.vertical(|ui| {
+                        ui.heading(i18n.t("settings_system_config_title"));
+                        ui.label(egui::RichText::new(i18n.t("settings_config_description")).weak().size(12.0));
+                    });
                     
                     // --- Mode Toggle (Custom Buttons for Contrast) ---
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(format!("{} ", i18n.t("settings_mode_label"))).strong());
+                        ui.label(egui::RichText::new(format!("{} ", i18n.t("settings_mode_label"))).strong().size(16.0));
                         
                         // Simple Mode Button
                         let simple_active = panel.config_mode == ConfigMode::Simple;
@@ -279,8 +285,10 @@ pub fn render_settings_view(
                             egui::RichText::new(i18n.t("settings_mode_simple"))
                                 .color(if simple_active { egui::Color32::WHITE } else { egui::Color32::from_gray(200) })
                                 .strong()
+                                .size(14.0)
                         )
-                        .fill(if simple_active { egui::Color32::from_rgb(41, 121, 255) } else { egui::Color32::from_rgb(40, 44, 52) });
+                        .fill(if simple_active { egui::Color32::from_rgb(41, 121, 255) } else { egui::Color32::from_rgb(40, 44, 52) })
+                        .min_size(egui::vec2(120.0, 32.0)); // Taller buttons
 
                         if ui.add(simple_btn).clicked() {
                             panel.config_mode = ConfigMode::Simple;
@@ -293,40 +301,46 @@ pub fn render_settings_view(
                             egui::RichText::new(i18n.t("settings_mode_advanced"))
                                 .color(if advanced_active { egui::Color32::WHITE } else { egui::Color32::from_gray(200) })
                                 .strong()
+                                .size(14.0)
                         )
-                        .fill(if advanced_active { egui::Color32::from_rgb(41, 121, 255) } else { egui::Color32::from_rgb(40, 44, 52) });
+                        .fill(if advanced_active { egui::Color32::from_rgb(41, 121, 255) } else { egui::Color32::from_rgb(40, 44, 52) })
+                         .min_size(egui::vec2(120.0, 32.0));
 
                         if ui.add(advanced_btn).clicked() {
                             panel.config_mode = ConfigMode::Advanced;
                         }
                     });
-                    ui.add_space(10.0);
+                    
                     ui.separator();
-                    ui.add_space(10.0);
 
-                    // Reserve space for the Save button footer
-                    let footer_height = 50.0;
-                    let available_height = ui.available_height() - footer_height;
+                    // Calculate dynamic minimum height for ScrollArea
 
+                    // Scrollable content with dynamic minimum height
                     egui::ScrollArea::vertical()
-                         .max_height(available_height)
-                         .id_salt("settings_scroll") // Unique ID
+                         .id_salt("settings_scroll")
+                         .min_scrolled_height(600.0)
                          .show(ui, |ui| {
-                        
+
                         // --- SIMPLE MODE ---
                         if panel.config_mode == ConfigMode::Simple {
+                            ui.add_space(30.0); // Space at top
+                            
                             ui.group(|ui| {
-                                ui.heading(i18n.t("settings_risk_score_label"));
-                                ui.label(egui::RichText::new(i18n.t("settings_risk_score_hint")).weak().size(11.0));
-                                ui.add_space(15.0);
+                                ui.heading(egui::RichText::new(i18n.t("settings_risk_score_label")).size(22.0));
+                                ui.label(egui::RichText::new(i18n.t("settings_risk_score_hint")).weak().size(14.0));
+                                ui.add_space(40.0); // More space before slider
                                 
                                 let mut score_f32 = panel.risk_score as f32;
-                                if ui.add(egui::Slider::new(&mut score_f32, 1.0..=10.0).step_by(1.0).show_value(true)).changed() {
+                                // Make slider larger
+                                let slider = egui::Slider::new(&mut score_f32, 1.0..=10.0).step_by(1.0).show_value(true);
+                                ui.add(slider);
+
+                                if score_f32 as u8 != panel.risk_score {
                                     panel.risk_score = score_f32 as u8;
                                     panel.update_from_score(panel.risk_score);
                                 }
                                 
-                                ui.add_space(15.0);
+                                ui.add_space(40.0); // More space after slider
                                 
                                 // Show derived profile badge
                                 if let Ok(appetite) = RiskAppetite::new(panel.risk_score) {
@@ -337,122 +351,136 @@ pub fn render_settings_view(
                                     };
                                     
                                     ui.horizontal(|ui| {
-                                        ui.label("Profile:");
-                                        ui.colored_label(color, egui::RichText::new(profile_text).strong());
+                                        ui.label(egui::RichText::new("Profile:").size(18.0)); // Larger
+                                        ui.colored_label(color, egui::RichText::new(profile_text).strong().size(18.0)); // Larger
                                     });
                                     
-                                    ui.add_space(5.0);
-                                    ui.label(format!("Risk per Trade: {:.1}%", appetite.calculate_risk_per_trade_percent() * 100.0));
-                                    ui.label(format!("Max Drawdown: {:.1}%", panel.max_drawdown_pct.parse::<f64>().unwrap_or(0.0) * 100.0));
+                                    ui.add_space(30.0); // More space
+                                    
+                                    // Make derived stats prominent
+                                    ui.group(|ui| {
+                                        ui.label(egui::RichText::new(format!("Risk per Trade: {:.1}%", appetite.calculate_risk_per_trade_percent() * 100.0)).size(16.0));
+                                        ui.add_space(10.0);
+                                        ui.label(egui::RichText::new(format!("Max Drawdown: {:.1}%", panel.max_drawdown_pct.parse::<f64>().unwrap_or(0.0) * 100.0)).size(16.0));
+                                        ui.add_space(10.0);
+                                        ui.label(egui::RichText::new(format!("Target Profit: {:.1}x ATR", appetite.calculate_profit_target_multiplier())).size(16.0));
+                                    });
                                 }
                             });
+                            
+                            ui.add_space(30.0); // Space at bottom
                         } else {
                             // --- ADVANCED MODE (Standard View) ---
+                            ui.add_space(20.0); // Space at top
                         
-                        // --- Risk Management Group ---
-                        ui.group(|ui| {
-                            ui.label(egui::RichText::new(i18n.t("settings_group_risk")).strong().size(14.0));
-                            ui.add_space(5.0);
-                            
-                            ui_setting_with_hint(ui, i18n.t("settings_risk_max_pos"), &mut panel.max_position_size_pct, 
-                                i18n.t("settings_risk_max_pos_hint"));
-                            
-                            ui_setting_with_hint(ui, i18n.t("settings_risk_max_loss"), &mut panel.max_daily_loss_pct, 
-                                i18n.t("settings_risk_max_loss_hint"));
+                            // --- Risk Management Group ---
+                            ui.group(|ui| {
+                                ui.label(egui::RichText::new(i18n.t("settings_group_risk")).strong().size(18.0));
+                                ui.add_space(15.0);
                                 
-                            ui_setting_with_hint(ui, i18n.t("settings_risk_max_dd"), &mut panel.max_drawdown_pct, 
-                                i18n.t("settings_risk_max_dd_hint"));
+                                ui_setting_with_hint(ui, i18n.t("settings_risk_max_pos"), &mut panel.max_position_size_pct, 
+                                    i18n.t("settings_risk_max_pos_hint"));
                                 
-                            ui_setting_with_hint(ui, i18n.t("settings_risk_consecutive_loss"), &mut panel.consecutive_loss_limit, 
-                                i18n.t("settings_risk_consecutive_loss_hint"));
-                        });
-                        
-                        ui.add_space(15.0);
-                        
-                        // --- Strategy Group ---
-                        ui.group(|ui| {
-                            ui.label(egui::RichText::new(i18n.t("settings_group_strategy")).strong().size(14.0));
-                            ui.add_space(5.0);
-                            
-                            ui.collapsing(i18n.t("settings_subgroup_trend"), |ui| {
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_fast_sma"), &mut panel.fast_sma_period, 
-                                    i18n.t("settings_strat_fast_sma_hint"));
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_slow_sma"), &mut panel.slow_sma_period, 
-                                    i18n.t("settings_strat_slow_sma_hint"));
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_sma_thresh"), &mut panel.sma_threshold, 
-                                    i18n.t("settings_strat_sma_thresh_hint"));
-                            });
-
-                            ui.collapsing(i18n.t("settings_subgroup_oscillators"), |ui| {
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_rsi_period"), &mut panel.rsi_period, 
-                                    i18n.t("settings_strat_rsi_period_hint"));
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_rsi_thresh"), &mut panel.rsi_threshold, 
-                                    i18n.t("settings_strat_rsi_thresh_hint"));
-                                ui_setting_with_hint(ui, i18n.t("settings_strat_macd_min"), &mut panel.macd_min_threshold, 
-                                    i18n.t("settings_strat_macd_min_hint"));
+                                ui_setting_with_hint(ui, i18n.t("settings_risk_max_loss"), &mut panel.max_daily_loss_pct, 
+                                    i18n.t("settings_risk_max_loss_hint"));
+                                    
+                                ui_setting_with_hint(ui, i18n.t("settings_risk_max_dd"), &mut panel.max_drawdown_pct, 
+                                    i18n.t("settings_risk_max_dd_hint"));
+                                    
+                                ui_setting_with_hint(ui, i18n.t("settings_risk_consecutive_loss"), &mut panel.consecutive_loss_limit, 
+                                    i18n.t("settings_risk_consecutive_loss_hint"));
                             });
                             
-                                ui.collapsing(i18n.t("settings_subgroup_advanced"), |ui| {
-                                    ui_setting_with_hint(ui, i18n.t("settings_strat_adx_thresh"), &mut panel.adx_threshold, 
-                                        i18n.t("settings_strat_adx_thresh_hint"));
-                                    ui_setting_with_hint(ui, i18n.t("settings_strat_min_rr"), &mut panel.min_profit_ratio, 
-                                        i18n.t("settings_strat_min_rr_hint"));
-                                    ui_setting_with_hint(ui, i18n.t("settings_strat_profit_mult"), &mut panel.profit_target_multiplier, 
-                                        i18n.t("settings_strat_profit_mult_hint"));
+                            ui.add_space(40.0); // More space between groups
+                            
+                            // --- Strategy Group ---
+                            ui.group(|ui| {
+                                ui.label(egui::RichText::new(i18n.t("settings_group_strategy")).strong().size(18.0));
+                                ui.add_space(15.0);
+                                
+                                ui.collapsing(i18n.t("settings_subgroup_trend"), |ui| {
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_fast_sma"), &mut panel.fast_sma_period, 
+                                        i18n.t("settings_strat_fast_sma_hint"));
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_slow_sma"), &mut panel.slow_sma_period, 
+                                        i18n.t("settings_strat_slow_sma_hint"));
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_sma_thresh"), &mut panel.sma_threshold, 
+                                        i18n.t("settings_strat_sma_thresh_hint"));
                                 });
-                            });
-                        } // End else Advanced Mode
+
+                                ui.collapsing(i18n.t("settings_subgroup_oscillators"), |ui| {
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_rsi_period"), &mut panel.rsi_period, 
+                                        i18n.t("settings_strat_rsi_period_hint"));
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_rsi_thresh"), &mut panel.rsi_threshold, 
+                                        i18n.t("settings_strat_rsi_thresh_hint"));
+                                    ui_setting_with_hint(ui, i18n.t("settings_strat_macd_min"), &mut panel.macd_min_threshold, 
+                                        i18n.t("settings_strat_macd_min_hint"));
+                                });
+                                
+                                    ui.collapsing(i18n.t("settings_subgroup_advanced"), |ui| {
+                                        ui_setting_with_hint(ui, i18n.t("settings_strat_adx_thresh"), &mut panel.adx_threshold, 
+                                            i18n.t("settings_strat_adx_thresh_hint"));
+                                        ui_setting_with_hint(ui, i18n.t("settings_strat_min_rr"), &mut panel.min_profit_ratio, 
+                                            i18n.t("settings_strat_min_rr_hint"));
+                                        ui_setting_with_hint(ui, i18n.t("settings_strat_profit_mult"), &mut panel.profit_target_multiplier, 
+                                            i18n.t("settings_strat_profit_mult_hint"));
+                                    });
+                                });
+                            } // End else Advanced Mode
 
                         ui.add_space(20.0);
                     }); // Close ScrollArea
 
-                    ui.add_space(10.0);
+                    ui.add_space(15.0);
                         
-                    if ui.button(egui::RichText::new(i18n.t("settings_save_button")).size(16.0)).clicked() {
-                             // --- Parse Values ---
-                             let max_pos = panel.max_position_size_pct.parse::<f64>().unwrap_or(0.10);
-                             let max_loss = panel.max_daily_loss_pct.parse::<f64>().unwrap_or(0.02);
-                             let max_dd = panel.max_drawdown_pct.parse::<f64>().unwrap_or(0.05);
-                             let cons_loss = panel.consecutive_loss_limit.parse::<usize>().unwrap_or(3);
-                             
-                             let fast_sma = panel.fast_sma_period.parse::<usize>().unwrap_or(10);
-                             let slow_sma = panel.slow_sma_period.parse::<usize>().unwrap_or(20);
-                             let rsi_per = panel.rsi_period.parse::<usize>().unwrap_or(14);
-                             let rsi_thresh = panel.rsi_threshold.parse::<f64>().unwrap_or(70.0);
-                             let sma_thresh = panel.sma_threshold.parse::<f64>().unwrap_or(0.001);
-                             let adx_thresh = panel.adx_threshold.parse::<f64>().unwrap_or(25.0);
-                             let min_rr = panel.min_profit_ratio.parse::<f64>().unwrap_or(1.5);
-                             let profit_mult = panel.profit_target_multiplier.parse::<f64>().unwrap_or(2.0);
-                             let macd_min = panel.macd_min_threshold.parse::<f64>().unwrap_or(0.0);
+                    // Save button - simple placement
+                    if ui.button(egui::RichText::new(i18n.t("settings_save_button")).size(18.0)).clicked() {
+                              // --- Parse Values ---
+                              let max_pos = panel.max_position_size_pct.parse::<f64>().unwrap_or(0.10);
+                              let max_loss = panel.max_daily_loss_pct.parse::<f64>().unwrap_or(0.02);
+                              let max_dd = panel.max_drawdown_pct.parse::<f64>().unwrap_or(0.05);
+                              let cons_loss = panel.consecutive_loss_limit.parse::<usize>().unwrap_or(3);
+                              
+                              let fast_sma = panel.fast_sma_period.parse::<usize>().unwrap_or(10);
+                              let slow_sma = panel.slow_sma_period.parse::<usize>().unwrap_or(20);
+                              let sma_thresh = panel.sma_threshold.parse::<f64>().unwrap_or(0.001);
+                              
+                              let rsi_p = panel.rsi_period.parse::<usize>().unwrap_or(14);
+                              let rsi_t = panel.rsi_threshold.parse::<f64>().unwrap_or(30.0);
+                              let macd_min = panel.macd_min_threshold.parse::<f64>().unwrap_or(0.0001);
+                              
+                              let adx_t = panel.adx_threshold.parse::<f64>().unwrap_or(25.0);
+                              let min_rr = panel.min_profit_ratio.parse::<f64>().unwrap_or(1.5);
+                              let prof_mult = panel.profit_target_multiplier.parse::<f64>().unwrap_or(2.0);
 
-                             // --- Create & Send Risk Config ---
-                             let mut risk_config = RiskConfig::default();
-                             risk_config.max_position_size_pct = max_pos;
-                             risk_config.max_daily_loss_pct = max_loss;
-                             risk_config.max_drawdown_pct = max_dd;
-                             risk_config.consecutive_loss_limit = cons_loss;
-                             
-                             let _ = risk_tx.try_send(RiskCommand::UpdateConfig(Box::new(risk_config)));
-                             
-                             // --- Create & Send Analyst Config ---
-                             let mut analyst_config = AnalystConfig::default();
-                             analyst_config.fast_sma_period = fast_sma;
-                             analyst_config.slow_sma_period = slow_sma;
-                             analyst_config.rsi_period = rsi_per;
-                             analyst_config.rsi_threshold = rsi_thresh;
-                             analyst_config.sma_threshold = sma_thresh;
-                             analyst_config.adx_threshold = adx_thresh;
-                             analyst_config.min_profit_ratio = min_rr;
-                             analyst_config.profit_target_multiplier = profit_mult;
-                             analyst_config.macd_min_threshold = macd_min;
-                             
-                             // Preserve other essential non-editable defaults that might get zeroed if not set
-                             // (AnalystConfig::default lines 147+ covers them)
-
-                             let _ = analyst_tx.try_send(AnalystCommand::UpdateConfig(Box::new(analyst_config)));
-                             
-                             // Feedback
-                             // We could set a flag to show a "Saved" message briefly.
+                              // --- Create & Send Risk Config ---
+                              // We use default() to set non-UI fields safely
+                              let mut risk_config = RiskConfig::default();
+                              risk_config.max_position_size_pct = max_pos;
+                              risk_config.max_daily_loss_pct = max_loss;
+                              risk_config.max_drawdown_pct = max_dd;
+                              risk_config.consecutive_loss_limit = cons_loss;
+                              
+                              // Use the correct enum variant: UpdateConfig(Box<RiskConfig>)
+                              // Use try_send because we are in a synchronous UI context
+                              if let Err(e) = risk_tx.try_send(RiskCommand::UpdateConfig(Box::new(risk_config))) {
+                                  error!("Failed to send update config command: {}", e);
+                              }
+                              
+                              // --- Update Analyst Config ---
+                              let mut analyst_cfg = AnalystConfig::default();
+                              analyst_cfg.fast_sma_period = fast_sma;
+                              analyst_cfg.slow_sma_period = slow_sma;
+                              analyst_cfg.sma_threshold = sma_thresh;
+                              analyst_cfg.rsi_period = rsi_p;
+                              analyst_cfg.rsi_threshold = rsi_t;
+                              analyst_cfg.macd_min_threshold = macd_min;
+                              analyst_cfg.adx_threshold = adx_t;
+                              analyst_cfg.min_profit_ratio = min_rr;
+                              analyst_cfg.profit_target_multiplier = prof_mult;
+                              
+                              if let Err(e) = analyst_tx.try_send(AnalystCommand::UpdateConfig(Box::new(analyst_cfg))) {
+                                   error!("Failed to send analyst config update: {}", e);
+                              }
                         }
                 }
                 SettingsTab::Language => {
