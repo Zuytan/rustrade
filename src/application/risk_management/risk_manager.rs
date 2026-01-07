@@ -704,7 +704,14 @@ impl RiskManager {
             RiskCommand::RefreshPortfolio => self.cmd_handle_refresh().await,
             RiskCommand::ProcessProposal(proposal) => self.cmd_handle_proposal(proposal).await,
             RiskCommand::UpdateSentiment(sentiment) => self.cmd_handle_update_sentiment(sentiment).await,
+            RiskCommand::UpdateConfig(config) => self.cmd_handle_update_config(config).await,
         }
+    }
+
+    async fn cmd_handle_update_config(&mut self, config: Box<RiskConfig>) -> Result<(), Box<dyn std::error::Error>> {
+        info!("RiskManager: Updating risk configuration: {:?}", config);
+        self.risk_config = *config;
+        Ok(())
     }
     
     async fn cmd_handle_update_sentiment(&mut self, sentiment: Sentiment) -> Result<(), Box<dyn std::error::Error>> {

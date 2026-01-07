@@ -1,4 +1,6 @@
 use crate::application::agents::sentinel::SentinelCommand;
+use crate::application::risk_management::commands::RiskCommand; // Added
+use crate::application::agents::analyst::AnalystCommand; // Added
 use crate::domain::market::strategy_config::StrategyMode;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
@@ -60,6 +62,8 @@ pub struct UserAgent {
     pub candle_rx: broadcast::Receiver<Candle>,
     pub sentiment_rx: broadcast::Receiver<Sentiment>,
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
+    pub risk_cmd_tx: mpsc::Sender<RiskCommand>, // Added
+    pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>, // Added
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub portfolio: Arc<RwLock<Portfolio>>,
 
@@ -139,6 +143,8 @@ impl UserAgent {
         candle_rx: broadcast::Receiver<Candle>,
         sentiment_rx: broadcast::Receiver<Sentiment>,
         sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
+        risk_cmd_tx: mpsc::Sender<RiskCommand>, // Added
+        analyst_cmd_tx: mpsc::Sender<AnalystCommand>, // Added
         proposal_tx: mpsc::Sender<TradeProposal>,
         portfolio: Arc<RwLock<Portfolio>>,
         strategy_mode: StrategyMode,
@@ -149,6 +155,8 @@ impl UserAgent {
             candle_rx,
             sentiment_rx,
             sentinel_cmd_tx,
+            risk_cmd_tx,
+            analyst_cmd_tx,
             proposal_tx,
             portfolio,
             chat_history: Vec::new(),

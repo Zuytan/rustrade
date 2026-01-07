@@ -8,7 +8,7 @@ use crate::application::optimization::win_rate_provider::HistoricalWinRateProvid
 use crate::application::strategies::TradingStrategy;
 use crate::application::{
     agents::{
-        analyst::{Analyst, AnalystConfig, AnalystDependencies},
+        analyst::{Analyst, AnalystCommand, AnalystConfig, AnalystDependencies},
         executor::Executor,
         scanner::MarketScanner,
         sentinel::{Sentinel, SentinelCommand}, // Added SentinelCommand
@@ -56,6 +56,8 @@ use crate::domain::sentiment::SentimentProvider;
 
 pub struct SystemHandle {
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
+    pub risk_cmd_tx: mpsc::Sender<RiskCommand>,
+    pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>,
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub candle_rx: broadcast::Receiver<Candle>,
@@ -212,6 +214,7 @@ impl Application {
         let (throttled_order_tx, throttled_order_rx) = mpsc::channel(50); // Low throughput: throttled orders
         let (sentinel_cmd_tx, sentinel_cmd_rx) = mpsc::channel(10); // Very low: control commands
         let (risk_cmd_tx, risk_cmd_rx) = mpsc::channel(10); // Low: risk updates
+        let (analyst_cmd_tx, analyst_cmd_rx) = mpsc::channel(10); // Low: config updates
 
         // Broadcast channel for Candles (for UI)
         let (candle_tx, candle_rx) = broadcast::channel(100);
@@ -252,6 +255,8 @@ impl Application {
         // Return handle BEFORE moving self members, so we clone what we need.
         let system_handle = SystemHandle {
             sentinel_cmd_tx: sentinel_cmd_tx.clone(),
+            risk_cmd_tx: risk_cmd_tx.clone(),
+            analyst_cmd_tx: analyst_cmd_tx.clone(),
             proposal_tx: proposal_tx.clone(),
             portfolio: self.portfolio.clone(),
             candle_rx, // Move the receiver to the handle
@@ -392,6 +397,7 @@ impl Application {
 
         let mut analyst = Analyst::new(
             market_rx,
+            analyst_cmd_rx,
             proposal_tx,
             analyst_config,
             strategy,

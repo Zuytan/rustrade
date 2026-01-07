@@ -107,9 +107,15 @@ impl eframe::App for UserAgent {
                  crate::interfaces::ui_components::DashboardView::Analytics => {
                       crate::interfaces::dashboard::render_analytics_view(ui, self);
                  }
-                 crate::interfaces::ui_components::DashboardView::Settings => {
-                      crate::interfaces::ui_components::render_settings_view(ui, &mut self.settings_panel, &mut self.i18n);
-                 }
+                  crate::interfaces::ui_components::DashboardView::Settings => {
+                       crate::interfaces::ui_components::render_settings_view(
+                           ui, 
+                           &mut self.settings_panel, 
+                           &mut self.i18n,
+                           &self.risk_cmd_tx,
+                           &self.analyst_cmd_tx
+                       );
+                  }
              }
         });
 

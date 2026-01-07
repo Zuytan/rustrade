@@ -1,5 +1,24 @@
 # Rustrade - Historique des Versions
 
+## Version 0.45.0 (Janvier 2026) - Dynamic Configuration & I18n UI
+- **Dynamic Configuration System**:
+  - **Runtime Updates**: Modification des paramètres critiques (Risk & Strategy) sans redémarrage.
+  - **Backend Support**: Implémentation des commandes `UpdateConfig` dans `RiskManager` et `Analyst`.
+  - **Canaux dédiés**: Canaux mpsc prioritaires pour la propagation immédiate des changements de config.
+- **System Config UI**:
+  - **Nouvel Onglet "System Config"**: Interface dédiée dans le panneau de paramètres.
+  - **Paramètres Exposés**:
+    - **Risk**: Max Position Size, Max Daily Loss, Max Drawdown, Consecutive Loss Limit.
+    - **Strategy**: SMA Periods (Fast/Slow), RSI Thresholds, MACD Min, ADX Threshold, Profit Targets.
+  - **Documentation Embarquée**: Tooltips `(?)` explicatifs pour chaque paramètre, traduits dynamiquement.
+  - **Groupes Pliables**: Organisation claire par domaine (Risk, Trend, Oscillators, Advanced).
+- **Internationalization (I18n)**:
+  - **Support Complet**: Traduction intégrale de l'interface de configuration (Labels + Hints) en Anglais et Français.
+  - **Refactoring UI**: Utilisation systématique de `i18n.t()` dans `ui_components.rs`.
+- **Validation**:
+  - `cargo check` réussie.
+  - Vérification manuelle du changement de langue et de la sauvegarde des configurations.
+
 ## Version 0.44.0 (Janvier 2026) - Market Sentiment Analysis
 - **Market Sentiment Integration**: Intégration de l'indice "Fear & Greed" pour ajuster dynamiquement la prise de risque.
   - **Source Externe**: Connecteur API pour `alternative.me` (Crypto Fear & Greed Index).

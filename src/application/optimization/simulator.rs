@@ -200,8 +200,11 @@ impl Simulator {
             },
         ));
 
+        let (_analyst_cmd_tx, analyst_cmd_rx) = mpsc::channel(1);
+
         let mut analyst = Analyst::new(
             market_rx,
+            analyst_cmd_rx,
             proposal_tx,
             sim_config,
             strategy,

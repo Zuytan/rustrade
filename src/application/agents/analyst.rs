@@ -50,6 +50,12 @@ pub struct SymbolContext {
     pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
 }
 
+#[derive(Debug)]
+pub enum AnalystCommand {
+    UpdateConfig(Box<AnalystConfig>),
+}
+
+
 impl SymbolContext {
     pub fn new(
         config: AnalystConfig,
@@ -270,12 +276,15 @@ pub struct Analyst {
     trade_filter: crate::application::trading::trade_filter::TradeFilter,
     // Multi-timeframe configuration
     enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
+    cmd_rx: Receiver<AnalystCommand>,
 }
+
 
 
 impl Analyst {
     pub fn new(
         market_rx: Receiver<MarketEvent>,
+        cmd_rx: Receiver<AnalystCommand>,
         proposal_tx: Sender<TradeProposal>,
         config: AnalystConfig,
         default_strategy: Arc<dyn TradingStrategy>,
@@ -319,6 +328,7 @@ impl Analyst {
             ui_candle_tx: dependencies.ui_candle_tx,
             trade_filter,
             enabled_timeframes,
+            cmd_rx,
         }
     }
 
@@ -383,6 +393,26 @@ impl Analyst {
                              }
                              _ => {}
                          }
+                    }
+                }
+
+                Some(cmd) = self.cmd_rx.recv() => {
+                    match cmd {
+                        AnalystCommand::UpdateConfig(new_config) => {
+                            info!("Analyst: Updating configuration...");
+                            self.config = *new_config;
+                            // Propagate to all existing symbol contexts
+                            for context in self.symbol_states.values_mut() {
+                                context.config = self.config.clone();
+                                // Check if structural parameters changed (periods)
+                                if context.config.rsi_period != self.config.rsi_period || 
+                                   context.config.fast_sma_period != self.config.fast_sma_period ||
+                                   context.config.slow_sma_period != self.config.slow_sma_period {
+                                     warn!("Analyst: Structural config change detected. Re-initializing Feature Service.");
+                                     context.feature_service = Box::new(crate::application::monitoring::feature_engineering_service::TechnicalFeatureEngineeringService::new(&self.config));
+                                }
+                            }
+                        }
                     }
                 }
             }

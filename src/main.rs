@@ -128,6 +128,8 @@ fn main() -> anyhow::Result<()> {
         system_handle.candle_rx,
         system_handle.sentiment_rx,
         system_handle.sentinel_cmd_tx,
+        system_handle.risk_cmd_tx,
+        system_handle.analyst_cmd_tx,
         system_handle.proposal_tx,
         system_handle.portfolio,
         system_handle.strategy_mode,

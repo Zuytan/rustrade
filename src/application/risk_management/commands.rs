@@ -22,6 +22,9 @@ pub enum RiskCommand {
 
     /// Update market sentiment state
     UpdateSentiment(Sentiment),
+
+    /// Update risk configuration dynamically
+    UpdateConfig(Box<crate::application::risk_management::risk_manager::RiskConfig>),
 }
 
 impl RiskCommand {
@@ -33,6 +36,7 @@ impl RiskCommand {
             Self::RefreshPortfolio => "RefreshPortfolio",
             Self::ProcessProposal(_) => "ProcessProposal",
             Self::UpdateSentiment(_) => "UpdateSentiment",
+            Self::UpdateConfig(_) => "UpdateConfig",
         }
     }
 }
