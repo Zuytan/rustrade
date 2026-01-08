@@ -59,6 +59,20 @@ pub enum ConnectionState {
     Subscribed,
 }
 
+struct ConnectionConfig<'a> {
+    ws_url: &'a str,
+    api_key: &'a str,
+    api_secret: &'a str,
+}
+
+struct ConnectionDependencies<'a> {
+    event_tx: &'a broadcast::Sender<MarketEvent>,
+    state: &'a Arc<RwLock<ConnectionState>>,
+    subscribed_symbols: &'a Arc<RwLock<Vec<String>>>,
+    command_rx: &'a mut mpsc::Receiver<SubscriptionCommand>,
+    spread_cache: &'a Arc<SpreadCache>,
+}
+
 /// Commands that can be sent to the WebSocket task
 #[derive(Debug)]
 enum SubscriptionCommand {
@@ -206,14 +220,18 @@ impl AlpacaWebSocketManager {
                 }
 
                 match Self::run_connection(
-                    &ws_url,
-                    &api_key,
-                    &api_secret,
-                    &event_tx,
-                    &state,
-                    &subscribed_symbols,
-                    &mut command_rx,
-                    &spread_cache, // NEW
+                    ConnectionConfig {
+                        ws_url: &ws_url,
+                        api_key: &api_key,
+                        api_secret: &api_secret,
+                    },
+                    ConnectionDependencies {
+                        event_tx: &event_tx,
+                        state: &state,
+                        subscribed_symbols: &subscribed_symbols,
+                        command_rx: &mut command_rx,
+                        spread_cache: &spread_cache,
+                    },
                 )
                 .await
                 {
@@ -259,21 +277,15 @@ impl AlpacaWebSocketManager {
     /// Main connection loop
     /// Returns Ok(true) if connection was authenticated successfully, Ok(false) if ended before auth
     async fn run_connection(
-        ws_url: &str,
-        api_key: &str,
-        api_secret: &str,
-        event_tx: &broadcast::Sender<MarketEvent>,
-        state: &Arc<RwLock<ConnectionState>>,
-        subscribed_symbols: &Arc<RwLock<Vec<String>>>,
-        command_rx: &mut mpsc::Receiver<SubscriptionCommand>,
-        spread_cache: &Arc<SpreadCache>, // NEW
+        config: ConnectionConfig<'_>,
+        deps: ConnectionDependencies<'_>,
     ) -> Result<bool> {
         // Connect to WebSocket
-        let (ws_stream, _) = connect_async(ws_url)
+        let (ws_stream, _) = connect_async(config.ws_url)
             .await
             .context("Failed to connect to WebSocket")?;
 
-        *state.write().await = ConnectionState::Connected;
+        *deps.state.write().await = ConnectionState::Connected;
         info!("WebSocketManager: Connected");
 
         let (mut write, mut read) = ws_stream.split();
@@ -305,22 +317,22 @@ impl AlpacaWebSocketManager {
                                                 // Send authentication
                                                 let auth_msg = serde_json::json!({
                                                     "action": "auth",
-                                                    "key": api_key,
-                                                    "secret": api_secret
+                                                    "key": config.api_key,
+                                                    "secret": config.api_secret
                                                 });
                                                 write.send(Message::Text(auth_msg.to_string().into())).await?;
                                                 info!("WebSocketManager: Auth sent");
                                             } else if msg == "authenticated" {
                                                 authenticated = true;
-                                                *state.write().await = ConnectionState::Authenticated;
+                                                *deps.state.write().await = ConnectionState::Authenticated;
                                                 info!("WebSocketManager: Authenticated");
 
                                                 // Subscribe to initial symbols if any
-                                                let initial = subscribed_symbols.read().await.clone();
+                                                let initial = deps.subscribed_symbols.read().await.clone();
                                                 if !initial.is_empty() {
                                                     Self::send_subscription(&mut write, &initial).await?;
                                                     current_subscribed = initial.clone();
-                                                    *state.write().await = ConnectionState::Subscribed;
+                                                    *deps.state.write().await = ConnectionState::Subscribed;
                                                     info!("WebSocketManager: Restored subscription to {} symbols", initial.len());
                                                 }
                                             }
@@ -333,7 +345,7 @@ impl AlpacaWebSocketManager {
                                         }
                                         AlpacaMessage::Quote(quote) => {
                                             // Store real-time spread BEFORE creating event
-                                            spread_cache.update(quote.symbol.clone(), quote.bid_price, quote.ask_price);
+                                            deps.spread_cache.update(quote.symbol.clone(), quote.bid_price, quote.ask_price);
 
                                             let mid_price = (quote.bid_price + quote.ask_price) / 2.0;
                                             let event = MarketEvent::Quote {
@@ -341,7 +353,7 @@ impl AlpacaWebSocketManager {
                                                 price: Decimal::from_f64_retain(mid_price).unwrap_or(Decimal::ZERO),
                                                 timestamp: Utc::now().timestamp_millis(),
                                             };
-                                            let _ = event_tx.send(event);
+                                            let _ = deps.event_tx.send(event);
                                         }
                                         AlpacaMessage::Trade(trade) => {
                                             // For crypto, estimate realistic bid/ask spread from trade price
@@ -359,14 +371,14 @@ impl AlpacaWebSocketManager {
                                             let synthetic_ask = trade.price + half_spread;
 
                                             // Update spread cache with synthetic bid/ask
-                                            spread_cache.update(trade.symbol.clone(), synthetic_bid, synthetic_ask);
+                                            deps.spread_cache.update(trade.symbol.clone(), synthetic_bid, synthetic_ask);
 
                                             let event = MarketEvent::Quote {
                                                 symbol: trade.symbol,
                                                 price: Decimal::from_f64_retain(trade.price).unwrap_or(Decimal::ZERO),
                                                 timestamp: Utc::now().timestamp_millis(),
                                             };
-                                            let _ = event_tx.send(event);
+                                            let _ = deps.event_tx.send(event);
                                         }
                                     }
                                 }
@@ -418,14 +430,14 @@ impl AlpacaWebSocketManager {
                 }
 
                 // Handle subscription update commands
-                Some(cmd) = command_rx.recv() => {
+                Some(cmd) = deps.command_rx.recv() => {
                     match cmd {
                         SubscriptionCommand::UpdateSymbols(new_symbols) => {
                             if authenticated && new_symbols != current_subscribed {
                                 info!("WebSocketManager: Updating subscription to: {:?}", new_symbols);
                                 Self::send_subscription(&mut write, &new_symbols).await?;
                                 current_subscribed = new_symbols;
-                                *state.write().await = ConnectionState::Subscribed;
+                                *deps.state.write().await = ConnectionState::Subscribed;
                             } else if !authenticated {
                                 warn!("WebSocketManager: Cannot update subscription - not authenticated yet");
                             }

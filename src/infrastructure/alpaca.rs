@@ -725,7 +725,13 @@ impl AlpacaMarketDataService {
         );
 
         {
-            let cache = self.bar_cache.read().unwrap();
+            let cache = match self.bar_cache.read() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::error!("AlpacaMarketDataService: bar_cache lock poisoned during read, recovering");
+                    poisoned.into_inner()
+                }
+            };
             if let Some(bars) = cache.get(&cache_key) {
                 trace!("AlpacaMarketDataService: Cache HIT for {}", cache_key);
                 return Ok(bars.clone());
@@ -807,7 +813,13 @@ impl AlpacaMarketDataService {
 
         // Save to cache
         if !all_bars.is_empty() {
-            let mut cache = self.bar_cache.write().unwrap();
+            let mut cache = match self.bar_cache.write() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::error!("AlpacaMarketDataService: bar_cache lock poisoned during write, recovering");
+                    poisoned.into_inner()
+                }
+            };
             cache.insert(cache_key, all_bars.clone());
         }
 

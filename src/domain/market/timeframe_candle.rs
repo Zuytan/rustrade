@@ -20,6 +20,7 @@ pub struct TimeframeCandle {
 
 impl TimeframeCandle {
     /// Creates a new TimeframeCandle from the first base candle
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         symbol: String,
         timeframe: Timeframe,

@@ -137,27 +137,36 @@ pub struct StrategyInfo {
     pub current_price: Decimal,
 }
 
+
+pub struct UserAgentChannels {
+    pub log_rx: Receiver<String>,
+    pub candle_rx: broadcast::Receiver<Candle>,
+    pub sentiment_rx: broadcast::Receiver<Sentiment>,
+    pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
+    pub risk_cmd_tx: mpsc::Sender<RiskCommand>,
+    pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>,
+    pub proposal_tx: mpsc::Sender<TradeProposal>,
+}
+
+pub struct UserAgentConfig {
+    pub strategy_mode: StrategyMode,
+    pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
+}
+
 impl UserAgent {
     pub fn new(
-        log_rx: Receiver<String>,
-        candle_rx: broadcast::Receiver<Candle>,
-        sentiment_rx: broadcast::Receiver<Sentiment>,
-        sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
-        risk_cmd_tx: mpsc::Sender<RiskCommand>, // Added
-        analyst_cmd_tx: mpsc::Sender<AnalystCommand>, // Added
-        proposal_tx: mpsc::Sender<TradeProposal>,
+        channels: UserAgentChannels,
         portfolio: Arc<RwLock<Portfolio>>,
-        strategy_mode: StrategyMode,
-        risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
+        config: UserAgentConfig,
     ) -> Self {
         Self {
-            log_rx,
-            candle_rx,
-            sentiment_rx,
-            sentinel_cmd_tx,
-            risk_cmd_tx,
-            analyst_cmd_tx,
-            proposal_tx,
+            log_rx: channels.log_rx,
+            candle_rx: channels.candle_rx,
+            sentiment_rx: channels.sentiment_rx,
+            sentinel_cmd_tx: channels.sentinel_cmd_tx,
+            risk_cmd_tx: channels.risk_cmd_tx,
+            analyst_cmd_tx: channels.analyst_cmd_tx,
+            proposal_tx: channels.proposal_tx,
             portfolio,
             chat_history: Vec::new(),
             input_text: String::new(),
@@ -165,7 +174,7 @@ impl UserAgent {
             market_data: std::collections::HashMap::new(),
             selected_chart_tab: None,
             strategy_info: std::collections::HashMap::new(),
-            strategy_mode,
+            strategy_mode: config.strategy_mode,
             log_level_filter: None, // Show all logs by default
             activity_feed: VecDeque::new(),
             logs_collapsed: true, // Collapsed by default
@@ -175,7 +184,7 @@ impl UserAgent {
             settings_panel: crate::interfaces::ui_components::SettingsPanel::new(),
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
             latency_ms: 12,    // Default initial value
-            risk_score: risk_appetite.map(|r| r.score()).unwrap_or(5),  // Use real risk score or default to 5 (balanced)
+            risk_score: config.risk_appetite.map(|r| r.score()).unwrap_or(5),  // Use real risk score or default to 5 (balanced)
             market_sentiment: None,
             monte_carlo_result: None,
             correlation_matrix: std::collections::HashMap::new(),

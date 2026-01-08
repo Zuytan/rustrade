@@ -1,5 +1,19 @@
 # Rustrade - Historique des Versions
 
+## Version 0.48.0 (Janvier 2026) - P1 Improvements: Stability & Refactoring
+- **Critical Stability Improvements**:
+  - Eliminated remaining critical `unwrap()` calls in `src/infrastructure/alpaca.rs` (RwLock proper error handling) and `src/infrastructure/sentiment/alternative_me.rs` (safe timestamp parsing).
+- **Codebase Refactoring**:
+  - Refactored `UserAgent::new` to use `UserAgentChannels` and `UserAgentConfig` structs, reducing parameter count from 10 to 3.
+  - Refactored `AlpacaWebSocketManager::run_connection` to use `ConnectionConfig` and `ConnectionDependencies`, reducing parameter count from 8 to 2.
+  - Addressed `clippy::too_many_arguments` warnings explicitly where appropriate.
+- **Enhanced Test Coverage**:
+  - Added `tests/edge_cases_risk_manager.rs` covering critical risk scenarios:
+    - PDT account boundary protection ($25k rule logic verification).
+    - Maximum Daily Loss circuit breaker triggering.
+    - Maximum Drawdown circuit breaker triggering.
+- **Verification**: All 172 unit tests + new integration tests passing. Clean `clippy` and `check`.
+
 ## Version 0.47.0 (Janvier 2026) - P0 Critical Fixes & CI/CD
 - **Test Infrastructure Fixes**:
   - Fixed all broken `Analyst::new` test calls (10 instances across 3 files) by adding missing `cmd_rx: Receiver<AnalystCommand>` parameter.

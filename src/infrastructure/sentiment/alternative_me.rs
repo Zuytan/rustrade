@@ -68,7 +68,8 @@ impl SentimentProvider for AlternativeMeSentimentProvider {
         if let Some(data) = body.data.first() {
             let value: u8 = data.value.parse().context("Failed to parse sentiment value")?;
             let timestamp_secs: i64 = data.timestamp.parse().context("Failed to parse timestamp")?;
-            let timestamp = Utc.timestamp_opt(timestamp_secs, 0).unwrap();
+            let timestamp = Utc.timestamp_opt(timestamp_secs, 0).single()
+                .ok_or_else(|| anyhow::anyhow!("Invalid timestamp from Alternative.me API: {}", timestamp_secs))?;
             
             // Re-classify based on our domain rules to ensure consistency
             let classification = SentimentClassification::from_score(value);

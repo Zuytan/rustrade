@@ -1,4 +1,4 @@
-use rustrade::application::agents::user_agent::UserAgent;
+use rustrade::application::agents::user_agent::{UserAgent, UserAgentChannels, UserAgentConfig};
 use rustrade::application::system::Application;
 use rustrade::config::Config;
 // use rustrade::interfaces::ui; // Unused
@@ -123,17 +123,26 @@ fn main() -> anyhow::Result<()> {
     info!("System Connected. Launching UI.");
 
     // 5. Initialize User Agent
-    let agent = UserAgent::new(
+    // 5. Initialize User Agent
+    let channels = UserAgentChannels {
         log_rx,
-        system_handle.candle_rx,
-        system_handle.sentiment_rx,
-        system_handle.sentinel_cmd_tx,
-        system_handle.risk_cmd_tx,
-        system_handle.analyst_cmd_tx,
-        system_handle.proposal_tx,
+        candle_rx: system_handle.candle_rx,
+        sentiment_rx: system_handle.sentiment_rx,
+        sentinel_cmd_tx: system_handle.sentinel_cmd_tx,
+        risk_cmd_tx: system_handle.risk_cmd_tx,
+        analyst_cmd_tx: system_handle.analyst_cmd_tx,
+        proposal_tx: system_handle.proposal_tx,
+    };
+
+    let config = UserAgentConfig {
+        strategy_mode: system_handle.strategy_mode,
+        risk_appetite: system_handle.risk_appetite,
+    };
+
+    let agent = UserAgent::new(
+        channels,
         system_handle.portfolio,
-        system_handle.strategy_mode,
-        system_handle.risk_appetite,
+        config,
     );
 
     // 6. Run UI (Blocks Main Thread)
