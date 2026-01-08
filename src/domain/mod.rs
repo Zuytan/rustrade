@@ -30,3 +30,6 @@ pub mod ui;
 
 // Sentiment Analysis domain
 pub mod sentiment;
+
+// Listener / News domain
+pub mod listener;

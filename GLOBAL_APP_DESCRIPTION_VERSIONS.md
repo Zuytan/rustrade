@@ -1,5 +1,17 @@
 # Rustrade - Historique des Versions
 
+## Version 0.58.0 (Janvier 2026) - Listener Agent (New)
+- **Problem**: Technical indicators (SMA, RSI) are lagging; market often moves on news before charts update.
+- **Solution**: Implemented `ListenerAgent` to monitor news sources and trigger immediate trade proposals based on keywords.
+- **Key Features**:
+  - **NewsDataService**: Abstraction for news ingestion (extensible for Twitter, CryptoPanic).
+  - **MockNewsService**: Simulation of news events (e.g., "Elon Musk Tweet", "SEC Lawsuit") for testing.
+  - **ListenerAgent**: Processes news stream, matches against `ListenerRule`s, creates `TradeProposal`s.
+  - **Integration**: Spawns alongside Analyst and Scanner in `system.rs`.
+- **Verification**:
+  - Unit tests verifying keyword matching and proposal generation.
+  - Validated flow from Mock Service -> Agent -> Proposal Channel.
+
 ## Version 0.57.0 (Janvier 2026) - DDD Refactoring: Analyst Decomposition (Phase 4) & Risks (Phases 1-2)
 - **Phase 1: Domain Config Value Objects** ✅:
   - **Extraction de la Validation**: Déplacement de la logique de validation de configuration de l'infrastructure vers la couche domaine.

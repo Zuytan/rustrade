@@ -15,3 +15,4 @@ pub use event_bus::EventBus;
 pub use repositories::{InMemoryPortfolioRepository, InMemoryTradeRepository};
 pub mod persistence;
 pub mod sentiment;
+pub mod news;

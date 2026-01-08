@@ -70,3 +70,9 @@ pub trait ExpectancyEvaluator: Send + Sync {
         regime: &crate::domain::market::market_regime::MarketRegime,
     ) -> Expectancy;
 }
+
+#[async_trait]
+pub trait NewsDataService: Send + Sync {
+    /// Subscribe to a stream of news events
+    async fn subscribe_news(&self) -> Result<Receiver<crate::domain::listener::NewsEvent>>;
+}

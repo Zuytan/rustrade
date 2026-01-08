@@ -12,6 +12,7 @@ use crate::application::{
         executor::Executor,
         scanner::MarketScanner,
         sentinel::{Sentinel, SentinelCommand}, // Added SentinelCommand
+        listener::ListenerAgent,
     },
     market_data::spread_cache::SpreadCache,
     monitoring::{
@@ -41,6 +42,7 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::TradeProposal; // Added TradeProposal import
 use crate::domain::sentiment::Sentiment; // Added Sentiment import
+use crate::domain::listener::{ListenerConfig, ListenerRule, ListenerAction}; // Added Listener imports
 use crate::infrastructure::alpaca::AlpacaSectorProvider;
 use crate::infrastructure::binance::BinanceSectorProvider;
 use crate::infrastructure::factory::ServiceFactory;
@@ -54,6 +56,8 @@ use crate::infrastructure::persistence::repositories::{
 };
 use crate::infrastructure::sentiment::alternative_me::AlternativeMeSentimentProvider;
 use crate::domain::sentiment::SentimentProvider;
+use crate::infrastructure::news::mock_news::MockNewsService;
+use crate::infrastructure::news::rss::RssNewsService;
 
 pub struct SystemHandle {
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
@@ -412,7 +416,7 @@ impl Application {
         let mut analyst = Analyst::new(
             market_rx,
             analyst_cmd_rx,
-            proposal_tx,
+            proposal_tx.clone(),
             analyst_config,
             strategy,
             AnalystDependencies {
@@ -500,6 +504,45 @@ impl Application {
         tokio::spawn(async move { risk_manager.run().await });
         tokio::spawn(async move { order_throttler.run().await });
         tokio::spawn(async move { executor.run().await });
+
+        // Spawn Listener Agent
+        let listener_proposal_tx = proposal_tx.clone();
+        tokio::spawn(async move {
+            info!("Starting Listener Agent...");
+            // Hardcoded configuration for now as per plan
+            let config = ListenerConfig {
+                poll_interval_seconds: 30, // Mock news service has its own internal delays
+                rules: vec![
+                    ListenerRule {
+                        id: "elon-doge".to_string(),
+                        keywords: vec!["Elon Musk".to_string(), "Dogecoin".to_string()],
+                        target_symbol: "DOGE/USD".to_string(),
+                        action: ListenerAction::BuyImmediate,
+                        active: true,
+                    },
+                    ListenerRule {
+                        id: "sec-lawsuit".to_string(),
+                        keywords: vec!["SEC".to_string(), "Lawsuit".to_string(), "Binance".to_string()],
+                        target_symbol: "BNB/USD".to_string(), // Assuming Binance Coin or broad market selloff
+                        action: ListenerAction::SellImmediate,
+                        active: true,
+                    },
+                ],
+            };
+            
+            let news_rss_url = std::env::var("NEWS_RSS_URL").ok();
+            
+            let news_service: Arc<dyn crate::domain::ports::NewsDataService> = if let Some(url) = news_rss_url {
+                info!("Using RSS News Service with URL: {}", url);
+                Arc::new(RssNewsService::new(&url, 60))
+            } else {
+                info!("Using Mock News Service (NEWS_RSS_URL not set)");
+                Arc::new(MockNewsService::new())
+            };
+
+            let listener = ListenerAgent::new(news_service, config, listener_proposal_tx);
+            listener.run().await;
+        });
 
         // Spawn Sentiment Polling Task
         let sentiment_tx = risk_cmd_tx.clone();

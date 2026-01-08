@@ -18,6 +18,7 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Real-time market data streaming (Polygon/Alpaca/Mock).
   - Historical data warmup for indicators.
   - Dynamic symbol scanning (Top Movers).
+  - **News & Social Monitoring**: 'Listener' agent reacting to news keywords (e.g. "Elon Musk", "SEC") for immediate trade proposals.
 - **Execution**:
   - Order throttling.
   - Slippage and commission modeling.
@@ -42,6 +43,13 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
     - **Analyst Refactoring**: Reduced monolithic `analyst.rs` from 2097 -> 1812 lines (-13.6%).
   - **Test Coverage**: 254 unit + integration tests passing (+8 tests).
   - **Architecture Benefits**: Improved separation of concerns, testability, and maintainability.
+
+## Version 0.58.0 - Listener Agent (New)
+- **Listener Agent**: Added a new agent that triggers trades based on news events/keywords.
+  - **Lagging Indicator Solution**: Reacts to news (Elon Musk tweets, SEC lawsuits) before price moves.
+  - **Architecture**: `ListenerAgent` consumes `NewsDataService` streams and outputs `TradeProposal`s.
+  - **Mock Integration**: Includes `MockNewsService` for verifying the flow.
+
 
 ## Version 0.55.0
 - **Dynamic Risk Management (P2)**:
@@ -116,6 +124,6 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
 - **Refactoring**: Updated `FeatureEngineeringService` to use `Candle` data (High/Low/Close) for advanced indicators.
 
 ## Architecture
-- **Agents**: Sentinel (Data ingestion), Scanner (Opportunity finding), Analyst (Strategy execution), RiskManager (Safety), Executor (Order placement).
+- **Agents**: Sentinel (Data ingestion), Scanner (Opportunity finding), Analyst (Strategy execution), Listener (News reaction), RiskManager (Safety), Executor (Order placement).
 - **Domain-Driven Design (DDD)**: Clear separation of Domain, Application, and Infrastructure layers.
 - **Async/Await**: Built on Tokio for non-blocking concurrency.
