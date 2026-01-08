@@ -525,7 +525,13 @@ impl Analyst {
         
         self.ensure_symbol_initialized(&symbol, timestamp_dt).await;
 
-        let context = self.symbol_states.get_mut(&symbol).unwrap();
+        let context = match self.symbol_states.get_mut(&symbol) {
+            Some(ctx) => ctx,
+            None => {
+                warn!("Analyst [{}]: Symbol state missing after initialization. Skipping candle.", symbol);
+                return;
+            }
+        };
 
         // 1.5 Detect Market Regime
         let regime = Self::detect_market_regime(&self.candle_repository, &symbol, candle.timestamp, context).await;
@@ -609,7 +615,8 @@ impl Analyst {
                                 let proposal = TradeProposal {
                                     symbol: symbol.clone(),
                                     side: OrderSide::Sell,
-                                    price: Decimal::from_f64_retain(price_f64).unwrap(),
+                                    price, // Use original Decimal
+
                                     quantity: quantity_to_sell,
                                     order_type: crate::domain::trading::types::OrderType::Market,
                                     reason: format!(
