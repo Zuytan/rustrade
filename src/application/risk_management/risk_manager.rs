@@ -1,9 +1,23 @@
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate, SectorProvider};
 use crate::domain::repositories::RiskStateRepository;
 use crate::domain::risk::state::RiskState;
-use crate::domain::sentiment::{Sentiment, SentimentClassification};
+use crate::domain::sentiment::Sentiment;
+#[cfg(test)]
+use crate::domain::sentiment::SentimentClassification;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, OrderSide, OrderStatus, OrderType, TradeProposal};
+use crate::application::risk_management::pipeline::validation_pipeline::RiskValidationPipeline;
+use crate::application::risk_management::state::risk_state_manager::RiskStateManager;
+use crate::application::risk_management::state::pending_orders_tracker::PendingOrdersTracker;
+use crate::domain::risk::filters::{
+    RiskValidator, ValidationContext, ValidationResult,
+    position_size_validator::{PositionSizeValidator, PositionSizeConfig},
+    circuit_breaker_validator::{CircuitBreakerValidator, CircuitBreakerConfig},
+    pdt_validator::{PdtValidator, PdtConfig},
+    sector_exposure_validator::{SectorExposureValidator, SectorExposureConfig},
+    sentiment_validator::{SentimentValidator, SentimentConfig},
+    correlation_filter::{CorrelationFilter, CorrelationFilterConfig},
+};
 use chrono::Utc;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -18,7 +32,6 @@ use crate::application::monitoring::performance_monitoring_service::PerformanceM
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::config::AssetClass;
-use crate::domain::risk::filters::correlation_filter::{CorrelationFilter, CorrelationFilterConfig};
 
 /// Error type for RiskManager configuration validation
 #[derive(Debug, thiserror::Error)]
@@ -118,24 +131,31 @@ pub struct RiskManager {
     order_tx: Sender<Order>,
     execution_service: Arc<dyn ExecutionService>,
     market_service: Arc<dyn MarketDataService>,
-    non_pdt_mode: bool,
-    asset_class: AssetClass,
-    risk_config: RiskConfig,
-    // Risk Tracking State
-    equity_high_water_mark: Decimal,
-    session_start_equity: Decimal,
-    daily_start_equity: Decimal, // New: for daily loss tracking
-    daily_pnl: Decimal,          // New: current day's P/L
-    last_reset_date: chrono::NaiveDate,
-    consecutive_losses: usize,
-    current_prices: HashMap<String, Decimal>, // Track current prices for equity calculation
-    portfolio_state_manager: Arc<PortfolioStateManager>, // Versioned state with optimistic locking (ACTIVE)
+    portfolio_state_manager: Arc<PortfolioStateManager>,
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     correlation_service: Option<Arc<CorrelationService>>,
-    sector_cache: HashMap<String, String>,
+    risk_config: RiskConfig,
 
+    asset_class: AssetClass,
+
+    // NEW Architecture Components
+    validation_pipeline: RiskValidationPipeline,
+    #[allow(dead_code)]
+    state_manager: RiskStateManager,
+    #[allow(dead_code)]
+    pending_orders_tracker: PendingOrdersTracker,
+
+    // Legacy State (Deprecated/To be removed) 
+    // Kept briefly if needed for transition, but aim to remove usage
+    risk_state: RiskState, // REPLACED BY state_manager
+    pending_orders: HashMap<String, PendingOrder>, // REPLACED BY pending_orders_tracker
+
+    // Runtime flags
     halted: bool,
-    pending_orders: HashMap<String, PendingOrder>,
+    daily_pnl: Decimal, 
+
+    // Cache
+    current_prices: HashMap<String, Decimal>,
     pending_reservations:
         HashMap<String, crate::application::monitoring::portfolio_state_manager::ReservationToken>, // Exposure reservations
     current_sentiment: Option<Sentiment>,
@@ -154,13 +174,6 @@ struct PendingOrder {
 }
 
 impl PendingOrder {
-    fn remaining_qty(&self) -> Decimal {
-        if self.filled_qty >= self.requested_qty {
-            Decimal::ZERO
-        } else {
-            self.requested_qty - self.filled_qty
-        }
-    }
 }
 
 impl RiskManager {
@@ -179,11 +192,58 @@ impl RiskManager {
         correlation_service: Option<Arc<CorrelationService>>,
         risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
     ) -> Result<Self, RiskConfigError> {
-        // Validate configuration and return error instead of panicking
+        // Validate configuration
         risk_config
             .validate()
             .map_err(RiskConfigError::ValidationError)?;
-        
+
+        // --- Build Validation Pipeline ---
+        // --- Build Validation Pipeline ---
+        let validators: Vec<Box<dyn RiskValidator>> = vec![
+            // 1. Top Priority: Circuit Breaker
+            Box::new(CircuitBreakerValidator::new(CircuitBreakerConfig {
+                max_daily_loss_pct: risk_config.max_daily_loss_pct,
+                max_drawdown_pct: risk_config.max_drawdown_pct,
+                consecutive_loss_limit: risk_config.consecutive_loss_limit,
+            })),
+
+            // 2. Regulatory: PDT
+            Box::new(PdtValidator::new(PdtConfig {
+                enabled: !non_pdt_mode && !risk_config.allow_pdt_risk, 
+                asset_class,
+                ..Default::default()
+            })),
+
+            // 3. Diversification: Sector Exposure
+            Box::new(SectorExposureValidator::new(SectorExposureConfig {
+                max_sector_exposure_pct: risk_config.max_sector_exposure_pct,
+                sector_provider: risk_config.sector_provider.clone(),
+            })),
+
+            // 4. Diversification: Correlation
+            Box::new(CorrelationFilter::new(
+                 risk_config.correlation_config.clone()
+            )),
+
+            // 5. Risk Sizing: Position Size
+            Box::new(PositionSizeValidator::new(PositionSizeConfig {
+                max_position_size_pct: risk_config.max_position_size_pct,
+            })),
+
+            // 6. Optimization: Sentiment
+            Box::new(SentimentValidator::new(SentimentConfig::default())),
+        ];
+
+        let validation_pipeline = RiskValidationPipeline::new(validators);
+
+        // --- State Management ---
+        let state_manager = RiskStateManager::new(
+            risk_state_repository.clone(),
+            Decimal::ZERO, // Initialized later in initialize_session
+        );
+
+        let pending_orders_tracker = PendingOrdersTracker::new();
+
         Ok(Self {
             proposal_rx,
             external_cmd_rx,
@@ -191,22 +251,28 @@ impl RiskManager {
             execution_service,
             market_service,
             portfolio_state_manager,
-            non_pdt_mode,
+
             asset_class,
             risk_config,
-            equity_high_water_mark: Decimal::ZERO,
-            session_start_equity: Decimal::ZERO,
-            daily_start_equity: Decimal::ZERO,
-            daily_pnl: Decimal::ZERO,
-            last_reset_date: Utc::now().date_naive(),
-            consecutive_losses: 0,
+            
+            // New Components
+            validation_pipeline,
+            state_manager,
+            pending_orders_tracker,
+
+            // Legacy State (Initialized to defaults, will be synced or ignored)
+            risk_state: RiskState::default(),
+            pending_orders: HashMap::new(),
+            // equity_high_water_mark removed
+            
             current_prices: HashMap::new(),
             performance_monitor,
             correlation_service,
-            sector_cache: HashMap::new(),
+
 
             halted: false,
-            pending_orders: HashMap::new(),
+            daily_pnl: Decimal::ZERO,
+            
             pending_reservations: HashMap::new(),
             current_sentiment: None,
             risk_state_repository,
@@ -218,11 +284,13 @@ impl RiskManager {
         if let Some(repo) = &self.risk_state_repository {
             let state = RiskState {
                 id: "global".to_string(), // Singleton for now
-                session_start_equity: self.session_start_equity,
-                daily_start_equity: self.daily_start_equity,
-                equity_high_water_mark: self.equity_high_water_mark,
-                consecutive_losses: self.consecutive_losses,
-                reference_date: self.last_reset_date,
+                session_start_equity: self.risk_state.session_start_equity,
+                daily_start_equity: self.risk_state.daily_start_equity,
+                equity_high_water_mark: self.risk_state.equity_high_water_mark,
+                consecutive_losses: self.risk_state.consecutive_losses,
+                reference_date: self.risk_state.reference_date,
+                updated_at: Utc::now().timestamp(),
+                daily_drawdown_reset: false, // Default or track it
             };
             
             if let Err(e) = repo.save(&state).await {
@@ -254,9 +322,9 @@ impl RiskManager {
         }
 
         let initial_equity = snapshot.portfolio.total_equity(&self.current_prices);
-        self.session_start_equity = initial_equity;
-        self.daily_start_equity = initial_equity; // Initialize daily tracking
-        self.equity_high_water_mark = initial_equity;
+        self.risk_state.session_start_equity = initial_equity;
+        self.risk_state.daily_start_equity = initial_equity; // Initialize daily tracking
+        self.risk_state.equity_high_water_mark = initial_equity;
         
         // Attempt to load persistent state
         if let Some(repo) = &self.risk_state_repository {
@@ -265,8 +333,8 @@ impl RiskManager {
                     info!("RiskManager: Loaded persistent state from DB: {:?}", state);
                     
                     // Restore HWM and Consecutive Losses always
-                    self.equity_high_water_mark = state.equity_high_water_mark;
-                    self.consecutive_losses = state.consecutive_losses;
+                    self.risk_state.equity_high_water_mark = state.equity_high_water_mark;
+                    self.risk_state.consecutive_losses = state.consecutive_losses;
                     
                     // Restore Daily/Session logic ONLY if it's the same day (to prevent skipping daily reset)
                     // If stored date < today, we treat it as a new day and keep the fresh values we just calculated
@@ -274,9 +342,9 @@ impl RiskManager {
                     // Let's use simple logic: If State Date == Today, Use State. Else Use Fresh.
                     let today = Utc::now().date_naive();
                     if state.reference_date == today {
-                        self.session_start_equity = state.session_start_equity;
-                        self.daily_start_equity = state.daily_start_equity;
-                        self.last_reset_date = state.reference_date;
+                        self.risk_state.session_start_equity = state.session_start_equity;
+                        self.risk_state.daily_start_equity = state.daily_start_equity;
+                        self.risk_state.reference_date = state.reference_date;
                         info!("RiskManager: Restored intraday equity baselines from persistence.");
                     } else {
                         info!("RiskManager: Persistent state is from previous day ({} vs {}). Using fresh equity baselines.", state.reference_date, today);
@@ -297,60 +365,19 @@ impl RiskManager {
 
         info!(
             "RiskManager: Session initialized. Equity: {}, Daily Start: {}, HWM: {}",
-            self.session_start_equity, self.daily_start_equity, self.equity_high_water_mark
+            self.risk_state.session_start_equity, self.risk_state.daily_start_equity, self.risk_state.equity_high_water_mark
         );
         Ok(())
     }
 
-    /// Validate position size doesn't exceed limit
-    fn validate_position_size(
-        &self,
-        _symbol: &str,
-        exposure: Decimal,
-        equity: Decimal,
-        side: OrderSide,
-    ) -> bool {
-        if equity <= Decimal::ZERO {
-            return true;
-        }
 
-        // Apply Sentiment-based Risk Adjustment
-        let mut adjusted_max_pos_pct = self.risk_config.max_position_size_pct;
-
-        if let Some(sentiment) = &self.current_sentiment {
-            // In Extreme Fear, we reduce position size by 50% for Long positions
-            // Unless we are Shorting (if we supported shorting, which we don't fully yet)
-            // But checking 'side' is good practice.
-            if side == OrderSide::Buy && sentiment.classification == SentimentClassification::ExtremeFear {
-                adjusted_max_pos_pct *= 0.5;
-                debug!(
-                    "RiskManager: Extreme Fear ({}) detected. Reducing max position size to {:.2}%",
-                    sentiment.value,
-                    adjusted_max_pos_pct * 100.0
-                );
-            }
-        }
-
-        let position_pct = (exposure / equity).to_f64().unwrap_or(0.0);
-
-        if position_pct > adjusted_max_pos_pct {
-            warn!(
-                "RiskManager: Rejecting because Position size ({:.2}%) > Limit ({:.2}%) [Sentiment Adjusted]",
-                position_pct * 100.0,
-                adjusted_max_pos_pct * 100.0
-            );
-            return false;
-        }
-
-        true
-    }
 
     /// Check if circuit breaker should trigger
     fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<String> {
         // Check daily loss limit
-        if self.session_start_equity > Decimal::ZERO {
-            let daily_loss_pct = ((current_equity - self.session_start_equity)
-                / self.session_start_equity)
+        if self.risk_state.session_start_equity > Decimal::ZERO {
+            let daily_loss_pct = ((current_equity - self.risk_state.session_start_equity)
+                / self.risk_state.session_start_equity)
                 .to_f64()
                 .unwrap_or(0.0);
 
@@ -359,7 +386,7 @@ impl RiskManager {
                     "Daily loss limit breached: {:.2}% (limit: {:.2}%) [Start: {}, Current: {}]",
                     daily_loss_pct * 100.0,
                     self.risk_config.max_daily_loss_pct * 100.0,
-                    self.session_start_equity,
+                    self.risk_state.session_start_equity,
                     current_equity
                 );
                 return Some(msg);
@@ -367,9 +394,9 @@ impl RiskManager {
         }
 
         // Check drawdown limit
-        if self.equity_high_water_mark > Decimal::ZERO {
-            let drawdown_pct = ((current_equity - self.equity_high_water_mark)
-                / self.equity_high_water_mark)
+        if self.risk_state.equity_high_water_mark > Decimal::ZERO {
+            let drawdown_pct = ((current_equity - self.risk_state.equity_high_water_mark)
+                / self.risk_state.equity_high_water_mark)
                 .to_f64()
                 .unwrap_or(0.0);
 
@@ -383,28 +410,14 @@ impl RiskManager {
         }
 
         // Check consecutive losses
-        if self.consecutive_losses >= self.risk_config.consecutive_loss_limit {
+        if self.risk_state.consecutive_losses >= self.risk_config.consecutive_loss_limit {
             return Some(format!(
                 "Consecutive loss limit reached: {} trades (limit: {})",
-                self.consecutive_losses, self.risk_config.consecutive_loss_limit
+                self.risk_state.consecutive_losses, self.risk_config.consecutive_loss_limit
             ));
         }
 
         None
-    }
-
-    /// Calculate projected quantity including pending orders
-    fn get_projected_quantity(&self, symbol: &str, current_qty: Decimal) -> Decimal {
-        let pending: Decimal = self
-            .pending_orders
-            .values()
-            .filter(|p| p.symbol == symbol)
-            .map(|p| match p.side {
-                OrderSide::Buy => p.remaining_qty(),
-                OrderSide::Sell => -p.remaining_qty(),
-            })
-            .sum();
-        current_qty + pending
     }
 
     /// Handle real-time order updates to maintain pending state
@@ -445,14 +458,14 @@ impl RiskManager {
                             && let Some(fill_price) = update.filled_avg_price {
                                 let pnl = (fill_price - pending.entry_price) * pending.filled_qty;
                                 if pnl < Decimal::ZERO {
-                                    self.consecutive_losses += 1;
+                                    self.state_manager.get_state_mut().consecutive_losses += 1;
                                     warn!(
                                         "RiskManager: Trade LOSS detected for {} (${:.2}). Consecutive losses: {}",
-                                        pending.symbol, pnl, self.consecutive_losses
+                                        pending.symbol, pnl, self.state_manager.get_state().consecutive_losses
                                     );
                                     state_changed = true;
                                 } else {
-                                    self.consecutive_losses = 0;
+                                    self.state_manager.get_state_mut().consecutive_losses = 0;
                                     state_changed = true; // Resetting is also a change we want to persist
                                     info!(
                                         "RiskManager: Trade PROFIT for {} (${:.2}). Loss streak reset.",
@@ -497,86 +510,7 @@ impl RiskManager {
         state_changed
     }
 
-    /// Validate sector exposure limits
-    async fn validate_sector_exposure(
-        &mut self,
-        proposal: &TradeProposal,
-        portfolio: &crate::domain::trading::portfolio::Portfolio,
-        current_equity: Decimal,
-    ) -> bool {
-        if current_equity <= Decimal::ZERO {
-            return true;
-        }
 
-        // Identify Sector
-        let sector = if let Some(provider) = &self.risk_config.sector_provider {
-            if let Some(s) = self.sector_cache.get(&proposal.symbol) {
-                s.clone()
-            } else {
-                let s = provider
-                    .get_sector(&proposal.symbol)
-                    .await
-                    .unwrap_or_else(|_| "Unknown".to_string());
-                self.sector_cache.insert(proposal.symbol.clone(), s.clone());
-                s
-            }
-        } else {
-            "Unknown".to_string()
-        };
-
-        if sector == "Unknown" {
-            return true;
-        }
-
-        // Calculate Current Sector Exposure
-        let mut current_sector_value = Decimal::ZERO;
-
-        for (sym, position) in &portfolio.positions {
-            let pos_sector = if let Some(provider) = &self.risk_config.sector_provider {
-                if let Some(s) = self.sector_cache.get(sym) {
-                    s.clone()
-                } else {
-                    let s = provider
-                        .get_sector(sym)
-                        .await
-                        .unwrap_or_else(|_| "Unknown".to_string());
-                    self.sector_cache.insert(sym.clone(), s.clone());
-                    s
-                }
-            } else {
-                "Unknown".to_string()
-            };
-
-            if pos_sector == sector {
-                let price = self
-                    .current_prices
-                    .get(sym)
-                    .cloned()
-                    .unwrap_or(position.average_price);
-                current_sector_value += price * position.quantity;
-            }
-        }
-
-        // Add Proposed Trade Value
-        let trade_value = proposal.price * proposal.quantity;
-        let new_sector_value = current_sector_value + trade_value;
-
-        // Calculate Percentage
-        let new_sector_pct = (new_sector_value / current_equity).to_f64().unwrap_or(0.0);
-
-        if new_sector_pct > self.risk_config.max_sector_exposure_pct {
-            warn!(
-                "RiskManager: Sector exposure limit exceeded for {}. Sector: {}, New Exposure: {:.2}% (Limit: {:.2}%)",
-                proposal.symbol,
-                sector,
-                new_sector_pct * 100.0,
-                self.risk_config.max_sector_exposure_pct * 100.0
-            );
-            return false;
-        }
-
-        true
-    }
 
     /// Fetch latest prices for all held positions and update valuation
     pub async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -600,12 +534,10 @@ impl RiskManager {
                 // 4. Calculate Equity with NEW prices
                 let current_equity = snapshot.portfolio.total_equity(&self.current_prices);
 
-                // 5. Update High Water Mark
-                if current_equity > self.equity_high_water_mark {
-                    self.equity_high_water_mark = current_equity;
-                    // HWM updated, worth persisting
-                    self.persist_state().await;
-                }
+                // 5. Update High Water Mark via State Manager
+                self.state_manager.update(current_equity, Utc::now()).await;
+                // Sync legacy copy
+                self.risk_state = self.state_manager.get_state().clone();
 
                 // 6. Check Risks (Async check)
                 // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
@@ -697,26 +629,34 @@ impl RiskManager {
 
     /// Check if we need to reset session stats (for 24/7 Crypto markets)
     fn check_daily_reset(&mut self, current_equity: Decimal) -> bool {
+        // Delegate to RiskStateManager
+        self.state_manager.check_daily_reset(current_equity);
+        
+        // Sync local legacy state
+        let old_reset = self.risk_state.daily_drawdown_reset;
+        self.risk_state = self.state_manager.get_state().clone();
+        
+        if self.risk_state.daily_drawdown_reset && !old_reset {
+             self.daily_pnl = Decimal::ZERO;
+             return true;
+        }
+        
+        // If reference date changed, it was a reset
         let today = Utc::now().date_naive();
-        if self.asset_class == AssetClass::Crypto && today > self.last_reset_date {
-            info!(
-                "🔄 24/7 Session Reset: New Baseline Equity = ${} (Was: ${})",
-                current_equity, self.session_start_equity
-            );
-            self.session_start_equity = current_equity;
-            self.daily_start_equity = current_equity; // Reset daily tracking
-            self.daily_pnl = Decimal::ZERO;
-            // self.daily_loss is calculated from session_start_equity, so it effectively resets.
-            // Consecutive losses might be preserved or reset?
-            // Usually "Daily Loss" is the main drift issue. Consecutive losses are trade-based.
-            // I will NOT reset consecutive_losses as bad streaks can span days.
-            self.last_reset_date = today;
-            
-            // Persist the new baseline
-            // Note: Since this func is effectively sync/called from async context but doesn't await easily?
-            // Actually it's called from cmd_handle_* which IS async. We should make check_daily_reset async OR return a "needs_save" bool.
-            // Let's make it return bool.
-            return true;
+        if self.asset_class == AssetClass::Crypto && self.risk_state.reference_date == today {
+             // It might have been updated by manager just now.
+             // But we need to know if it CHANGED just now. 
+             // We can assume state_manager handles it.
+             // Returning false is safe if manager handles persistence (via update called elsewhere).
+             // But caller expects bool to call persist.
+             
+             // Simplification: always return false here and rely on update_portfolio_valuation to persist state changes?
+             // But daily reset happens on proposal too.
+             
+             // Check if updated_at is recent?
+             if self.risk_state.updated_at >= Utc::now().timestamp() - 1 {
+                 return true;
+             }
         }
         false
     }
@@ -865,17 +805,15 @@ impl RiskManager {
             snapshot = self.portfolio_state_manager.refresh().await?;
         }
 
-        let portfolio = &snapshot.portfolio;
-
         // Reconcile pending orders
-        self.reconcile_pending_orders(portfolio);
+        self.reconcile_pending_orders(&snapshot.portfolio);
 
         // Calculate current equity
-        let current_equity = portfolio.total_equity(&self.current_prices);
+        let current_equity = snapshot.portfolio.total_equity(&self.current_prices);
 
         // Update high water mark
-        if current_equity > self.equity_high_water_mark {
-            self.equity_high_water_mark = current_equity;
+        if current_equity > self.risk_state.equity_high_water_mark {
+            self.risk_state.equity_high_water_mark = current_equity;
         }
 
         // Check daily reset
@@ -883,7 +821,8 @@ impl RiskManager {
              self.persist_state().await;
         }
 
-        // Circuit breaker check
+        // Circuit breaker check (Trigger Liquidation logic)
+        // Keeps the system safe by checking global health before processing specific trade rules
         if let Some(reason) = self.check_circuit_breaker(current_equity) {
             error!("RiskManager: CIRCUIT BREAKER TRIGGERED - {}", reason);
             self.halted = true;
@@ -891,99 +830,43 @@ impl RiskManager {
             return Ok(());
         }
 
-        // PDT protection (Pattern Day Trader) - Blocks trades if equity < $25k and rules apply
-        let is_pdt_risk = current_equity < Decimal::from(25000);
-        let pdt_protection_enabled = !self.non_pdt_mode && !self.risk_config.allow_pdt_risk;
-        
- 
-        if pdt_protection_enabled && is_pdt_risk && portfolio.day_trades_count >= 3 {
-            // Rejections:
-            // 1. Any BUY is blocked if we have >= 3 day trades (prevents opening new positions that could be day traded)
-            // 2. Any SELL that COMPLETES a day trade is blocked (prevents finalizing the 4th day trade)
-            
-            let is_buy = matches!(proposal.side, OrderSide::Buy);
-            
-            // Check if this SELL would complete a day trade
-            let is_closing_day_trade = if !is_buy {
-                // If we bought this symbol today, it's a day trade
-                // For simplicity, we check if we have it in positions and it was bought today
-                // In a real system, we'd check filled_at timestamp of the buy
-                portfolio.positions.contains_key(&proposal.symbol) // Mock simplification
-            } else {
-                false
-            };
+        // Prepare Validation Context
+        let correlation_matrix = if let Some(service) = &self.correlation_service {
+             // Pre-fetch correlation matrix if service available
+             // Optimization: We could let the validator ask for it, but context is passive.
+             // We get existing symbols + proposal symbol
+             let mut symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
+             if !symbols.contains(&proposal.symbol) {
+                 symbols.push(proposal.symbol.clone());
+             }
+             service.calculate_correlation_matrix(&symbols).await.ok()
+        } else {
+             None
+        };
 
-            if is_buy || is_closing_day_trade {
+        let ctx = ValidationContext::new(
+            &proposal,
+            &snapshot.portfolio,
+            current_equity,
+            &self.current_prices,
+            &self.risk_state,
+            self.current_sentiment.as_ref(),
+            correlation_matrix.as_ref(), // Pass pre-calculated matrix
+        );
+
+        // Execute Pipeline
+        match self.validation_pipeline.validate(&ctx).await {
+            ValidationResult::Approve => {
+                // All checks passed
+                self.execute_proposal_internal(proposal, &snapshot.portfolio).await?;
+            }
+            ValidationResult::Reject(reason) => {
                 warn!(
-                    "RiskManager: REJECTING {:?} (PDT PROTECT): Count={}, Equity={}",
-                    proposal.side, portfolio.day_trades_count, current_equity
+                    "RiskManager: Rejecting {:?} order for {} - {}",
+                    proposal.side, proposal.symbol, reason
                 );
-                return Ok(());
             }
         }
-
-        // Position size validation for buys
-        if matches!(proposal.side, OrderSide::Buy) {
-            let current_pos_qty = portfolio
-                .positions
-                .get(&proposal.symbol)
-                .map(|p| p.quantity)
-                .unwrap_or(Decimal::ZERO);
-
-            let total_qty = self.get_projected_quantity(&proposal.symbol, current_pos_qty) + proposal.quantity;
-            let total_exposure = total_qty * proposal.price;
-
-            if !self.validate_position_size(&proposal.symbol, total_exposure, current_equity, proposal.side) {
-                warn!(
-                    "RiskManager: Rejecting {:?} order for {} - Position size limit",
-                    proposal.side, proposal.symbol
-                );
-                return Ok(());
-            }
-        }
-
-        // Sector exposure validation for buys
-        if matches!(proposal.side, OrderSide::Buy)
-            && !self.validate_sector_exposure(&proposal, portfolio, current_equity).await
-        {
-            warn!(
-                "RiskManager: Rejecting {:?} order for {} - Sector exposure limit",
-                proposal.side, proposal.symbol
-            );
-            return Ok(());
-        }
-
-        // Correlation-based diversification validation for buys
-        if matches!(proposal.side, OrderSide::Buy)
-            && let Some(corr_service) = &self.correlation_service {
-                // Collect all symbols (target + existing positions)
-                let mut symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
-                if !symbols.contains(&proposal.symbol) {
-                    symbols.push(proposal.symbol.clone());
-                }
-
-                if symbols.len() > 1 {
-                    match corr_service.calculate_correlation_matrix(&symbols).await {
-                        Ok(matrix) => {
-                            if let Err(reason) = CorrelationFilter::check_correlation(
-                                &proposal.symbol,
-                                &portfolio.positions,
-                                &matrix,
-                                &self.risk_config.correlation_config,
-                            ) {
-                                warn!("RiskManager: Rejecting BUY order for {} - {}", proposal.symbol, reason);
-                                return Ok(());
-                            }
-                        }
-                        Err(e) => {
-                            warn!("RiskManager: Correlation check failed for {}: {}. Proceeding with caution.", proposal.symbol, e);
-                        }
-                    }
-                }
-            }
-
-        // Execute proposal
-        self.execute_proposal_internal(proposal, portfolio).await?;
 
         Ok(())
     }
@@ -1787,21 +1670,28 @@ mod tests {
         )
         .expect("Test config should be valid");
 
-        // Manually manipulate last_reset_date to yesterday
+        // Manually manipulate last_reset_date to yesterday in STATE MANAGER
         let yesterday = Utc::now().date_naive() - chrono::Duration::days(1);
-        rm.last_reset_date = yesterday;
-        rm.session_start_equity = Decimal::from(5000); // Old baseline
+        let yesterday_ts = (Utc::now() - chrono::Duration::days(1)).timestamp();
+        
+        rm.state_manager.get_state_mut().reference_date = yesterday;
+        rm.state_manager.get_state_mut().updated_at = yesterday_ts;
+        rm.state_manager.get_state_mut().session_start_equity = Decimal::from(5000); // Old baseline
+        rm.state_manager.get_state_mut().daily_drawdown_reset = false;
+
+        // Sync legacy state to avoid confusion (though logic depends on manager)
+        rm.risk_state = rm.state_manager.get_state().clone();
 
         // Wait, current_equity argument needed.
         let current_equity = Decimal::from(10000);
         rm.check_daily_reset(current_equity);
 
         assert_eq!(
-            rm.session_start_equity, current_equity,
+            rm.risk_state.session_start_equity, current_equity,
             "Should reset session equity to current"
         );
         assert_eq!(
-            rm.last_reset_date,
+            rm.risk_state.reference_date,
             Utc::now().date_naive(),
             "Should update reset date to today"
         );

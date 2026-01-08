@@ -83,6 +83,8 @@ impl RiskStateRepository for SqliteRiskStateRepository {
                 equity_high_water_mark: Decimal::from_str(&hwm_eq_str).unwrap_or_default(),
                 consecutive_losses: losses as usize,
                 reference_date: ref_date,
+                updated_at: chrono::Utc::now().timestamp(),
+                daily_drawdown_reset: false,
             }))
         } else {
             Ok(None)

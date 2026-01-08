@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.51.0"
+version = "0.52.0"
 edition = "2024"
 
 [dev-dependencies]
@@ -36,3 +36,4 @@ uuid = { version = "1.19.0", features = ["v4", "serde"] }
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+futures = "0.3.31"

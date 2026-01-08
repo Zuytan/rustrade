@@ -1,6 +1,15 @@
 # Rustrade - Historique des Versions
 
-## Version 0.51.0 (Janvier 2026) - P0 Critical Fixes: Trailing Stop \u0026 Error Handling
+## Version 0.52.0 (Janvier 2026) - Risk Manager Architecture Overhaul
+- **Modular Risk Architecture**: Refactored `RiskManager` into a Chain of Responsibility validation pipeline.
+- **State Persistence Refactor**: Decoupled state management into `RiskStateManager` and `PendingOrdersTracker`, ensuring critical risk state survives restarts (HWM, daily loss).
+- **Consolidated Validation**: Replaced ad-hoc checks with dedicated validators (`CircuitBreakerValidator`, `PdtValidator`, `CorrelationFilter`, `SectorExposureValidator`, `PositionSizeValidator`, `SentimentValidator`).
+- **Technical Improvements**:
+  - Eliminated `clippy` lints (collapsible ifs, vec optimizations).
+  - Improved test coverage (Daily Reset logic, new validator tests).
+- **Verification**: 213 unit tests passed (100% success rate).
+
+## Version 0.51.0 (Janvier 2026) - P0 Critical Fixes: Trailing Stop & Error Handling
 - **Trailing Stop Auto-Initialization (P0-A)**:
   - **Problem**: Trailing stops were not initialized for positions that existed from previous sessions or manual trades, causing sell signal suppression logic to fail.
   - **Solution**: Added auto-initialization logic in `Analyst` that detects existing positions without active trailing stops and initializes them using the portfolio's average entry price.

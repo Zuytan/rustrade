@@ -21,7 +21,14 @@ pub struct RiskState {
     pub consecutive_losses: usize,
     
     /// Date of the last reference update (for daily reset)
+    /// Date of the last reference update (for daily reset)
     pub reference_date: NaiveDate,
+    
+    /// Timestamp of last state update
+    pub updated_at: i64,
+    
+    /// Flag indicating if daily drawdown has been reset
+    pub daily_drawdown_reset: bool,
 }
 
 impl Default for RiskState {
@@ -33,6 +40,8 @@ impl Default for RiskState {
             equity_high_water_mark: Decimal::ZERO,
             consecutive_losses: 0,
             reference_date: chrono::Utc::now().date_naive(),
+            updated_at: chrono::Utc::now().timestamp(),
+            daily_drawdown_reset: false,
         }
     }
 }

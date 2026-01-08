@@ -16,34 +16,42 @@ impl Default for CorrelationFilterConfig {
     }
 }
 
-pub struct CorrelationFilter;
+use async_trait::async_trait;
+use crate::domain::risk::filters::validator_trait::{RiskValidator, ValidationContext, ValidationResult};
+use crate::domain::trading::types::OrderSide;
+
+pub struct CorrelationFilter {
+    config: CorrelationFilterConfig,
+}
 
 impl CorrelationFilter {
-    /// Checks if a new trade (Buy) should be blocked due to high correlation with existing positions.
-    /// Returns Err(message) if blocked, Ok(()) otherwise.
+    pub fn new(config: CorrelationFilterConfig) -> Self {
+        Self { config }
+    }
+    
+    // Legacy static method - keep for backward compat if needed, or remove
     pub fn check_correlation(
         target_symbol: &str,
         positions: &HashMap<String, Position>,
         correlation_matrix: &HashMap<(String, String), f64>,
         config: &CorrelationFilterConfig,
     ) -> Result<(), String> {
-        // If no positions, correlation check is always fine
+        // ... (existing implementation)
+        // Re-implement logic here or call from instance method
+        
         if positions.is_empty() {
             return Ok(());
         }
 
         for existing_symbol in positions.keys() {
-            // Self-correlation is 1.0, but we only care about OTHER symbols
             if existing_symbol == target_symbol {
                 continue;
             }
 
-            // Get correlation from matrix (try both combinations as matrix might be upper/lower triangle only, 
-            // though CorrelationService fills both)
             let corr = correlation_matrix.get(&(target_symbol.to_string(), existing_symbol.clone()))
                 .or_else(|| correlation_matrix.get(&(existing_symbol.clone(), target_symbol.to_string())))
                 .cloned()
-                .unwrap_or(0.0); // Default to 0 if no data
+                .unwrap_or(0.0);
 
             if corr > config.max_correlation_threshold {
                 return Err(format!(
@@ -57,6 +65,40 @@ impl CorrelationFilter {
         }
 
         Ok(())
+    }
+}
+
+#[async_trait]
+impl RiskValidator for CorrelationFilter {
+    fn name(&self) -> &str {
+        "CorrelationFilter"
+    }
+
+    async fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
+        // Only validate Buy orders
+        if !matches!(ctx.proposal.side, OrderSide::Buy) {
+            return ValidationResult::Approve;
+        }
+
+        // Need correlation matrix
+        let matrix = match ctx.correlation_matrix {
+            Some(m) => m,
+            None => return ValidationResult::Approve, // No data, can't validate
+        };
+
+        match Self::check_correlation(
+            &ctx.proposal.symbol,
+            &ctx.portfolio.positions,
+            matrix,
+            &self.config
+        ) {
+            Ok(_) => ValidationResult::Approve,
+            Err(e) => ValidationResult::Reject(e),
+        }
+    }
+
+    fn priority(&self) -> u8 {
+        35 // After Sector Exposure, before Sentiment
     }
 }
 

@@ -594,10 +594,10 @@ impl Analyst {
         // - Position existed from previous session
         // - Position was created manually
         // - Analyst restarted after Buy but before position was closed
-        if has_position && !context.position_manager.trailing_stop.is_active() {
-            if let Some(portfolio) = portfolio_data {
-                if let Some(pos) = portfolio.positions.get(&symbol) {
-                    let entry_price = pos.average_price.to_f64().unwrap_or(price_f64);
+        if has_position && !context.position_manager.trailing_stop.is_active() 
+            && let Some(portfolio) = portfolio_data 
+            && let Some(pos) = portfolio.positions.get(&symbol) {
+                let entry_price = pos.average_price.to_f64().unwrap_or(price_f64);
                     let atr = context.last_features.atr.unwrap_or(1.0);
                     
                     context.position_manager.trailing_stop = 
@@ -613,8 +613,6 @@ impl Analyst {
                             symbol, entry_price, stop_price, atr
                         );
                     }
-                }
-            }
         }
 
         // 4. Check Trailing Stop (Priority Exit) via PositionManager
