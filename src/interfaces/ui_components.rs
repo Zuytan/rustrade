@@ -89,6 +89,12 @@ pub struct SettingsPanel {
     pub profit_target_multiplier: String,
 }
 
+impl Default for SettingsPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SettingsPanel {
     pub fn new() -> Self {
         let mut panel = Self {
@@ -453,12 +459,13 @@ pub fn render_settings_view(
                               let prof_mult = panel.profit_target_multiplier.parse::<f64>().unwrap_or(2.0);
 
                               // --- Create & Send Risk Config ---
-                              // We use default() to set non-UI fields safely
-                              let mut risk_config = RiskConfig::default();
-                              risk_config.max_position_size_pct = max_pos;
-                              risk_config.max_daily_loss_pct = max_loss;
-                              risk_config.max_drawdown_pct = max_dd;
-                              risk_config.consecutive_loss_limit = cons_loss;
+                              let risk_config = RiskConfig {
+                                  max_position_size_pct: max_pos,
+                                  max_daily_loss_pct: max_loss,
+                                  max_drawdown_pct: max_dd,
+                                  consecutive_loss_limit: cons_loss,
+                                  ..RiskConfig::default()
+                              };
                               
                               // Use the correct enum variant: UpdateConfig(Box<RiskConfig>)
                               // Use try_send because we are in a synchronous UI context
@@ -467,16 +474,18 @@ pub fn render_settings_view(
                               }
                               
                               // --- Update Analyst Config ---
-                              let mut analyst_cfg = AnalystConfig::default();
-                              analyst_cfg.fast_sma_period = fast_sma;
-                              analyst_cfg.slow_sma_period = slow_sma;
-                              analyst_cfg.sma_threshold = sma_thresh;
-                              analyst_cfg.rsi_period = rsi_p;
-                              analyst_cfg.rsi_threshold = rsi_t;
-                              analyst_cfg.macd_min_threshold = macd_min;
-                              analyst_cfg.adx_threshold = adx_t;
-                              analyst_cfg.min_profit_ratio = min_rr;
-                              analyst_cfg.profit_target_multiplier = prof_mult;
+                              let analyst_cfg = AnalystConfig {
+                                  fast_sma_period: fast_sma,
+                                  slow_sma_period: slow_sma,
+                                  sma_threshold: sma_thresh,
+                                  rsi_period: rsi_p,
+                                  rsi_threshold: rsi_t,
+                                  macd_min_threshold: macd_min,
+                                  adx_threshold: adx_t,
+                                  min_profit_ratio: min_rr,
+                                  profit_target_multiplier: prof_mult,
+                                  ..AnalystConfig::default()
+                              };
                               
                               if let Err(e) = analyst_tx.try_send(AnalystCommand::UpdateConfig(Box::new(analyst_cfg))) {
                                    error!("Failed to send analyst config update: {}", e);

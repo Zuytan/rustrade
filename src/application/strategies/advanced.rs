@@ -109,11 +109,10 @@ impl AdvancedTripleFilterStrategy {
         }
 
         // If requires rising, check that condition too
-        if self.macd_requires_rising {
-            if let Some(prev_hist) = ctx.last_macd_histogram {
+        if self.macd_requires_rising
+            && let Some(prev_hist) = ctx.last_macd_histogram {
                 return ctx.macd_histogram > prev_hist;
             }
-        }
 
         // Passed all checks
         true

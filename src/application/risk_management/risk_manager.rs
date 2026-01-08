@@ -366,8 +366,8 @@ impl RiskManager {
                         pending.filled_at = Some(chrono::Utc::now().timestamp_millis());
 
                         // Track P&L for SELL orders to update consecutive loss counter
-                        if pending.side == OrderSide::Sell {
-                            if let Some(fill_price) = update.filled_avg_price {
+                        if pending.side == OrderSide::Sell
+                            && let Some(fill_price) = update.filled_avg_price {
                                 let pnl = (fill_price - pending.entry_price) * pending.filled_qty;
                                 if pnl < Decimal::ZERO {
                                     self.consecutive_losses += 1;
@@ -383,7 +383,6 @@ impl RiskManager {
                                     );
                                 }
                             }
-                        }
 
                         info!(
                             "RiskManager: Order {} FILLED (tentative) - awaiting portfolio sync for {}",
@@ -529,13 +528,12 @@ impl RiskManager {
 
                 // 6. Check Risks (Async check)
                 // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
-                if !self.halted {
-                    if let Some(reason) = self.check_circuit_breaker(current_equity) {
+                if !self.halted
+                    && let Some(reason) = self.check_circuit_breaker(current_equity) {
                         tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
                         self.halted = true;
                         self.liquidate_portfolio(&reason).await;
                     }
-                }
 
                 // 7. Capture performance snapshot if monitor available
                 if let Some(monitor) = &self.performance_monitor {
@@ -806,7 +804,7 @@ impl RiskManager {
                 // If we bought this symbol today, it's a day trade
                 // For simplicity, we check if we have it in positions and it was bought today
                 // In a real system, we'd check filled_at timestamp of the buy
-                portfolio.positions.get(&proposal.symbol).is_some() // Mock simplification
+                portfolio.positions.contains_key(&proposal.symbol) // Mock simplification
             } else {
                 false
             };
@@ -852,8 +850,8 @@ impl RiskManager {
         }
 
         // Correlation-based diversification validation for buys
-        if matches!(proposal.side, OrderSide::Buy) {
-            if let Some(corr_service) = &self.correlation_service {
+        if matches!(proposal.side, OrderSide::Buy)
+            && let Some(corr_service) = &self.correlation_service {
                 // Collect all symbols (target + existing positions)
                 let mut symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
                 if !symbols.contains(&proposal.symbol) {
@@ -879,7 +877,6 @@ impl RiskManager {
                     }
                 }
             }
-        }
 
         // Execute proposal
         self.execute_proposal_internal(proposal, portfolio).await?;

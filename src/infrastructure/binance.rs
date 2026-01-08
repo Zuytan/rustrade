@@ -302,11 +302,10 @@ impl MarketDataService for BinanceMarketDataService {
             // Normalize symbol back (BTCUSDT -> BTC/USDT)
             let normalized_sym = normalize_crypto_symbol(&ticker.symbol).unwrap_or(ticker.symbol);
 
-            if let Ok(price_f64) = ticker.price.parse::<f64>() {
-                if let Some(dec) = Decimal::from_f64_retain(price_f64) {
+            if let Ok(price_f64) = ticker.price.parse::<f64>()
+                && let Some(dec) = Decimal::from_f64_retain(price_f64) {
                     prices.insert(normalized_sym, dec);
                 }
-            }
         }
 
         Ok(prices)
@@ -326,8 +325,8 @@ impl MarketDataService for BinanceMarketDataService {
             let start_ts = start.timestamp();
             let end_ts = end.timestamp();
 
-            if let Ok(cached_candles) = repo.get_range(symbol, start_ts, end_ts).await {
-                if cached_candles.len() >= MIN_REQUIRED_BARS {
+            if let Ok(cached_candles) = repo.get_range(symbol, start_ts, end_ts).await
+                && cached_candles.len() >= MIN_REQUIRED_BARS {
                     info!(
                         "BinanceMarketDataService: Using {} cached bars for {}",
                         cached_candles.len(),
@@ -335,7 +334,6 @@ impl MarketDataService for BinanceMarketDataService {
                     );
                     return Ok(cached_candles);
                 }
-            }
         }
 
         // Fetch from API
@@ -417,7 +415,7 @@ impl BinanceMarketDataService {
                 }
 
                 let timestamp_ms = arr[0].as_i64()?;
-                let timestamp = (timestamp_ms / 1000) as i64;
+                let timestamp = timestamp_ms / 1000;
 
                 let open = arr[1].as_str()?.parse::<f64>().ok()?;
                 let high = arr[2].as_str()?.parse::<f64>().ok()?;
@@ -517,12 +515,11 @@ impl ExecutionService for BinanceExecutionService {
             ("timestamp", timestamp.to_string()),
         ];
 
-        if let OrderType::Limit = order.order_type {
-            if order.price > Decimal::ZERO {
+        if let OrderType::Limit = order.order_type
+            && order.price > Decimal::ZERO {
                 params.push(("price", order.price.to_string()));
                 params.push(("timeInForce", "GTC".to_string()));
             }
-        }
 
         let query_string: String = params
             .iter()

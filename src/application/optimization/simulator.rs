@@ -390,11 +390,9 @@ impl Simulator {
 
                     if let (Some(&prev_spy), Some(&curr_spy)) =
                         (spy_daily_map.get(&prev_dt), spy_daily_map.get(&curr_dt))
-                    {
-                        if prev_spy > 0.0 {
+                        && prev_spy > 0.0 {
                             benchmark_returns.push((curr_spy - prev_spy) / prev_spy);
                         }
-                    }
                 }
 
                 // Only calculate if we have matching returns

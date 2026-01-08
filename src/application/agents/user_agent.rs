@@ -233,7 +233,7 @@ impl UserAgent {
 
             match self.proposal_tx.try_send(proposal) {
                 Ok(_) => Some(self.i18n.tf("cmd_proposal_sent", &[
-                    ("side", &self.i18n.t(&format!("side_{}", side.to_string().to_lowercase())).to_string()),
+                    ("side", self.i18n.t(&format!("side_{}", side.to_string().to_lowercase()))),
                     ("qty", &qty.to_string()),
                     ("symbol", symbol)
                 ])),
@@ -254,22 +254,20 @@ impl UserAgent {
 
             // Extract signal information from SignalGenerator logs
             // Format: "SignalGenerator [StrategyName]: SYMBOL - REASON"
-            if msg.contains("SignalGenerator") && msg.contains(": ") {
-                if let Some(signal_part) = msg.split("SignalGenerator").nth(1) {
+            if msg.contains("SignalGenerator") && msg.contains(": ")
+                && let Some(signal_part) = msg.split("SignalGenerator").nth(1) {
                     // Extract symbol and reason
                     if let Some(content) = signal_part.split(" - ").nth(1) {
                         // Find the symbol (between]: and -)
-                        if let Some(symbol_section) = signal_part.split("]: ").nth(1) {
-                            if let Some(symbol) = symbol_section.split(" - ").next() {
+                        if let Some(symbol_section) = signal_part.split("]: ").nth(1)
+                            && let Some(symbol) = symbol_section.split(" - ").next() {
                                 // Update strategy info with the signal reason
                                 if let Some(info) = self.strategy_info.get_mut(symbol) {
                                     info.last_signal = Some(content.trim().to_string());
                                 }
                             }
-                        }
                     }
                 }
-            }
 
             // Simple heuristic to extract "Sender" from log line if possible,
             // otherwise default to "System"
@@ -493,20 +491,19 @@ impl UserAgent {
         }
         // Check for buy/sell signals
         else if msg.contains("SignalGenerator") {
-            if msg.contains("BUY") || msg.contains("SELL") {
-                if let Some(symbol) = self.extract_symbol_from_log(msg) {
+            if (msg.contains("BUY") || msg.contains("SELL"))
+                && let Some(symbol) = self.extract_symbol_from_log(msg) {
                     let signal_type = if msg.contains("BUY") { 
                         self.i18n.t("side_buy") 
                     } else { 
                         self.i18n.t("side_sell") 
                     };
                     let event_msg = self.i18n.tf("activity_signal", &[
-                        ("type", &signal_type.to_string()),
+                        ("type", signal_type),
                         ("symbol", &symbol)
                     ]);
                     self.add_activity(ActivityEventType::Signal, event_msg, EventSeverity::Info);
                 }
-            }
         }
         // Check for filter blocks
         else if msg.contains("REJECT") || msg.contains("blocked") || msg.contains("filtered") {
@@ -522,7 +519,7 @@ impl UserAgent {
                 };
                 let event_msg = self.i18n.tf("activity_blocked", &[
                     ("symbol", &symbol),
-                    ("reason", &reason.to_string())
+                    ("reason", reason)
                 ]);
                 self.add_activity(
                     ActivityEventType::FilterBlock,

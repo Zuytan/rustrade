@@ -161,11 +161,10 @@ impl AnalysisContext {
         
         // Try to get ADX from highest timeframe (1Day > 4Hour > 1Hour > ...)
         for tf in [Timeframe::OneDay, Timeframe::FourHour, Timeframe::OneHour, Timeframe::FifteenMin] {
-            if let Some(features) = tf_features.get(&tf) {
-                if let Some(adx) = features.adx {
+            if let Some(features) = tf_features.get(&tf)
+                && let Some(adx) = features.adx {
                     return adx;
                 }
-            }
         }
         
         // Fall back to primary timeframe

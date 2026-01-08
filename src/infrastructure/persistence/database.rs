@@ -18,13 +18,12 @@ impl Database {
         // Ensure the directory exists if it's a file path
         if let Some(path_part) = db_url.strip_prefix("sqlite://") {
             let path = Path::new(path_part);
-            if let Some(parent) = path.parent() {
-                if !parent.exists() {
+            if let Some(parent) = path.parent()
+                && !parent.exists() {
                     fs::create_dir_all(parent)
                         .await
                         .context("Failed to create database directory")?;
                 }
-            }
         }
 
         let options = SqliteConnectOptions::from_str(db_url)?

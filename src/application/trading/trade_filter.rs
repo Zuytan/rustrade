@@ -36,15 +36,14 @@ impl TradeFilter {
         }
 
         // 2. Pending Order Check
-        if let Some(pending) = position_manager.pending_order {
-            if pending == signal {
+        if let Some(pending) = position_manager.pending_order
+            && pending == signal {
                 info!(
                     "TradeFilter: Signal {:?} for {} BLOCKED - Pending Order exists",
                     signal, symbol
                 );
                 return false;
             }
-        }
 
         // 3. Cooldown Check
         let cooldown_ms = config.order_cooldown_seconds * 1000;
@@ -64,8 +63,8 @@ impl TradeFilter {
         last_entry_time: Option<i64>,
         min_hold_time_ms: i64,
     ) -> bool {
-        if signal == OrderSide::Sell {
-            if let Some(entry_time) = last_entry_time {
+        if signal == OrderSide::Sell
+            && let Some(entry_time) = last_entry_time {
                 let hold_duration_ms = timestamp - entry_time;
                 if hold_duration_ms < min_hold_time_ms {
                     let remaining_minutes = (min_hold_time_ms - hold_duration_ms) / 60000;
@@ -76,7 +75,6 @@ impl TradeFilter {
                     return false;
                 }
             }
-        }
         true
     }
 

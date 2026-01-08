@@ -491,11 +491,10 @@ impl MarketDataService for AlpacaMarketDataService {
                 0.0
             };
 
-            if price_f64 > 0.0 {
-                if let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64) {
+            if price_f64 > 0.0
+                && let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64) {
                     prices.insert(normalized_sym, dec);
                 }
-            }
         }
 
         Ok(prices)
@@ -691,15 +690,14 @@ impl MarketDataService for AlpacaMarketDataService {
                     let start_ts = start.timestamp();
                     let end_ts = end.timestamp();
 
-                    if let Ok(cached_candles) = repo.get_range(symbol, start_ts, end_ts).await {
-                        if !cached_candles.is_empty() {
+                    if let Ok(cached_candles) = repo.get_range(symbol, start_ts, end_ts).await
+                        && !cached_candles.is_empty() {
                             tracing::warn!(
                                 "AlpacaMarketDataService: API failed for {}: {}. Falling back to {} cached bars (DEGRADED MODE)",
                                 symbol, e, cached_candles.len()
                             );
                             return Ok(cached_candles);
                         }
-                    }
                 }
 
                 // No cache available and API failed - propagate error
@@ -790,11 +788,10 @@ impl AlpacaMarketDataService {
                 .await
                 .context("Failed to parse Alpaca bars response")?;
 
-            if let Some(bars_map) = resp.bars {
-                if let Some(bars) = bars_map.get(symbol) {
+            if let Some(bars_map) = resp.bars
+                && let Some(bars) = bars_map.get(symbol) {
                     all_bars.extend(bars.clone());
                 }
-            }
 
             match resp.next_page_token {
                 Some(token) if !token.is_empty() => {

@@ -68,7 +68,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                              egui::RichText::new(agent.i18n.tf("pnl_pill_format", &[
                                  ("amount", &format!("{:.2}", unrealized_pnl.to_f64().unwrap_or(0.0).abs())),
                                  ("percent", &format!("{:.2}", unrealized_pct)),
-                                 ("sign", &pnl_sign.to_string())
+                                 ("sign", pnl_sign)
                              ]))
                                  .size(12.0)
                                  .strong()
@@ -85,7 +85,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                  ui.horizontal(|ui| {
                      ui.label(egui::RichText::new("●").size(10.0).color(egui::Color32::GREEN));
                      ui.label(
-                         egui::RichText::new(agent.i18n.tf("status_label", &[("status", &agent.i18n.t("status_active"))]))
+                         egui::RichText::new(agent.i18n.tf("status_label", &[("status", agent.i18n.t("status_active"))]))
                              .size(12.0)
                              .color(egui::Color32::from_gray(160))
                      );
@@ -131,7 +131,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                          let sign = if pnl_val >= 0.0 { "+" } else { "-" };
                          ui.label(egui::RichText::new(agent.i18n.tf("pnl_value_format", &[
                              ("amount", &format!("{:.2}", pnl_val.abs())),
-                             ("sign", &sign.to_string())
+                             ("sign", sign)
                          ])).size(28.0).strong().color(pnl_color));
                          ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                              ui.label(egui::RichText::new(pnl_arrow).size(18.0).color(pnl_color));
@@ -405,7 +405,7 @@ fn render_symbol_card(
                         .show(ui, |ui| {
                              ui.label(egui::RichText::new(agent.i18n.tf("pnl_amount_format", &[
                                  ("amount", &format!("{:.2}", pnl.to_f64().unwrap_or(0.0).abs())),
-                                 ("sign", &if is_profit { "+" } else { "-" }.to_string())
+                                 ("sign", if is_profit { "+" } else { "-" })
                              ]))
                                 .size(11.0).strong().color(pnl_color));
                         });
@@ -643,8 +643,8 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
         ui.add_space(8.0);
         
         // Chart for selected tab
-        if let Some(selected_symbol) = &agent.selected_chart_tab {
-            if let Some(candles) = agent.market_data.get(selected_symbol) {
+        if let Some(selected_symbol) = &agent.selected_chart_tab
+            && let Some(candles) = agent.market_data.get(selected_symbol) {
                 if candles.is_empty() {
                      ui.label(agent.i18n.tf("no_candles", &[("symbol", selected_symbol)]));
                 } else {
@@ -734,7 +734,6 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                         });
                 }
             }
-        }
     }
 
 }
@@ -831,11 +830,10 @@ pub fn render_logs_panel(agent: &mut UserAgent, ctx: &egui::Context) {
                                 let is_system = sender == agent.i18n.t("sender_system") 
                                     || sender == agent.i18n.t("sender_system_error") 
                                     || sender == agent.i18n.t("sender_system_warn");
-                                if is_system {
-                                    if !msg.contains(filter_level.as_str()) {
+                                if is_system
+                                    && !msg.contains(filter_level.as_str()) {
                                         continue;
                                     }
-                                }
                             }
 
                             ui.horizontal_wrapped(|ui| {

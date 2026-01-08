@@ -246,11 +246,7 @@ impl Application {
 
         let candle_repo = self.candle_repository.clone(); // Option<Arc<..>> impls Clone
 
-        let correlation_service = if let Some(repo) = &candle_repo {
-            Some(Arc::new(CorrelationService::new(repo.clone())))
-        } else {
-            None
-        };
+        let correlation_service = candle_repo.as_ref().map(|repo| Arc::new(CorrelationService::new(repo.clone())));
 
         // Return handle BEFORE moving self members, so we clone what we need.
         let system_handle = SystemHandle {

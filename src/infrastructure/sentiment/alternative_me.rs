@@ -27,6 +27,12 @@ pub struct AlternativeMeSentimentProvider {
     url: String,
 }
 
+impl Default for AlternativeMeSentimentProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AlternativeMeSentimentProvider {
     pub fn new() -> Self {
         Self {

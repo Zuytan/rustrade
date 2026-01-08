@@ -592,10 +592,10 @@ impl Analyst {
         let trailing_stop_triggered = signal.is_some();
 
         // Check Partial Take-Profit (Swing Trading Upgrade)
-        if !trailing_stop_triggered && has_position {
-            if let Some(portfolio) = portfolio_data {
-                if let Some(pos) = portfolio.positions.get(&symbol) {
-                    if pos.quantity > Decimal::ZERO {
+        if !trailing_stop_triggered && has_position
+            && let Some(portfolio) = portfolio_data
+                && let Some(pos) = portfolio.positions.get(&symbol)
+                    && pos.quantity > Decimal::ZERO {
                         let avg_price = pos.average_price.to_f64().unwrap_or(1.0);
                         let pnl_pct = (price_f64 - avg_price) / avg_price;
 
@@ -640,9 +640,6 @@ impl Analyst {
                             }
                         }
                     }
-                }
-            }
-        }
 
         // Monitor pending order timeout
         if context.position_manager.check_timeout(timestamp, 60000) {
@@ -700,28 +697,25 @@ impl Analyst {
             );
 
             // RSI Filtering (Strategic Tuning)
-            if let Some(OrderSide::Buy) = signal {
-                if let Some(rsi) = context.last_features.rsi {
-                    if rsi > context.config.rsi_threshold {
+            if let Some(OrderSide::Buy) = signal
+                && let Some(rsi) = context.last_features.rsi
+                    && rsi > context.config.rsi_threshold {
                         info!(
                             "Analyst: Buy signal BLOCKED for {} - RSI {:.2} > {:.2} (Overbought)",
                             symbol, rsi, context.config.rsi_threshold
                         );
                         signal = None;
                     }
-                }
-            }
 
             // Suppress SMA-cross sell if Trailing Stop is active
-            if let Some(OrderSide::Sell) = signal {
-                if context.position_manager.trailing_stop.is_active() && !trailing_stop_triggered {
+            if let Some(OrderSide::Sell) = signal
+                && context.position_manager.trailing_stop.is_active() && !trailing_stop_triggered {
                     info!(
                         "Analyst: Sell signal SUPPRESSED for {} - Using trailing stop exit instead",
                         symbol
                     );
                     signal = None;
                 }
-            }
         }
 
         // 6. Post-Signal Validation (Long-Only, Pending, Cooldown)
@@ -834,17 +828,15 @@ impl Analyst {
                         if side == OrderSide::Buy {
                             context.last_entry_time = Some(timestamp);
                         }
-                        if side == OrderSide::Buy {
-                            if let Some(atr) = context.last_features.atr {
-                                if atr > 0.0 {
+                        if side == OrderSide::Buy
+                            && let Some(atr) = context.last_features.atr
+                                && atr > 0.0 {
                                     context.position_manager.trailing_stop = StopState::on_buy(
                                         price_f64,
                                         atr,
                                         context.config.trailing_stop_atr_multiplier,
                                     );
                                 }
-                            }
-                        }
                     }
                     Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                         warn!(
@@ -897,8 +889,8 @@ impl Analyst {
         )
     }
     async fn resolve_strategy(&self, symbol: &str) -> (Arc<dyn TradingStrategy>, AnalystConfig) {
-        if let Some(repo) = &self.strategy_repository {
-            if let Ok(Some(def)) = repo.find_by_symbol(symbol).await {
+        if let Some(repo) = &self.strategy_repository
+            && let Ok(Some(def)) = repo.find_by_symbol(symbol).await {
                 let mut config = self.config.clone();
 
                 if let Ok(parsed_config) = serde_json::from_str::<AnalystConfig>(&def.config_json) {
@@ -913,7 +905,6 @@ impl Analyst {
                 let strategy = StrategyFactory::create(def.mode, &config);
                 return (strategy, config);
             }
-        }
 
         // Default
         (self.default_strategy.clone(), self.config.clone())
