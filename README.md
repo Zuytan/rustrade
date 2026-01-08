@@ -1,5 +1,7 @@
 # RustTrade Agentic Bot 🦀
 
+[![CI](https://github.com/zuytan/rustrade/actions/workflows/ci.yml/badge.svg)](https://github.com/zuytan/rustrade/actions/workflows/ci.yml)
+
 > [!WARNING]
 > **This project is not production-ready and should not be used with real money.**
 > Using this trading bot involves significant financial risks. Use it only in simulation mode (Paper Trading) or for educational purposes.
