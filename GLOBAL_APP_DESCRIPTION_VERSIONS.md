@@ -1,5 +1,16 @@
 # Rustrade - Historique des Versions
 
+## Version 0.49.0 (Janvier 2026) - P2 & P3: Core Logic Hardening & Metrics
+- **Core Logic Hardening (P2)**:
+  - Eliminated unsafe `unwrap()` usage in Analyst and Risk logic components (e.g. `symbol_states` access).
+  - Validated that all remaining unwraps (RiskManager, RiskAppetite) are confined to test code.
+- **Performance Metrics (P3)**:
+  - Implemented rolling **Sharpe Ratio** (30d) and **Win Rate** (30d) calculation in `PerformanceMonitoringService`.
+  - Added FIFO Trade reconstruction logic to derive PnL statistics from raw Order history.
+  - Calculator logic isolated in new `domain::performance::calculator` module with unit tests.
+- **Maintenance**:
+  - `clippy` clean codebase.
+
 ## Version 0.48.0 (Janvier 2026) - P1 Improvements: Stability & Refactoring
 - **Critical Stability Improvements**:
   - Eliminated remaining critical `unwrap()` calls in `src/infrastructure/alpaca.rs` (RwLock proper error handling) and `src/infrastructure/sentiment/alternative_me.rs` (safe timestamp parsing).

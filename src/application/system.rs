@@ -122,6 +122,7 @@ impl Application {
                 candle_repo.clone(),
                 market_service.clone(),
                 portfolio.clone(),
+                order_repo.clone(),
                 config.regime_detection_window,
             )))
         } else {

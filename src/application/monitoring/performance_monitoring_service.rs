@@ -7,14 +7,19 @@ use anyhow::Result;
 use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info, warn};
+use crate::domain::repositories::TradeRepository;
+use crate::domain::performance::calculator;
+use crate::domain::trading::types::Order;
 
 pub struct PerformanceMonitoringService {
     snapshot_repository: Arc<dyn PerformanceSnapshotRepository>,
     candle_repository: Arc<dyn CandleRepository>,
     market_service: Arc<dyn MarketDataService>,
     regime_detector: MarketRegimeDetector,
+
     portfolio: Arc<RwLock<Portfolio>>,
+    trade_repository: Arc<dyn TradeRepository>,
 }
 
 impl PerformanceMonitoringService {
@@ -22,7 +27,9 @@ impl PerformanceMonitoringService {
         snapshot_repository: Arc<dyn PerformanceSnapshotRepository>,
         candle_repository: Arc<dyn CandleRepository>,
         market_service: Arc<dyn MarketDataService>,
+
         portfolio: Arc<RwLock<Portfolio>>,
+        trade_repository: Arc<dyn TradeRepository>,
         regime_window_size: usize,
     ) -> Self {
         Self {
@@ -31,6 +38,7 @@ impl PerformanceMonitoringService {
             market_service,
             regime_detector: MarketRegimeDetector::new(regime_window_size, 25.0, 2.0), // Defaults, should come from config
             portfolio,
+            trade_repository,
         }
     }
 
@@ -74,8 +82,8 @@ impl PerformanceMonitoringService {
 
         // Calculate Rolling Metrics (simplified for now, would need trade history)
         // For MVP, we'll placeholders or fetch from TradeRepository if available
-        let sharpe_30d = 0.0; // TODO: Implement rolling calculation
-        let win_rate_30d = 0.0; // TODO: Implement rolling calculation
+        // Calculate Rolling Metrics (30d)
+        let (sharpe_30d, win_rate_30d) = self.calculate_rolling_metrics(symbol, 30).await;
 
         let snapshot = PerformanceSnapshot::new(
             symbol.to_string(),
@@ -98,5 +106,30 @@ impl PerformanceMonitoringService {
         }
 
         Ok(())
+    }
+
+    /// Calculate rolling performance metrics using FIFO LIFO matching on orders
+    async fn calculate_rolling_metrics(&self, symbol: &str, days: i64) -> (f64, f64) {
+        let trades = match self.trade_repository.find_by_symbol(symbol).await {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("Failed to fetch trades for metrics: {}", e);
+                return (0.0, 0.0);
+            }
+        };
+
+        // Filter by date (approximate timestamp check)
+        let cutoff = chrono::Utc::now().timestamp() - (days * 24 * 3600);
+        let relevant_orders: Vec<&Order> = trades
+            .iter()
+            .filter(|t| t.timestamp >= cutoff)
+            .collect();
+
+        if relevant_orders.is_empty() {
+            return (0.0, 0.0);
+        }
+
+        // Delegate to domain utility
+        calculator::calculate_metrics_from_orders(&relevant_orders.into_iter().cloned().collect::<Vec<_>>())
     }
 }
