@@ -34,10 +34,17 @@
 
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Order;
+use crate::domain::risk::state::RiskState;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+
+#[async_trait]
+pub trait RiskStateRepository: Send + Sync {
+    async fn save(&self, state: &RiskState) -> Result<()>;
+    async fn load(&self, id: &str) -> Result<Option<RiskState>>;
+}
 
 /// Repository for persisting and retrieving trade orders
 #[async_trait]

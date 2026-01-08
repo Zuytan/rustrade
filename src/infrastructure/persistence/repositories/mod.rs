@@ -20,6 +20,9 @@ pub use performance_snapshot_repository::SqlitePerformanceSnapshotRepository;
 pub mod reoptimization_trigger_repository;
 pub use reoptimization_trigger_repository::SqliteReoptimizationTriggerRepository;
 
+pub mod risk_state_repository;
+pub use risk_state_repository::SqliteRiskStateRepository;
+
 pub struct SqliteOrderRepository {
     pool: SqlitePool,
 }

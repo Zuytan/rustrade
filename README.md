@@ -32,6 +32,8 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 - **Correlation Filters**: Prevents exposure to highly correlated assets (Pearson matrix).
 - **Sector Exposure Limits**: Caps risk per industry sector.
 - **Circuit Breakers**: Daily Loss Limit, Max Drawdown Halt, Composite Risk Score.
+- **Persistence ("No Amnesia")**: Retains critical risk state (HWM, Daily Loss) across restarts.
+- **Panic Mode**: Blind emergency liquidation during data outages.
 - **PDT Protection**: Pattern Day Trader safeguards for accounts < $25k.
 
 ### 🔬 Backtesting & Optimization

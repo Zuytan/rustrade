@@ -66,6 +66,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
         config,
         None,
         None,
+        None,
     );
 
     // Run RiskManager in background

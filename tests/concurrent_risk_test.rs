@@ -55,8 +55,9 @@ async fn test_concurrent_proposals_respect_limits() {
         false, // non_pdt_mode
         AssetClass::Stock,
         risk_config,
-        None, // performance_monitor
-        None, // correlation_service
+        None,
+        None,
+        None,
     );
 
     // Start RiskManager in background
@@ -160,6 +161,7 @@ async fn test_backpressure_drops_excess_proposals() {
         false,
         AssetClass::Stock,
         risk_config,
+        None,
         None,
         None,
     );

@@ -181,7 +181,25 @@ impl Database {
         )
         .execute(&mut *conn)
         .await
-        .context("Failed to create reoptimization_triggers table")?;
+            .context("Failed to create reoptimization_triggers table")?;
+
+        // 7. Risk State Table (Global Singleton)
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS risk_state (
+                id TEXT PRIMARY KEY,
+                session_start_equity TEXT NOT NULL,
+                daily_start_equity TEXT NOT NULL,
+                equity_high_water_mark TEXT NOT NULL,
+                consecutive_losses INTEGER NOT NULL,
+                reference_date DATE NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            "#,
+        )
+        .execute(&mut *conn)
+        .await
+        .context("Failed to create risk_state table")?;
 
         info!("Database schema initialized.");
         Ok(())

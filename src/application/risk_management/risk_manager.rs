@@ -1,4 +1,6 @@
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate, SectorProvider};
+use crate::domain::repositories::RiskStateRepository;
+use crate::domain::risk::state::RiskState;
 use crate::domain::sentiment::{Sentiment, SentimentClassification};
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, OrderSide, OrderStatus, OrderType, TradeProposal};
@@ -130,6 +132,7 @@ pub struct RiskManager {
     pending_reservations:
         HashMap<String, crate::application::monitoring::portfolio_state_manager::ReservationToken>, // Exposure reservations
     current_sentiment: Option<Sentiment>,
+    risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
 }
 
 #[derive(Debug, Clone)]
@@ -167,6 +170,7 @@ impl RiskManager {
         risk_config: RiskConfig,
         performance_monitor: Option<Arc<PerformanceMonitoringService>>,
         correlation_service: Option<Arc<CorrelationService>>,
+        risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
     ) -> Self {
         if let Err(e) = risk_config.validate() {
             panic!("RiskManager Configuration Error: {}", e);
@@ -196,6 +200,27 @@ impl RiskManager {
             pending_orders: HashMap::new(),
             pending_reservations: HashMap::new(),
             current_sentiment: None,
+            risk_state_repository,
+        }
+    }
+
+    /// Persist current risk state to database
+    async fn persist_state(&self) {
+        if let Some(repo) = &self.risk_state_repository {
+            let state = RiskState {
+                id: "global".to_string(), // Singleton for now
+                session_start_equity: self.session_start_equity,
+                daily_start_equity: self.daily_start_equity,
+                equity_high_water_mark: self.equity_high_water_mark,
+                consecutive_losses: self.consecutive_losses,
+                reference_date: self.last_reset_date,
+            };
+            
+            if let Err(e) = repo.save(&state).await {
+                error!("RiskManager: Failed to persist risk state: {}", e);
+            } else {
+                debug!("RiskManager: Risk state persisted successfully.");
+            }
         }
     }
 
@@ -223,9 +248,47 @@ impl RiskManager {
         self.session_start_equity = initial_equity;
         self.daily_start_equity = initial_equity; // Initialize daily tracking
         self.equity_high_water_mark = initial_equity;
+        
+        // Attempt to load persistent state
+        if let Some(repo) = &self.risk_state_repository {
+            match repo.load("global").await {
+                Ok(Some(state)) => {
+                    info!("RiskManager: Loaded persistent state from DB: {:?}", state);
+                    
+                    // Restore HWM and Consecutive Losses always
+                    self.equity_high_water_mark = state.equity_high_water_mark;
+                    self.consecutive_losses = state.consecutive_losses;
+                    
+                    // Restore Daily/Session logic ONLY if it's the same day (to prevent skipping daily reset)
+                    // If stored date < today, we treat it as a new day and keep the fresh values we just calculated
+                    // But for Crypto 24/7, maybe we want to adhere to the stored values if within same session?
+                    // Let's use simple logic: If State Date == Today, Use State. Else Use Fresh.
+                    let today = Utc::now().date_naive();
+                    if state.reference_date == today {
+                        self.session_start_equity = state.session_start_equity;
+                        self.daily_start_equity = state.daily_start_equity;
+                        self.last_reset_date = state.reference_date;
+                        info!("RiskManager: Restored intraday equity baselines from persistence.");
+                    } else {
+                        info!("RiskManager: Persistent state is from previous day ({} vs {}). Using fresh equity baselines.", state.reference_date, today);
+                        // We still kept HWM and consecutive losses above.
+                        // We should save the new day state immediately
+                        self.persist_state().await;
+                    }
+                }
+                Ok(None) => {
+                    info!("RiskManager: No persistent state found. Starting fresh.");
+                    self.persist_state().await;
+                }
+                Err(e) => {
+                    error!("RiskManager: Failed to load persistent state: {}. Continuing with fresh state.", e);
+                }
+            }
+        }
+
         info!(
-            "RiskManager: Session initialized with equity: {} (portfolio v{})",
-            initial_equity, snapshot.version
+            "RiskManager: Session initialized. Equity: {}, Daily Start: {}, HWM: {}",
+            self.session_start_equity, self.daily_start_equity, self.equity_high_water_mark
         );
         Ok(())
     }
@@ -336,7 +399,8 @@ impl RiskManager {
     }
 
     /// Handle real-time order updates to maintain pending state
-    fn handle_order_update(&mut self, update: OrderUpdate) {
+    /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
+    fn handle_order_update(&mut self, update: OrderUpdate) -> bool {
         // info!("RiskManager: processing update for order {}", update.order_id);
 
         // If we don't have the order in pending, we might have started tracking after it was sent?
@@ -350,6 +414,8 @@ impl RiskManager {
         // So we should match on `client_order_id` (our UUID) OR `order_id` (Alpaca ID)?
         // RiskManager keys `pending_orders` by the UUID it generated.
         // `OrderUpdate.client_order_id` SHOULD match that UUID.
+
+        let mut state_changed = false;
 
         if let Some(pending) = self.pending_orders.get_mut(&update.client_order_id) {
             match update.status {
@@ -375,8 +441,10 @@ impl RiskManager {
                                         "RiskManager: Trade LOSS detected for {} (${:.2}). Consecutive losses: {}",
                                         pending.symbol, pnl, self.consecutive_losses
                                     );
+                                    state_changed = true;
                                 } else {
                                     self.consecutive_losses = 0;
+                                    state_changed = true; // Resetting is also a change we want to persist
                                     info!(
                                         "RiskManager: Trade PROFIT for {} (${:.2}). Loss streak reset.",
                                         pending.symbol, pnl
@@ -416,6 +484,8 @@ impl RiskManager {
                 }
             }
         }
+        
+        state_changed
     }
 
     /// Validate sector exposure limits
@@ -524,6 +594,8 @@ impl RiskManager {
                 // 5. Update High Water Mark
                 if current_equity > self.equity_high_water_mark {
                     self.equity_high_water_mark = current_equity;
+                    // HWM updated, worth persisting
+                    self.persist_state().await;
                 }
 
                 // 6. Check Risks (Async check)
@@ -569,13 +641,18 @@ impl RiskManager {
                 // CRITICAL SAFETY: Never use unbounded Market orders during emergency
                 // Instead, use aggressive Limit orders with 2% slippage tolerance
                 // If price unavailable, skip liquidation (requires manual intervention)
-                if current_price <= Decimal::ZERO {
+                // UPDATE (P0 Fix): If price unavailable, WE MUST LIQUIDATE BLINDLY (Panic Mode).
+                // Staying in position during a data outage/crash is riskier than slippage.
+                
+                let _price = if current_price <= Decimal::ZERO {
                     warn!(
-                        "RiskManager: No current price for {} - CANNOT safely liquidate. Manual intervention required.",
+                        "RiskManager: No current price for {} - EXECUTING BLIND MARKET ORDER (Panic Mode)",
                         symbol
                     );
-                    continue;
-                }
+                    Decimal::ZERO
+                } else {
+                    current_price
+                };
 
                 // CRITICAL SAFETY: Use Market orders for emergency liquidation to guarantee exit.
                 // "Get me out at any price" is safer than "Get me out if price > X" in a true crash.
@@ -610,7 +687,7 @@ impl RiskManager {
     }
 
     /// Check if we need to reset session stats (for 24/7 Crypto markets)
-    fn check_daily_reset(&mut self, current_equity: Decimal) {
+    fn check_daily_reset(&mut self, current_equity: Decimal) -> bool {
         let today = Utc::now().date_naive();
         if self.asset_class == AssetClass::Crypto && today > self.last_reset_date {
             info!(
@@ -625,7 +702,14 @@ impl RiskManager {
             // Usually "Daily Loss" is the main drift issue. Consecutive losses are trade-based.
             // I will NOT reset consecutive_losses as bad streaks can span days.
             self.last_reset_date = today;
+            
+            // Persist the new baseline
+            // Note: Since this func is effectively sync/called from async context but doesn't await easily?
+            // Actually it's called from cmd_handle_* which IS async. We should make check_daily_reset async OR return a "needs_save" bool.
+            // Let's make it return bool.
+            return true;
         }
+        false
     }
 
     /// Cleanup tentative filled orders and release reservations
@@ -703,6 +787,11 @@ impl RiskManager {
             RiskCommand::ProcessProposal(proposal) => self.cmd_handle_proposal(proposal).await,
             RiskCommand::UpdateSentiment(sentiment) => self.cmd_handle_update_sentiment(sentiment).await,
             RiskCommand::UpdateConfig(config) => self.cmd_handle_update_config(config).await,
+            RiskCommand::CircuitBreakerTrigger => {
+                warn!("RiskManager: MANUAL CIRCUIT BREAKER TRIGGERED! Executing Panic Liquidation.");
+                self.liquidate_portfolio("Manual Circuit Breaker Trigger").await;
+                Ok(())
+            },
         }
     }
 
@@ -726,7 +815,9 @@ impl RiskManager {
 
     /// Handle order update command
     async fn cmd_handle_order_update(&mut self, update: OrderUpdate) -> Result<(), Box<dyn std::error::Error>> {
-        self.handle_order_update(update);
+        if self.handle_order_update(update) {
+             self.persist_state().await; 
+        }
         Ok(())
     }
 
@@ -736,7 +827,9 @@ impl RiskManager {
 
         if !self.halted {
             let snapshot = self.portfolio_state_manager.get_snapshot().await;
-            self.check_daily_reset(snapshot.portfolio.total_equity(&self.current_prices));
+            if self.check_daily_reset(snapshot.portfolio.total_equity(&self.current_prices)) {
+                self.persist_state().await;
+            }
             self.reconcile_pending_orders(&snapshot.portfolio);
         }
 
@@ -777,7 +870,9 @@ impl RiskManager {
         }
 
         // Check daily reset
-        self.check_daily_reset(current_equity);
+        if self.check_daily_reset(current_equity) {
+             self.persist_state().await;
+        }
 
         // Circuit breaker check
         if let Some(reason) = self.check_circuit_breaker(current_equity) {
@@ -1148,6 +1243,7 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
 
         // Run RiskManager in background
@@ -1228,6 +1324,7 @@ mod tests {
             RiskConfig::default(),
             None,
             None,
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -1274,6 +1371,7 @@ mod tests {
             false,
             AssetClass::Stock,
             RiskConfig::default(),
+            None,
             None,
             None,
         );
@@ -1330,6 +1428,7 @@ mod tests {
             false,
             AssetClass::Stock,
             RiskConfig::default(),
+            None,
             None,
             None,
         );
@@ -1406,6 +1505,7 @@ mod tests {
             false, // non_pdt_mode = false (trigger protection)
             AssetClass::Stock,
             risk_config,
+            None,
             None,
             None,
         );
@@ -1502,6 +1602,7 @@ mod tests {
             config,
             None,
             None,
+            None,
         );
         tokio::spawn(async move { rm.run().await });
 
@@ -1576,6 +1677,7 @@ mod tests {
             false,
             AssetClass::Stock,
             config,
+            None,
             None,
             None,
         );
@@ -1662,6 +1764,7 @@ mod tests {
             RiskConfig::default(),
             None,
             None,
+            None,
         );
 
         // Manually manipulate last_reset_date to yesterday
@@ -1717,6 +1820,7 @@ mod tests {
             false,
             AssetClass::Crypto,
             risk_config,
+            None,
             None,
             None,
         );
@@ -1777,5 +1881,75 @@ mod tests {
         // 6. Verify Acceptance
         let order = order_rx.recv().await.expect("Should be approved in Greed mode");
         assert_eq!(order.symbol, "BTC");
+    }
+
+    #[tokio::test]
+    async fn test_blind_liquidation_panic_mode() {
+        // 1. Setup
+        let portfolio = Portfolio::new();
+        let portfolio = Arc::new(RwLock::new(portfolio));
+        
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+        // MockMarketDataService returns 0 if price not set
+        let market_service = Arc::new(MockMarketDataService::new()); 
+        
+        let (_proposal_tx, proposal_rx) = mpsc::channel(1);
+        let (risk_cmd_tx, risk_cmd_rx) = mpsc::channel(1);
+        let (order_tx, mut order_rx) = mpsc::channel(1);
+
+        let mut risk_config = RiskConfig::default();
+        risk_config.max_daily_loss_pct = 0.5;
+
+        // Portfolio has 10 BTC
+        {
+            let mut p = portfolio.write().await;
+            p.cash = Decimal::from(1000);
+            p.positions.insert("BTC".to_string(), crate::domain::trading::portfolio::Position {
+                symbol: "BTC".to_string(),
+                quantity: Decimal::from(10),
+                average_price: Decimal::from(100),
+            });
+        }
+
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
+
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            risk_cmd_rx,
+            order_tx,
+            exec_service,
+            market_service,
+            state_manager,
+            false,
+            AssetClass::Crypto,
+            risk_config,
+            None,
+            None,
+            None,
+        );
+        tokio::spawn(async move { rm.run().await });
+
+        // 2. Trigger Liquidation (with 0 price)
+        // We do NOT set price on MockMarketDataService, so it returns None or 0 depending on implementation.
+        // Even if it returns 0, logic should proceed.
+        
+        // Wait for init
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        info!("Triggering Liquidation with NO PRICE data (Panic Mode)...");
+        risk_cmd_tx.send(RiskCommand::CircuitBreakerTrigger).await.unwrap();
+
+        // 3. Expect Market Sell Order
+        let order = order_rx.recv().await.expect("Should receive liquidation order even without price");
+        
+        assert_eq!(order.symbol, "BTC");
+        assert_eq!(order.side, OrderSide::Sell);
+        assert_eq!(order.quantity, Decimal::from(10));
+        assert!(matches!(order.order_type, OrderType::Market), "Must be Market order in panic mode");
     }
 }

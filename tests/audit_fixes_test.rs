@@ -66,6 +66,7 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         risk_config,
         None,
         None,
+        None,
     );
 
     // Start RiskManager
@@ -185,6 +186,7 @@ async fn test_pending_order_ttl_cleanup() {
         false,
         AssetClass::Stock,
         risk_config,
+        None,
         None,
         None,
     );

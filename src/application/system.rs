@@ -49,7 +49,7 @@ use crate::infrastructure::persistence::database::Database;
 use crate::infrastructure::persistence::repositories::{
     SqliteCandleRepository, SqliteOptimizationHistoryRepository, SqliteOrderRepository,
     SqlitePerformanceSnapshotRepository, SqliteReoptimizationTriggerRepository,
-    SqliteStrategyRepository,
+    SqliteStrategyRepository, SqliteRiskStateRepository,
 };
 use crate::infrastructure::sentiment::alternative_me::AlternativeMeSentimentProvider;
 use crate::domain::sentiment::SentimentProvider;
@@ -77,6 +77,7 @@ pub struct Application {
     pub adaptive_optimization_service: Option<Arc<AdaptiveOptimizationService>>,
     pub performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     pub spread_cache: Arc<SpreadCache>, // Shared spread cache from market data service
+    pub risk_state_repository: Arc<dyn crate::domain::repositories::RiskStateRepository>,
 }
 
 impl Application {
@@ -109,6 +110,8 @@ impl Application {
         // 4. Initialize remaining Persistence repositories
         let order_repo = Arc::new(SqliteOrderRepository::new(db.pool.clone()));
         let strategy_repo = Arc::new(SqliteStrategyRepository::new(db.pool.clone()));
+        let risk_state_repo: Arc<dyn crate::domain::repositories::RiskStateRepository> = 
+            Arc::new(SqliteRiskStateRepository::new(db.clone()));
 
         // 4. Initialize Adaptive Optimization Repositories
         let opt_history_repo = Arc::new(SqliteOptimizationHistoryRepository::new(db.pool.clone()));
@@ -181,6 +184,7 @@ impl Application {
             adaptive_optimization_service,
             performance_monitor,
             spread_cache,
+            risk_state_repository: risk_state_repo,
         })
     }
 
@@ -446,6 +450,7 @@ impl Application {
             ),
         );
 
+        
         let mut risk_manager = RiskManager::new(
             proposal_rx,
             risk_cmd_rx,
@@ -458,6 +463,7 @@ impl Application {
             risk_config,
             self.performance_monitor.clone(),
             correlation_service,
+            Some(self.risk_state_repository.clone()),
         );
 
         let mut order_throttler = OrderThrottler::new(

@@ -25,6 +25,9 @@ pub enum RiskCommand {
 
     /// Update risk configuration dynamically
     UpdateConfig(Box<crate::application::risk_management::risk_manager::RiskConfig>),
+
+    /// Manually trigger circuit breaker (Testing/Panic)
+    CircuitBreakerTrigger,
 }
 
 impl RiskCommand {
@@ -37,6 +40,7 @@ impl RiskCommand {
             Self::ProcessProposal(_) => "ProcessProposal",
             Self::UpdateSentiment(_) => "UpdateSentiment",
             Self::UpdateConfig(_) => "UpdateConfig",
+            Self::CircuitBreakerTrigger => "CircuitBreakerTrigger",
         }
     }
 }

@@ -1,5 +1,21 @@
 # Rustrade - Historique des Versions
 
+## Version 0.50.0 (Janvier 2026) - P0 Critical Security Fixes
+- **Risk State Persistence ("No Amnesia")**:
+  - **Problem**: Previously, restarting the bot reset the `daily_loss` counter, allowing a loophole to bypass Max Daily Loss limits.
+  - **Solution**: Implemented `SqliteRiskStateRepository` to persist `RiskState` (Daily Equity, Session Start, High Water Mark).
+  - **Integration**: `RiskManager` now loads state on startup and saves async on significant changes.
+- **Blind Liquidation ("Panic Mode")**:
+  - **Problem**: Emergency liquidation logic required a valid market price, which might be missing during a data outage/crash.
+  - **Solution**: Removed price dependency in `liquidate_portfolio`. If price is missing, `Market` sell orders are sent blindly with a warning log.
+  - **Circuit Breaker**: Added manual trigger command `CircuitBreakerTrigger` for robustness testing.
+- **Architecture**:
+  - **Dependency Injection**: `RiskManager` constructor updated to receive `RiskStateRepository`.
+  - **Refactoring**: Cleaning up `handle_order_update` for clearer boolean return logic.
+- **Verification**:
+  - Added new unit tests: `test_daily_reset_with_persistence_and_past_date`, `test_blind_liquidation_panic_mode`.
+  - Validated with P0 regression suite (176 tests).
+
 ## Version 0.49.0 (Janvier 2026) - P2 & P3: Core Logic Hardening & Metrics
 - **Core Logic Hardening (P2)**:
   - Eliminated unsafe `unwrap()` usage in Analyst and Risk logic components (e.g. `symbol_states` access).

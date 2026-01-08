@@ -40,6 +40,7 @@ async fn test_pdt_protection_boundary() {
         risk_config,
         None,
         None,
+        None,
     );
 
     tokio::spawn(async move {
@@ -125,6 +126,7 @@ async fn test_max_daily_loss_prevents_trading() {
         risk_config,
         None,
         None,
+        None,
     );
 
     tokio::spawn(async move {
@@ -187,6 +189,7 @@ async fn test_circuit_breaker_on_drawdown() {
         false,
         AssetClass::Stock,
         risk_config,
+        None,
         None,
         None,
     );

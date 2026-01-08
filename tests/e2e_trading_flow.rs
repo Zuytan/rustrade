@@ -139,6 +139,15 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     // `Application` fields are public!
 
     // We can just instantiate the services locally, then construct `Application` struct manually!
+    #[derive(Clone)]
+    struct NullRiskStateRepository;
+    #[async_trait::async_trait]
+    impl rustrade::domain::repositories::RiskStateRepository for NullRiskStateRepository {
+        async fn save(&self, _state: &rustrade::domain::risk::state::RiskState) -> anyhow::Result<()> { Ok(()) }
+        async fn load(&self, _id: &str) -> anyhow::Result<Option<rustrade::domain::risk::state::RiskState>> { Ok(None) }
+    }
+    let null_risk_state = std::sync::Arc::new(NullRiskStateRepository);
+
     let portfolio = std::sync::Arc::new(tokio::sync::RwLock::new(
         rustrade::domain::trading::portfolio::Portfolio::new(),
     ));
@@ -164,6 +173,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         adaptive_optimization_service: None,
         performance_monitor: None,
         spread_cache: std::sync::Arc::new(rustrade::application::market_data::spread_cache::SpreadCache::new()),
+        risk_state_repository: null_risk_state,
     };
 
     // 4. Run Application (BACKGROUND)
