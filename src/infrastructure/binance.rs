@@ -522,11 +522,11 @@ impl ExecutionService for BinanceExecutionService {
                 ("timestamp", timestamp.to_string()),
             ];
 
-            if let OrderType::Limit = order.order_type {
-                if order.price > Decimal::ZERO {
-                    params.push(("price", order.price.to_string()));
-                    params.push(("timeInForce", "GTC".to_string()));
-                }
+            if let OrderType::Limit = order.order_type
+                && order.price > Decimal::ZERO
+            {
+                params.push(("price", order.price.to_string()));
+                params.push(("timeInForce", "GTC".to_string()));
             }
 
             let query_string: String = params

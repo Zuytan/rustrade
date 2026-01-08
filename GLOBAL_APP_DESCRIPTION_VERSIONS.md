@@ -1,6 +1,6 @@
 # Rustrade - Historique des Versions
 
-## Version 0.56.0 (Janvier 2026) - DDD Refactoring: Phases 1-2 Complete
+## Version 0.57.0 (Janvier 2026) - DDD Refactoring: Analyst Decomposition (Phase 4) & Risks (Phases 1-2)
 - **Phase 1: Domain Config Value Objects** ✅:
   - **Extraction de la Validation**: Déplacement de la logique de validation de configuration de l'infrastructure vers la couche domaine.
   - **Nouveaux Value Objects**:
@@ -41,7 +41,21 @@
 - **Fichiers Modifiés** (4):
   - `src/domain/mod.rs`, `src/config.rs`, `src/application/risk_management/mod.rs`, `src/application/risk_management/risk_manager.rs`
 - **Total**: +1126 lignes de code bien structuré et testé, ~150 lignes supprimées de RiskManager.
-- **Vérification**: 246 tests (241 unitaires + 5 intégration) passants, zéro régression, build réussi.
+- **Phase 4: Analyst Decomposition** ✅:
+  - **SymbolContext Extraction**:
+    - Déplacement de `SymbolContext` vers `domain/trading/symbol_context.rs`.
+    - Séparation propre de l'état domaine et de la logique applicative.
+  - **WarmupService Extraction**:
+    - Nouveau service dédié `application/agents/warmup_service.rs`.
+    - Encapsulation de la logique de chargement historique et d'initialisation.
+  - **SignalProcessor Extraction**:
+    - Nouveau service `application/agents/signal_processor.rs`.
+    - Centralisation de la génération de signaux et de la construction de propositions.
+  - **Analyst Refactoring**: 
+    - Réduction de 2097 à 1812 lignes (-13.6%).
+    - Code plus lisible, testable et maintenable.
+- **Verification**: 254 tests passants (+8 tests), build réussi.
+
 
 ## Version 0.55.0 (Janvier 2026) - DDD Refactoring: Phases 1-2
 - **Phase 1: Domain Config Value Objects**:
@@ -983,40 +997,4 @@
 - Initial project setup with Cargo.
 - Added core dependencies.
 - Defined multi-agent architecture.
-
-## v0.27.0 (December 2025) - Production Hardening
-
-**Focus** : Corrections critiques pour déploiement production suite à audit de sécurité complet.
-
-**Changements Majeurs** :
-
-1. **Élimination Race Conditions (CRITICAL-01, CRITICAL-02)**
-   - PortfolioStateManager avec snapshots versionnés
-   - Système de réservation d'exposition pour ordres BUY
-   - Détection de staleness et rafraîchissement automatique
-   - Tests : 125 unit tests passing
-
-2. **Prévention Fuites Mémoire (BLOCKER-02)**
-   - Canaux bornés avec buffer sizes appropriés
-   - Backpressure explicite via try_send()
-   - Test de backpressure validé
-
-3. **Résilience API (Circuit Breaker)**
-   - Circuit breaker générique Closed/Open/HalfOpen
-   - Fast-fail quand API down
-   - Auto-recovery après 30s timeout
-   - Tests complets de la machine à états
-
-**Fichiers Modifiés** :
-- `risk_manager.rs` : Refactoring majeur (snapshots + reservations)
-- `system.rs` : Canaux bornés
-- `analyst.rs` : Backpressure handling
-- `alpaca.rs` : Circuit breaker integration
-
-**Nouveaux Fichiers** :
-- `circuit_breaker.rs` : Implémentation générique
-- `concurrent_risk_test.rs` : Tests d'intégration
-
-**Status** : ✅ Production Ready - 95%
-**Recommandation** : Paper trading 24h avant live deployment
 

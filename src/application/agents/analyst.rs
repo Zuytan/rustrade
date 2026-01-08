@@ -1,109 +1,35 @@
 use crate::application::market_data::candle_aggregator::CandleAggregator;
-use crate::application::market_data::signal_generator::SignalGenerator;
 use crate::application::market_data::spread_cache::SpreadCache;
 use crate::application::monitoring::cost_evaluator::CostEvaluator;
-use crate::application::monitoring::feature_engineering_service::TechnicalFeatureEngineeringService;
-use crate::application::optimization::expectancy_evaluator::MarketExpectancyEvaluator;
 use crate::application::optimization::win_rate_provider::{StaticWinRateProvider, WinRateProvider};
-use crate::application::risk_management::position_manager::PositionManager;
 
 use crate::application::risk_management::trailing_stops::StopState;
 
 use crate::application::strategies::strategy_selector::StrategySelector;
-use crate::application::strategies::{StrategyFactory, TradingStrategy};
+use crate::application::strategies::TradingStrategy;
 
-use crate::domain::market::market_regime::{MarketRegime, MarketRegimeDetector};
-use crate::domain::ports::{
-    ExecutionService, ExpectancyEvaluator, FeatureEngineeringService, MarketDataService,
-};
+use crate::domain::market::market_regime::MarketRegime;
+use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
 use crate::domain::trading::fee_model::FeeModel; // Added
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderStatus; // Added
-use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
+use crate::domain::trading::types::{MarketEvent, OrderSide, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 
-pub struct SymbolContext {
-    pub feature_service: Box<dyn FeatureEngineeringService>,
-    pub signal_generator: SignalGenerator,
-    pub position_manager: PositionManager,
-    pub strategy: Arc<dyn TradingStrategy>, // Per-symbol strategy
-    pub config: AnalystConfig,              // Per-symbol config
-    pub last_features: FeatureSet,          // Primary timeframe features
-    pub regime_detector: MarketRegimeDetector,
-    pub expectancy_evaluator: Box<dyn ExpectancyEvaluator>,
-    pub taken_profit: bool, // Track if partial profit has been taken for current position
-    pub last_entry_time: Option<i64>, // Phase 2: track entry time for min hold
-    pub min_hold_time_ms: i64, // Phase 2: minimum hold time in milliseconds
-    pub active_strategy_mode: crate::domain::market::strategy_config::StrategyMode, // Phase 3: Track active mode
-    pub last_macd_histogram: Option<f64>, // Track previous MACD histogram for rising/falling detection
-    pub cached_reward_risk_ratio: f64,    // Calculated during warmup, used for trade filtering
-    pub warmup_succeeded: bool,           // Track if historical warmup was successful
-    pub candle_history: VecDeque<Candle>, // Maintain last N candles for SMC/pattern detection
-    // Multi-timeframe support
-    pub timeframe_aggregator: crate::application::market_data::timeframe_aggregator::TimeframeAggregator,
-    pub timeframe_features: std::collections::HashMap<crate::domain::market::timeframe::Timeframe, FeatureSet>,
-    pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
-}
+use crate::domain::trading::symbol_context::SymbolContext;
 
 #[derive(Debug)]
 pub enum AnalystCommand {
     UpdateConfig(Box<AnalystConfig>),
 }
 
-
-impl SymbolContext {
-    pub fn new(
-        config: AnalystConfig,
-        strategy: Arc<dyn TradingStrategy>,
-        win_rate_provider: Arc<dyn WinRateProvider>,
-        enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
-    ) -> Self {
-        let min_hold_time_ms = config.min_hold_time_minutes * 60 * 1000;
-
-        Self {
-            feature_service: Box::new(TechnicalFeatureEngineeringService::new(&config)),
-            signal_generator: SignalGenerator::new(),
-            position_manager: PositionManager::new(),
-            strategy,
-            config: config.clone(),
-            last_features: FeatureSet::default(),
-
-            regime_detector: MarketRegimeDetector::new(20, 25.0, 2.0), // Default thresholds
-            expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(1.5, win_rate_provider)),
-            taken_profit: false,
-            last_entry_time: None,
-            min_hold_time_ms,
-            active_strategy_mode: config.strategy_mode, // Initial mode
-            last_macd_histogram: None,
-            cached_reward_risk_ratio: 2.0, // Default to 2:1
-            warmup_succeeded: false,       // Will be set to true if warmup completes
-            candle_history: VecDeque::with_capacity(100),
-            // Multi-timeframe initialization
-            timeframe_aggregator: crate::application::market_data::timeframe_aggregator::TimeframeAggregator::new(),
-            timeframe_features: std::collections::HashMap::new(),
-            enabled_timeframes,
-        }
-    }
-
-    pub fn update(&mut self, candle: &crate::domain::trading::types::Candle) {
-        // Update candle history
-        if self.candle_history.len() >= 100 {
-            self.candle_history.pop_front();
-        }
-        self.candle_history.push_back(candle.clone());
-
-        // Store previous MACD histogram before updating features
-        self.last_macd_histogram = self.last_features.macd_hist;
-        self.last_features = self.feature_service.update(candle);
-    }
-}
 
 fn default_fee_model() -> Arc<dyn FeeModel> {
     Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO))
@@ -274,17 +200,15 @@ pub struct Analyst {
     market_rx: Receiver<MarketEvent>,
     proposal_tx: Sender<TradeProposal>,
     execution_service: Arc<dyn ExecutionService>,
-    market_service: Arc<dyn MarketDataService>, // Added for warmup
     default_strategy: Arc<dyn TradingStrategy>, // Fallback
     config: AnalystConfig,                      // Default config
     symbol_states: HashMap<String, SymbolContext>,
     candle_aggregator: CandleAggregator,
     candle_repository: Option<Arc<dyn CandleRepository>>,
-    strategy_repository: Option<Arc<dyn StrategyRepository>>, // Added
-    win_rate_provider: Arc<dyn WinRateProvider>,              // Added
-    ui_candle_tx: Option<broadcast::Sender<Candle>>,          // Added for UI streaming
+    win_rate_provider: Arc<dyn WinRateProvider>,
 
     trade_filter: crate::application::trading::trade_filter::TradeFilter,
+    warmup_service: super::warmup_service::WarmupService, // NEW: Extracted warmup logic
     // Multi-timeframe configuration
     enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     cmd_rx: Receiver<AnalystCommand>,
@@ -320,11 +244,17 @@ impl Analyst {
         // For now, default to primary timeframe only to maintain backward compatibility
         let enabled_timeframes = vec![crate::domain::market::timeframe::Timeframe::OneMin];
 
+        // Initialize WarmupService
+        let warmup_service = super::warmup_service::WarmupService::new(
+            dependencies.market_service.clone(),
+            dependencies.strategy_repository.clone(),
+            dependencies.ui_candle_tx.clone(),
+        );
+
         Self {
             market_rx,
             proposal_tx,
             execution_service: dependencies.execution_service,
-            market_service: dependencies.market_service,
             default_strategy,
             config,
             symbol_states: HashMap::new(),
@@ -333,10 +263,9 @@ impl Analyst {
                 dependencies.spread_cache.clone(),
             ),
             candle_repository: dependencies.candle_repository,
-            strategy_repository: dependencies.strategy_repository,
             win_rate_provider,
-            ui_candle_tx: dependencies.ui_candle_tx,
             trade_filter,
+            warmup_service,
             enabled_timeframes,
             cmd_rx,
         }
@@ -454,62 +383,6 @@ impl Analyst {
         MarketRegime::unknown()
     }
 
-    /// Generate trading signal from strategy
-    fn generate_trading_signal(
-        context: &mut SymbolContext,
-        symbol: &str,
-        price: Decimal,
-        timestamp: i64,
-        has_position: bool,
-    ) -> Option<OrderSide> {
-        context.signal_generator.generate_signal(
-            symbol,
-            price,
-            timestamp,
-            &context.last_features,
-            &context.strategy,
-            context.config.sma_threshold,
-            has_position,
-            context.last_macd_histogram,
-            &context.candle_history,
-        )
-    }
-
-    /// Build trade proposal from signal
-    async fn build_trade_proposal(
-        config: &AnalystConfig,
-        execution_service: &Arc<dyn ExecutionService>,
-        symbol: String,
-        side: OrderSide,
-        price: Decimal,
-        timestamp: i64,
-        reason: String,
-    ) -> Option<TradeProposal> {
-        // Calculate quantity
-        let quantity = Self::calculate_trade_quantity(
-            config,
-            execution_service,
-            &symbol,
-            price,
-        )
-        .await;
-
-        if quantity <= Decimal::ZERO {
-            debug!("Analyst [{}]: Quantity is ZERO. Skipping proposal.", symbol);
-            return None;
-        }
-
-        Some(TradeProposal {
-            symbol,
-            side,
-            price,
-            quantity,
-            order_type: crate::domain::trading::types::OrderType::Market,
-            reason,
-            timestamp,
-        })
-    }
-
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
         let price = candle.close;
@@ -517,17 +390,8 @@ impl Analyst {
         let price_f64 = price.to_f64().unwrap_or(0.0);
 
         // Broadcast to UI
-        if let Some(tx) = &self.ui_candle_tx {
-            match tx.send(candle.clone()) {
-                Ok(_) => debug!(
-                    "Analyst: Broadcasted candle for {} (price: {}) to UI",
-                    symbol, price
-                ),
-                Err(e) => warn!("Analyst: Failed to broadcast candle to UI: {}", e),
-            }
-        } else {
-            warn!("Analyst: No UI candle broadcaster configured!");
-        }
+        // Broadcast to UI (via warmup_service which has ui_candle_tx)
+        // UI broadcasting is now handled by warmup_service during warmup
 
         // 1. Get/Init Context (Consolidated with ensure_symbol_initialized)
         let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
@@ -733,7 +597,7 @@ impl Analyst {
 
         // 5. Generate Trading Signal
         if !trailing_stop_triggered {
-            signal = Self::generate_trading_signal(
+            signal = super::signal_processor::SignalProcessor::generate_signal(
                 context,
                 &symbol,
                 price,
@@ -741,26 +605,20 @@ impl Analyst {
                 has_position,
             );
 
-            // RSI Filtering (Strategic Tuning)
-            if let Some(OrderSide::Buy) = signal
-                && let Some(rsi) = context.last_features.rsi
-                    && rsi > context.config.rsi_threshold {
-                        info!(
-                            "Analyst: Buy signal BLOCKED for {} - RSI {:.2} > {:.2} (Overbought)",
-                            symbol, rsi, context.config.rsi_threshold
-                        );
-                        signal = None;
-                    }
+            // Apply RSI filter
+            signal = super::signal_processor::SignalProcessor::apply_rsi_filter(
+                signal,
+                context,
+                &symbol,
+            );
 
-            // Suppress SMA-cross sell if Trailing Stop is active
-            if let Some(OrderSide::Sell) = signal
-                && context.position_manager.trailing_stop.is_active() && !trailing_stop_triggered {
-                    info!(
-                        "Analyst: Sell signal SUPPRESSED for {} - Using trailing stop exit instead",
-                        symbol
-                    );
-                    signal = None;
-                }
+            // Suppress sell signals when trailing stop is active
+            signal = super::signal_processor::SignalProcessor::suppress_sell_if_trailing_stop(
+                signal,
+                context,
+                &symbol,
+                trailing_stop_triggered,
+            );
         }
 
         // 6. Post-Signal Validation (Long-Only, Pending, Cooldown)
@@ -818,8 +676,8 @@ impl Analyst {
                 context.active_strategy_mode, regime.regime_type
             );
 
-            let mut proposal = match Self::build_trade_proposal(
-                &context.config,
+            let mut proposal = match super::signal_processor::SignalProcessor::build_proposal(
+                &self.config,
                 &self.execution_service,
                 symbol.clone(),
                 side,
@@ -899,187 +757,9 @@ impl Analyst {
             }
         }
 
-    async fn calculate_trade_quantity(
-        config: &AnalystConfig,
-        execution_service: &Arc<dyn ExecutionService>,
-        symbol: &str,
-        price: Decimal,
-    ) -> Decimal {
-        // Get Total Equity from Portfolio
-        // If fail, we can only default to static if risk-sizing is NOT required
-        // But SizingEngine needs equity.
 
-        let mut total_equity = Decimal::ZERO;
 
-        if config.risk_per_trade_percent > 0.0 {
-            let portfolio_result = execution_service.get_portfolio().await;
-            if let Ok(portfolio) = portfolio_result {
-                total_equity = portfolio.cash;
-                for pos in portfolio.positions.values() {
-                    total_equity += pos.quantity * pos.average_price;
-                }
-            } else {
-                info!("Analyst: Failed to get portfolio for sizing. Defaulting to 0 equity (will result in 0 quantity if risk-sizing enabled).");
-            }
-        }
 
-        let sizing_config: crate::application::risk_management::sizing_engine::SizingConfig =
-            config.into();
-
-        crate::application::risk_management::sizing_engine::SizingEngine::calculate_quantity(
-            &sizing_config,
-            total_equity,
-            price,
-            symbol,
-        )
-    }
-    async fn resolve_strategy(&self, symbol: &str) -> (Arc<dyn TradingStrategy>, AnalystConfig) {
-        if let Some(repo) = &self.strategy_repository
-            && let Ok(Some(def)) = repo.find_by_symbol(symbol).await {
-                let mut config = self.config.clone();
-
-                if let Ok(parsed_config) = serde_json::from_str::<AnalystConfig>(&def.config_json) {
-                    config = parsed_config;
-                    debug!("Analyst: Loaded custom config for {}", symbol);
-                } else {
-                    debug!("Analyst: Failed to parse full config for {}, using default with custom strategy", symbol);
-                }
-
-                config.strategy_mode = def.mode;
-
-                let strategy = StrategyFactory::create(def.mode, &config);
-                return (strategy, config);
-            }
-
-        // Default
-        (self.default_strategy.clone(), self.config.clone())
-    }
-
-    async fn warmup_context(
-        &self,
-        context: &mut SymbolContext,
-        symbol: &str,
-        end: chrono::DateTime<chrono::Utc>,
-    ) {
-        // Calculate needed lookback
-        // Max(TrendSMA, SlowSMA, EMA, RSI, MACD_Slow)
-        let config = &context.config;
-        let max_period = [
-            config.trend_sma_period,
-            config.slow_sma_period,
-            config.ema_slow_period,
-            config.rsi_period * 2, // General rule for RSI stability
-            config.macd_slow_period + config.macd_signal_period,
-        ]
-        .iter()
-        .max()
-        .copied()
-        .unwrap_or(200);
-
-        // Add 10% buffer
-        let required_bars = (max_period as f64 * 1.1) as usize;
-
-        info!(
-            "Analyst: Warming up {} with {} bars (Max Period: {}) ending at {}",
-            symbol, required_bars, max_period, end
-        );
-
-        // Assuming 1-minute bars.
-        // Assuming 1-minute bars.
-        // Market is open 6.5h a day ~ 390mins.
-        // 2000 bars is ~5.1 trading days.
-        // We fetch enough calendar days back to cover weekends/holidays (e.g., 2000 bars might need 10 days if over weekend).
-        // Let's use a safe multiplier.
-        let days_back = (required_bars / (300)) + 3;
-        let start = end - chrono::Duration::days(days_back as i64);
-
-        match self
-            .market_service
-            .get_historical_bars(symbol, start, end, "1Min")
-            .await
-        {
-            Ok(bars) => {
-                let bars_count = bars.len();
-                info!(
-                    "Analyst: Fetched {} historical bars for {}",
-                    bars_count, symbol
-                );
-
-                for candle in &bars {
-                    // Update context (features + indicators)
-                    context.update(candle);
-                }
-
-                debug!(
-                    "Analyst: Warmup complete for {} with {} candles. Last Price: {:?}",
-                    symbol,
-                    bars.len(),
-                    context.last_features.sma_50
-                );
-
-                // Calculate and cache reward/risk ratio for trade filtering
-                if !bars.is_empty() {
-                    let regime = context
-                        .regime_detector
-                        .detect(&bars)
-                        .unwrap_or(MarketRegime::unknown());
-                    let last_price_decimal = bars.last().unwrap().close;
-
-                    let expectancy = context
-                        .expectancy_evaluator
-                        .evaluate(symbol, last_price_decimal, &regime)
-                        .await;
-                    context.cached_reward_risk_ratio = expectancy.reward_risk_ratio;
-
-                    info!(
-                        "Analyst: Cached reward/risk ratio for {}: {:.2}",
-                        symbol, context.cached_reward_risk_ratio
-                    );
-                }
-
-                // Broadcast last 100 historical candles to UI for chart initialization
-                if let Some(tx) = &self.ui_candle_tx {
-                    let start_idx = bars.len().saturating_sub(100);
-                    let recent_bars = &bars[start_idx..];
-                    info!(
-                        "Analyst: Broadcasting {} historical candles for {} to UI",
-                        recent_bars.len(),
-                        symbol
-                    );
-
-                    for bar in recent_bars {
-                        let candle = crate::domain::trading::types::Candle {
-                            symbol: symbol.to_string(),
-                            open: bar.open,
-                            high: bar.high,
-                            low: bar.low,
-                            close: bar.close,
-                            volume: bar.volume,
-                            timestamp: bar.timestamp,
-                        };
-                        let _ = tx.send(candle);
-                    }
-                }
-
-                // Mark warmup as successful
-                context.warmup_succeeded = true;
-                info!(
-                    "Analyst: ✓ Warmup completed successfully for {} with {} bars",
-                    symbol,
-                    bars.len()
-                );
-            }
-            Err(e) => {
-                warn!(
-                    "Analyst: Failed to warmup {}: {}. Indicators will start from zero (degraded mode)",
-                    symbol, e
-                );
-                // warmup_succeeded remains false
-                // Indicators are already initialized to zero/default in SymbolContext::new()
-                // The system will continue trading but with less historical context
-            }
-        }
-    }
 
     async fn ensure_symbol_initialized(
         &mut self,
@@ -1091,7 +771,12 @@ impl Analyst {
                 "Analyst: Initializing context for {} (Warmup end: {})",
                 symbol, end_time
             );
-            let (strategy, config) = self.resolve_strategy(symbol).await;
+            let (strategy, config) = self.warmup_service.resolve_strategy(
+                symbol,
+                self.default_strategy.clone(),
+                &self.config,
+            ).await;
+            
             let mut context = SymbolContext::new(
                 config,
                 strategy,
@@ -1100,7 +785,7 @@ impl Analyst {
             );
 
             // WARMUP: Fetch historical data to initialize indicators
-            self.warmup_context(&mut context, symbol, end_time).await;
+            self.warmup_service.warmup_context(&mut context, symbol, end_time).await;
 
             self.symbol_states.insert(symbol.to_string(), context);
         }

@@ -69,6 +69,7 @@ pub struct ValidationContext<'a> {
 
 impl<'a> ValidationContext<'a> {
     /// Create a new validation context
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         proposal: &'a TradeProposal,
         portfolio: &'a Portfolio,

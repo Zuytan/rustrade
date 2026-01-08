@@ -455,10 +455,10 @@ impl MarketDataService for AlpacaMarketDataService {
                     0.0
                 };
 
-                if price_f64 > 0.0 {
-                    if let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64) {
-                        prices.insert(normalized_sym, dec);
-                    }
+                if price_f64 > 0.0
+                    && let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64)
+                {
+                    prices.insert(normalized_sym, dec);
                 }
             }
 

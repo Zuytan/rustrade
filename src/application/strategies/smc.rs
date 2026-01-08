@@ -106,7 +106,7 @@ impl SMCStrategy {
         let mut max_high = 0.0;
         let mut min_low = f64::MAX;
 
-        for i in (candles.len() - 10)..(candles.len() - 1) {
+        for (i, _candle) in candles.iter().enumerate().take(candles.len() - 1).skip(candles.len() - 10) {
             let h = candles[i].high.to_f64().unwrap_or(0.0);
             let l = candles[i].low.to_f64().unwrap_or(0.0);
             if h > max_high { max_high = h; }

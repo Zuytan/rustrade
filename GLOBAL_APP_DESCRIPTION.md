@@ -23,7 +23,7 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.56.0 - January 2026)
+## Latest Updates (Version 0.57.0 - January 2026)
 - **DDD Refactoring - Phases 1-2 Complete**:
   - **Phase 1: Domain Config Value Objects**:
     - Extracted configuration validation into domain layer (`RiskConfig`, `StrategyConfig`, `BrokerConfig`).
@@ -35,7 +35,12 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
     - Extracted `LiquidationService` (100 lines) - emergency liquidation logic.
     - Refactored RiskManager to use extracted services, reducing complexity by 31%.
     - Added 5 integration tests for service composition.
-  - **Test Coverage**: 246 unit + integration tests passing (zero regressions).
+  - **Phase 4: Analyst Decomposition (In Progress -> Complete)**:
+    - Extracted `SymbolContext` to Domain Layer (75 lines).
+    - Extracted `WarmupService` (153 lines) - encapsulated warmup logic.
+    - Extracted `SignalProcessor` (305 lines) - encapsulated signal generation.
+    - **Analyst Refactoring**: Reduced monolithic `analyst.rs` from 2097 -> 1812 lines (-13.6%).
+  - **Test Coverage**: 254 unit + integration tests passing (+8 tests).
   - **Architecture Benefits**: Improved separation of concerns, testability, and maintainability.
 
 ## Version 0.55.0
