@@ -276,6 +276,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         // Should approve SELL if no position exists (can't be a day trade)
@@ -305,6 +306,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         // Should approve because PDT protection is disabled
@@ -332,6 +334,7 @@ mod tests {
             dec!(5000), // Low equity
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );

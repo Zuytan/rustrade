@@ -204,6 +204,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         // Should return current market price, not proposal price
@@ -234,6 +235,7 @@ mod tests {
             dec!(100000),
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );

@@ -1,7 +1,7 @@
-use crate::domain::trading::types::OrderSide;
+use crate::domain::trading::types::{OrderSide, Candle};
 use crate::domain::market::timeframe::Timeframe;
 use rust_decimal::Decimal;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 /// Features for a specific timeframe
 #[derive(Debug, Clone)]
@@ -45,6 +45,9 @@ pub struct AnalysisContext {
 
     // Timestamp
     pub timestamp: i64,
+
+    // Candle history (for SMC patterns)
+    pub candles: VecDeque<Candle>,
     
     // Multi-timeframe data (optional for backward compatibility)
     pub timeframe_features: Option<HashMap<Timeframe, TimeframeFeatures>>,

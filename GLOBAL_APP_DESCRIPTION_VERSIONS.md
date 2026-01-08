@@ -1,5 +1,16 @@
 # Rustrade - Historique des Versions
 
+## Version 0.54.0 (Janvier 2026) - Smart Money Concepts & System Stabilization
+- **Smart Money Concepts (SMC) Implementation**:
+  - **SMCStrategy**: New institutional-grade strategy based on price action patterns.
+  - **Detection Logic**: Implemented detection for Fair Value Gaps (FVG), Order Blocks (OB), and Market Structure Shifts (MSS).
+  - **Context Extension**: `AnalysisContext` now provides a `candles` history buffer (VecDeque) to all strategies.
+- **Risk Validation Pipeline Stabilization**:
+  - **Compilation Fixes**: Systematic resolution of `ValidationContext` and `RiskConfig` initialization issues in all unit and integration tests (15+ files updated).
+  - **Strategy Infrastructure**: Updated `Advanced`, `Dynamic`, `DualSMA`, `MeanReversion`, and `TrendRiding` strategies to comply with the new `AnalysisContext` signature.
+  - **Agent Cleanup**: Fixed outdated `AnalystConfig` fields (`slippage_pct`, `commission_per_share`) in `Analyst` tests, replaced with `FeeModel`.
+- **Verification**: All 220+ tests pass (100% success rate); SMC pattern detection verified via TDD unit tests.
+
 ## Version 0.53.0 (Janvier 2026) - Resilience & Dynamic Risk Integration
 - **Infrastructure Resilience (P0 & P2)**:
   - **HttpClientFactory**: Centralized creation of HTTP clients with standard `ExponentialBackoff` retry policies for 429 (Rate Limit) and 5xx (Server Error) responses.

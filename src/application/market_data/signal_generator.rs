@@ -1,6 +1,7 @@
 use crate::application::strategies::{AnalysisContext, TradingStrategy};
 use crate::domain::trading::types::{FeatureSet, OrderSide};
 use rust_decimal::Decimal;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tracing::info;
 
@@ -32,6 +33,7 @@ impl SignalGenerator {
         _sma_threshold: f64, // Unused
         has_position: bool,
         previous_macd_histogram: Option<f64>, // Previous MACD histogram for rising/falling detection
+        candle_history: &VecDeque<crate::domain::trading::types::Candle>,
     ) -> Option<OrderSide> {
         let price_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&price).unwrap_or(0.0);
 
@@ -55,6 +57,7 @@ impl SignalGenerator {
             adx: features.adx.unwrap_or(0.0),
             has_position,
             timestamp,
+            candles: candle_history.clone(),
             timeframe_features: None, // Will be populated by Analyst when multi-timeframe is enabled
         };
 

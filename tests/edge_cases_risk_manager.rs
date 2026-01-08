@@ -4,7 +4,6 @@ use rustrade::config::AssetClass;
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
-use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};

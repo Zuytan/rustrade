@@ -23,7 +23,7 @@ use crate::domain::trading::types::OrderStatus; // Added
 use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -45,6 +45,7 @@ pub struct SymbolContext {
     pub last_macd_histogram: Option<f64>, // Track previous MACD histogram for rising/falling detection
     pub cached_reward_risk_ratio: f64,    // Calculated during warmup, used for trade filtering
     pub warmup_succeeded: bool,           // Track if historical warmup was successful
+    pub candle_history: VecDeque<Candle>, // Maintain last N candles for SMC/pattern detection
     // Multi-timeframe support
     pub timeframe_aggregator: crate::application::market_data::timeframe_aggregator::TimeframeAggregator,
     pub timeframe_features: std::collections::HashMap<crate::domain::market::timeframe::Timeframe, FeatureSet>,
@@ -81,8 +82,9 @@ impl SymbolContext {
             min_hold_time_ms,
             active_strategy_mode: config.strategy_mode, // Initial mode
             last_macd_histogram: None,
-            cached_reward_risk_ratio: 1.0, // Default safe value, will be updated during warmup
+            cached_reward_risk_ratio: 2.0, // Default to 2:1
             warmup_succeeded: false,       // Will be set to true if warmup completes
+            candle_history: VecDeque::with_capacity(100),
             // Multi-timeframe initialization
             timeframe_aggregator: crate::application::market_data::timeframe_aggregator::TimeframeAggregator::new(),
             timeframe_features: std::collections::HashMap::new(),
@@ -91,6 +93,12 @@ impl SymbolContext {
     }
 
     pub fn update(&mut self, candle: &crate::domain::trading::types::Candle) {
+        // Update candle history
+        if self.candle_history.len() >= 100 {
+            self.candle_history.pop_front();
+        }
+        self.candle_history.push_back(candle.clone());
+
         // Store previous MACD histogram before updating features
         self.last_macd_histogram = self.last_features.macd_hist;
         self.last_features = self.feature_service.update(candle);
@@ -463,6 +471,7 @@ impl Analyst {
             context.config.sma_threshold,
             has_position,
             context.last_macd_histogram,
+            &context.candle_history,
         )
     }
 
@@ -1102,6 +1111,7 @@ impl Analyst {
 mod tests {
     use super::*;
     use crate::domain::trading::types::Candle;
+    use rust_decimal::prelude::FromPrimitive;
     use std::sync::Once;
     use tokio::sync::mpsc;
     use tokio::sync::RwLock;
@@ -1216,8 +1226,7 @@ mod tests {
             trend_riding_exit_buffer_pct: 0.03,
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
-            slippage_pct: 0.0,
-            commission_per_share: 0.0,
+            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
             max_position_size_pct: 0.0,
             bb_period: 20,
             bb_std_dev: 2.0,
@@ -1329,8 +1338,7 @@ mod tests {
             trend_riding_exit_buffer_pct: 0.03,
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
-            slippage_pct: 0.0,
-            commission_per_share: 0.0,
+            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
             max_position_size_pct: 0.1,
             bb_period: 20,
             bb_std_dev: 2.0,
@@ -1457,8 +1465,7 @@ mod tests {
             trend_riding_exit_buffer_pct: 0.03,
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
-            slippage_pct: 0.0,
-            commission_per_share: 0.0,
+            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
             max_position_size_pct: 0.1,
             bb_period: 20,
             bb_std_dev: 2.0,
@@ -1577,8 +1584,7 @@ mod tests {
             trend_riding_exit_buffer_pct: 0.03,
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
-            slippage_pct: 0.0,
-            commission_per_share: 0.0,
+            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
             max_position_size_pct: 0.1,
             bb_period: 20,
             bb_std_dev: 2.0,

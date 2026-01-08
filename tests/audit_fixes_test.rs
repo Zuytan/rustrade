@@ -49,6 +49,7 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         allow_pdt_risk: false,
         pending_order_ttl_ms: None,
         correlation_config: rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
+        volatility_config: rustrade::domain::risk::volatility_manager::VolatilityConfig::default(),
     };
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));

@@ -395,6 +395,12 @@ impl Application {
                     analyst_config.trend_riding_exit_buffer_pct,
                 ))
             }
+            crate::domain::market::strategy_config::StrategyMode::SMC => {
+                Arc::new(SMCStrategy::new(
+                    20, // Lookback
+                    0.005, // 0.5% min FVG gap
+                ))
+            }
         };
 
         let win_rate_provider = Arc::new(HistoricalWinRateProvider::new(

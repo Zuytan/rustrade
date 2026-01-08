@@ -138,6 +138,7 @@ mod tests {
              risk_state,
              current_sentiment: None,
              correlation_matrix: None,
+             volatility_multiplier: None,
         }
     }
     

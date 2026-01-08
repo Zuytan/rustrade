@@ -97,6 +97,7 @@ mod tests {
             has_position,
             timestamp: 0,
             timeframe_features: None,
+            candles: std::collections::VecDeque::new(),
         }
     }
 

@@ -4,7 +4,7 @@
 Rustrade is a high-performance, algorithmic trading bot written in Rust, designed for reliability, concurrency, and modularity. It supports multiple asset classes (Stocks, Crypto) and brokers (Alpaca, OANDA, Binance, Mock).
 
 ## Core Features
-- **Multi-Strategy Engine**: Supports Standard (Dual SMA), Advanced (Triple Filter: SMA+RSI+MACD+ADX), Dynamic Regime Adaptive, and Mean Reversion strategies.
+- **Multi-Strategy Engine**: Supports Standard (Dual SMA), Advanced (Triple Filter: SMA+RSI+MACD+ADX), Dynamic Regime Adaptive, Mean Reversion, and Smart Money Concepts (SMC) strategies.
 - **Market Regime Detection**: Automatically detects Bull, Bear, Sideways, and Volatile regimes.
 - **Risk Management**:
   - **Modular Architecture**: Chain of Responsibility pattern with independent validators.
@@ -23,7 +23,17 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.52.0)
+## Latest Updates (Version 0.54.0)
+- **Smart Money Concepts (SMC) Strategy**:
+  - Implemented a more sophisticated institutional-grade strategy using **Order Blocks (OB)**, **Fair Value Gaps (FVG)**, and **Market Structure Shifts (MSS)**.
+  - Integrated into the `StrategyFactory` for seamless selection.
+- **Risk Management Stabilization**:
+  - Systematic resolution of compilation errors across the risk validation pipeline.
+  - Updated all strategies to support the new `AnalysisContext` which now includes a rolling history of candles for pattern detection.
+- **Improved Performance Evaluation**:
+  - Enhanced backtesting infrastructure to better support pattern-based strategies.
+
+## Version 0.52.0 - 0.53.0
 - **Dynamic Risk Management (P2)**:
   - **Volatility Adaptation**: Implemented `VolatilityManager` to calculate ATR-based multipliers, dynamically scaling position sizes based on market conditions.
   - **Infrastructure Resilience**: Integrated `CircuitBreaker` pattern into `Alpaca` and `Binance` services to prevent system stalls during API outages.

@@ -9,6 +9,7 @@ pub enum StrategyMode {
     TrendRiding,
     MeanReversion,
     RegimeAdaptive,
+    SMC,
 }
 
 impl std::str::FromStr for StrategyMode {
@@ -22,6 +23,7 @@ impl std::str::FromStr for StrategyMode {
             "trendriding" => Ok(StrategyMode::TrendRiding),
             "meanreversion" => Ok(StrategyMode::MeanReversion),
             "regimeadaptive" => Ok(StrategyMode::RegimeAdaptive),
+            "smc" => Ok(StrategyMode::SMC),
 
             _ => anyhow::bail!(
                 "Invalid STRATEGY_MODE: {}. Must be 'standard', 'advanced', 'dynamic', 'trendriding', or 'meanreversion'",
@@ -40,6 +42,7 @@ impl std::fmt::Display for StrategyMode {
             StrategyMode::TrendRiding => write!(f, "TrendRiding"),
             StrategyMode::MeanReversion => write!(f, "MeanReversion"),
             StrategyMode::RegimeAdaptive => write!(f, "RegimeAdaptive"),
+            StrategyMode::SMC => write!(f, "SMC"),
         }
     }
 }

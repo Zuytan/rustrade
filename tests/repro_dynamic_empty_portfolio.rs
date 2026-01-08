@@ -3,7 +3,6 @@ use rustrade::application::agents::analyst::{Analyst, AnalystConfig};
 use rustrade::application::agents::scanner::MarketScanner;
 use rustrade::application::agents::sentinel::Sentinel;
 use rustrade::application::strategies::DualSMAStrategy;
-use rustrade::config::StrategyMode;
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::domain::trading::types::{Candle, MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
@@ -49,7 +48,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         sma_threshold: 0.0,
         order_cooldown_seconds: 0,
         risk_per_trade_percent: 0.1, // 10% risk
-        strategy_mode: StrategyMode::Standard,
+        strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
         trend_sma_period: 100,
         rsi_period: 14,
         macd_fast_period: 12,
@@ -62,8 +61,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         trend_riding_exit_buffer_pct: 0.0,
         mean_reversion_rsi_exit: 50.0,
         mean_reversion_bb_period: 20,
-        slippage_pct: 0.0,
-        commission_per_share: 0.0,
+        fee_model: Arc::new(rustrade::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
         max_position_size_pct: 0.2,
         bb_period: 20,
         bb_std_dev: 2.0,

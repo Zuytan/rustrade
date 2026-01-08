@@ -2,6 +2,7 @@ mod advanced;
 mod dual_sma;
 mod dynamic;
 mod mean_reversion;
+mod smc;
 pub mod strategy_selector;
 mod traits;
 pub mod trend_riding;
@@ -10,6 +11,7 @@ pub use advanced::{AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy};
 pub use dual_sma::DualSMAStrategy;
 pub use dynamic::{DynamicRegimeConfig, DynamicRegimeStrategy};
 pub use mean_reversion::MeanReversionStrategy;
+pub use smc::SMCStrategy;
 pub use traits::{AnalysisContext, Signal, TradingStrategy};
 pub use trend_riding::TrendRidingStrategy;
 
@@ -72,6 +74,10 @@ impl StrategyFactory {
                 config.slow_sma_period,
                 config.sma_threshold,
                 config.trend_riding_exit_buffer_pct,
+            )),
+            StrategyMode::SMC => Arc::new(SMCStrategy::new(
+                20, // Lookback
+                0.005, // 0.5% min FVG gap
             )),
         }
     }

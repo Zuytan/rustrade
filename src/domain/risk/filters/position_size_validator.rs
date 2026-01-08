@@ -243,6 +243,7 @@ mod tests {
             &risk_state,
             Some(&sentiment),
             None,
+            None,
         );
 
         // Exposure: 0.25 * $50k = $12.5k = 12.5% of equity
@@ -279,6 +280,7 @@ mod tests {
             &prices,
             &risk_state,
             Some(&sentiment),
+            None,
             None,
         );
 
@@ -355,6 +357,7 @@ mod tests {
             dec!(100000), // $100k equity
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );

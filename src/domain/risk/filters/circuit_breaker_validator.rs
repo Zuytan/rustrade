@@ -263,6 +263,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         let result = validator.validate(&ctx).await;
@@ -296,6 +297,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         let result = validator.validate(&ctx).await;
@@ -321,6 +323,7 @@ mod tests {
             dec!(110000), // +10% profit
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );
@@ -352,6 +355,7 @@ mod tests {
             dec!(80000), // -20% (breaches both daily loss and drawdown)
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );

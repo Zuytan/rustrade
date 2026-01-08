@@ -185,7 +185,7 @@ mod tests {
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal,  &portfolio, dec!(10000), &prices, &risk_state, None, None);
+        let ctx = ValidationContext::new(&proposal,  &portfolio, dec!(10000), &prices, &risk_state, None, None, None);
 
         // Without provider, sector is "Unknown", so approves
         let result = validator.validate(&ctx).await;
@@ -208,7 +208,7 @@ mod tests {
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None);
+        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None, None);
 
         // Exposure: $1000/$10000 = 10% (Limit 20%) -> Approve
         let result = validator.validate(&ctx).await;
@@ -227,7 +227,7 @@ mod tests {
         });
 
         let proposal = create_test_proposal("AAPL"); // $1000 value
-        let mut portfolio = Portfolio::new();
+        let portfolio = Portfolio::new();
         // Assume equity $5000. 10% limit = $500.
         // Proposal $1000 > $500 -> Reject
         // Note: Equity isn't derived from portfolio in context, it's passed explicitly
@@ -235,7 +235,7 @@ mod tests {
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(5000), &prices, &risk_state, None, None);
+        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(5000), &prices, &risk_state, None, None, None);
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
@@ -268,7 +268,7 @@ mod tests {
         prices.insert("MSFT".to_string(), dec!(100)); // Current price matches cost
 
         let risk_state = RiskState::default();
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None);
+        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None, None);
 
         // Current Sector Exp: $2500 (MSFT)
         // New Trade: $1000 (AAPL)
