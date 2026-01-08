@@ -66,8 +66,10 @@ async fn test_sell_signal_suppression() {
         ui_candle_tx: None,
     };
 
+    let (_analyst_cmd_tx, analyst_cmd_rx) = mpsc::channel(10);
     let analyst = Analyst::new(
         market_rx,
+        analyst_cmd_rx,
         proposal_tx,
         config,
         Arc::new(SwitchingStrategy::new()),

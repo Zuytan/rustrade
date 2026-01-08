@@ -58,26 +58,38 @@ impl SpreadCache {
             timestamp: chrono::Utc::now().timestamp_millis(),
         };
 
-        self.spreads.write().unwrap().insert(symbol, data);
+        match self.spreads.write() {
+            Ok(mut guard) => { guard.insert(symbol, data); }
+            Err(poisoned) => {
+                tracing::error!("SpreadCache: Lock poisoned during write, recovering");
+                poisoned.into_inner().insert(symbol, data);
+            }
+        }
     }
 
     /// Get spread as percentage (0.01 = 1%)
     pub fn get_spread_pct(&self, symbol: &str) -> Option<f64> {
-        self.spreads
-            .read()
-            .unwrap()
-            .get(symbol)
-            .map(|d| d.spread_bps / 10000.0) // Convert basis points to percentage
+        match self.spreads.read() {
+            Ok(guard) => guard.get(symbol).map(|d| d.spread_bps / 10000.0),
+            Err(poisoned) => poisoned.into_inner().get(symbol).map(|d| d.spread_bps / 10000.0),
+        }
     }
 
     /// Get full spread data for a symbol
     pub fn get_spread_data(&self, symbol: &str) -> Option<SpreadData> {
-        self.spreads.read().unwrap().get(symbol).cloned()
+        match self.spreads.read() {
+            Ok(guard) => guard.get(symbol).cloned(),
+            Err(poisoned) => poisoned.into_inner().get(symbol).cloned(),
+        }
     }
 
     /// Check if spread data is stale (older than threshold_ms)
     pub fn is_stale(&self, symbol: &str, threshold_ms: i64) -> bool {
-        if let Some(data) = self.spreads.read().unwrap().get(symbol) {
+        let guard = match self.spreads.read() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some(data) = guard.get(symbol) {
             let age_ms = chrono::Utc::now().timestamp_millis() - data.timestamp;
             age_ms > threshold_ms
         } else {

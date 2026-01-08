@@ -86,8 +86,10 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
     };
 
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));
+    let (_analyst_cmd_tx, analyst_cmd_rx) = mpsc::channel(10);
     let mut analyst = Analyst::new(
         market_rx,
+        analyst_cmd_rx,
         proposal_tx,
         config,
         strategy,

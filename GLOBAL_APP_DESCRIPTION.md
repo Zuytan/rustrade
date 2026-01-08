@@ -20,7 +20,15 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.46.0)
+## Latest Updates (Version 0.47.0)
+- **P0 Critical Fixes**:
+  - Fixed all broken `Analyst::new` test calls (10 instances across 3 test files) by adding missing `cmd_rx` channel parameter.
+  - Eliminated critical `unwrap()` calls in production runtime paths:
+    - `spread_cache.rs`: Replaced 4 RwLock unwraps with proper poisoned lock recovery.
+    - `user_agent.rs`: Replaced 3 Option unwraps with safe `and_then` chains.
+  - Added **GitHub Actions CI** workflow with 4 automated checks: compilation, tests, Clippy linting, and formatting.
+
+## Version 0.46.0
 - **Unified Configuration Modes**: Two distinct modes for system configuration:
   - **Simple (Novice)**: Single "Risk Appetite Score" (1-10) slider that auto-tunes all 12+ deeply technical parameters. Includes "Conservative", "Balanced", and "Aggressive" profile visualizers.
   - **Advanced (Expert)**: Full granular control over every parameter (SMA periods, RSI thresholds, etc.).

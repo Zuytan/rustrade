@@ -304,7 +304,7 @@ impl UserAgent {
             debug!(
                 "UserAgent: Market data now has {} candles for {}",
                 entry.len(),
-                entry.last().unwrap().symbol
+                entry.last().map(|c| c.symbol.as_str()).unwrap_or("UNKNOWN")
             );
 
             // Calculate SMAs and trend for this symbol
@@ -449,9 +449,9 @@ impl UserAgent {
                 // For SHORT: (entry - exit) / entry
                 // This is equivalent to trade.pnl / (entry * quantity), but per unit is simpler
                 let pnl_per_unit = if trade.side == OrderSide::Buy {
-                     trade.exit_price.unwrap().to_f64().unwrap_or(0.0) - entry_val
+                     trade.exit_price.and_then(|p| p.to_f64()).unwrap_or(0.0) - entry_val
                 } else {
-                     entry_val - trade.exit_price.unwrap().to_f64().unwrap_or(0.0)
+                     entry_val - trade.exit_price.and_then(|p| p.to_f64()).unwrap_or(0.0)
                 };
 
                 let pct = pnl_per_unit / entry_val;

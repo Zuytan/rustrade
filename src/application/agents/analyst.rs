@@ -1094,6 +1094,7 @@ mod tests {
     async fn test_immediate_warmup() {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
         let (proposal_tx, _proposal_rx) = mpsc::channel(10);
 
         use crate::domain::trading::portfolio::Portfolio;
@@ -1112,6 +1113,7 @@ mod tests {
 
         let mut analyst = Analyst::new(
             market_rx,
+            cmd_rx,
             proposal_tx,
             config,
             strategy,
@@ -1154,6 +1156,7 @@ mod tests {
     async fn test_golden_cross() {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
         use crate::domain::trading::portfolio::Portfolio;
@@ -1219,6 +1222,7 @@ mod tests {
         ));
         let mut analyst = Analyst::new(
             market_rx,
+            cmd_rx,
             proposal_tx,
             config,
             strategy,
@@ -1265,6 +1269,7 @@ mod tests {
     async fn test_prevent_short_selling() {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
         use crate::domain::trading::portfolio::Portfolio;
@@ -1329,6 +1334,7 @@ mod tests {
         ));
         let mut analyst = Analyst::new(
             market_rx,
+            cmd_rx,
             proposal_tx,
             config,
             strategy,
@@ -1384,6 +1390,7 @@ mod tests {
     async fn test_sell_signal_with_position() {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
         let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
@@ -1455,6 +1462,7 @@ mod tests {
         ));
         let mut analyst = Analyst::new(
             market_rx,
+            cmd_rx,
             proposal_tx,
             config,
             strategy,
@@ -1508,6 +1516,7 @@ mod tests {
     async fn test_dynamic_quantity_scaling() {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
         // 100k account
@@ -1573,6 +1582,7 @@ mod tests {
         ));
         let mut analyst = Analyst::new(
             market_rx,
+            cmd_rx,
             proposal_tx,
             config,
             strategy,
@@ -1624,6 +1634,7 @@ mod tests {
     async fn test_multi_symbol_isolation() {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
         let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
@@ -1697,6 +1708,7 @@ mod tests {
         ));
         let mut analyst = Analyst::new(
             market_rx,
+            cmd_rx,
             proposal_tx,
             config,
             strategy,
@@ -1773,6 +1785,7 @@ mod tests {
     async fn test_advanced_strategy_trend_filter() {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
         let portfolio = Arc::new(RwLock::new(
             crate::domain::trading::portfolio::Portfolio::new(),
@@ -1837,6 +1850,7 @@ mod tests {
         ));
         let mut analyst = Analyst::new(
             market_rx,
+            cmd_rx,
             proposal_tx,
             config,
             strategy,
@@ -1909,6 +1923,7 @@ mod tests {
     async fn test_risk_based_quantity_calculation() {
         setup_logging();
         let (market_tx, market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
         use crate::domain::trading::portfolio::Portfolio;
@@ -1976,6 +1991,7 @@ mod tests {
         ));
         let mut analyst = Analyst::new(
             market_rx,
+            cmd_rx,
             proposal_tx,
             config,
             strategy,

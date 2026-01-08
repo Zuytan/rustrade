@@ -24,7 +24,7 @@ impl CandleBuilder {
         let start_time = timestamp
             .date_naive()
             .and_hms_opt(timestamp.hour(), timestamp.minute(), 0)
-            .unwrap()
+            .expect("Valid hour/minute should always produce valid time")
             .and_utc();
 
         Self {
@@ -86,12 +86,18 @@ impl CandleAggregator {
 
     /// Process a Quote event. Returns Some(Candle) if a candle is completed (i.e., we moved to a new minute).
     pub fn on_quote(&mut self, symbol: &str, price: Decimal, timestamp_ms: i64) -> Option<Candle> {
-        let timestamp = Utc.timestamp_millis_opt(timestamp_ms).unwrap();
+        let timestamp = match Utc.timestamp_millis_opt(timestamp_ms).single() {
+            Some(t) => t,
+            None => {
+                error!("CandleAggregator: Invalid timestamp {} for {}", timestamp_ms, symbol);
+                return None;
+            }
+        };
 
         let current_minute = timestamp
             .date_naive()
             .and_hms_opt(timestamp.hour(), timestamp.minute(), 0)
-            .unwrap()
+            .expect("Valid hour/minute should always produce valid time")
             .and_utc();
 
         // Check if we have an existing builder for this symbol

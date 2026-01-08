@@ -1,5 +1,21 @@
 # Rustrade - Historique des Versions
 
+## Version 0.47.0 (Janvier 2026) - P0 Critical Fixes & CI/CD
+- **Test Infrastructure Fixes**:
+  - Fixed all broken `Analyst::new` test calls (10 instances across 3 files) by adding missing `cmd_rx: Receiver<AnalystCommand>` parameter.
+  - Tests affected: `analyst.rs` (8 unit tests), `repro_dynamic_empty_portfolio.rs`, `repro_sell_suppression.rs`.
+- **Runtime Safety Improvements (`unwrap()` Elimination)**:
+  - **`spread_cache.rs`**: Replaced 4 RwLock `unwrap()` calls with proper poisoned lock recovery using `match` patterns.
+  - **`user_agent.rs`**: Replaced 3 `unwrap()` calls with safe `and_then()` chains and `unwrap_or()` fallbacks.
+- **CI/CD Pipeline**:
+  - Added GitHub Actions workflow (`.github/workflows/ci.yml`) with 4 automated checks:
+    - `check`: Compilation validation
+    - `test`: Unit and integration tests
+    - `clippy`: Linting with `-D warnings`
+    - `fmt`: Code formatting validation
+  - Uses `rust-cache` for faster CI builds.
+- **Verification**: 172 unit tests + 5 integration tests passing. Compilation with 0 errors.
+
 ## Version 0.46.0 (Janvier 2026) - Simple & Advanced Configuration Modes
 - **Dual-Mode Configuration UI**:
   - **Objectif**: Simplifier l'expérience pour les utilisateurs novices tout en conservant la puissance pour les experts.
