@@ -18,11 +18,13 @@ use crate::domain::risk::filters::{
     sentiment_validator::{SentimentValidator, SentimentConfig},
     correlation_filter::{CorrelationFilter, CorrelationFilterConfig},
 };
+use crate::domain::risk::volatility_manager::{VolatilityConfig, VolatilityManager}; // Added
 use chrono::Utc;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock; // Added
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -53,6 +55,7 @@ pub struct RiskConfig {
     pub allow_pdt_risk: bool, // If true, allows opening orders even if PDT saturated (Risky!)
     pub pending_order_ttl_ms: Option<i64>, // TTL for pending orders filled but not synced
     pub correlation_config: CorrelationFilterConfig,
+    pub volatility_config: VolatilityConfig, // Added
 }
 
 impl std::fmt::Debug for RiskConfig {
@@ -70,6 +73,7 @@ impl std::fmt::Debug for RiskConfig {
             .field("allow_pdt_risk", &self.allow_pdt_risk)
             .field("pending_order_ttl_ms", &self.pending_order_ttl_ms)
             .field("correlation_config", &self.correlation_config)
+            .field("volatility_config", &self.volatility_config)
             .finish()
     }
 }
@@ -121,6 +125,7 @@ impl Default for RiskConfig {
             allow_pdt_risk: false,
             pending_order_ttl_ms: None, // Default 5 mins
             correlation_config: CorrelationFilterConfig::default(),
+            volatility_config: VolatilityConfig::default(),
         }
     }
 }
@@ -135,6 +140,7 @@ pub struct RiskManager {
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     correlation_service: Option<Arc<CorrelationService>>,
     risk_config: RiskConfig,
+    volatility_manager: Arc<RwLock<VolatilityManager>>, // Added
 
     asset_class: AssetClass,
 
@@ -243,6 +249,9 @@ impl RiskManager {
         );
 
         let pending_orders_tracker = PendingOrdersTracker::new();
+        let volatility_manager = Arc::new(RwLock::new(VolatilityManager::new(
+            risk_config.volatility_config.clone(),
+        )));
 
         Ok(Self {
             proposal_rx,
@@ -254,6 +263,7 @@ impl RiskManager {
 
             asset_class,
             risk_config,
+            volatility_manager,
             
             // New Components
             validation_pipeline,
@@ -562,6 +572,50 @@ impl RiskManager {
         Ok(())
     }
 
+    /// Update volatility manager with latest ATR/Benchmark data
+    pub async fn update_volatility(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Choose benchmark symbol based on asset class
+        let benchmark = match self.asset_class {
+            AssetClass::Crypto => "BTC/USDT",
+            _ => "SPY",
+        };
+
+        // Fetch last 20 daily candles for ATR
+        let now = Utc::now();
+        let start = now - chrono::Duration::days(30); // 30 days to get enough candles
+
+        match self.market_service
+            .get_historical_bars(benchmark, start, now, "1D")
+            .await 
+        {
+            Ok(candles) => {
+                if candles.len() < 2 {
+                    return Ok(());
+                }
+
+                // Calculate a simple True Range for the latest candle
+                // TR = Max(H-L, H-Cp, L-Cp)
+                // For simplicity here, we take H-L
+                let last = &candles[candles.len() - 1];
+                let high = last.high.to_f64().unwrap_or(0.0);
+                let low = last.low.to_f64().unwrap_or(0.0);
+                let range = high - low;
+
+                if range > 0.0 {
+                    let mut vm = self.volatility_manager.write().await;
+                    vm.update(range);
+                    debug!("RiskManager: Volatility updated for {}. Latest range: {:.2}, Avg: {:.2}", 
+                        benchmark, range, vm.get_average_volatility());
+                }
+            }
+            Err(e) => {
+                warn!("RiskManager: Failed to fetch volatility data: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
     async fn liquidate_portfolio(&mut self, reason: &str) {
         // Get current portfolio snapshot
         let snapshot = self.portfolio_state_manager.get_snapshot().await;
@@ -844,6 +898,15 @@ impl RiskManager {
              None
         };
 
+        let volatility_multiplier = {
+            let vm = self.volatility_manager.read().await;
+            // For now we use the average multiplier if no specific current vol is fed
+            // Or we could have a "get_current_multiplier" that uses a default or last known.
+            // Let's assume we want to pass a value here.
+            // If we don't have current volatility data, we use 1.0.
+            Some(vm.calculate_multiplier(vm.get_average_volatility()))
+        };
+
         let ctx = ValidationContext::new(
             &proposal,
             &snapshot.portfolio,
@@ -852,6 +915,7 @@ impl RiskManager {
             &self.risk_state,
             self.current_sentiment.as_ref(),
             correlation_matrix.as_ref(), // Pass pre-calculated matrix
+            volatility_multiplier,
         );
 
         // Execute Pipeline
@@ -948,8 +1012,18 @@ impl RiskManager {
             }
         };
 
+        // Ticker for periodic volatility update
+        let mut vol_interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Every hour
+
         loop {
             tokio::select! {
+                // Periodic volatility refresh
+                _ = vol_interval.tick() => {
+                    if let Err(e) = self.update_volatility().await {
+                        error!("RiskManager: Volatility update failed: {}", e);
+                    }
+                }
+
                 // Periodic portfolio state refresh
                 _ = refresh_interval.tick() => {
                     if let Err(e) = self.handle_command(RiskCommand::RefreshPortfolio).await {

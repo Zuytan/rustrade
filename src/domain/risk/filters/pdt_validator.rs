@@ -153,6 +153,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         // Should approve because equity > $25k (not subject to PDT)
@@ -179,6 +180,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         // Should approve because day_trades_count < 3
@@ -203,6 +205,7 @@ mod tests {
             dec!(20000), // Below $25k threshold
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );
@@ -241,6 +244,7 @@ mod tests {
             dec!(20000), // Below $25k threshold
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );

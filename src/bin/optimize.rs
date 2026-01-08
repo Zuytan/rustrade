@@ -10,6 +10,8 @@ use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use rustrade::domain::trading::fee_model::ConstantFeeModel; // Added
+use rust_decimal::prelude::FromPrimitive; // Added
 use tracing::info;
 
 #[tokio::main]
@@ -181,10 +183,13 @@ async fn main() -> Result<()> {
             .parse::<f64>()
             .unwrap_or(0.001);
 
+        let slippage = Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO);
+        let commission = Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO);
+        let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
+
         Arc::new(MockExecutionService::with_costs(
             portfolio_lock,
-            slippage_pct,
-            commission_per_share,
+            fee_model,
         ))
     });
 

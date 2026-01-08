@@ -1,5 +1,17 @@
 # Rustrade - Historique des Versions
 
+## Version 0.53.0 (Janvier 2026) - Resilience & Dynamic Risk Integration
+- **Infrastructure Resilience (P0 & P2)**:
+  - **HttpClientFactory**: Centralized creation of HTTP clients with standard `ExponentialBackoff` retry policies for 429 (Rate Limit) and 5xx (Server Error) responses.
+  - **Circuit Breaker Integration**: Wrapped key API calls in `AlpacaMarketDataService`, `BinanceMarketDataService`, and `BinanceExecutionService` to prevent system stalls during prolonged outages.
+- **Centralized Cost Model (P1)**:
+  - Introduced `FeeModel` trait and implementations (`ConstantFeeModel`, `TieredFeeModel`).
+  - Generalized cost calculation (commission + slippage) across the Analyst, Simulator, and Monitoring components.
+- **Dynamic Risk Management (P2)**:
+  - **VolatilityManager**: New service calculating ATR-based risk multipliers (0.5x - 1.5x) to scale position sizes based on market volatility.
+  - **RiskManager Integration**: `ValidationContext` now includes `volatility_multiplier`, and `PositionSizeValidator` respects this multiplier during order validation.
+- **Verification**: All 210+ tests pass; circuit breakers and retries verified via build and code audit.
+
 ## Version 0.52.0 (Janvier 2026) - Risk Manager Architecture Overhaul
 - **Modular Risk Architecture**: Refactored `RiskManager` into a Chain of Responsibility validation pipeline.
 - **State Persistence Refactor**: Decoupled state management into `RiskStateManager` and `PendingOrdersTracker`, ensuring critical risk state survives restarts (HWM, daily loss).

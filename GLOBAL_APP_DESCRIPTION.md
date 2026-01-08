@@ -10,7 +10,8 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - **Modular Architecture**: Chain of Responsibility pattern with independent validators.
   - **Persistent State**: Dedicated State Manager ensures critical metrics (HWM, Daily Loss) survive restarts.
   - Position sizing based on account risk (e.g., 1% per trade).
-  - Global circuit breakers (Day Loss Limit, Drawdown Limit).
+  - Global circuit breakers (Day Loss Limit, Drawdown Limit) and infrastructure-level circuit breakers for API resilience.
+  - Dynamic volatility-based position sizing (ATR-based multiplier).
   - Correlation filters to prevent over-exposure.
   - Sector exposure limits.
 - **Data Pipeline**:
@@ -22,7 +23,16 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.50.0)
+## Latest Updates (Version 0.52.0)
+- **Dynamic Risk Management (P2)**:
+  - **Volatility Adaptation**: Implemented `VolatilityManager` to calculate ATR-based multipliers, dynamically scaling position sizes based on market conditions.
+  - **Infrastructure Resilience**: Integrated `CircuitBreaker` pattern into `Alpaca` and `Binance` services to prevent system stalls during API outages.
+- **Centralized Cost Model (P1)**:
+  - Unified transaction cost logic (commission/slippage) via `FeeModel` trait, ensuring consistency between simulation and live trading.
+- **API Resilience (P0)**:
+  - Implemented `HttpClientFactory` with standard `ExponentialBackoff` retry policies for all HTTP integrations.
+
+## Version 0.50.0
 - **P0 Critical Security Fixes**:
   - **Risk State Persistence**: Implemented `SqliteRiskStateRepository` to persist critical risk metrics (Daily Loss, HWM) across restarts, preventing verification bypass ("Amnesia").
   - **Blind Liquidation (Panic Mode)**: `RiskManager` now bypasses price checks during emergency liquidations, ensuring market exit even without data feed.

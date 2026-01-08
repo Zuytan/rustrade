@@ -17,6 +17,7 @@ use crate::domain::ports::{
     ExecutionService, ExpectancyEvaluator, FeatureEngineeringService, MarketDataService,
 };
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
+use crate::domain::trading::fee_model::FeeModel; // Added
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderStatus; // Added
 use crate::domain::trading::types::{FeatureSet, MarketEvent, OrderSide, TradeProposal};
@@ -96,6 +97,10 @@ impl SymbolContext {
     }
 }
 
+fn default_fee_model() -> Arc<dyn FeeModel> {
+    Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO))
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AnalystConfig {
     pub fast_sma_period: usize,
@@ -118,8 +123,8 @@ pub struct AnalystConfig {
     pub trend_riding_exit_buffer_pct: f64, // Trend Riding Strategy
     pub mean_reversion_rsi_exit: f64,
     pub mean_reversion_bb_period: usize,
-    pub slippage_pct: f64,
-    pub commission_per_share: f64, // Added
+    #[serde(skip, default = "default_fee_model")] // FeeModel is trait object
+    pub fee_model: Arc<dyn FeeModel>,
     pub max_position_size_pct: f64,
     pub bb_period: usize,
     pub bb_std_dev: f64,
@@ -165,8 +170,7 @@ impl Default for AnalystConfig {
             trend_riding_exit_buffer_pct: 0.02,
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
-            slippage_pct: 0.0,
-            commission_per_share: 0.0,
+            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(rust_decimal::Decimal::ZERO, rust_decimal::Decimal::ZERO)),
             max_position_size_pct: 10.0,
             bb_period: 20,
             bb_std_dev: 2.0,
@@ -213,8 +217,7 @@ impl From<crate::config::Config> for AnalystConfig {
             trend_riding_exit_buffer_pct: config.trend_riding_exit_buffer_pct,
             mean_reversion_rsi_exit: config.mean_reversion_rsi_exit,
             mean_reversion_bb_period: config.mean_reversion_bb_period,
-            slippage_pct: config.slippage_pct,
-            commission_per_share: config.commission_per_share, // Added
+            fee_model: config.create_fee_model(),
             max_position_size_pct: config.max_position_size_pct,
             bb_period: config.mean_reversion_bb_period,
             bb_std_dev: 2.0,
@@ -297,8 +300,7 @@ impl Analyst {
 
         // Initialize Cost Evaluator for profit-aware trading WITH real-time spreads
         let cost_evaluator = CostEvaluator::with_spread_cache(
-            config.commission_per_share,
-            config.slippage_pct,
+            config.fee_model.clone(),
             config.spread_bps, // Default fallback if real spread unavailable
             dependencies.spread_cache.clone(), // Real-time spreads from WebSocket!
         );
@@ -1701,8 +1703,7 @@ mod tests {
             trend_riding_exit_buffer_pct: 0.03,
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
-            slippage_pct: 0.0,
-            commission_per_share: 0.0,
+            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
             max_position_size_pct: 0.1,
             bb_period: 20,
             bb_std_dev: 2.0,
@@ -1842,8 +1843,7 @@ mod tests {
             trend_riding_exit_buffer_pct: 0.03,
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
-            slippage_pct: 0.0,
-            commission_per_share: 0.0,
+            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
             max_position_size_pct: 0.1,
             bb_period: 20,
             bb_std_dev: 2.0,
@@ -1983,8 +1983,7 @@ mod tests {
             trend_riding_exit_buffer_pct: 0.03,
             mean_reversion_rsi_exit: 50.0,
             mean_reversion_bb_period: 20,
-            slippage_pct: 0.001,
-            commission_per_share: 0.0,
+            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::from_f64(0.001).unwrap())),
             max_position_size_pct: 0.1, // 10% maximum position size
             bb_period: 20,
             bb_std_dev: 2.0,

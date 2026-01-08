@@ -53,6 +53,16 @@ impl PositionSizeValidator {
             }
         }
 
+        // Apply volatility-based adjustment
+        if let Some(multiplier) = ctx.volatility_multiplier {
+            adjusted_max_pct *= multiplier;
+            debug!(
+                "PositionSizeValidator: Volatility multiplier {:.2}x applied. Adjusted max position size: {:.2}%",
+                multiplier,
+                adjusted_max_pct * 100.0
+            );
+        }
+
         adjusted_max_pct
     }
 }
@@ -144,6 +154,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         // Exposure: 0.1 * $50k = $5k = 5% of equity (well under 25% limit)
@@ -170,6 +181,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         // Exposure: 1.0 * $50k = $50k = 50% of equity (exceeds 10% limit)
@@ -194,6 +206,7 @@ mod tests {
             dec!(100000),
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );
@@ -303,6 +316,7 @@ mod tests {
             dec!(100000), // $100k equity
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );

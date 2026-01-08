@@ -1,9 +1,11 @@
 use crate::application::agents::analyst::AnalystConfig;
 use crate::application::optimization::simulator::Simulator;
 use crate::config::StrategyMode;
+use crate::domain::trading::fee_model::ConstantFeeModel; // Added
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use rust_decimal::prelude::FromPrimitive; // Added
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -125,8 +127,7 @@ impl GridSearchOptimizer {
                                     trend_riding_exit_buffer_pct: 0.03,
                                     mean_reversion_rsi_exit: 50.0,
                                     mean_reversion_bb_period: 20,
-                                    slippage_pct: 0.001,
-                                    commission_per_share: 0.005,
+                                    fee_model: Arc::new(ConstantFeeModel::new(Decimal::from_f64(0.005).unwrap(), Decimal::from_f64(0.001).unwrap())),
                                     max_position_size_pct: 0.1,
                                     bb_period: 20,
                                     bb_std_dev: 2.0,
@@ -362,8 +363,7 @@ mod tests {
                 trend_riding_exit_buffer_pct: 0.03,
                 mean_reversion_rsi_exit: 50.0,
                 mean_reversion_bb_period: 20,
-                slippage_pct: 0.001,
-                commission_per_share: 0.005,
+                fee_model: Arc::new(ConstantFeeModel::new(Decimal::from_f64(0.005).unwrap(), Decimal::from_f64(0.001).unwrap())),
                 max_position_size_pct: 0.1,
                 bb_period: 20,
                 bb_std_dev: 2.0,

@@ -2,6 +2,7 @@ use crate::application::market_data::spread_cache::SpreadCache;
 use crate::domain::trading::types::TradeProposal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
+use crate::domain::trading::fee_model::FeeModel;
 use std::sync::Arc;
 
 /// Detailed breakdown of transaction costs for a trade
@@ -47,10 +48,8 @@ pub struct TradeCost {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CostEvaluator {
-    /// Commission per share (e.g., $0.005 per share)
-    commission_per_share: Decimal,
-    /// Slippage as percentage of trade value (e.g., 0.001 = 0.1%)
-    slippage_pct: Decimal,
+    /// Centralized Fee Model (Strategy Pattern)
+    fee_model: Arc<dyn FeeModel>,
     /// DEFAULT spread in basis points (fallback when real spread unavailable)
     default_spread_bps: Decimal,
     /// Real-time spread cache (optional - uses default if None or stale)
@@ -58,16 +57,10 @@ pub struct CostEvaluator {
 }
 
 impl CostEvaluator {
-    /// Create a new CostEvaluator with specified cost parameters
-    ///
-    /// # Arguments
-    /// * `commission_per_share` - Commission fee per share (e.g., 0.005 for $0.005/share)
-    /// * `slippage_pct` - Expected slippage as decimal (e.g., 0.001 for 0.1%)
-    /// * `spread_bps` - DEFAULT bid-ask spread in basis points (e.g., 5.0 for 5 bps)
-    pub fn new(commission_per_share: f64, slippage_pct: f64, spread_bps: f64) -> Self {
+    /// Create a new CostEvaluator with specified fee model
+    pub fn new(fee_model: Arc<dyn FeeModel>, spread_bps: f64) -> Self {
         Self {
-            commission_per_share: Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO),
-            slippage_pct: Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO),
+            fee_model,
             default_spread_bps: Decimal::from_f64(spread_bps).unwrap_or(Decimal::ZERO),
             spread_cache: None,
         }
@@ -75,14 +68,12 @@ impl CostEvaluator {
 
     /// Create CostEvaluator with real-time spread tracking
     pub fn with_spread_cache(
-        commission_per_share: f64,
-        slippage_pct: f64,
+        fee_model: Arc<dyn FeeModel>,
         default_spread_bps: f64,
         spread_cache: Arc<SpreadCache>,
     ) -> Self {
         Self {
-            commission_per_share: Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO),
-            slippage_pct: Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO),
+            fee_model,
             default_spread_bps: Decimal::from_f64(default_spread_bps).unwrap_or(Decimal::ZERO),
             spread_cache: Some(spread_cache),
         }
@@ -96,15 +87,10 @@ impl CostEvaluator {
     /// # Returns
     /// TradeCost breakdown with detailed cost components
     pub fn evaluate(&self, proposal: &TradeProposal) -> TradeCost {
-        // Commission: quantity * per-share fee
-        let commission = proposal.quantity * self.commission_per_share;
-
-        // Trade value (notional value of the trade)
-        let trade_value = proposal.price * proposal.quantity;
-
-        // Slippage: trade_value * slippage_pct
-        // This represents the expected price impact when executing the order
-        let estimated_slippage = trade_value * self.slippage_pct;
+        // Delegate to FeeModel
+        let trade_costs = self.fee_model.calculate_cost(proposal.quantity, proposal.price, proposal.side);
+        let commission = trade_costs.fee;
+        let estimated_slippage = trade_costs.slippage_cost;
 
         // Maximum spread caps to prevent unrealistically wide spreads from low-liquidity periods
         // Crypto altcoins: max 25 bps, Stocks: max 15 bps
@@ -149,6 +135,7 @@ impl CostEvaluator {
         // When you BUY, you pay ask (mid + half_spread) instead of mid
         // When you SELL, you receive bid (mid - half_spread) instead of mid
         let half_spread_bps = spread_bps / Decimal::from(2);
+        let trade_value = proposal.price * proposal.quantity;
         let spread_cost = trade_value * (half_spread_bps / Decimal::from(10000));
 
         // Total cost is sum of all components
@@ -272,7 +259,11 @@ impl Default for CostEvaluator {
     /// - Slippage: 0.1% of trade value
     /// - Spread: 5 basis points
     fn default() -> Self {
-        Self::new(0.005, 0.001, 5.0)
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        Self::new(
+            Arc::new(ConstantFeeModel::new(Decimal::from_f64(0.005).unwrap(), Decimal::from_f64(0.001).unwrap())),
+            5.0
+        )
     }
 }
 
@@ -296,7 +287,11 @@ mod tests {
 
     #[test]
     fn test_cost_evaluation_components() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         let costs = evaluator.evaluate(&proposal);
@@ -316,7 +311,11 @@ mod tests {
 
     #[test]
     fn test_profitability_check_pass() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // Total costs: $1.55 (from previous test)
@@ -327,7 +326,11 @@ mod tests {
 
     #[test]
     fn test_profitability_check_fail() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // Total costs: $1.55
@@ -338,7 +341,11 @@ mod tests {
 
     #[test]
     fn test_profitability_exact_threshold() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // Total costs: $1.55
@@ -349,7 +356,11 @@ mod tests {
 
     #[test]
     fn test_expected_profit_calculation() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // ATR = $2.00, multiplier = 1.5, quantity = 10
@@ -360,7 +371,11 @@ mod tests {
 
     #[test]
     fn test_profit_cost_ratio() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // Total costs: $1.30 (with half-spread)
@@ -384,7 +399,11 @@ mod tests {
 
     #[test]
     fn test_large_trade_costs() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(500.0), dec!(100.0)); // $50,000 trade
 
         let costs = evaluator.evaluate(&proposal);
@@ -404,7 +423,11 @@ mod tests {
 
     #[test]
     fn test_zero_quantity_edge_case() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(100.0), dec!(0.0));
 
         let costs = evaluator.evaluate(&proposal);
@@ -416,7 +439,11 @@ mod tests {
 
     #[test]
     fn test_high_profit_ratio_requirement() {
-        let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+        use crate::domain::trading::fee_model::ConstantFeeModel;
+        let evaluator = CostEvaluator::new(
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            5.0
+        );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // Costs: $1.55

@@ -26,7 +26,7 @@ impl ServiceFactory {
             Mode::Mock => {
                 (
                     Arc::new(MockMarketDataService::new()),
-                    Arc::new(MockExecutionService::new(portfolio)),
+                    Arc::new(MockExecutionService::with_costs(portfolio, config.create_fee_model())),
                     Arc::new(SpreadCache::new()),
                 )
             }

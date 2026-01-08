@@ -140,49 +140,7 @@ impl Simulator {
         let (market_tx, market_rx) = mpsc::channel(1000);
         let (proposal_tx, mut proposal_rx) = mpsc::channel(100);
 
-        let sim_config = AnalystConfig {
-            fast_sma_period: self.config.fast_sma_period,
-            slow_sma_period: self.config.slow_sma_period,
-            max_positions: self.config.max_positions,
-            trade_quantity: self.config.trade_quantity,
-            sma_threshold: self.config.sma_threshold,
-            order_cooldown_seconds: self.config.order_cooldown_seconds,
-            risk_per_trade_percent: self.config.risk_per_trade_percent,
-            strategy_mode: self.config.strategy_mode,
-            trend_sma_period: self.config.trend_sma_period,
-            rsi_period: self.config.rsi_period,
-            macd_fast_period: self.config.macd_fast_period,
-            macd_slow_period: self.config.macd_slow_period,
-            macd_signal_period: self.config.macd_signal_period,
-            trend_divergence_threshold: self.config.trend_divergence_threshold,
-            trailing_stop_atr_multiplier: self.config.trailing_stop_atr_multiplier,
-            atr_period: self.config.atr_period,
-            rsi_threshold: self.config.rsi_threshold,
-            trend_riding_exit_buffer_pct: self.config.trend_riding_exit_buffer_pct,
-            mean_reversion_rsi_exit: self.config.mean_reversion_rsi_exit,
-            mean_reversion_bb_period: self.config.mean_reversion_bb_period,
-            slippage_pct: self.config.slippage_pct,
-            commission_per_share: self.config.commission_per_share, // Added
-            max_position_size_pct: self.config.max_position_size_pct,
-            bb_period: self.config.mean_reversion_bb_period,
-            bb_std_dev: 2.0,
-            macd_fast: self.config.macd_fast_period,
-            macd_slow: self.config.macd_slow_period,
-            macd_signal: self.config.macd_signal_period,
-            ema_fast_period: self.config.ema_fast_period,
-            ema_slow_period: self.config.ema_slow_period,
-            take_profit_pct: self.config.take_profit_pct,
-            min_hold_time_minutes: self.config.min_hold_time_minutes,
-            signal_confirmation_bars: self.config.signal_confirmation_bars,
-            spread_bps: self.config.spread_bps,
-            min_profit_ratio: self.config.min_profit_ratio,
-            macd_requires_rising: self.config.macd_requires_rising,
-            trend_tolerance_pct: self.config.trend_tolerance_pct,
-            macd_min_threshold: self.config.macd_min_threshold,
-            profit_target_multiplier: self.config.profit_target_multiplier,
-            adx_period: self.config.adx_period,
-            adx_threshold: self.config.adx_threshold,
-        };
+        let sim_config = self.config.clone();
 
         // Use Advanced strategy for simulations
         let strategy: Arc<dyn TradingStrategy> = Arc::new(AdvancedTripleFilterStrategy::new(
@@ -290,15 +248,16 @@ impl Simulator {
         let mut executed_trades = Vec::new();
 
         while let Some(prop) = proposal_rx.recv().await {
-            let slippage =
-                Decimal::from_f64_retain(self.config.slippage_pct).unwrap_or(Decimal::ZERO);
+            let costs = self.config.fee_model.calculate_cost(prop.quantity, prop.price, prop.side);
+            let slippage_amount = costs.slippage_cost;
+            let slippage_per_unit = if prop.quantity.is_zero() {
+                Decimal::ZERO
+            } else {
+                slippage_amount / prop.quantity
+            };
             let execution_price = match prop.side {
-                crate::domain::trading::types::OrderSide::Buy => {
-                    prop.price * (Decimal::ONE + slippage)
-                }
-                crate::domain::trading::types::OrderSide::Sell => {
-                    prop.price * (Decimal::ONE - slippage)
-                }
+                crate::domain::trading::types::OrderSide::Buy => prop.price + slippage_per_unit,
+                crate::domain::trading::types::OrderSide::Sell => prop.price - slippage_per_unit,
             };
 
             // Execute Immediately to update Portfolio State for next Analyst check

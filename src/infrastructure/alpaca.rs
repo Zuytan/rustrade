@@ -7,7 +7,9 @@ use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{NaiveDate, TimeZone};
-use reqwest::Client;
+use crate::infrastructure::http_client_factory::HttpClientFactory;
+use crate::infrastructure::circuit_breaker::CircuitBreaker; // Added
+use reqwest_middleware::ClientWithMiddleware;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -37,7 +39,7 @@ const CRYPTO_UNIVERSE: &[&str] = &[
 // ===== Market Data Service (WebSocket) =====
 
 pub struct AlpacaMarketDataService {
-    client: Client,
+    client: ClientWithMiddleware,
     api_key: String,
     api_secret: String,
     ws_manager: Arc<AlpacaWebSocketManager>, // Singleton WebSocket manager
@@ -47,6 +49,7 @@ pub struct AlpacaMarketDataService {
     asset_class: AssetClass, // Added
     spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>, // Shared spread cache for real-time cost tracking
     candle_repository: Option<Arc<dyn crate::domain::repositories::CandleRepository>>, // For intelligent caching
+    circuit_breaker: Arc<CircuitBreaker>, // Added
 }
 
 impl AlpacaMarketDataService {
@@ -138,17 +141,12 @@ impl AlpacaMarketDataServiceBuilder {
         let api_secret = self.api_secret.expect("api_secret is required");
         let ws_url = self.ws_url.expect("ws_url is required");
         let data_base_url = self.data_base_url.expect("data_base_url is required");
-        let min_volume_threshold = self.min_volume_threshold.unwrap_or(0.0);
+        let min_volume_threshold = self.min_volume_threshold.unwrap_or(100000.0);
         let asset_class = self.asset_class.unwrap_or(AssetClass::Stock);
         let candle_repository = self.candle_repository.flatten();
 
-        // Configure client with connection pool limits
-        let client = Client::builder()
-            .pool_max_idle_per_host(5)
-            .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| Client::new());
+        // Create client using factory (includes Retry Middleware)
+        let client = HttpClientFactory::create_client();
 
         // Create singleton WebSocket manager
         let spread_cache =
@@ -158,6 +156,13 @@ impl AlpacaMarketDataServiceBuilder {
             api_secret.clone(),
             ws_url,
             spread_cache.clone(),
+        ));
+
+        let circuit_breaker = Arc::new(CircuitBreaker::new(
+            "AlpacaMarketData",
+            5, // Open after 5 failures
+            3, // Close after 3 successes in HalfOpen
+            std::time::Duration::from_secs(60), // Wait 60s before retrying
         ));
 
         AlpacaMarketDataService {
@@ -171,6 +176,7 @@ impl AlpacaMarketDataServiceBuilder {
             asset_class,
             spread_cache,
             candle_repository,
+            circuit_breaker,
         }
     }
 }
@@ -418,86 +424,90 @@ impl MarketDataService for AlpacaMarketDataService {
             return Ok(std::collections::HashMap::new());
         }
 
-        // Detect if we're dealing with crypto symbols (contain '/')
-        let is_crypto = symbols.iter().any(|s| s.contains('/'));
+        self.circuit_breaker.call(async move {
+            // Detect if we're dealing with crypto symbols (contain '/')
+            let is_crypto = symbols.iter().any(|s| s.contains('/'));
 
-        // For crypto, denormalize symbols (remove slashes) before API call
-        // Alpaca's snapshot API expects BTCUSD not BTC/USD
-        let api_symbols: Vec<String> = if is_crypto {
-            symbols
-                .iter()
-                .map(|s| crate::domain::trading::types::denormalize_crypto_symbol(s))
-                .collect()
-        } else {
-            symbols.clone()
-        };
-
-        let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
-        let symbols_param = api_symbols.join(",");
-
-        let response = self
-            .client
-            .get(url)
-            .header("APCA-API-KEY-ID", &self.api_key)
-            .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .query(&[("symbols", &symbols_param)])
-            .send()
-            .await
-            .context("Failed to fetch snapshots from Alpaca")?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("Alpaca snapshots fetch failed: {}", error_text);
-        }
-
-        // Response structure: Keys are symbols, Values are Snapshot objects
-        // Snapshot object has "dailyBar" or "latestTrade" or "latestQuote".
-        // We prefer "latestTrade" price.
-        #[derive(Debug, Deserialize)]
-        struct SnapshotTrade {
-            #[serde(rename = "p")]
-            price: f64,
-        }
-        #[derive(Debug, Deserialize)]
-        struct Snapshot {
-            #[serde(rename = "latestTrade")]
-            latest_trade: Option<SnapshotTrade>,
-            #[serde(rename = "prevDailyBar")]
-            prev_daily_bar: Option<AlpacaBar>, // Fallback
-        }
-
-        // Alpaca returns a map of symbol -> snapshot
-        let resp: std::collections::HashMap<String, Snapshot> = response
-            .json()
-            .await
-            .context("Failed to parse Alpaca snapshots response")?;
-
-        let mut prices = std::collections::HashMap::new();
-
-        for (alp_sym, snapshot) in resp {
-            // Normalize the symbol back to internal format (BTCUSD -> BTC/USD)
-            let normalized_sym = if is_crypto {
-                crate::domain::trading::types::normalize_crypto_symbol(&alp_sym)
-                    .unwrap_or(alp_sym.clone())
+            // For crypto, denormalize symbols (remove slashes) before API call
+            let api_symbols: Vec<String> = if is_crypto {
+                symbols
+                    .iter()
+                    .map(|s| crate::domain::trading::types::denormalize_crypto_symbol(s))
+                    .collect()
             } else {
-                alp_sym
+                symbols.clone()
             };
 
-            let price_f64 = if let Some(trade) = snapshot.latest_trade {
-                trade.price
-            } else if let Some(bar) = snapshot.prev_daily_bar {
-                bar.close
-            } else {
-                0.0
-            };
+            let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
+            let symbols_param = api_symbols.join(",");
 
-            if price_f64 > 0.0
-                && let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64) {
-                    prices.insert(normalized_sym, dec);
+            let response = self
+                .client
+                .get(url)
+                .header("APCA-API-KEY-ID", &self.api_key)
+                .header("APCA-API-SECRET-KEY", &self.api_secret)
+                .query(&[("symbols", &symbols_param)])
+                .send()
+                .await
+                .context("Failed to fetch snapshots from Alpaca")?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await.unwrap_or_default();
+                anyhow::bail!("Alpaca snapshots fetch failed: {}", error_text);
+            }
+
+            #[derive(Debug, Deserialize)]
+            struct SnapshotTrade {
+                #[serde(rename = "p")]
+                price: f64,
+            }
+            #[derive(Debug, Deserialize)]
+            struct Snapshot {
+                #[serde(rename = "latestTrade")]
+                latest_trade: Option<SnapshotTrade>,
+                #[serde(rename = "prevDailyBar")]
+                prev_daily_bar: Option<AlpacaBar>,
+            }
+
+            let resp: std::collections::HashMap<String, Snapshot> = response
+                .json()
+                .await
+                .context("Failed to parse Alpaca snapshots response")?;
+
+            let mut prices = std::collections::HashMap::new();
+
+            for (alp_sym, snapshot) in resp {
+                let normalized_sym = if is_crypto {
+                    crate::domain::trading::types::normalize_crypto_symbol(&alp_sym)
+                        .unwrap_or(alp_sym.clone())
+                } else {
+                    alp_sym
+                };
+
+                let price_f64 = if let Some(trade) = snapshot.latest_trade {
+                    trade.price
+                } else if let Some(bar) = snapshot.prev_daily_bar {
+                    bar.close
+                } else {
+                    0.0
+                };
+
+                if price_f64 > 0.0 {
+                    if let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64) {
+                        prices.insert(normalized_sym, dec);
+                    }
                 }
-        }
+            }
 
-        Ok(prices)
+            Ok(prices)
+        })
+        .await
+        .map_err(|e| match e {
+            crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                anyhow::anyhow!("Alpaca Market Data circuit breaker open: {}", msg)
+            }
+            crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+        })
     }
 
     async fn get_historical_bars(
@@ -715,115 +725,116 @@ impl AlpacaMarketDataService {
         end: chrono::DateTime<chrono::Utc>,
         timeframe: &str,
     ) -> Result<Vec<AlpacaBar>> {
-        // 1. Check Cache
-        let cache_key = format!(
-            "{}:{}:{}:{}",
-            symbol,
-            start.timestamp(),
-            end.timestamp(),
-            timeframe
-        );
+        self.circuit_breaker.call(async move {
+            // 1. Check Cache
+            let cache_key = format!(
+                "{}:{}:{}:{}",
+                symbol,
+                start.timestamp(),
+                end.timestamp(),
+                timeframe
+            );
 
-        {
-            let cache = match self.bar_cache.read() {
-                Ok(guard) => guard,
-                Err(poisoned) => {
-                    tracing::error!("AlpacaMarketDataService: bar_cache lock poisoned during read, recovering");
-                    poisoned.into_inner()
+            {
+                let cache = match self.bar_cache.read() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        tracing::error!("AlpacaMarketDataService: bar_cache lock poisoned during read, recovering");
+                        poisoned.into_inner()
+                    }
+                };
+                if let Some(bars) = cache.get(&cache_key) {
+                    trace!("AlpacaMarketDataService: Cache HIT for {}", cache_key);
+                    return Ok(bars.clone());
                 }
+            }
+
+            debug!(
+                "AlpacaMarketDataService: Cache MISS for {}. Fetching...",
+                cache_key
+            );
+
+            // Determine endpoint based on symbol format (Crypto pairs usually have '/')
+            let is_crypto = symbol.contains('/');
+            let url = if is_crypto {
+                // For crypto, use v1beta3 endpoint
+                format!("{}/v1beta3/crypto/us/bars", self.data_base_url)
+            } else {
+                format!("{}/v2/stocks/bars", self.data_base_url)
             };
-            if let Some(bars) = cache.get(&cache_key) {
-                trace!("AlpacaMarketDataService: Cache HIT for {}", cache_key);
-                return Ok(bars.clone());
-            }
-        }
 
-        debug!(
-            "AlpacaMarketDataService: Cache MISS for {}. Fetching...",
-            cache_key
-        );
+            let mut all_bars = Vec::new();
+            let mut page_token: Option<String> = None;
 
-        // Determine endpoint based on symbol format (Crypto pairs usually have '/')
-        let is_crypto = symbol.contains('/');
-        let url = if is_crypto {
-            // For crypto, use v1beta3 endpoint
-            format!("{}/v1beta3/crypto/us/bars", self.data_base_url)
-        } else {
-            format!("{}/v2/stocks/bars", self.data_base_url)
-        };
+            loop {
+                let mut query_params = vec![
+                    ("symbols", symbol.to_string()),
+                    ("start", start.to_rfc3339()),
+                    ("end", end.to_rfc3339()),
+                    ("timeframe", timeframe.to_string()),
+                    ("limit", "10000".to_string()),
+                ];
+                if let Some(token) = &page_token {
+                    query_params.push(("page_token", token.clone()));
+                }
 
-        let mut all_bars = Vec::new();
-        let mut page_token: Option<String> = None;
-        let mut _backoff = 1; // Unused but kept for structure
+                let response = self
+                    .client
+                    .get(&url)
+                    .header("APCA-API-KEY-ID", &self.api_key)
+                    .header("APCA-API-SECRET-KEY", &self.api_secret)
+                    .query(&query_params)
+                    .send()
+                    .await
+                    .context("Failed to fetch bars from Alpaca")?;
 
-        loop {
-            let mut query_params = vec![
-                ("symbols", symbol.to_string()),
-                ("start", start.to_rfc3339()),
-                ("end", end.to_rfc3339()),
-                ("timeframe", timeframe.to_string()),
-                ("limit", "10000".to_string()),
-            ];
-            if let Some(token) = &page_token {
-                query_params.push(("page_token", token.clone()));
-            }
+                if !response.status().is_success() {
+                    let error_text = response.text().await.unwrap_or_default();
+                    anyhow::bail!("Alpaca API error: {}", error_text);
+                }
 
-            let response = self
-                .client
-                .get(&url)
-                .header("APCA-API-KEY-ID", &self.api_key)
-                .header("APCA-API-SECRET-KEY", &self.api_secret)
-                .query(&query_params)
-                .send()
-                .await
-                .map_err(|e| anyhow::anyhow!("Request failed: {}", e))?;
+                #[derive(Debug, Deserialize)]
+                struct AlpacaBarResponse {
+                    bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
+                    next_page_token: Option<String>,
+                }
 
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_default();
-                anyhow::bail!("Alpaca bars fetch failed: {}", error_text);
-            }
+                let resp_body: AlpacaBarResponse = response
+                    .json()
+                    .await
+                    .context("Failed to parse bars response")?;
 
-            #[derive(Debug, Deserialize)]
-            struct BarsResponse {
-                bars: Option<std::collections::HashMap<String, Vec<AlpacaBar>>>,
-                next_page_token: Option<String>,
-            }
-
-            let resp: BarsResponse = response
-                .json()
-                .await
-                .context("Failed to parse Alpaca bars response")?;
-
-            if let Some(bars_map) = resp.bars
-                && let Some(bars) = bars_map.get(symbol) {
+                if let Some(bars) = resp_body.bars.get(symbol) {
                     all_bars.extend(bars.clone());
                 }
 
-            match resp.next_page_token {
-                Some(token) if !token.is_empty() => {
-                    page_token = Some(token);
-                    // Add a small delay to respect rate limits if fetching many pages
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                page_token = resp_body.next_page_token;
+                if page_token.is_none() {
+                    break;
                 }
-                _ => break,
             }
-        }
 
-        debug!("Fetched total {} bars for {}", all_bars.len(), symbol);
+            // Update cache before returning
+            {
+                let mut cache = match self.bar_cache.write() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        tracing::error!("AlpacaMarketDataService: bar_cache lock poisoned during write, recovering");
+                        poisoned.into_inner()
+                    }
+                };
+                cache.insert(cache_key, all_bars.clone());
+            }
 
-        // Save to cache
-        if !all_bars.is_empty() {
-            let mut cache = match self.bar_cache.write() {
-                Ok(guard) => guard,
-                Err(poisoned) => {
-                    tracing::error!("AlpacaMarketDataService: bar_cache lock poisoned during write, recovering");
-                    poisoned.into_inner()
-                }
-            };
-            cache.insert(cache_key, all_bars.clone());
-        }
-
-        Ok(all_bars)
+            Ok(all_bars)
+        })
+        .await
+        .map_err(|e| match e {
+            crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                anyhow::anyhow!("Alpaca Market Data circuit breaker open: {}", msg)
+            }
+            crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+        })
     }
 
     pub async fn get_historical_movers(
@@ -1065,7 +1076,7 @@ pub struct AlpacaBar {
 // ===== Execution Service (REST API) =====
 
 pub struct AlpacaExecutionService {
-    client: Client,
+    client: ClientWithMiddleware,
     api_key: String,
     api_secret: String,
     base_url: String,
@@ -1075,13 +1086,9 @@ pub struct AlpacaExecutionService {
 
 impl AlpacaExecutionService {
     pub fn new(api_key: String, api_secret: String, base_url: String) -> Self {
-        // Configure client with connection pool limits to avoid exhausting API connections
-        let client = Client::builder()
-            .pool_max_idle_per_host(5) // Limit idle connections per host
-            .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| Client::new());
+        // Configure client with retry middleware
+        let client = HttpClientFactory::create_client();
+        // Previous standard client builder removed in favor of factory
 
         // Initialize Trading Stream
         let trading_stream = Arc::new(AlpacaTradingStream::new(
@@ -1100,7 +1107,7 @@ impl AlpacaExecutionService {
             ));
 
         Self {
-            client,
+            client, // Now ClientWithMiddleware
             api_key,
             api_secret,
             base_url,
@@ -1228,7 +1235,8 @@ impl ExecutionService for AlpacaExecutionService {
             .post(&url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .json(&order_request)
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_string(&order_request).context("Failed to serialize order request")?)
             .send()
             .await
             .context("Failed to send order to Alpaca")?;
@@ -1514,7 +1522,7 @@ struct AlpacaAsset {
 }
 
 pub struct AlpacaSectorProvider {
-    client: Client,
+    client: ClientWithMiddleware,
     api_key: String,
     api_secret: String,
     base_url: String,
@@ -1523,7 +1531,7 @@ pub struct AlpacaSectorProvider {
 impl AlpacaSectorProvider {
     pub fn new(api_key: String, api_secret: String, base_url: String) -> Self {
         Self {
-            client: Client::new(),
+            client: HttpClientFactory::create_client(),
             api_key,
             api_secret,
             base_url,

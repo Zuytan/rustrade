@@ -1,6 +1,8 @@
 use chrono::{TimeZone, Utc};
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::FromPrimitive; // Added
 use rust_decimal::Decimal;
+use rustrade::domain::trading::fee_model::ConstantFeeModel; // Added
 use rustrade::application::agents::analyst::AnalystConfig;
 use rustrade::application::optimization::simulator::Simulator;
 use rustrade::config::StrategyMode;
@@ -349,10 +351,13 @@ async fn run_single_benchmark(
         .parse::<f64>()
         .unwrap_or(0.001);
 
+    let slippage = Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO);
+    let commission = Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO);
+    let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
+
     let execution_service = Arc::new(MockExecutionService::with_costs(
         portfolio_lock.clone(),
-        slippage_pct,
-        commission_per_share,
+        fee_model,
     ));
 
     let simulator = Simulator::new(market_service.clone(), execution_service.clone(), config);
@@ -423,10 +428,13 @@ async fn run_batch_benchmark(
             .parse::<f64>()
             .unwrap_or(0.001);
 
+        let slippage = Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO);
+        let commission = Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO);
+        let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
+
         let execution_service = Arc::new(MockExecutionService::with_costs(
             portfolio_lock.clone(),
-            slippage_pct,
-            commission_per_share,
+            fee_model,
         ));
         let simulator = Simulator::new(
             market_service.clone(),

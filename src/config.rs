@@ -578,4 +578,27 @@ impl Config {
             trend_timeframe,
         })
     }
+
+    pub fn create_fee_model(&self) -> std::sync::Arc<dyn crate::domain::trading::fee_model::FeeModel> {
+        use crate::domain::trading::fee_model::{ConstantFeeModel, TieredFeeModel};
+        use rust_decimal::prelude::FromPrimitive;
+        
+        match self.asset_class {
+            AssetClass::Stock => {
+                std::sync::Arc::new(ConstantFeeModel::new(
+                    Decimal::from_f64(self.commission_per_share).unwrap_or(Decimal::ZERO),
+                    Decimal::from_f64(self.slippage_pct).unwrap_or(Decimal::ZERO),
+                ))
+            },
+            AssetClass::Crypto => {
+                // For crypto, interpret commission_per_share as taker fee % if needed, or use separate env vars later.
+                // For now, mapping commission_per_share to taker_fee_pct for simplicity in this transition.
+                std::sync::Arc::new(TieredFeeModel::new(
+                    Decimal::ZERO, // Maker fee
+                    Decimal::from_f64(self.commission_per_share).unwrap_or(Decimal::ZERO), // Taker fee
+                    Decimal::from_f64(self.slippage_pct).unwrap_or(Decimal::ZERO),
+                ))
+            }
+        }
+    }
 }

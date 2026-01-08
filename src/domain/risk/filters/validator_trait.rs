@@ -62,6 +62,9 @@ pub struct ValidationContext<'a> {
     
     /// Current correlation matrix (if available)
     pub correlation_matrix: Option<&'a HashMap<(String, String), f64>>,
+    
+    /// Current volatility multiplier (if available, e.g. from VolatilityManager)
+    pub volatility_multiplier: Option<f64>,
 }
 
 impl<'a> ValidationContext<'a> {
@@ -74,6 +77,7 @@ impl<'a> ValidationContext<'a> {
         risk_state: &'a RiskState,
         current_sentiment: Option<&'a Sentiment>,
         correlation_matrix: Option<&'a HashMap<(String, String), f64>>,
+        volatility_multiplier: Option<f64>,
     ) -> Self {
         Self {
             proposal,
@@ -83,6 +87,7 @@ impl<'a> ValidationContext<'a> {
             risk_state,
             current_sentiment,
             correlation_matrix,
+            volatility_multiplier,
         }
     }
 

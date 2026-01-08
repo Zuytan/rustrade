@@ -168,6 +168,7 @@ mod tests {
             &risk_state,
             None,
             None,
+            None,
         );
 
         let result = validator.validate(&ctx).await;
@@ -195,6 +196,7 @@ mod tests {
             dec!(90000), // -10% loss (exceeds 5% limit)
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );
@@ -226,6 +228,7 @@ mod tests {
             dec!(100000), // Current $100k = -16.67% from peak (exceeds 10% limit)
             &prices,
             &risk_state,
+            None,
             None,
             None,
         );

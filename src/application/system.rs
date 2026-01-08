@@ -44,6 +44,7 @@ use crate::domain::sentiment::Sentiment; // Added Sentiment import
 use crate::infrastructure::alpaca::AlpacaSectorProvider;
 use crate::infrastructure::binance::BinanceSectorProvider;
 use crate::infrastructure::factory::ServiceFactory;
+use crate::infrastructure::mock::MockExecutionService; // Added
 use crate::infrastructure::oanda::OandaSectorProvider;
 use crate::infrastructure::persistence::database::Database;
 use crate::infrastructure::persistence::repositories::{
@@ -133,9 +134,16 @@ impl Application {
         };
 
         let adaptive_optimization_service = if config.adaptive_optimization_enabled {
-            let es_clone = execution_service.clone();
+            let initial_cash = config.initial_cash;
             let execution_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync> =
-                Arc::new(move || es_clone.clone());
+                Arc::new(move || {
+                    let portfolio = Arc::new(RwLock::new({
+                        let mut p = Portfolio::new();
+                        p.cash = initial_cash;
+                        p
+                    }));
+                    Arc::new(MockExecutionService::new(portfolio))
+                });
 
             let optimizer = Arc::new(GridSearchOptimizer::new(
                 market_service.clone(),
@@ -305,8 +313,7 @@ impl Application {
             trend_riding_exit_buffer_pct: 0.03,
             mean_reversion_rsi_exit: self.config.mean_reversion_rsi_exit,
             mean_reversion_bb_period: self.config.mean_reversion_bb_period,
-            slippage_pct: self.config.slippage_pct,
-            commission_per_share: self.config.commission_per_share,
+            fee_model: self.config.create_fee_model(),
             max_position_size_pct: self.config.max_position_size_pct,
             bb_period: self.config.mean_reversion_bb_period,
             bb_std_dev: 2.0,
@@ -437,6 +444,7 @@ impl Application {
             correlation_config: crate::domain::risk::filters::correlation_filter::CorrelationFilterConfig {
                 max_correlation_threshold: 0.85, // Default threshold
             },
+            volatility_config: crate::domain::risk::volatility_manager::VolatilityConfig::default(),
         };
 
         // Create portfolio state manager for versioned state access
