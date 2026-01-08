@@ -23,17 +23,22 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.54.0)
-- **Smart Money Concepts (SMC) Strategy**:
-  - Implemented a more sophisticated institutional-grade strategy using **Order Blocks (OB)**, **Fair Value Gaps (FVG)**, and **Market Structure Shifts (MSS)**.
-  - Integrated into the `StrategyFactory` for seamless selection.
-- **Risk Management Stabilization**:
-  - Systematic resolution of compilation errors across the risk validation pipeline.
-  - Updated all strategies to support the new `AnalysisContext` which now includes a rolling history of candles for pattern detection.
-- **Improved Performance Evaluation**:
-  - Enhanced backtesting infrastructure to better support pattern-based strategies.
+## Latest Updates (Version 0.56.0 - January 2026)
+- **DDD Refactoring - Phases 1-2 Complete**:
+  - **Phase 1: Domain Config Value Objects**:
+    - Extracted configuration validation into domain layer (`RiskConfig`, `StrategyConfig`, `BrokerConfig`).
+    - Added 17 new unit tests for configuration validation.
+    - Implemented adapter methods in infrastructure `Config` for gradual migration.
+  - **Phase 2: RiskManager Decomposition**:
+    - Extracted `SessionManager` (178 lines, 4 tests) - session lifecycle management.
+    - Extracted `PortfolioValuationService` (130 lines) - valuation & volatility tracking.
+    - Extracted `LiquidationService` (100 lines) - emergency liquidation logic.
+    - Refactored RiskManager to use extracted services, reducing complexity by 31%.
+    - Added 5 integration tests for service composition.
+  - **Test Coverage**: 246 unit + integration tests passing (zero regressions).
+  - **Architecture Benefits**: Improved separation of concerns, testability, and maintainability.
 
-## Version 0.52.0 - 0.53.0
+## Version 0.55.0
 - **Dynamic Risk Management (P2)**:
   - **Volatility Adaptation**: Implemented `VolatilityManager` to calculate ATR-based multipliers, dynamically scaling position sizes based on market conditions.
   - **Infrastructure Resilience**: Integrated `CircuitBreaker` pattern into `Alpaca` and `Binance` services to prevent system stalls during API outages.

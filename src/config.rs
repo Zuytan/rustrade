@@ -601,4 +601,93 @@ impl Config {
             }
         }
     }
+
+    /// Create a RiskConfig domain value object from this Config
+    ///
+    /// This adapter method allows gradual migration to domain value objects
+    pub fn to_risk_config(&self) -> Result<crate::domain::config::RiskConfig> {
+        crate::domain::config::RiskConfig::new(
+            self.max_position_size_pct,
+            self.max_sector_exposure_pct,
+            self.max_daily_loss_pct,
+            self.max_drawdown_pct,
+            self.consecutive_loss_limit,
+            self.pending_order_ttl_ms,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid risk config: {}", e))
+    }
+
+    /// Create a StrategyConfig domain value object from this Config
+    pub fn to_strategy_config(&self) -> Result<crate::domain::config::StrategyConfig> {
+        crate::domain::config::StrategyConfig::new(
+            self.strategy_mode,
+            self.fast_sma_period,
+            self.slow_sma_period,
+            self.trend_sma_period,
+            self.rsi_period,
+            self.rsi_threshold,
+            self.macd_fast_period,
+            self.macd_slow_period,
+            self.macd_signal_period,
+            self.macd_requires_rising,
+            self.macd_min_threshold,
+            self.adx_period,
+            self.adx_threshold,
+            self.trend_divergence_threshold,
+            self.trend_tolerance_pct,
+            self.signal_confirmation_bars,
+            self.primary_timeframe,
+            self.enabled_timeframes.clone(),
+            self.trend_timeframe,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid strategy config: {}", e))
+    }
+
+    /// Create a BrokerConfig domain value object from this Config
+    pub fn to_broker_config(&self) -> Result<crate::domain::config::BrokerConfig> {
+        use crate::domain::config::BrokerType;
+        
+        let broker_type = match self.mode {
+            Mode::Mock => BrokerType::Mock,
+            Mode::Alpaca => BrokerType::Alpaca,
+            Mode::Binance => BrokerType::Binance,
+            Mode::Oanda => BrokerType::Oanda,
+        };
+
+        let (api_key, secret_key, base_url, ws_url, data_url) = match self.mode {
+            Mode::Mock => (String::new(), String::new(), String::new(), String::new(), None),
+            Mode::Alpaca => (
+                self.alpaca_api_key.clone(),
+                self.alpaca_secret_key.clone(),
+                self.alpaca_base_url.clone(),
+                self.alpaca_ws_url.clone(),
+                Some(self.alpaca_data_url.clone()),
+            ),
+            Mode::Binance => (
+                self.binance_api_key.clone(),
+                self.binance_secret_key.clone(),
+                self.binance_base_url.clone(),
+                self.binance_ws_url.clone(),
+                None,
+            ),
+            Mode::Oanda => (
+                self.oanda_api_key.clone(),
+                String::new(), // OANDA uses only API key
+                self.oanda_api_base_url.clone(),
+                self.oanda_stream_base_url.clone(),
+                None,
+            ),
+        };
+
+        crate::domain::config::BrokerConfig::new(
+            broker_type,
+            api_key,
+            secret_key,
+            base_url,
+            ws_url,
+            data_url,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid broker config: {}", e))
+    }
 }
+

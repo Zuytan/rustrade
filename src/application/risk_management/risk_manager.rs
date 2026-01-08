@@ -5,10 +5,13 @@ use crate::domain::sentiment::Sentiment;
 #[cfg(test)]
 use crate::domain::sentiment::SentimentClassification;
 use crate::domain::trading::portfolio::Portfolio;
-use crate::domain::trading::types::{Order, OrderSide, OrderStatus, OrderType, TradeProposal};
+use crate::domain::trading::types::{Order, OrderSide, OrderStatus, TradeProposal};
 use crate::application::risk_management::pipeline::validation_pipeline::RiskValidationPipeline;
 use crate::application::risk_management::state::risk_state_manager::RiskStateManager;
 use crate::application::risk_management::state::pending_orders_tracker::PendingOrdersTracker;
+use crate::application::risk_management::session_manager::SessionManager;
+use crate::application::risk_management::portfolio_valuation_service::PortfolioValuationService;
+use crate::application::risk_management::liquidation_service::LiquidationService;
 use crate::domain::risk::filters::{
     RiskValidator, ValidationContext, ValidationResult,
     position_size_validator::{PositionSizeValidator, PositionSizeConfig},
@@ -140,7 +143,7 @@ pub struct RiskManager {
     performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     correlation_service: Option<Arc<CorrelationService>>,
     risk_config: RiskConfig,
-    volatility_manager: Arc<RwLock<VolatilityManager>>, // Added
+    volatility_manager: Arc<RwLock<VolatilityManager>>,
 
     asset_class: AssetClass,
 
@@ -150,6 +153,11 @@ pub struct RiskManager {
     state_manager: RiskStateManager,
     #[allow(dead_code)]
     pending_orders_tracker: PendingOrdersTracker,
+    
+    // Extracted Services
+    session_manager: SessionManager,
+    portfolio_valuation_service: PortfolioValuationService,
+    liquidation_service: LiquidationService,
 
     // Legacy State (Deprecated/To be removed) 
     // Kept briefly if needed for transition, but aim to remove usage
@@ -252,6 +260,24 @@ impl RiskManager {
         let volatility_manager = Arc::new(RwLock::new(VolatilityManager::new(
             risk_config.volatility_config.clone(),
         )));
+        
+        // Initialize extracted services
+        let session_manager = SessionManager::new(
+            risk_state_repository.clone(),
+            market_service.clone(),
+        );
+        
+        let portfolio_valuation_service = PortfolioValuationService::new(
+            market_service.clone(),
+            portfolio_state_manager.clone(),
+            volatility_manager.clone(),
+            asset_class,
+        );
+        
+        let liquidation_service = LiquidationService::new(
+            order_tx.clone(),
+            portfolio_state_manager.clone(),
+        );
 
         Ok(Self {
             proposal_rx,
@@ -269,16 +295,19 @@ impl RiskManager {
             validation_pipeline,
             state_manager,
             pending_orders_tracker,
+            
+            // Extracted Services
+            session_manager,
+            portfolio_valuation_service,
+            liquidation_service,
 
             // Legacy State (Initialized to defaults, will be synced or ignored)
             risk_state: RiskState::default(),
             pending_orders: HashMap::new(),
-            // equity_high_water_mark removed
             
             current_prices: HashMap::new(),
             performance_monitor,
             correlation_service,
-
 
             halted: false,
             daily_pnl: Decimal::ZERO,
@@ -312,71 +341,26 @@ impl RiskManager {
     }
 
     /// Initialize session tracking with starting equity
+    /// Delegates to SessionManager for session lifecycle management
     pub async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Refresh portfolio state from exchange
+        // Get portfolio snapshot
         let snapshot = self.portfolio_state_manager.refresh().await?;
-
-        // Fetch initial prices for accurate equity calculation
-        let symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
-        if !symbols.is_empty() {
-            match self.market_service.get_prices(symbols).await {
-                Ok(prices) => {
-                    for (sym, price) in prices {
-                        self.current_prices.insert(sym, price);
-                    }
-                }
-                Err(e) => {
-                    warn!("RiskManager: Failed to fetch initial prices: {}", e);
-                }
-            }
-        }
-
-        let initial_equity = snapshot.portfolio.total_equity(&self.current_prices);
-        self.risk_state.session_start_equity = initial_equity;
-        self.risk_state.daily_start_equity = initial_equity; // Initialize daily tracking
-        self.risk_state.equity_high_water_mark = initial_equity;
         
-        // Attempt to load persistent state
-        if let Some(repo) = &self.risk_state_repository {
-            match repo.load("global").await {
-                Ok(Some(state)) => {
-                    info!("RiskManager: Loaded persistent state from DB: {:?}", state);
-                    
-                    // Restore HWM and Consecutive Losses always
-                    self.risk_state.equity_high_water_mark = state.equity_high_water_mark;
-                    self.risk_state.consecutive_losses = state.consecutive_losses;
-                    
-                    // Restore Daily/Session logic ONLY if it's the same day (to prevent skipping daily reset)
-                    // If stored date < today, we treat it as a new day and keep the fresh values we just calculated
-                    // But for Crypto 24/7, maybe we want to adhere to the stored values if within same session?
-                    // Let's use simple logic: If State Date == Today, Use State. Else Use Fresh.
-                    let today = Utc::now().date_naive();
-                    if state.reference_date == today {
-                        self.risk_state.session_start_equity = state.session_start_equity;
-                        self.risk_state.daily_start_equity = state.daily_start_equity;
-                        self.risk_state.reference_date = state.reference_date;
-                        info!("RiskManager: Restored intraday equity baselines from persistence.");
-                    } else {
-                        info!("RiskManager: Persistent state is from previous day ({} vs {}). Using fresh equity baselines.", state.reference_date, today);
-                        // We still kept HWM and consecutive losses above.
-                        // We should save the new day state immediately
-                        self.persist_state().await;
-                    }
-                }
-                Ok(None) => {
-                    info!("RiskManager: No persistent state found. Starting fresh.");
-                    self.persist_state().await;
-                }
-                Err(e) => {
-                    error!("RiskManager: Failed to load persistent state: {}. Continuing with fresh state.", e);
-                }
-            }
-        }
-
+        // Delegate session initialization to SessionManager
+        let risk_state = self.session_manager
+            .initialize_session(&snapshot.portfolio, &mut self.current_prices)
+            .await?;
+        
+        // Sync to legacy state (will be removed in future)
+        self.risk_state = risk_state;
+        
         info!(
             "RiskManager: Session initialized. Equity: {}, Daily Start: {}, HWM: {}",
-            self.risk_state.session_start_equity, self.risk_state.daily_start_equity, self.risk_state.equity_high_water_mark
+            self.risk_state.session_start_equity, 
+            self.risk_state.daily_start_equity, 
+            self.risk_state.equity_high_water_mark
         );
+        
         Ok(())
     }
 
@@ -523,52 +507,37 @@ impl RiskManager {
 
 
     /// Fetch latest prices for all held positions and update valuation
+    /// Delegates to PortfolioValuationService for valuation updates
     pub async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // 1. Get fresh portfolio snapshot
-        let snapshot = self.portfolio_state_manager.refresh().await?;
-
-        // 2. Collect symbols
-        let symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
-        if symbols.is_empty() {
-            return Ok(());
-        }
-
-        // 3. Fetch latest prices
-        match self.market_service.get_prices(symbols).await {
-            Ok(prices) => {
-                // Update our cache
-                for (sym, price) in prices {
-                    self.current_prices.insert(sym, price);
-                }
-
-                // 4. Calculate Equity with NEW prices
-                let current_equity = snapshot.portfolio.total_equity(&self.current_prices);
-
-                // 5. Update High Water Mark via State Manager
-                self.state_manager.update(current_equity, Utc::now()).await;
-                // Sync legacy copy
-                self.risk_state = self.state_manager.get_state().clone();
-
-                // 6. Check Risks (Async check)
-                // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
-                if !self.halted
-                    && let Some(reason) = self.check_circuit_breaker(current_equity) {
-                        tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
-                        self.halted = true;
-                        self.liquidate_portfolio(&reason).await;
-                    }
-
-                // 7. Capture performance snapshot if monitor available
-                if let Some(monitor) = &self.performance_monitor {
-                    for sym in self.current_prices.keys() {
-                        let _ = monitor.capture_snapshot(sym).await;
-                    }
-                }
+        // Delegate valuation to PortfolioValuationService
+        let (_portfolio, current_equity) = self.portfolio_valuation_service
+            .update_portfolio_valuation(&mut self.current_prices)
+            .await?;
+        
+        // Update volatility
+        let _ = self.portfolio_valuation_service.update_volatility().await;
+        
+        // Update High Water Mark via State Manager
+        self.state_manager.update(current_equity, Utc::now()).await;
+        // Sync legacy copy
+        self.risk_state = self.state_manager.get_state().clone();
+        
+        // Check Risks (Async check)
+        // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
+        if !self.halted
+            && let Some(reason) = self.check_circuit_breaker(current_equity) {
+                tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
+                self.halted = true;
+                self.liquidate_portfolio(&reason).await;
             }
-            Err(e) => {
-                warn!("RiskManager: Failed to update valuation prices: {}", e);
+        
+        // Capture performance snapshot if monitor available
+        if let Some(monitor) = &self.performance_monitor {
+            for sym in self.current_prices.keys() {
+                let _ = monitor.capture_snapshot(sym).await;
             }
         }
+        
         Ok(())
     }
 
@@ -616,69 +585,13 @@ impl RiskManager {
         Ok(())
     }
 
+    /// Emergency liquidation of entire portfolio
+    /// Delegates to LiquidationService for emergency liquidation logic
     async fn liquidate_portfolio(&mut self, reason: &str) {
-        // Get current portfolio snapshot
-        let snapshot = self.portfolio_state_manager.get_snapshot().await;
-
-        info!(
-            "RiskManager: EMERGENCY LIQUIDATION TRIGGERED - Reason: {}",
-            reason
-        );
-
-        for (symbol, position) in &snapshot.portfolio.positions {
-            if position.quantity > Decimal::ZERO {
-                let current_price = self
-                    .current_prices
-                    .get(symbol)
-                    .cloned()
-                    .unwrap_or(Decimal::ZERO);
-
-                // CRITICAL SAFETY: Never use unbounded Market orders during emergency
-                // Instead, use aggressive Limit orders with 2% slippage tolerance
-                // If price unavailable, skip liquidation (requires manual intervention)
-                // UPDATE (P0 Fix): If price unavailable, WE MUST LIQUIDATE BLINDLY (Panic Mode).
-                // Staying in position during a data outage/crash is riskier than slippage.
-                
-                let _price = if current_price <= Decimal::ZERO {
-                    warn!(
-                        "RiskManager: No current price for {} - EXECUTING BLIND MARKET ORDER (Panic Mode)",
-                        symbol
-                    );
-                    Decimal::ZERO
-                } else {
-                    current_price
-                };
-
-                // CRITICAL SAFETY: Use Market orders for emergency liquidation to guarantee exit.
-                // "Get me out at any price" is safer than "Get me out if price > X" in a true crash.
-
-                let order = Order {
-                    id: Uuid::new_v4().to_string(),
-                    symbol: symbol.clone(),
-                    side: OrderSide::Sell,
-                    price: Decimal::ZERO, // Market order ignores price
-                    quantity: position.quantity,
-                    order_type: OrderType::Market,
-                    timestamp: chrono::Utc::now().timestamp_millis(),
-                };
-
-                warn!(
-                    "RiskManager: Placing EMERGENCY MARKET SELL for {} (Qty: {})",
-                    symbol, position.quantity
-                );
-
-                if let Err(e) = self.order_tx.send(order).await {
-                    error!(
-                        "RiskManager: Failed to send liquidation order for {}: {}",
-                        symbol, e
-                    );
-                }
-            }
-        }
-
-        info!(
-            "RiskManager: Emergency liquidation orders placed. Trading HALTED. Manual review required."
-        );
+        // Delegate liquidation to LiquidationService
+        self.liquidation_service
+            .liquidate_portfolio(reason, &self.current_prices)
+            .await;
     }
 
     /// Check if we need to reset session stats (for 24/7 Crypto markets)

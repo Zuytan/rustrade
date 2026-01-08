@@ -1,3 +1,6 @@
+// Configuration domain (value objects)
+pub mod config;
+
 // Market analysis domain
 pub mod market;
 
