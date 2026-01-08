@@ -464,7 +464,7 @@ impl Application {
             self.performance_monitor.clone(),
             correlation_service,
             Some(self.risk_state_repository.clone()),
-        );
+        )?;
 
         let mut order_throttler = OrderThrottler::new(
             order_rx,

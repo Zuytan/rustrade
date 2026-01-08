@@ -1,5 +1,26 @@
 # Rustrade - Historique des Versions
 
+## Version 0.51.0 (Janvier 2026) - P0 Critical Fixes: Trailing Stop \u0026 Error Handling
+- **Trailing Stop Auto-Initialization (P0-A)**:
+  - **Problem**: Trailing stops were not initialized for positions that existed from previous sessions or manual trades, causing sell signal suppression logic to fail.
+  - **Solution**: Added auto-initialization logic in `Analyst` that detects existing positions without active trailing stops and initializes them using the portfolio's average entry price.
+  - **Impact**: The previously failing test `test_sell_signal_suppression` now passes. All positions are now protected by trailing stops, even after restarts.
+  - **Location**: [analyst.rs:590-618](file:///Users/zuytan/Documents/Developpement/Projets%20Perso/Rustrade/src/application/agents/analyst.rs#L590-L618)
+- **Graceful Error Handling (P0-B)**:
+  - **Problem**: `RiskManager::new()` used `panic!` for configuration validation errors, causing the entire application to crash instead of handling errors gracefully.
+  - **Solution**: 
+    - Created `RiskConfigError` enum for proper error typing
+    - Changed `RiskManager::new()` signature to return `Result<Self, RiskConfigError>`
+    - Updated `system.rs` to propagate errors using `?` operator
+    - Updated all test files (14 files total) to handle the new `Result` type
+  - **Impact**: Invalid configurations now result in clean error messages instead of application crashes. Production deployments are more resilient.
+  - **Files Modified**: `risk_manager.rs`, `system.rs`, 4 integration test files, 10 unit tests
+- **Verification**:
+  - All 170+ tests passing (100% pass rate)
+  - Previously failing `test_sell_signal_suppression` now passes
+  - No regressions introduced
+  - Clean `cargo clippy` output
+
 ## Version 0.50.0 (Janvier 2026) - P0 Critical Security Fixes
 - **Risk State Persistence ("No Amnesia")**:
   - **Problem**: Previously, restarting the bot reset the `daily_loss` counter, allowing a loophole to bypass Max Daily Loss limits.

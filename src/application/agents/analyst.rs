@@ -588,6 +588,35 @@ impl Analyst {
             context.taken_profit = false;
         }
 
+        // 3.5. Auto-initialize Trailing Stop for existing positions (P0 Fix)
+        // If we have a position but no active trailing stop, initialize it
+        // This handles cases where:
+        // - Position existed from previous session
+        // - Position was created manually
+        // - Analyst restarted after Buy but before position was closed
+        if has_position && !context.position_manager.trailing_stop.is_active() {
+            if let Some(portfolio) = portfolio_data {
+                if let Some(pos) = portfolio.positions.get(&symbol) {
+                    let entry_price = pos.average_price.to_f64().unwrap_or(price_f64);
+                    let atr = context.last_features.atr.unwrap_or(1.0);
+                    
+                    context.position_manager.trailing_stop = 
+                        crate::application::risk_management::trailing_stops::StopState::on_buy(
+                            entry_price,
+                            atr,
+                            context.config.trailing_stop_atr_multiplier,
+                        );
+                    
+                    if let Some(stop_price) = context.position_manager.trailing_stop.get_stop_price() {
+                        info!(
+                            "Analyst [{}]: Auto-initialized trailing stop (entry={:.2}, stop={:.2}, atr={:.2})",
+                            symbol, entry_price, stop_price, atr
+                        );
+                    }
+                }
+            }
+        }
+
         // 4. Check Trailing Stop (Priority Exit) via PositionManager
         let mut signal = context.position_manager.check_trailing_stop(
             &symbol,

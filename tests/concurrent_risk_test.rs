@@ -58,7 +58,8 @@ async fn test_concurrent_proposals_respect_limits() {
         None,
         None,
         None,
-    );
+    )
+    .expect("Test config should be valid");
 
     // Start RiskManager in background
     tokio::spawn(async move {
@@ -164,7 +165,8 @@ async fn test_backpressure_drops_excess_proposals() {
         None,
         None,
         None,
-    );
+    )
+    .expect("Test config should be valid");
 
     // Start RiskManager but intentionally slow it down
     tokio::spawn(async move {

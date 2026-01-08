@@ -20,6 +20,13 @@ use crate::application::risk_management::commands::RiskCommand;
 use crate::config::AssetClass;
 use crate::domain::risk::filters::correlation_filter::{CorrelationFilter, CorrelationFilterConfig};
 
+/// Error type for RiskManager configuration validation
+#[derive(Debug, thiserror::Error)]
+pub enum RiskConfigError {
+    #[error("Invalid RiskConfig: {0}")]
+    ValidationError(String),
+}
+
 /// Risk management configuration
 #[derive(Clone)]
 pub struct RiskConfig {
@@ -171,11 +178,13 @@ impl RiskManager {
         performance_monitor: Option<Arc<PerformanceMonitoringService>>,
         correlation_service: Option<Arc<CorrelationService>>,
         risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
-    ) -> Self {
-        if let Err(e) = risk_config.validate() {
-            panic!("RiskManager Configuration Error: {}", e);
-        }
-        Self {
+    ) -> Result<Self, RiskConfigError> {
+        // Validate configuration and return error instead of panicking
+        risk_config
+            .validate()
+            .map_err(RiskConfigError::ValidationError)?;
+        
+        Ok(Self {
             proposal_rx,
             external_cmd_rx,
             order_tx,
@@ -201,7 +210,7 @@ impl RiskManager {
             pending_reservations: HashMap::new(),
             current_sentiment: None,
             risk_state_repository,
-        }
+        })
     }
 
     /// Persist current risk state to database
@@ -1244,7 +1253,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
 
         // Run RiskManager in background
         tokio::spawn(async move { rm.run().await });
@@ -1325,7 +1335,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
         tokio::spawn(async move { rm.run().await });
 
         let proposal = TradeProposal {
@@ -1374,7 +1385,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
         tokio::spawn(async move { rm.run().await });
 
         let proposal = TradeProposal {
@@ -1431,7 +1443,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
         tokio::spawn(async move { rm.run().await });
 
         let proposal = TradeProposal {
@@ -1490,9 +1503,12 @@ mod tests {
             ),
         );
 
-        let mut risk_config = RiskConfig::default();
-        risk_config.max_daily_loss_pct = 0.5; // 50% max allowed
-        risk_config.max_drawdown_pct = 0.5; // 50%
+
+        let risk_config = RiskConfig {
+            max_daily_loss_pct: 0.5, // 50% max allowed
+            max_drawdown_pct: 0.5, // 50%
+            ..Default::default()
+        };
 
         let (_, dummy_cmd_rx) = mpsc::channel(1);
         let mut rm = RiskManager::new(
@@ -1508,7 +1524,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
         
         // Initialize state (this fetches initial portfolio and prices)
         rm.initialize_session().await.unwrap();
@@ -1603,7 +1620,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
         tokio::spawn(async move { rm.run().await });
 
         // Proposal: Buy MSFT (Tech) $20,000
@@ -1680,7 +1698,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
 
         tokio::spawn(async move { rm.run().await });
 
@@ -1765,7 +1784,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
 
         // Manually manipulate last_reset_date to yesterday
         let yesterday = Utc::now().date_naive() - chrono::Duration::days(1);
@@ -1807,8 +1827,10 @@ mod tests {
             ),
         );
 
-        let mut risk_config = RiskConfig::default();
-        risk_config.max_position_size_pct = 0.10; // 10% normally ($1000)
+        let risk_config = RiskConfig {
+            max_position_size_pct: 0.10, // 10% normally ($1000)
+            ..Default::default()
+        };
 
         let mut rm = RiskManager::new(
             proposal_rx,
@@ -1823,7 +1845,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
         tokio::spawn(async move { rm.run().await });
 
         // 1. Inject Sentiment: Extreme Fear (20)
@@ -1897,8 +1920,10 @@ mod tests {
         let (risk_cmd_tx, risk_cmd_rx) = mpsc::channel(1);
         let (order_tx, mut order_rx) = mpsc::channel(1);
 
-        let mut risk_config = RiskConfig::default();
-        risk_config.max_daily_loss_pct = 0.5;
+        let risk_config = RiskConfig {
+            max_daily_loss_pct: 0.5,
+            ..Default::default()
+        };
 
         // Portfolio has 10 BTC
         {
@@ -1931,7 +1956,8 @@ mod tests {
             None,
             None,
             None,
-        );
+        )
+        .expect("Test config should be valid");
         tokio::spawn(async move { rm.run().await });
 
         // 2. Trigger Liquidation (with 0 price)

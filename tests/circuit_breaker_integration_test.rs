@@ -67,7 +67,8 @@ async fn test_circuit_breaker_triggers_on_crash() {
         None,
         None,
         None,
-    );
+    )
+    .expect("Test config should be valid");
 
     // Run RiskManager in background
     tokio::spawn(async move {

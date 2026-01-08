@@ -67,7 +67,8 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         None,
         None,
         None,
-    );
+    )
+    .expect("Test config should be valid");
 
     // Start RiskManager
     tokio::spawn(async move {
@@ -189,7 +190,8 @@ async fn test_pending_order_ttl_cleanup() {
         None,
         None,
         None,
-    );
+    )
+    .expect("Test config should be valid");
 
     // Start RiskManager
     tokio::spawn(async move {

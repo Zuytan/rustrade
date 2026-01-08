@@ -41,7 +41,8 @@ async fn test_pdt_protection_boundary() {
         None,
         None,
         None,
-    );
+    )
+    .expect("Test config should be valid");
 
     tokio::spawn(async move {
         risk_manager.run().await;
@@ -127,7 +128,8 @@ async fn test_max_daily_loss_prevents_trading() {
         None,
         None,
         None,
-    );
+    )
+    .expect("Test config should be valid");
 
     tokio::spawn(async move {
         risk_manager.run().await;
@@ -192,7 +194,8 @@ async fn test_circuit_breaker_on_drawdown() {
         None,
         None,
         None,
-    );
+    )
+    .expect("Test config should be valid");
     
      tokio::spawn(async move {
         risk_manager.run().await;
