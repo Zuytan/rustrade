@@ -506,7 +506,7 @@ impl Application {
         tokio::spawn(async move { executor.run().await });
 
         // Spawn Listener Agent
-        let listener_proposal_tx = proposal_tx.clone();
+        let listener_analyst_tx = analyst_cmd_tx.clone();
         tokio::spawn(async move {
             info!("Starting Listener Agent...");
             // Hardcoded configuration for now as per plan
@@ -517,14 +517,14 @@ impl Application {
                         id: "elon-doge".to_string(),
                         keywords: vec!["Elon Musk".to_string(), "Dogecoin".to_string()],
                         target_symbol: "DOGE/USD".to_string(),
-                        action: ListenerAction::BuyImmediate,
+                        action: ListenerAction::NotifyAnalyst(crate::domain::listener::NewsSentiment::Bullish),
                         active: true,
                     },
                     ListenerRule {
                         id: "sec-lawsuit".to_string(),
                         keywords: vec!["SEC".to_string(), "Lawsuit".to_string(), "Binance".to_string()],
                         target_symbol: "BNB/USD".to_string(), // Assuming Binance Coin or broad market selloff
-                        action: ListenerAction::SellImmediate,
+                        action: ListenerAction::NotifyAnalyst(crate::domain::listener::NewsSentiment::Bearish),
                         active: true,
                     },
                 ],
@@ -540,7 +540,7 @@ impl Application {
                 Arc::new(MockNewsService::new())
             };
 
-            let listener = ListenerAgent::new(news_service, config, listener_proposal_tx);
+            let listener = ListenerAgent::new(news_service, config, listener_analyst_tx);
             listener.run().await;
         });
 

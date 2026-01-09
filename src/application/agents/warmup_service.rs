@@ -230,7 +230,7 @@ mod tests {
         let default_config = super::super::analyst::AnalystConfig::default();
         let default_strategy = StrategyFactory::create(StrategyMode::Advanced, &default_config);
 
-        let (strategy, config) = service
+        let (_strategy, config) = service
             .resolve_strategy("BTC/USD", default_strategy.clone(), &default_config)
             .await;
 

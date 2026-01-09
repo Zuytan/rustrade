@@ -154,6 +154,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Should approve because equity > $25k (not subject to PDT)
@@ -181,6 +182,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Should approve because day_trades_count < 3
@@ -208,6 +210,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Should reject BUY when PDT saturated
@@ -247,6 +250,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Should reject SELL that completes a day trade
@@ -277,6 +281,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Should approve SELL if no position exists (can't be a day trade)
@@ -307,6 +312,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Should approve because PDT protection is disabled
@@ -337,6 +343,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Should approve because Crypto is not subject to PDT rules

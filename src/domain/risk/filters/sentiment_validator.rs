@@ -105,7 +105,7 @@ mod tests {
         sentiment: Option<&'a Sentiment>,
         prices: &'a HashMap<String, Decimal>,
     ) -> ValidationContext<'a> {
-        ValidationContext::new(proposal, portfolio, dec!(100000), prices, risk_state, sentiment, None, None)
+        ValidationContext::new(proposal, portfolio, dec!(100000), prices, risk_state, sentiment, None, None, Decimal::ZERO)
     }
 
     #[tokio::test]

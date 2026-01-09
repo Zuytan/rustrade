@@ -360,6 +360,10 @@ impl RiskManager {
             self.risk_state.daily_start_equity, 
             self.risk_state.equity_high_water_mark
         );
+
+        // SYNC Fix: Ensure state_manager is also updated with the initialized state
+        // otherwise update_portfolio_valuation will overwrite self.risk_state with empty state
+        *self.state_manager.get_state_mut() = self.risk_state.clone();
         
         Ok(())
     }
@@ -820,6 +824,10 @@ impl RiskManager {
             Some(vm.calculate_multiplier(vm.get_average_volatility()))
         };
 
+        let pending_exposure = self.pending_orders.values()
+            .filter(|p| p.symbol == proposal.symbol && p.side == OrderSide::Buy)
+            .fold(Decimal::ZERO, |acc, p| acc + (p.requested_qty * p.entry_price));
+
         let ctx = ValidationContext::new(
             &proposal,
             &snapshot.portfolio,
@@ -829,6 +837,7 @@ impl RiskManager {
             self.current_sentiment.as_ref(),
             correlation_matrix.as_ref(), // Pass pre-calculated matrix
             volatility_multiplier,
+            pending_exposure,
         );
 
         // Execute Pipeline

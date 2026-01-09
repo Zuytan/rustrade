@@ -15,6 +15,12 @@ impl MockNewsService {
     }
 }
 
+impl Default for MockNewsService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl NewsDataService for MockNewsService {
     async fn subscribe_news(&self) -> Result<Receiver<NewsEvent>> {

@@ -1,29 +1,27 @@
 use anyhow::{Context, Result};
-use rust_decimal::Decimal;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use crate::domain::listener::{ListenerConfig, ListenerRule, NewsEvent, ListenerAction};
 use crate::domain::ports::NewsDataService;
-use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 
 pub struct ListenerAgent {
     news_service: Arc<dyn NewsDataService>,
     config: ListenerConfig,
-    proposal_tx: mpsc::Sender<TradeProposal>,
+    analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
 }
 
 impl ListenerAgent {
     pub fn new(
         news_service: Arc<dyn NewsDataService>,
         config: ListenerConfig,
-        proposal_tx: mpsc::Sender<TradeProposal>,
+        analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
     ) -> Self {
         Self {
             news_service,
             config,
-            proposal_tx,
+            analyst_cmd_tx,
         }
     }
 
@@ -62,44 +60,26 @@ impl ListenerAgent {
     }
 
     async fn trigger_action(&self, rule: &ListenerRule, event: &NewsEvent) -> Result<()> {
-        let side = match rule.action {
-            ListenerAction::BuyImmediate => OrderSide::Buy,
-            ListenerAction::SellImmediate => OrderSide::Sell,
+        let sentiment = match rule.action {
+            ListenerAction::NotifyAnalyst(s) => s,
+            // Map legacy actions to sentiment
+            ListenerAction::BuyImmediate => crate::domain::listener::NewsSentiment::Bullish,
+            ListenerAction::SellImmediate => crate::domain::listener::NewsSentiment::Bearish,
         };
 
-        // For now, we propose a Market order.
-        // Quantity and exact price handling would ideally be dynamic or come from a smarter sizing logic.
-        // Here we put a placeholder quantity, expecting RiskManager to validate/sizing or reject.
-        // BUT: RiskManager expects a quantity. 
-        // Let's use a "unit" quantity or a minimal viable amount, 
-        // OR we can make the Proposal accept a "Notional" amount if we supported it.
-        // Since we don't know the price yet (unless we fetch it), we might need to send a proposal 
-        // that indicates "Buy as much as possible" or "Buy fixed amount".
-        // 
-        // Strategy: 
-        // 1. We don't have price here. Market Scanner has prices.
-        // 2. We can send a Market order with a "0" price (standard for market orders usually) 
-        //    but Quantity is tricky without price.
-        //
-        // SIMPLIFICATION:
-        // We will infer a "standard" trade size from config if we had access to it, 
-        // or just put 1.0 and assume RiskManager/Executor might fix it or we accept 1 unit for now.
-        // Better: ListenerAgent should probably have access to current prices or just make a best effort.
-        
-        let proposal = TradeProposal {
-            symbol: rule.target_symbol.clone(),
-            side,
-            price: Decimal::ZERO, // Market order
-            quantity: Decimal::new(100, 0), // Placeholder: 100 units (e.g. 100 Doge). 
-                                            // TODO: Make this configurable in ListenerRule or calculate based on % equity.
-            order_type: OrderType::Market,
-            reason: format!("Listener Trigger: {} (News: {})", rule.id, event.title),
-            timestamp: chrono::Utc::now().timestamp(),
+        let signal = crate::domain::listener::NewsSignal {
+             symbol: rule.target_symbol.clone(),
+             sentiment,
+             headline: event.title.clone(),
+             source: event.source.clone(),
+             url: event.url.clone(),
         };
 
-        info!("Generating Trade Proposal based on news: {:?}", proposal);
+        info!("Listener: Sending News Signal to Analyst: {:?} for {}", signal.sentiment, signal.symbol);
 
-        self.proposal_tx.send(proposal).await.context("Failed to send trade proposal")?;
+        self.analyst_cmd_tx.send(crate::application::agents::analyst::AnalystCommand::ProcessNews(signal))
+            .await
+            .context("Failed to send news signal to analyst")?;
 
         Ok(())
     }
@@ -126,7 +106,7 @@ mod tests {
     #[tokio::test]
     async fn test_listener_agent_matches_and_proposes() {
         let (news_tx, news_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
+        let (analyst_cmd_tx, mut analyst_cmd_rx) = mpsc::channel(10);
 
         let news_service = Arc::new(TestNewsService {
             rx: tokio::sync::Mutex::new(Some(news_rx)),
@@ -138,12 +118,12 @@ mod tests {
                 id: "test-rule".to_string(),
                 keywords: vec!["Buy".to_string(), "Now".to_string()],
                 target_symbol: "TEST/USD".to_string(),
-                action: ListenerAction::BuyImmediate,
+                action: ListenerAction::NotifyAnalyst(crate::domain::listener::NewsSentiment::Bullish),
                 active: true,
             }],
         };
 
-        let agent = ListenerAgent::new(news_service, config, proposal_tx);
+        let agent = ListenerAgent::new(news_service, config, analyst_cmd_tx);
 
         // Spawn agent
         tokio::spawn(async move {
@@ -162,11 +142,15 @@ mod tests {
         };
         news_tx.send(event).await.unwrap();
 
-        // Check proposal
-        let proposal = proposal_rx.recv().await;
-        assert!(proposal.is_some());
-        let p = proposal.unwrap();
-        assert_eq!(p.symbol, "TEST/USD");
-        assert_eq!(p.side, OrderSide::Buy);
+        // Check command
+        let cmd = analyst_cmd_rx.recv().await;
+        assert!(cmd.is_some());
+        match cmd.unwrap() {
+            crate::application::agents::analyst::AnalystCommand::ProcessNews(signal) => {
+                 assert_eq!(signal.symbol, "TEST/USD");
+                 assert_eq!(signal.sentiment, crate::domain::listener::NewsSentiment::Bullish);
+            }
+            _ => panic!("Expected ProcessNews command"),
+        }
     }
 }

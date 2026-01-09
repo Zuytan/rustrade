@@ -42,6 +42,14 @@ impl PendingOrdersTracker {
         self.pending_orders.values().any(|o| o.symbol == symbol)
     }
 
+    /// Calculate total pending exposure (approximate) for a symbol from BUY orders
+    pub fn calculate_pending_exposure(&self, symbol: &str) -> rust_decimal::Decimal {
+        self.pending_orders
+            .values()
+            .filter(|o| o.symbol == symbol && o.side == crate::domain::trading::types::OrderSide::Buy)
+            .fold(rust_decimal::Decimal::ZERO, |acc, o| acc + (o.quantity * o.price))
+    }
+
     /// Clean up stale pending orders (timeouts)
     /// Returns list of expired order IDs
     pub fn cleanup_stale_orders(&mut self, timeout_seconds: i64) -> Vec<String> {

@@ -29,7 +29,12 @@ pub struct TradeCost {
 /// use rustrade::domain::trading::types::{TradeProposal, OrderSide, OrderType};
 /// use rust_decimal::Decimal;
 ///
-/// let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+/// use rust_decimal::prelude::FromPrimitive;
+/// use std::sync::Arc;
+/// use rustrade::domain::trading::fee_model::ConstantFeeModel;
+///
+/// let fee_model = Arc::new(ConstantFeeModel::new(Decimal::from_f64(0.005).unwrap(), Decimal::from_f64(0.001).unwrap()));
+/// let evaluator = CostEvaluator::new(fee_model, 5.0);
 /// let proposal = TradeProposal {
 ///     symbol: "AAPL".to_string(),
 ///     side: OrderSide::Buy,
@@ -180,7 +185,12 @@ impl CostEvaluator {
     /// use rustrade::domain::trading::types::{TradeProposal, OrderSide, OrderType};
     /// use rust_decimal::Decimal;
     ///
-    /// let evaluator = CostEvaluator::new(0.005, 0.001, 5.0);
+    /// use rust_decimal::prelude::FromPrimitive;
+    /// use std::sync::Arc;
+    /// use rustrade::domain::trading::fee_model::ConstantFeeModel;
+    ///
+    /// let fee_model = Arc::new(ConstantFeeModel::new(Decimal::from_f64(0.005).unwrap(), Decimal::from_f64(0.001).unwrap()));
+    /// let evaluator = CostEvaluator::new(fee_model, 5.0);
     /// let proposal = TradeProposal {
     ///     symbol: "AAPL".to_string(),
     ///     side: OrderSide::Buy,

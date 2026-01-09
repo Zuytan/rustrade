@@ -185,7 +185,7 @@ mod tests {
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal,  &portfolio, dec!(10000), &prices, &risk_state, None, None, None);
+        let ctx = ValidationContext::new(&proposal,  &portfolio, dec!(10000), &prices, &risk_state, None, None, None, Decimal::ZERO);
 
         // Without provider, sector is "Unknown", so approves
         let result = validator.validate(&ctx).await;
@@ -208,7 +208,7 @@ mod tests {
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None, None);
+        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None, None, Decimal::ZERO);
 
         // Exposure: $1000/$10000 = 10% (Limit 20%) -> Approve
         let result = validator.validate(&ctx).await;
@@ -235,7 +235,7 @@ mod tests {
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(5000), &prices, &risk_state, None, None, None);
+        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(5000), &prices, &risk_state, None, None, None, Decimal::ZERO);
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
@@ -268,7 +268,7 @@ mod tests {
         prices.insert("MSFT".to_string(), dec!(100)); // Current price matches cost
 
         let risk_state = RiskState::default();
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None, None);
+        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None, None, Decimal::ZERO);
 
         // Current Sector Exp: $2500 (MSFT)
         // New Trade: $1000 (AAPL)

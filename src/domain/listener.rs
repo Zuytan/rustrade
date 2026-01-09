@@ -13,10 +13,27 @@ pub struct NewsEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NewsSentiment {
+    Bullish,
+    Bearish,
+    Neutral,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewsSignal {
+    pub symbol: String,
+    pub sentiment: NewsSentiment,
+    pub headline: String,
+    pub source: String,
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ListenerAction {
+    NotifyAnalyst(NewsSentiment), // New action type
+    // Deprecated for now, or keep for backward compat until full migration
     BuyImmediate,
     SellImmediate,
-    // Future: AddToWatchlist, AdjustRisk, etc.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

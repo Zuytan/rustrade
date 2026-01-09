@@ -85,9 +85,12 @@ impl RiskValidator for PositionSizeValidator {
         }
 
         // Calculate total exposure after this trade
+        // Total = Existing Position (Mark-to-Market) + Pending Orders (at Entry) + New Proposal
         let current_position_qty = ctx.get_current_position_qty();
-        let total_qty = current_position_qty + ctx.proposal.quantity;
-        let total_exposure = total_qty * ctx.proposal.price;
+        let existing_exposure = current_position_qty * ctx.proposal.price;
+        let proposal_exposure = ctx.proposal.quantity * ctx.proposal.price;
+        
+        let total_exposure = existing_exposure + ctx.symbol_pending_exposure + proposal_exposure;
 
         // Calculate adjusted limit based on sentiment
         let adjusted_max_pct = self.calculate_adjusted_limit(ctx, ctx.proposal.side);
@@ -155,6 +158,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Exposure: 0.1 * $50k = $5k = 5% of equity (well under 25% limit)
@@ -182,6 +186,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Exposure: 1.0 * $50k = $50k = 50% of equity (exceeds 10% limit)
@@ -209,6 +214,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Sell orders should always be approved (they reduce exposure)
@@ -244,6 +250,7 @@ mod tests {
             Some(&sentiment),
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Exposure: 0.25 * $50k = $12.5k = 12.5% of equity
@@ -282,6 +289,7 @@ mod tests {
             Some(&sentiment),
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Exposure: 0.3 * $50k = $15k = 15% of equity
@@ -321,6 +329,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Total position: 0.1 (existing) + 0.1 (new) = 0.2 BTC
@@ -360,6 +369,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         // Total position: 0.1 (existing) + 0.15 (new) = 0.25 BTC

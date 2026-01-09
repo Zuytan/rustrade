@@ -51,18 +51,24 @@ impl NewsDataService for RssNewsService {
             // A common pattern is to fetch once to fill the cache, then fetch loop.
             
             // Let's populate seen_guids first to avoid flooding on restart
-            if let Ok(content) = client.get(&url).send().await {
-               if let Ok(bytes) = content.bytes().await {
-                   if let Ok(channel) = Channel::read_from(Cursor::new(bytes)) {
-                       let mut guids = seen_guids.lock().await;
-                       for item in channel.items() {
-                           if let Some(guid) = item.guid() {
-                               guids.insert(guid.value.to_string());
-                           }
-                       }
-                       info!("Initialized RSS Poller: Marked {} items as seen.", guids.len());
-                   }
-               }
+            // Let's populate seen_guids first to avoid flooding on restart
+            let fetch_result = async {
+                let content = client.get(&url).send().await?;
+                let bytes = content.bytes().await?;
+                match Channel::read_from(Cursor::new(bytes)) {
+                    Ok(c) => Ok(c),
+                    Err(e) => Err(anyhow::anyhow!(e)),
+                }
+            }.await;
+
+            if let Ok(channel) = fetch_result {
+                let mut guids = seen_guids.lock().await;
+                for item in channel.items() {
+                    if let Some(guid) = item.guid() {
+                        guids.insert(guid.value.to_string());
+                    }
+                }
+                info!("Initialized RSS Poller: Marked {} items as seen.", guids.len());
             }
 
             loop {

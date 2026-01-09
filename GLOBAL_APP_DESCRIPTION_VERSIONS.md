@@ -1,5 +1,13 @@
 # Rustrade - Historique des Versions
 
+## Version 0.58.1 (Janvier 2026) - Concurrency Hotfix & Cleanup
+- **Critical Fix**: Resolved race condition in `RiskManager` where concurrent proposals could bypass position limits.
+- **Improvements**:
+  - Implemented `Default` for `MockNewsService`.
+  - Refactored nested control flow in `Analyst` and `RssNewsService` to reduce complexity.
+  - Bumped version to 0.58.1.
+- **Verification**: `test_concurrent_proposals_respect_limits` passing.
+
 ## Version 0.58.0 (Janvier 2026) - Listener Agent (New)
 - **Problem**: Technical indicators (SMA, RSI) are lagging; market often moves on news before charts update.
 - **Solution**: Implemented `ListenerAgent` to monitor news sources and trigger immediate trade proposals based on keywords.
@@ -7,10 +15,14 @@
   - **NewsDataService**: Abstraction for news ingestion (extensible for Twitter, CryptoPanic).
   - **MockNewsService**: Simulation of news events (e.g., "Elon Musk Tweet", "SEC Lawsuit") for testing.
   - **ListenerAgent**: Processes news stream, matches against `ListenerRule`s, creates `TradeProposal`s.
-  - **Integration**: Spawns alongside Analyst and Scanner in `system.rs`.
+- **Integration**: Spawns alongside Analyst and Scanner in `system.rs`.
+- **Intelligent Analysis**:
+  - **Bullish News**: Validated against SMA50 (Trend) and RSI (Overbought) before buying.
+  - **Bearish News**: Checks PnL. Tightens stop if profitable (>5%), or panic sells if losing.
 - **Verification**:
   - Unit tests verifying keyword matching and proposal generation.
   - Validated flow from Mock Service -> Agent -> Proposal Channel.
+  - Verified intelligent filtering logic in `Analyst`.
 
 ## Version 0.57.0 (Janvier 2026) - DDD Refactoring: Analyst Decomposition (Phase 4) & Risks (Phases 1-2)
 - **Phase 1: Domain Config Value Objects** ✅:

@@ -139,6 +139,7 @@ mod tests {
              current_sentiment: None,
              correlation_matrix: None,
              volatility_multiplier: None,
+             symbol_pending_exposure: rust_decimal::Decimal::ZERO,
         }
     }
     

@@ -14,14 +14,17 @@
 //! # Example
 //!
 //! ```rust,no_run
+//! use rustrade::application::market_data::spread_cache::SpreadCache;
 //! use rustrade::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
+//! use std::sync::Arc;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let api_key = "key".to_string();
 //! let api_secret = "secret".to_string();
 //! let ws_url = "wss://example.com".to_string();
+//! let spread_cache = Arc::new(SpreadCache::new());
 //!
-//! let manager = AlpacaWebSocketManager::new(api_key, api_secret, ws_url);
+//! let manager = AlpacaWebSocketManager::new(api_key, api_secret, ws_url, spread_cache);
 //!
 //! // Subscribe to events
 //! let mut rx = manager.subscribe();

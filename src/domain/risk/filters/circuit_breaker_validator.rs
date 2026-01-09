@@ -169,6 +169,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         let result = validator.validate(&ctx).await;
@@ -199,6 +200,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         let result = validator.validate(&ctx).await;
@@ -231,6 +233,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         let result = validator.validate(&ctx).await;
@@ -264,6 +267,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         let result = validator.validate(&ctx).await;
@@ -298,6 +302,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         let result = validator.validate(&ctx).await;
@@ -326,6 +331,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         let result = validator.validate(&ctx).await;
@@ -358,6 +364,7 @@ mod tests {
             None,
             None,
             None,
+            Decimal::ZERO,
         );
 
         let result = validator.validate(&ctx).await;

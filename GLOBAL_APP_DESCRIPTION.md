@@ -49,6 +49,9 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - **Lagging Indicator Solution**: Reacts to news (Elon Musk tweets, SEC lawsuits) before price moves.
   - **Architecture**: `ListenerAgent` consumes `NewsDataService` streams and outputs `TradeProposal`s.
   - **Mock Integration**: Includes `MockNewsService` for verifying the flow.
+  - **Intelligent Processing**:
+    - **Bullish**: Buys only if Price > SMA50 (Trend) AND RSI < 75 (Not Overbought).
+    - **Bearish**: Checks PnL. Tightens stops if green, panic sells if red.
 
 
 ## Version 0.55.0

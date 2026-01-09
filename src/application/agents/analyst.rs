@@ -28,6 +28,7 @@ use crate::domain::trading::symbol_context::SymbolContext;
 #[derive(Debug)]
 pub enum AnalystCommand {
     UpdateConfig(Box<AnalystConfig>),
+    ProcessNews(crate::domain::listener::NewsSignal),
 }
 
 
@@ -351,6 +352,11 @@ impl Analyst {
                                      context.feature_service = Box::new(crate::application::monitoring::feature_engineering_service::TechnicalFeatureEngineeringService::new(&self.config));
                                 }
                             }
+                        }
+                        AnalystCommand::ProcessNews(signal) => {
+                            info!("Analyst: Received News Signal for {}: {:?} - {}", signal.symbol, signal.sentiment, signal.headline);
+                            // Process valid signals
+                            self.handle_news_signal(signal).await;
                         }
                     }
                 }
@@ -788,6 +794,120 @@ impl Analyst {
             self.warmup_service.warmup_context(&mut context, symbol, end_time).await;
 
             self.symbol_states.insert(symbol.to_string(), context);
+        }
+    }
+    async fn handle_news_signal(&mut self, signal: crate::domain::listener::NewsSignal) {
+        // Ensure context exists
+        let timestamp = chrono::Utc::now();
+        self.ensure_symbol_initialized(&signal.symbol, timestamp).await;
+        
+        let context = match self.symbol_states.get_mut(&signal.symbol) {
+             Some(ctx) => ctx,
+             None => {
+                 warn!("Analyst: Could not initialize context for {}. Ignoring news.", signal.symbol);
+                 return;
+             }
+        };
+
+        // Get latest price
+        let price = context.candle_history.back().map(|c| c.close).unwrap_or(Decimal::ZERO);
+        let price_f64 = price.to_f64().unwrap_or(0.0);
+
+        if price == Decimal::ZERO {
+            warn!("Analyst: No price data for {}. Cannot process news.", signal.symbol);
+            return;
+        }
+
+        match signal.sentiment {
+            crate::domain::listener::NewsSentiment::Bullish => {
+                // Feature Extraction for Intelligence
+                let sma_50 = context.last_features.sma_50.unwrap_or(0.0);
+                let rsi = context.last_features.rsi.unwrap_or(50.0);
+                
+                info!("Analyst: Analyzing BULLISH news for {}. Price: {}, SMA50: {}, RSI: {}", 
+                      signal.symbol, price_f64, sma_50, rsi);
+
+                // 1. Trend Filter: Avoid buying falling knives
+                if price_f64 < sma_50 {
+                    warn!("Analyst: REJECTED Bullish News for {}. Price below SMA50 (Bearish Trend).", signal.symbol);
+                    return;
+                }
+
+                // 2. Overbought Filter: Avoid FOMO
+                if rsi > 75.0 {
+                    warn!("Analyst: REJECTED Bullish News for {}. RSI {} indicates Overbought.", signal.symbol, rsi);
+                    return;
+                }
+
+                // 3. Construct Proposal
+                let reason = format!("News (Trend Correct & RSI OK): {}", signal.headline);
+                if let Some(mut proposal) = super::signal_processor::SignalProcessor::build_proposal(
+                    &self.config,
+                    &self.execution_service,
+                    signal.symbol.clone(),
+                    OrderSide::Buy,
+                    price,
+                    timestamp.timestamp() * 1000,
+                    reason,
+                ).await {
+                    proposal.order_type = crate::domain::trading::types::OrderType::Market;
+                    info!("Analyst: Proposing BUY based on Validated News: {}", signal.headline);
+                    if let Err(e) = self.proposal_tx.send(proposal).await {
+                        error!("Failed to send news proposal: {}", e);
+                    }
+                }
+            },
+            crate::domain::listener::NewsSentiment::Bearish => {
+                 // Check if we hold it.
+                 if let Ok(portfolio) = self.execution_service.get_portfolio().await {
+                     if let Some(pos) = portfolio.positions.get(&signal.symbol).filter(|p| p.quantity > Decimal::ZERO) {
+                             let avg_price = pos.average_price.to_f64().unwrap_or(price_f64);
+                             let pnl_pct = (price_f64 - avg_price) / avg_price;
+
+                             info!("Analyst: Processing BEARISH news for {}. PnL: {:.2}%", signal.symbol, pnl_pct * 100.0);
+
+                             if pnl_pct > 0.05 {
+                                 // SCENARIO 1: Profitable Position -> Tighten Stop to Protect Gains
+                                 // Tighten to 0.5% below current price
+                                 let atr = context.last_features.atr.unwrap_or(price_f64 * 0.01);
+                                 // 0.5% gap approx
+                                 let tight_multiplier = (price_f64 * 0.005) / atr; 
+                                 
+                                 // Manually update StopState
+                                 if let crate::application::risk_management::trailing_stops::StopState::ActiveStop { stop_price, .. } = &mut context.position_manager.trailing_stop {
+                                     let new_stop = price_f64 - (atr * tight_multiplier.max(0.5)); // Ensure valid mult
+                                     if new_stop > *stop_price {
+                                         *stop_price = new_stop;
+                                         info!("Analyst: News TIGHTENED Trailing Stop for {} to {:.2} (Locking Gains)", signal.symbol, new_stop);
+                                     }
+                                 } else {
+                                     // Create new tight stop
+                                     context.position_manager.trailing_stop = 
+                                        crate::application::risk_management::trailing_stops::StopState::on_buy(price_f64, atr, tight_multiplier.max(0.5));
+                                     info!("Analyst: News CREATED Tight Trailing Stop for {}", signal.symbol);
+                                 }
+                             } else {
+                                 // SCENARIO 2: Losing or Flat Position -> Panic Sell / Damage Control
+                                 info!("Analyst: News Triggering PANIC SELL for {} to limit potential loss.", signal.symbol);
+                                 
+                                 let proposal = TradeProposal {
+                                     symbol: signal.symbol.clone(),
+                                     side: OrderSide::Sell,
+                                     price: Decimal::ZERO, 
+                                     quantity: pos.quantity, // Sell ALL
+                                     order_type: crate::domain::trading::types::OrderType::Market,
+                                     reason: format!("News Panic Sell (PnL: {:.2}%): {}", pnl_pct * 100.0, signal.headline),
+                                     timestamp: timestamp.timestamp(),
+                                 };
+                                 
+                                 if let Err(e) = self.proposal_tx.send(proposal).await {
+                                     error!("Failed to send panic sell proposal: {}", e);
+                                 }
+                             }
+                     }
+                 }
+            },
+            _ => {}
         }
     }
 }
@@ -1777,5 +1897,96 @@ mod tests {
             "Quantity should be reasonable (was {})",
             proposal.quantity
         );
+    }
+
+    #[tokio::test]
+    async fn test_news_intelligence_filters() {
+        setup_logging();
+        let (_market_tx, _market_rx) = mpsc::channel(10);
+        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
+        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
+
+        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
+        portfolio.cash = Decimal::from(100000);
+        let portfolio_lock = Arc::new(RwLock::new(portfolio));
+        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
+            portfolio_lock,
+        ));
+        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
+
+        let config = AnalystConfig::default();
+        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(10, 20, 0.0));
+        
+        let deps = AnalystDependencies {
+             execution_service: exec_service,
+             market_service: market_service,
+             candle_repository: None,
+             strategy_repository: None,
+             win_rate_provider: None,
+             ui_candle_tx: None,
+             spread_cache: Arc::new(SpreadCache::new()),
+        };
+
+        let mut analyst = Analyst::new(
+            _market_rx,
+            cmd_rx,
+            proposal_tx,
+            config,
+            strategy,
+            deps,
+        );
+
+        analyst.ensure_symbol_initialized("BTC/USD", chrono::Utc::now()).await;
+
+        {
+             let context = analyst.symbol_states.get_mut("BTC/USD").unwrap();
+             // Scenario 1: Bullish OK (Price > SMA)
+             context.last_features.sma_50 = Some(40000.0);
+             context.last_features.rsi = Some(50.0);
+             let candle = Candle {
+                 symbol: "BTC/USD".to_string(),
+                 open: Decimal::from(50000),
+                 high: Decimal::from(50000),
+                 low: Decimal::from(50000),
+                 close: Decimal::from(50000),
+                 volume: 100.0,
+                 timestamp: 1000,
+             };
+             context.candle_history.push_back(candle);
+        }
+
+        // Send Bullish Signal
+        let signal = crate::domain::listener::NewsSignal {
+             symbol: "BTC/USD".to_string(),
+             sentiment: crate::domain::listener::NewsSentiment::Bullish,
+             headline: "Moon".to_string(),
+             source: "Twitter".to_string(),
+             url: Some("".to_string()),
+        };
+        
+        analyst.handle_news_signal(signal.clone()).await;
+
+        let proposal = proposal_rx.try_recv().expect("Should have generated proposal for Bullish+Technical OK");
+        assert_eq!(proposal.side, OrderSide::Buy);
+        
+        {
+             let context = analyst.symbol_states.get_mut("BTC/USD").unwrap();
+             // Scenario 2: Bullish REJECTED (Price < SMA)
+             context.last_features.sma_50 = Some(40000.0);
+             context.candle_history.back_mut().unwrap().close = Decimal::from(30000);
+        }
+
+        analyst.handle_news_signal(signal.clone()).await;
+        assert!(proposal_rx.try_recv().is_err(), "Should NOT generate proposal in bearish trend");
+
+        {
+             let context = analyst.symbol_states.get_mut("BTC/USD").unwrap();
+             // Scenario 3: Bullish REJECTED (RSI > 75)
+             context.last_features.sma_50 = Some(20000.0);
+             context.last_features.rsi = Some(80.0);
+             context.candle_history.back_mut().unwrap().close = Decimal::from(30000);
+        }
+        analyst.handle_news_signal(signal.clone()).await;
+        assert!(proposal_rx.try_recv().is_err(), "Should NOT generate proposal when RSI > 75");
     }
 }

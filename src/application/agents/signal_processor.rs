@@ -188,6 +188,7 @@ mod tests {
         SymbolContext::new(config, strategy, win_rate_provider, timeframes)
     }
 
+    #[allow(dead_code)]
     fn create_test_candle(symbol: &str, price: f64) -> Candle {
         Candle {
             symbol: symbol.to_string(),

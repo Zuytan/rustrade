@@ -65,6 +65,9 @@ pub struct ValidationContext<'a> {
     
     /// Current volatility multiplier (if available, e.g. from VolatilityManager)
     pub volatility_multiplier: Option<f64>,
+
+    /// Exposure from pending orders for the proposal's symbol
+    pub symbol_pending_exposure: Decimal,
 }
 
 impl<'a> ValidationContext<'a> {
@@ -79,6 +82,7 @@ impl<'a> ValidationContext<'a> {
         current_sentiment: Option<&'a Sentiment>,
         correlation_matrix: Option<&'a HashMap<(String, String), f64>>,
         volatility_multiplier: Option<f64>,
+        symbol_pending_exposure: Decimal,
     ) -> Self {
         Self {
             proposal,
@@ -89,6 +93,7 @@ impl<'a> ValidationContext<'a> {
             current_sentiment,
             correlation_matrix,
             volatility_multiplier,
+            symbol_pending_exposure,
         }
     }
 
@@ -206,6 +211,7 @@ mod tests {
             None,
             None,
             None,
+            rust_decimal::Decimal::ZERO,
         );
 
         // Should return current market price, not proposal price
@@ -239,6 +245,7 @@ mod tests {
             None,
             None,
             None,
+            rust_decimal::Decimal::ZERO,
         );
 
         assert_eq!(ctx.calculate_proposal_exposure(), dec!(100000));
