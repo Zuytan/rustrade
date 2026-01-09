@@ -14,6 +14,7 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Dynamic volatility-based position sizing (ATR-based multiplier).
   - Correlation filters to prevent over-exposure.
   - Sector exposure limits.
+  - **Buying Power Validation**: Ensures trades are affordable using available cash, accounting for reserved funds.
 - **Data Pipeline**:
   - Real-time market data streaming (Polygon/Alpaca/Mock).
   - Historical data warmup for indicators.

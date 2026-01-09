@@ -20,6 +20,7 @@ use crate::domain::risk::filters::{
     sector_exposure_validator::{SectorExposureValidator, SectorExposureConfig},
     sentiment_validator::{SentimentValidator, SentimentConfig},
     correlation_filter::{CorrelationFilter, CorrelationFilterConfig},
+    buying_power_validator::{BuyingPowerValidator, BuyingPowerConfig},
 };
 use crate::domain::risk::volatility_manager::{VolatilityConfig, VolatilityManager}; // Added
 use chrono::Utc;
@@ -246,6 +247,9 @@ impl RiskManager {
 
             // 6. Optimization: Sentiment
             Box::new(SentimentValidator::new(SentimentConfig::default())),
+
+            // 7. Affordability: Buying Power (Available Cash)
+            Box::new(BuyingPowerValidator::new(BuyingPowerConfig::default())),
         ];
 
         let validation_pipeline = RiskValidationPipeline::new(validators);
@@ -838,6 +842,7 @@ impl RiskManager {
             correlation_matrix.as_ref(), // Pass pre-calculated matrix
             volatility_multiplier,
             pending_exposure,
+            snapshot.available_cash(),
         );
 
         // Execute Pipeline
@@ -1282,6 +1287,83 @@ mod tests {
         // Give it a moment to process (or fail to process)
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         assert!(order_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_buy_rejection_insufficient_buying_power_high_equity() {
+        let (proposal_tx, proposal_rx) = mpsc::channel(1);
+        let (order_tx, mut order_rx) = mpsc::channel(1);
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(1000); 
+        // High equity via positions
+        port.positions.insert(
+            "AAPL".to_string(),
+            Position {
+                symbol: "AAPL".to_string(),
+                quantity: Decimal::from(1000),
+                average_price: Decimal::from(100),
+            },
+        );
+        let portfolio = Arc::new(RwLock::new(port));
+        let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+        
+        // Mock Market Data (Need AAPL price for Equity calc)
+        let market_data = Arc::new(ConfigurableMockMarketData::new());
+        market_data.set_price("AAPL", Decimal::from(100)); // $100k Equity
+        let market_service = market_data;
+
+        let state_manager = Arc::new(
+            crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
+                exec_service.clone(),
+                5000,
+            ),
+        );
+
+        let (_, dummy_cmd_rx) = mpsc::channel(1);
+        // Default config: 10% max position size = $10,000 (approx 10% of $101,000 equity)
+        let mut rm = RiskManager::new(
+            proposal_rx,
+            dummy_cmd_rx,
+            order_tx,
+            exec_service,
+            market_service.clone(), 
+            state_manager,
+            false,
+            AssetClass::Stock,
+            RiskConfig::default(),
+            None,
+            None,
+            None,
+        )
+        .expect("Test config should be valid");
+        
+        // Ensure price map is populated in RM
+        // RiskManager refreshes prices on run loop.
+        
+        tokio::spawn(async move { rm.run().await });
+
+        // Initialize session
+        // rm.initialize_session().await.unwrap(); // Called by run() automatically
+
+        // Proposal: Buy $5,000
+        // Position Size check: $5,000 < $10,100 (10% of equity). PASS.
+        // Buying Power check: $5,000 > $1,000 (Available Cash). REJECT.
+        let proposal = TradeProposal {
+            symbol: "MSFT".to_string(),
+            side: OrderSide::Buy,
+            price: Decimal::from(100),
+            quantity: Decimal::from(50), // $5,000
+            order_type: OrderType::Market,
+            reason: "Test Buying Power".to_string(),
+            timestamp: 0,
+        };
+        proposal_tx.send(proposal).await.unwrap();
+
+        // Give it a moment to process
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        
+        // Assert NO order was generated
+        assert!(order_rx.try_recv().is_err(), "Order should be rejected due to insufficient buying power despite high equity");
     }
 
     #[tokio::test]

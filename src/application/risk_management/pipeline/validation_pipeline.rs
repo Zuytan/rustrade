@@ -140,6 +140,7 @@ mod tests {
              correlation_matrix: None,
              volatility_multiplier: None,
              symbol_pending_exposure: rust_decimal::Decimal::ZERO,
+             available_cash: dec!(100000),
         }
     }
     

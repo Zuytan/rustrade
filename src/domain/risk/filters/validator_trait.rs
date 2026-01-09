@@ -68,6 +68,9 @@ pub struct ValidationContext<'a> {
 
     /// Exposure from pending orders for the proposal's symbol
     pub symbol_pending_exposure: Decimal,
+
+    /// Available cash for trading (Cash - Reservations)
+    pub available_cash: Decimal,
 }
 
 impl<'a> ValidationContext<'a> {
@@ -83,6 +86,7 @@ impl<'a> ValidationContext<'a> {
         correlation_matrix: Option<&'a HashMap<(String, String), f64>>,
         volatility_multiplier: Option<f64>,
         symbol_pending_exposure: Decimal,
+        available_cash: Decimal,
     ) -> Self {
         Self {
             proposal,
@@ -94,6 +98,7 @@ impl<'a> ValidationContext<'a> {
             correlation_matrix,
             volatility_multiplier,
             symbol_pending_exposure,
+            available_cash,
         }
     }
 
@@ -212,6 +217,7 @@ mod tests {
             None,
             None,
             rust_decimal::Decimal::ZERO,
+            dec!(100000), // available_cash
         );
 
         // Should return current market price, not proposal price
@@ -246,6 +252,7 @@ mod tests {
             None,
             None,
             rust_decimal::Decimal::ZERO,
+            dec!(100000), // available_cash
         );
 
         assert_eq!(ctx.calculate_proposal_exposure(), dec!(100000));

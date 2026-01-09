@@ -1,5 +1,15 @@
 # Rustrade - Historique des Versions
 
+## Version 0.58.4 (Janvier 2026) - Risk Management Fixes: Buying Power Validation
+- **Buying Power Validation (CRITICAL Fix)**:
+  - **Problem**: The Risk Manager was using Total Equity to check affordability of trades, which allowed the system to approve trades even when Available Cash (Buying Power) was insufficient (e.g., tied up in open orders).
+  - **Solution**: Implemented `BuyingPowerValidator` which checks the estimated cost of a BUY order against the actual `available_cash` (Buying Power).
+  - **Integration**: Added `available_cash` field to `ValidationContext` and updated `RiskManager` pipeline to use the new validator.
+  - **Impact**: Prevents "Insufficient Funds" rejections from the broker by catching them locally in the Risk Manager.
+- **Verification**:
+  - Added integration test `test_buy_rejection_insufficient_buying_power_high_equity` validating rejection when cash is low despite high equity.
+  - Clean `cargo test` run.
+
 ## Version 0.58.3 (Janvier 2026) - Local NLP Sentiment Analysis
 - **NLP-Powered News Sentiment**: RSS news items are now analyzed using local NLP instead of displaying as "Neutral".
   - **VADER Integration**: Added `vader_sentiment` crate for Valence Aware Dictionary and sEntiment Reasoner analysis.
