@@ -1,5 +1,15 @@
 # Rustrade - Historique des Versions
 
+## Version 0.58.3 (Janvier 2026) - Local NLP Sentiment Analysis
+- **NLP-Powered News Sentiment**: RSS news items are now analyzed using local NLP instead of displaying as "Neutral".
+  - **VADER Integration**: Added `vader_sentiment` crate for Valence Aware Dictionary and sEntiment Reasoner analysis.
+  - **Financial Keyword Boosting**: Enhanced VADER with 50+ financial-specific keywords (bullish: surge, rally, skyrocket, etc.; bearish: crash, plunge, lawsuit, etc.) for improved accuracy on crypto/stock news.
+  - **SentimentAnalyzer Module**: New `src/infrastructure/news/sentiment_analyzer.rs` with weighted title/content analysis (70%/30%).
+  - **RssNewsService Enhancement**: Integrated sentiment analyzer to populate `sentiment_score` for each news item.
+  - **Logging**: RSS events now log sentiment classification and score (e.g., "📈 Bullish (score: 0.65)").
+- **Testing**: 6 unit tests validating bullish, bearish, neutral headlines, combined analysis, and financial boosting.
+- **Impact**: News feed widget now displays dynamic "📈 Bullish" / "📉 Bearish" / "➖ Neutral" badges based on NLP analysis.
+
 ## Version 0.58.2 (Janvier 2026) - UI Enhancements: News Display & Sentiment Reliability
 - **News Feed Widget**: Added real-time news display to dashboard right panel.
   - **Visual Design**: Styled news cards with alternating backgrounds, source badges, and sentiment indicators.

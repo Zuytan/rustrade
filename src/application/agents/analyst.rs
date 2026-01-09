@@ -859,8 +859,8 @@ impl Analyst {
             },
             crate::domain::listener::NewsSentiment::Bearish => {
                  // Check if we hold it.
-                 if let Ok(portfolio) = self.execution_service.get_portfolio().await {
-                     if let Some(pos) = portfolio.positions.get(&signal.symbol).filter(|p| p.quantity > Decimal::ZERO) {
+                 if let Ok(portfolio) = self.execution_service.get_portfolio().await
+                     && let Some(pos) = portfolio.positions.get(&signal.symbol).filter(|p| p.quantity > Decimal::ZERO) {
                              let avg_price = pos.average_price.to_f64().unwrap_or(price_f64);
                              let pnl_pct = (price_f64 - avg_price) / avg_price;
 
@@ -905,7 +905,6 @@ impl Analyst {
                                  }
                              }
                      }
-                 }
             },
             _ => {}
         }

@@ -1,5 +1,6 @@
 use crate::domain::listener::NewsEvent;
 use crate::domain::ports::NewsDataService;
+use crate::infrastructure::news::sentiment_analyzer::SentimentAnalyzer;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -18,6 +19,7 @@ pub struct RssNewsService {
     client: Client,
     seen_guids: Arc<Mutex<HashSet<String>>>,
     poll_interval_seconds: u64,
+    sentiment_analyzer: Arc<SentimentAnalyzer>,
 }
 
 impl RssNewsService {
@@ -27,6 +29,7 @@ impl RssNewsService {
             client: Client::new(),
             seen_guids: Arc::new(Mutex::new(HashSet::new())),
             poll_interval_seconds,
+            sentiment_analyzer: Arc::new(SentimentAnalyzer::new()),
         }
     }
 
@@ -41,9 +44,10 @@ impl NewsDataService for RssNewsService {
         let client = self.client.clone();
         let seen_guids = self.seen_guids.clone();
         let interval_sec = self.poll_interval_seconds;
+        let sentiment_analyzer = self.sentiment_analyzer.clone();
 
         tokio::spawn(async move {
-            info!("Starting RSS News Poller for: {}", url);
+            info!("Starting RSS News Poller for: {} (with NLP sentiment analysis)", url);
             
             // Initial fetch to populate seen_guids without sending events (optional, or we can send them)
             // For now, let's treat the first fetch as "historical" and not trigger actions, 
@@ -96,21 +100,35 @@ impl NewsDataService for RssNewsService {
                                                 // RSS dates are RFC-2822 usually.
                                                 let pub_date = item.pub_date().and_then(|d| DateTime::parse_from_rfc2822(d).ok()).map(|d| d.with_timezone(&Utc)).unwrap_or(Utc::now());
                                                 
+                                                let title = item.title().unwrap_or("No Title").to_string();
+                                                let content = item.description().unwrap_or("").to_string();
+                                                
+                                                // Analyze sentiment using local NLP
+                                                let sentiment_score = sentiment_analyzer.analyze_news(&title, &content);
+                                                
                                                 let event = NewsEvent {
                                                     id: guid_str,
                                                     source: "RSS".to_string(), // Could parse channel title
-                                                    title: item.title().unwrap_or("No Title").to_string(),
-                                                    content: item.description().unwrap_or("").to_string(),
+                                                    title: title.clone(),
+                                                    content,
                                                     url: item.link().map(|l| l.to_string()),
                                                     timestamp: pub_date,
-                                                    sentiment_score: None, // RSS doesn't give sentiment usually
+                                                    sentiment_score: Some(sentiment_score),
                                                 };
 
                                                 if let Err(e) = tx.send(event).await {
                                                     error!("Failed to send RSS event: {}", e);
                                                     return; // Channel closed
                                                 }
-                                                info!("RSS New Item: {}", item.title().unwrap_or("?"));
+                                                
+                                                let sentiment_label = if sentiment_score > 0.3 {
+                                                    "📈 Bullish"
+                                                } else if sentiment_score < -0.3 {
+                                                    "📉 Bearish"
+                                                } else {
+                                                    "➖ Neutral"
+                                                };
+                                                info!("RSS New Item: {} [{}] (score: {:.2})", title, sentiment_label, sentiment_score);
                                             }
                                         }
                                     }
