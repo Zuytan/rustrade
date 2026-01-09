@@ -67,6 +67,7 @@ pub struct SystemHandle {
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub candle_rx: broadcast::Receiver<Candle>,
     pub sentiment_rx: broadcast::Receiver<Sentiment>, // Added sentiment rx
+    pub news_rx: broadcast::Receiver<crate::domain::listener::NewsEvent>, // Added news rx
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
 }
@@ -236,8 +237,11 @@ impl Application {
         // Broadcast channel for Candles (for UI)
         let (candle_tx, candle_rx) = broadcast::channel(100);
 
-        // Broadcast channel for Sentiment (for UI)
-        let (sentiment_broadcast_tx, sentiment_broadcast_rx) = broadcast::channel(1);
+        // Broadcast channel for Sentiment (for UI) - buffer of 8 to prevent loss
+        let (sentiment_broadcast_tx, sentiment_broadcast_rx) = broadcast::channel(8);
+
+        // Broadcast channel for News Events (for UI)
+        let (news_broadcast_tx, news_broadcast_rx) = broadcast::channel(20);
 
         // Use the shared SpreadCache from Application (populated by WebSocket for Alpaca mode)
         let spread_cache = self.spread_cache.clone();
@@ -274,6 +278,7 @@ impl Application {
             portfolio: self.portfolio.clone(),
             candle_rx, // Move the receiver to the handle
             sentiment_rx: sentiment_broadcast_rx, // Move the receiver to the handle
+            news_rx: news_broadcast_rx, // Move the receiver to the handle
             strategy_mode: self.config.strategy_mode,
             risk_appetite: self.config.risk_appetite,
         };
@@ -507,6 +512,7 @@ impl Application {
 
         // Spawn Listener Agent
         let listener_analyst_tx = analyst_cmd_tx.clone();
+        let news_tx_for_listener = news_broadcast_tx.clone();
         tokio::spawn(async move {
             info!("Starting Listener Agent...");
             // Hardcoded configuration for now as per plan
@@ -540,7 +546,7 @@ impl Application {
                 Arc::new(MockNewsService::new())
             };
 
-            let listener = ListenerAgent::new(news_service, config, listener_analyst_tx);
+            let listener = ListenerAgent::with_news_broadcast(news_service, config, listener_analyst_tx, news_tx_for_listener);
             listener.run().await;
         });
 
@@ -574,6 +580,16 @@ impl Application {
                         }
                     }
                 }
+            } else {
+                // For Stock mode, send a mock neutral sentiment for UI display
+                info!("Asset class is Stock - using mock neutral sentiment for UI");
+                let mock_sentiment = crate::domain::sentiment::Sentiment {
+                    value: 50,
+                    classification: crate::domain::sentiment::SentimentClassification::Neutral,
+                    timestamp: chrono::Utc::now(),
+                    source: "Mock (Stock Mode)".to_string(),
+                };
+                let _ = sentiment_broadcast_tx.send(mock_sentiment);
             }
         });
 

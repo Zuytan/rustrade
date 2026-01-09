@@ -1,5 +1,21 @@
 # Rustrade - Historique des Versions
 
+## Version 0.58.2 (Janvier 2026) - UI Enhancements: News Display & Sentiment Reliability
+- **News Feed Widget**: Added real-time news display to dashboard right panel.
+  - **Visual Design**: Styled news cards with alternating backgrounds, source badges, and sentiment indicators.
+  - **Sentiment Badges**: Color-coded badges (📈 Bullish, 📉 Bearish, ➖ Neutral) based on news sentiment scores.
+  - **Broadcast Architecture**: News events from `ListenerAgent` are now broadcast to UI via dedicated channel.
+  - **Integration**: News feed positioned between market positions and activity feed for optimal information hierarchy.
+- **Market Mood Reliability Fix**: Increased sentiment broadcast buffer from 1 to 8 to prevent message loss.
+  - **Problem**: Single-buffer channel could lose sentiment updates if UI wasn't ready to receive.
+  - **Solution**: Larger buffer ensures sentiment data reaches UI even with timing variations.
+- **Architecture Improvements**:
+  - Added `news_rx` broadcast channel to `SystemHandle` and `UserAgent`.
+  - Extended `ListenerAgent` with `with_news_broadcast()` constructor for UI forwarding.
+  - Added `news_events` VecDeque to `UserAgent` (max 10 events).
+  - Created `render_news_feed()` helper function in `dashboard.rs`.
+- **Verification**: All 132 tests passing, clean build, zero regressions.
+
 ## Version 0.58.1 (Janvier 2026) - Concurrency Hotfix & Cleanup
 - **Critical Fix**: Resolved race condition in `RiskManager` where concurrent proposals could bypass position limits.
 - **Improvements**:

@@ -128,6 +128,7 @@ fn main() -> anyhow::Result<()> {
         log_rx,
         candle_rx: system_handle.candle_rx,
         sentiment_rx: system_handle.sentiment_rx,
+        news_rx: system_handle.news_rx,
         sentinel_cmd_tx: system_handle.sentinel_cmd_tx,
         risk_cmd_tx: system_handle.risk_cmd_tx,
         analyst_cmd_tx: system_handle.analyst_cmd_tx,

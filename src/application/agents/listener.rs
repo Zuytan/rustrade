@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, warn};
 
 use crate::domain::listener::{ListenerConfig, ListenerRule, NewsEvent, ListenerAction};
@@ -10,6 +10,8 @@ pub struct ListenerAgent {
     news_service: Arc<dyn NewsDataService>,
     config: ListenerConfig,
     analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
+    /// Optional broadcast sender to forward news events to UI
+    news_broadcast_tx: Option<broadcast::Sender<NewsEvent>>,
 }
 
 impl ListenerAgent {
@@ -22,6 +24,22 @@ impl ListenerAgent {
             news_service,
             config,
             analyst_cmd_tx,
+            news_broadcast_tx: None,
+        }
+    }
+
+    /// Create a ListenerAgent with a news broadcast sender for UI updates
+    pub fn with_news_broadcast(
+        news_service: Arc<dyn NewsDataService>,
+        config: ListenerConfig,
+        analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
+        news_broadcast_tx: broadcast::Sender<NewsEvent>,
+    ) -> Self {
+        Self {
+            news_service,
+            config,
+            analyst_cmd_tx,
+            news_broadcast_tx: Some(news_broadcast_tx),
         }
     }
 
@@ -38,6 +56,12 @@ impl ListenerAgent {
 
         while let Some(event) = news_rx.recv().await {
             info!("Received news event: {} - {}", event.source, event.title);
+            
+            // Forward to UI broadcast if available
+            if let Some(tx) = &self.news_broadcast_tx {
+                let _ = tx.send(event.clone());
+            }
+            
             self.process_event(&event).await;
         }
 

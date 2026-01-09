@@ -78,7 +78,8 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
 - **Dynamic Configuration System**: Runtime adjustment of Risk and Strategy parameters without restarting.
 - **System Config UI**: New settings tab with granular controls (Risk Limits, SMA Periods, RSI Thresholds, etc.).
 - **Internationalization (I18n)**: Full localization of the new configuration UI including helpful tooltips for every parameter.
-- **Market Sentiment Analysis**: Integrated "Fear & Greed Index" (Crypto) analysis. Risk Manager automatically reduces position sizing by 50% during "Extreme Fear" periods. "Market Mood" is visualized on the Dashboard with dynamic color coding.
+- **Market Sentiment Analysis**: Integrated "Fear & Greed Index" (Crypto) analysis. Risk Manager automatically reduces position sizing by 50% during "Extreme Fear" periods. "Market Mood" is visualized on the Dashboard with dynamic color coding and improved reliability (buffered broadcast channel).
+- **News Feed Display**: Real-time news events displayed in the dashboard with sentiment badges (Bullish/Bearish/Neutral), source attribution, and timestamps. News events are broadcast from the Listener Agent to provide market context alongside technical analysis.
 
 ## Version 0.43.0
 - **Dynamic Dashboard Metrics**: User Interface now reflects real-time trading statistics:

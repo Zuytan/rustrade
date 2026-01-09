@@ -737,9 +737,26 @@ impl AlpacaMarketDataService {
                     ("timeframe", timeframe.to_string()),
                     ("limit", "10000".to_string()),
                 ];
+                
+                // Add feed parameter for stocks (required for Alpaca Data API)
+                // Use IEX for free/paper accounts, SIP for paid accounts
+                if !is_crypto {
+                    query_params.push(("feed", "iex".to_string()));
+                }
+                
                 if let Some(token) = &page_token {
                     query_params.push(("page_token", token.clone()));
                 }
+
+                debug!(
+                    "AlpacaMarketDataService: Fetching {} bars from {} with params: symbol={}, timeframe={}, start={}, end={}",
+                    if is_crypto { "crypto" } else { "stock" },
+                    url,
+                    symbol,
+                    timeframe,
+                    start,
+                    end
+                );
 
                 let response = self
                     .client
@@ -752,8 +769,13 @@ impl AlpacaMarketDataService {
                     .context("Failed to fetch bars from Alpaca")?;
 
                 if !response.status().is_success() {
+                    let status = response.status();
                     let error_text = response.text().await.unwrap_or_default();
-                    anyhow::bail!("Alpaca API error: {}", error_text);
+                    error!(
+                        "AlpacaMarketDataService: API error {} for {}: {}",
+                        status, symbol, error_text
+                    );
+                    anyhow::bail!("Alpaca API error ({}): {}", status, error_text);
                 }
 
                 #[derive(Debug, Deserialize)]

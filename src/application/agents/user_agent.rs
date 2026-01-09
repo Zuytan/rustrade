@@ -7,6 +7,7 @@ use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderSide;
 use crate::domain::trading::types::TradeProposal;
 use crate::domain::sentiment::Sentiment;
+use crate::domain::listener::NewsEvent;
 use crate::domain::ui::I18nService;
 use chrono::{DateTime, Utc};
 use crossbeam_channel::Receiver;
@@ -61,6 +62,7 @@ pub struct UserAgent {
     pub log_rx: Receiver<String>,
     pub candle_rx: broadcast::Receiver<Candle>,
     pub sentiment_rx: broadcast::Receiver<Sentiment>,
+    pub news_rx: broadcast::Receiver<NewsEvent>,
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
     pub risk_cmd_tx: mpsc::Sender<RiskCommand>, // Added
     pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>, // Added
@@ -81,6 +83,9 @@ pub struct UserAgent {
 
     // Activity feed (max 20 events)
     pub activity_feed: VecDeque<ActivityEvent>,
+
+    // News feed (max 10 events)
+    pub news_events: VecDeque<NewsEvent>,
 
     // UI state
     pub logs_collapsed: bool,
@@ -142,6 +147,7 @@ pub struct UserAgentChannels {
     pub log_rx: Receiver<String>,
     pub candle_rx: broadcast::Receiver<Candle>,
     pub sentiment_rx: broadcast::Receiver<Sentiment>,
+    pub news_rx: broadcast::Receiver<NewsEvent>,
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
     pub risk_cmd_tx: mpsc::Sender<RiskCommand>,
     pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>,
@@ -163,6 +169,7 @@ impl UserAgent {
             log_rx: channels.log_rx,
             candle_rx: channels.candle_rx,
             sentiment_rx: channels.sentiment_rx,
+            news_rx: channels.news_rx,
             sentinel_cmd_tx: channels.sentinel_cmd_tx,
             risk_cmd_tx: channels.risk_cmd_tx,
             analyst_cmd_tx: channels.analyst_cmd_tx,
@@ -177,6 +184,7 @@ impl UserAgent {
             strategy_mode: config.strategy_mode,
             log_level_filter: None, // Show all logs by default
             activity_feed: VecDeque::new(),
+            news_events: VecDeque::new(),
             logs_collapsed: true, // Collapsed by default
             total_trades: 0,
             winning_trades: 0,
@@ -294,6 +302,16 @@ impl UserAgent {
         if let Ok(sentiment) = self.sentiment_rx.try_recv() {
              debug!("UserAgent: Received new sentiment: {} ({})", sentiment.value, sentiment.classification);
              self.market_sentiment = Some(sentiment);
+        }
+
+        // 1.6 News Events
+        while let Ok(news) = self.news_rx.try_recv() {
+            debug!("UserAgent: Received news event: {} - {}", news.source, news.title);
+            self.news_events.push_front(news);
+            // Keep only last 10 news events
+            while self.news_events.len() > 10 {
+                self.news_events.pop_back();
+            }
         }
 
         // 2. Candles
