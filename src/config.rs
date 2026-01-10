@@ -136,6 +136,10 @@ pub struct Config {
     // SMC Strategy Configuration
     pub smc_ob_lookback: usize,
     pub smc_min_fvg_size_pct: f64,
+    // Observability Configuration
+    pub observability_enabled: bool,
+    pub observability_port: u16,
+    pub observability_bind_address: String,
 }
 
 impl Config {
@@ -517,6 +521,20 @@ impl Config {
             .parse::<f64>()
             .unwrap_or(0.005);
 
+        // Observability Configuration
+        let observability_enabled = env::var("OBSERVABILITY_ENABLED")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse::<bool>()
+            .unwrap_or(true);
+
+        let observability_port = env::var("OBSERVABILITY_PORT")
+            .unwrap_or_else(|_| "9090".to_string())
+            .parse::<u16>()
+            .unwrap_or(9090);
+
+        let observability_bind_address =
+            env::var("OBSERVABILITY_BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1".to_string());
+
         Ok(Config {
             mode,
             asset_class,
@@ -594,6 +612,9 @@ impl Config {
             trend_timeframe,
             smc_ob_lookback,
             smc_min_fvg_size_pct,
+            observability_enabled,
+            observability_port,
+            observability_bind_address,
         })
     }
 

@@ -1,7 +1,28 @@
 [package]
 name = "rustrade"
-version = "0.61.0"
+version = "0.62.0"
 edition = "2024"
+
+[features]
+default = ["ui"]
+ui = ["dep:eframe", "dep:egui", "dep:egui_plot"]
+
+[[bin]]
+name = "rustrade"
+path = "src/main.rs"
+required-features = ["ui"]
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
+[[bin]]
+name = "optimize"
+path = "src/bin/optimize.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -9,9 +30,9 @@ rust_decimal_macros = "1.36"
 
 [dependencies]
 crossbeam-channel = "0.5.14"
-eframe = "0.31.0"
-egui = "0.31.0"
-egui_plot = "0.31.0"
+eframe = { version = "0.31.0", optional = true }
+egui = { version = "0.31.0", optional = true }
+egui_plot = { version = "0.31.0", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros", "chrono", "uuid", "rust_decimal"] }
 anyhow = "1.0"
 async-trait = "0.1.89"
@@ -44,4 +65,7 @@ reqwest-retry = "0.5"
 task-local-extensions = "0.1"
 rss = "2.0.12"
 vader_sentiment = "0.1"
+
+# Observability (push-based, no HTTP server)
+prometheus = "0.13"
 

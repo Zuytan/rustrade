@@ -100,6 +100,9 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         binance_secret_key: "".to_string(),
         binance_base_url: "".to_string(),
         binance_ws_url: "".to_string(),
+        observability_enabled: false, // Disable for tests
+        observability_port: 9090,
+        observability_bind_address: "127.0.0.1".to_string(),
         primary_timeframe: rustrade::domain::market::timeframe::Timeframe::OneMin,
         enabled_timeframes: vec![rustrade::domain::market::timeframe::Timeframe::OneMin],
         trend_timeframe: rustrade::domain::market::timeframe::Timeframe::OneHour,

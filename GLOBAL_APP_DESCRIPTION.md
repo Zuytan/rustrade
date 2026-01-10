@@ -88,3 +88,22 @@ Built with `egui` (Native) for low-latency performance:
   - 100% Test Coverage on core logic (Risk, Sizing).
   - CI pipeline enforcing `clippy` (linting) and `fmt` standards.
   - "No Unwraps" policy in production code for stability.
+
+## 8. Server Mode & Observability
+
+### Headless Deployment
+Rustrade can run without a GUI for server deployments:
+- **Server Binary**: `cargo run --bin server` - Runs the full trading system without UI.
+- **UI Optional**: The `ui` feature flag can be disabled for headless builds.
+
+### Push-Based Metrics
+The system outputs metrics **outbound only** - no HTTP server, no incoming connections:
+- **Structured JSON to stdout**: Periodic output prefixed with `METRICS_JSON:` for log aggregators
+- **Configurable interval**: `OBSERVABILITY_INTERVAL` environment variable (default: 60s)
+
+Metrics include:
+- Portfolio value, cash, positions count
+- Per-symbol position details (quantity, average price, value)
+- System status (circuit breaker, uptime, version)
+
+**Security Note**: The system only SENDS data, it never accepts incoming requests.

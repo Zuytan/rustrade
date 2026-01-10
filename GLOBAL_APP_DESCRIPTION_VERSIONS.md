@@ -1,6 +1,32 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.62.0 (Janvier 2026) - Server Mode & Observability
+
+- **Headless Server Mode**:
+  - **New Server Binary**: `cargo run --bin server` runs the trading system without UI.
+  - **Optional UI Feature**: `eframe`, `egui`, `egui_plot` dependencies are now optional behind the `ui` feature flag.
+  - **Server Deployment Ready**: System can run on headless servers for production trading.
+
+- **Push-Based Observability**:
+  - **No HTTP Server**: System only SENDS data, never accepts incoming requests (security first).
+  - **Structured JSON Logs**: Metrics output to stdout prefixed with `METRICS_JSON:` for log aggregators (Loki, Fluentd, CloudWatch).
+  - **Metrics Exported**:
+    - Portfolio: cash, total value, positions count
+    - Positions: per-symbol quantity, average price, value
+    - System: uptime, version, circuit breaker status
+  - **Configurable Interval**: `OBSERVABILITY_INTERVAL` env var (default: 60 seconds)
+
+- **Configuration**:
+  - `OBSERVABILITY_ENABLED`: Enable/disable metrics reporting (default: true)
+  - `OBSERVABILITY_INTERVAL`: Seconds between metric outputs (default: 60)
+
+- **Dependencies Added**: `prometheus` (for internal metrics tracking)
+- **Dependencies Removed**: `axum`, `tower`, `tower-http` (no HTTP server needed)
+- **Security**: System only outputs data, never accepts incoming connections.
+- **Files Created** (3): `server.rs` (bin), `observability/mod.rs`, `observability/reporter.rs`, `observability/metrics.rs`
+- **Tests**: 25+ tests passing
+
 ## Version 0.61.0 (Janvier 2026) - Dynamic Risk Scaling & Simulator Fixes
 - **Dynamic Risk Scaling**:
   - **Adaptive Risk Control**: Automatically scales down Risk Appetite Score during adverse market regimes.

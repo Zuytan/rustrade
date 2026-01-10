@@ -9,6 +9,7 @@ pub mod factory;
 pub mod http_client_factory;
 pub mod mock;
 pub mod oanda;
+pub mod observability;
 pub mod repositories;
 
 pub use event_bus::EventBus;
