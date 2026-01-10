@@ -82,6 +82,9 @@ pub struct AnalystConfig {
     pub macd_min_threshold: f64,    // Minimum MACD histogram threshold
     pub adx_period: usize,
     pub adx_threshold: f64,
+    // SMC Strategy Configuration
+    pub smc_ob_lookback: usize,    // Order Block lookback period
+    pub smc_min_fvg_size_pct: f64, // Minimum Fair Value Gap size (e.g., 0.005 = 0.5%)
 }
 
 impl Default for AnalystConfig {
@@ -130,6 +133,8 @@ impl Default for AnalystConfig {
             macd_min_threshold: 0.0,
             adx_period: 14,
             adx_threshold: 25.0,
+            smc_ob_lookback: 20,
+            smc_min_fvg_size_pct: 0.005,
         }
     }
 }
@@ -177,6 +182,8 @@ impl From<crate::config::Config> for AnalystConfig {
             macd_min_threshold: config.macd_min_threshold,
             adx_period: config.adx_period,
             adx_threshold: config.adx_threshold,
+            smc_ob_lookback: config.smc_ob_lookback,
+            smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
         }
     }
 }
@@ -1115,6 +1122,8 @@ mod tests {
             profit_target_multiplier: 1.5,
             adx_period: 14,
             adx_threshold: 25.0,
+            smc_ob_lookback: 20,
+            smc_min_fvg_size_pct: 0.005,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1229,6 +1238,8 @@ mod tests {
             profit_target_multiplier: 1.5,
             adx_period: 14,
             adx_threshold: 25.0,
+            smc_ob_lookback: 20,
+            smc_min_fvg_size_pct: 0.005,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1360,6 +1371,8 @@ mod tests {
             profit_target_multiplier: 1.5,
             adx_period: 14,
             adx_threshold: 25.0,
+            smc_ob_lookback: 20,
+            smc_min_fvg_size_pct: 0.005,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1482,6 +1495,8 @@ mod tests {
             profit_target_multiplier: 1.5,
             adx_period: 14,
             adx_threshold: 25.0,
+            smc_ob_lookback: 20,
+            smc_min_fvg_size_pct: 0.005,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1610,6 +1625,8 @@ mod tests {
             profit_target_multiplier: 1.5,
             adx_period: 14,
             adx_threshold: 25.0,
+            smc_ob_lookback: 20,
+            smc_min_fvg_size_pct: 0.005,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1754,6 +1771,8 @@ mod tests {
             profit_target_multiplier: 1.5,
             adx_period: 14,
             adx_threshold: 25.0,
+            smc_ob_lookback: 20,
+            smc_min_fvg_size_pct: 0.005,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1895,6 +1914,8 @@ mod tests {
             profit_target_multiplier: 1.5,
             adx_period: 14,
             adx_threshold: 25.0,
+            smc_ob_lookback: 20,
+            smc_min_fvg_size_pct: 0.005,
         };
 
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(

@@ -10,6 +10,10 @@ pub enum StrategyMode {
     MeanReversion,
     RegimeAdaptive,
     SMC,
+    VWAP,
+    Breakout,
+    Momentum,
+    Ensemble,
 }
 
 impl std::str::FromStr for StrategyMode {
@@ -24,9 +28,13 @@ impl std::str::FromStr for StrategyMode {
             "meanreversion" => Ok(StrategyMode::MeanReversion),
             "regimeadaptive" => Ok(StrategyMode::RegimeAdaptive),
             "smc" => Ok(StrategyMode::SMC),
+            "vwap" => Ok(StrategyMode::VWAP),
+            "breakout" => Ok(StrategyMode::Breakout),
+            "momentum" => Ok(StrategyMode::Momentum),
+            "ensemble" => Ok(StrategyMode::Ensemble),
 
             _ => anyhow::bail!(
-                "Invalid STRATEGY_MODE: {}. Must be 'standard', 'advanced', 'dynamic', 'trendriding', or 'meanreversion'",
+                "Invalid STRATEGY_MODE: {}. Valid: standard, advanced, dynamic, trendriding, meanreversion, smc, vwap, breakout, momentum, ensemble",
                 s
             ),
         }
@@ -43,6 +51,10 @@ impl std::fmt::Display for StrategyMode {
             StrategyMode::MeanReversion => write!(f, "MeanReversion"),
             StrategyMode::RegimeAdaptive => write!(f, "RegimeAdaptive"),
             StrategyMode::SMC => write!(f, "SMC"),
+            StrategyMode::VWAP => write!(f, "VWAP"),
+            StrategyMode::Breakout => write!(f, "Breakout"),
+            StrategyMode::Momentum => write!(f, "Momentum"),
+            StrategyMode::Ensemble => write!(f, "Ensemble"),
         }
     }
 }

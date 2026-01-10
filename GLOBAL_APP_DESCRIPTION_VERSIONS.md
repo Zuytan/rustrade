@@ -1,5 +1,20 @@
 # Rustrade - Historique des Versions
 
+## Version 0.60.0 (Janvier 2026) - Extended Strategy Panel
+- **4 New Trading Strategies**:
+  - **VWAP Strategy**: Volume Weighted Average Price strategy for institutional-style trading. Buys when price is significantly below VWAP with RSI oversold confirmation. Sells when price rises above VWAP.
+  - **Breakout Strategy**: Detects consolidation breakouts with optional volume confirmation. Configurable lookback period and breakout threshold.
+  - **Momentum Divergence Strategy**: Identifies price/RSI divergences for reversal detection. Bullish divergence (price lower low, RSI higher low) and bearish divergence detection.
+  - **Ensemble Strategy**: Combines multiple strategies with configurable voting threshold. Supports majority voting (>50%) or unanimous agreement modes.
+- **SMC Dynamic Configuration**: Smart Money Concepts strategy parameters (`smc_ob_lookback`, `smc_min_fvg_size_pct`) are now configurable via environment variables.
+- **New Environment Variables**:
+  - `SMC_OB_LOOKBACK`: Order Block lookback period (default: 20)
+  - `SMC_MIN_FVG_SIZE_PCT`: Minimum Fair Value Gap size as percentage (default: 0.005)
+- **StrategyMode Extended**: Added `VWAP`, `Breakout`, `Momentum`, and `Ensemble` modes to `StrategyMode` enum.
+- **Tests**: 41 strategy tests, all passing. Full compilation validation.
+- **Files Created** (4): `vwap.rs`, `breakout.rs`, `momentum.rs`, `ensemble.rs`
+- **Files Modified** (8): `mod.rs`, `strategy_config.rs`, `system.rs`, `optimizer.rs`, `analyst.rs`, `config.rs`, test files
+
 ## Version 0.59.0 (Janvier 2026) - Extreme Risk Parameter Scaling
 - **Rescaled Risk Appetite**:
   - **Concept**: Drastically widened the range of risk parameters to allow for "Extremely Safe" (Score 1) to "Extremely Risky" (Score 9) profiles.

@@ -5,7 +5,7 @@ use rustrade::domain::market::strategy_config::StrategyMode;
 
 /// Test that StrategySelector correctly maps market regimes to appropriate strategies
 #[test]
-fn test_strategy_selector_ranging_to_mean_reversion() {
+fn test_strategy_selector_ranging_to_vwap() {
     let config = AnalystConfig::default();
 
     // Create a Ranging regime
@@ -23,11 +23,11 @@ fn test_strategy_selector_ranging_to_mean_reversion() {
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
 
-    // Should switch to MeanReversion for Ranging regime
+    // Should switch to VWAP for Ranging regime (v0.60 enhancement)
     assert_eq!(
         new_mode,
-        StrategyMode::MeanReversion,
-        "Should select MeanReversion strategy for Ranging regime"
+        StrategyMode::VWAP,
+        "Should select VWAP strategy for Ranging regime"
     );
 }
 
@@ -75,7 +75,7 @@ fn test_strategy_selector_trending_down_to_trend_riding() {
 }
 
 #[test]
-fn test_strategy_selector_volatile_to_mean_reversion() {
+fn test_strategy_selector_volatile_to_momentum() {
     let config = AnalystConfig::default();
 
     let volatile_regime = MarketRegime::new(
@@ -90,11 +90,11 @@ fn test_strategy_selector_volatile_to_mean_reversion() {
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&volatile_regime, &config, current_mode);
 
-    // Volatile markets should use MeanReversion (as per strategy_selector.rs)
+    // Volatile markets should use Momentum (v0.60 enhancement - divergence detection)
     assert_eq!(
         new_mode,
-        StrategyMode::MeanReversion,
-        "Should select MeanReversion strategy for Volatile regime"
+        StrategyMode::Momentum,
+        "Should select Momentum strategy for Volatile regime"
     );
 }
 
@@ -123,16 +123,16 @@ fn test_strategy_selector_no_change_when_same() {
 
     let ranging_regime = MarketRegime::new(MarketRegimeType::Ranging, 0.8, 1.0, 10.0);
 
-    // Already using MeanReversion
-    let current_mode = StrategyMode::MeanReversion;
+    // Already using VWAP (which is correct for Ranging)
+    let current_mode = StrategyMode::VWAP;
 
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
 
-    // Should stay with MeanReversion
+    // Should stay with VWAP
     assert_eq!(
         new_mode,
-        StrategyMode::MeanReversion,
-        "Should keep MeanReversion strategy when already appropriate"
+        StrategyMode::VWAP,
+        "Should keep VWAP strategy when already appropriate for Ranging"
     );
 }

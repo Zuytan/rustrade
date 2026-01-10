@@ -339,6 +339,8 @@ impl Application {
             profit_target_multiplier: self.config.profit_target_multiplier,
             adx_period: self.config.adx_period,
             adx_threshold: self.config.adx_threshold,
+            smc_ob_lookback: self.config.smc_ob_lookback,
+            smc_min_fvg_size_pct: self.config.smc_min_fvg_size_pct,
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
@@ -403,9 +405,21 @@ impl Application {
             }
             crate::domain::market::strategy_config::StrategyMode::SMC => {
                 Arc::new(SMCStrategy::new(
-                    20,    // Lookback
-                    0.005, // 0.5% min FVG gap
+                    analyst_config.smc_ob_lookback,
+                    analyst_config.smc_min_fvg_size_pct,
                 ))
+            }
+            crate::domain::market::strategy_config::StrategyMode::VWAP => {
+                Arc::new(VWAPStrategy::default())
+            }
+            crate::domain::market::strategy_config::StrategyMode::Breakout => {
+                Arc::new(BreakoutStrategy::default())
+            }
+            crate::domain::market::strategy_config::StrategyMode::Momentum => {
+                Arc::new(MomentumDivergenceStrategy::default())
+            }
+            crate::domain::market::strategy_config::StrategyMode::Ensemble => {
+                Arc::new(EnsembleStrategy::default_ensemble())
             }
         };
 

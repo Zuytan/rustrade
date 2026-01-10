@@ -4,8 +4,11 @@
 Rustrade is a high-performance, algorithmic trading bot written in Rust, designed for reliability, concurrency, and modularity. It supports multiple asset classes (Stocks, Crypto) and brokers (Alpaca, OANDA, Binance, Mock).
 
 ## Core Features
-- **Multi-Strategy Engine**: Supports Standard (Dual SMA), Advanced (Triple Filter: SMA+RSI+MACD+ADX), Dynamic Regime Adaptive, Mean Reversion, and Smart Money Concepts (SMC) strategies.
-- **Market Regime Detection**: Automatically detects Bull, Bear, Sideways, and Volatile regimes.
+- **Multi-Strategy Engine**: Supports 10 trading strategies:
+  - **Standard** (Dual SMA), **Advanced** (Triple Filter: SMA+RSI+MACD+ADX), **Dynamic Regime Adaptive**, **Mean Reversion**, **Smart Money Concepts (SMC)**, **Trend Riding**
+  - **NEW**: **VWAP** (Volume Weighted Average Price), **Breakout** (Range/Volume), **Momentum Divergence** (RSI divergences), **Ensemble** (Multi-strategy voting)
+- **Intelligent Regime Adaptation**: RegimeAdaptive mode automatically switches strategies based on market conditions:
+  - Trending → TrendRiding | Ranging → VWAP | Volatile → Momentum | Range→Trend transition → Breakout
 - **Risk Management**:
   - **Modular Architecture**: Chain of Responsibility pattern with independent validators.
   - **Persistent State**: Dedicated State Manager ensures critical metrics (HWM, Daily Loss) survive restarts.

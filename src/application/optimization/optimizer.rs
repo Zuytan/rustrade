@@ -150,6 +150,8 @@ impl GridSearchOptimizer {
                                     profit_target_multiplier: 1.5, // Conservative default
                                     adx_period: 14,
                                     adx_threshold: 25.0,
+                                    smc_ob_lookback: 20,
+                                    smc_min_fvg_size_pct: 0.005,
                                 });
                             }
                         }
@@ -389,6 +391,8 @@ mod tests {
                 profit_target_multiplier: 1.5,
                 adx_period: 14,
                 adx_threshold: 25.0,
+                smc_ob_lookback: 20,
+                smc_min_fvg_size_pct: 0.005,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

@@ -133,6 +133,9 @@ pub struct Config {
     pub primary_timeframe: crate::domain::market::timeframe::Timeframe,
     pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     pub trend_timeframe: crate::domain::market::timeframe::Timeframe,
+    // SMC Strategy Configuration
+    pub smc_ob_lookback: usize,
+    pub smc_min_fvg_size_pct: f64,
 }
 
 impl Config {
@@ -503,6 +506,17 @@ impl Config {
             .parse::<crate::domain::market::timeframe::Timeframe>()
             .context("Failed to parse TREND_TIMEFRAME")?;
 
+        // SMC Strategy Configuration
+        let smc_ob_lookback = env::var("SMC_OB_LOOKBACK")
+            .unwrap_or_else(|_| "20".to_string())
+            .parse::<usize>()
+            .unwrap_or(20);
+
+        let smc_min_fvg_size_pct = env::var("SMC_MIN_FVG_SIZE_PCT")
+            .unwrap_or_else(|_| "0.005".to_string())
+            .parse::<f64>()
+            .unwrap_or(0.005);
+
         Ok(Config {
             mode,
             asset_class,
@@ -578,6 +592,8 @@ impl Config {
             primary_timeframe,
             enabled_timeframes,
             trend_timeframe,
+            smc_ob_lookback,
+            smc_min_fvg_size_pct,
         })
     }
 

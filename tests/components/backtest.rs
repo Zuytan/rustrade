@@ -109,6 +109,8 @@ async fn test_backtest_strategy_on_historical_data() {
         profit_target_multiplier: 1.5,
         adx_period: 14,
         adx_threshold: 25.0,
+        smc_ob_lookback: 20,
+        smc_min_fvg_size_pct: 0.005,
     };
 
     let simulator = Simulator::new(market_service, execution_service, config);

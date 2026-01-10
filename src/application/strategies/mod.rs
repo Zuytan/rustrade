@@ -1,19 +1,27 @@
 mod advanced;
+mod breakout;
 mod dual_sma;
 mod dynamic;
+mod ensemble;
 mod mean_reversion;
+mod momentum;
 mod smc;
 pub mod strategy_selector;
 mod traits;
 pub mod trend_riding;
+mod vwap;
 
 pub use advanced::{AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy};
+pub use breakout::BreakoutStrategy;
 pub use dual_sma::DualSMAStrategy;
 pub use dynamic::{DynamicRegimeConfig, DynamicRegimeStrategy};
+pub use ensemble::EnsembleStrategy;
 pub use mean_reversion::MeanReversionStrategy;
+pub use momentum::MomentumDivergenceStrategy;
 pub use smc::SMCStrategy;
 pub use traits::{AnalysisContext, Signal, TradingStrategy};
 pub use trend_riding::TrendRidingStrategy;
+pub use vwap::VWAPStrategy;
 
 use crate::application::agents::analyst::AnalystConfig;
 use crate::domain::market::strategy_config::StrategyMode;
@@ -76,9 +84,13 @@ impl StrategyFactory {
                 config.trend_riding_exit_buffer_pct,
             )),
             StrategyMode::SMC => Arc::new(SMCStrategy::new(
-                20,    // Lookback
-                0.005, // 0.5% min FVG gap
+                config.smc_ob_lookback,
+                config.smc_min_fvg_size_pct,
             )),
+            StrategyMode::VWAP => Arc::new(VWAPStrategy::default()),
+            StrategyMode::Breakout => Arc::new(BreakoutStrategy::default()),
+            StrategyMode::Momentum => Arc::new(MomentumDivergenceStrategy::default()),
+            StrategyMode::Ensemble => Arc::new(EnsembleStrategy::default_ensemble()),
         }
     }
 }
