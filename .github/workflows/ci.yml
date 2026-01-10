@@ -33,8 +33,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
       - name: Run tests
-        run: cargo test --lib --tests
+        run: cargo nextest run --lib --tests
 
   clippy:
     name: Clippy

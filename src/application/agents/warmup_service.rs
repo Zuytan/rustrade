@@ -50,7 +50,9 @@ impl WarmupService {
         {
             let mut config = default_config.clone();
 
-            if let Ok(parsed_config) = serde_json::from_str::<super::analyst::AnalystConfig>(&def.config_json) {
+            if let Ok(parsed_config) =
+                serde_json::from_str::<super::analyst::AnalystConfig>(&def.config_json)
+            {
                 config = parsed_config;
                 debug!("WarmupService: Loaded custom config for {}", symbol);
             } else {
@@ -251,7 +253,7 @@ mod tests {
         let mut context = SymbolContext::new(config, strategy, win_rate_provider, timeframes);
 
         // Initially warmup not succeeded
-        assert_eq!(context.warmup_succeeded, false);
+        assert!(!context.warmup_succeeded);
 
         // Warmup the context
         service

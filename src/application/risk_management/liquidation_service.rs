@@ -57,10 +57,7 @@ impl LiquidationService {
 
         for (symbol, position) in &snapshot.portfolio.positions {
             if position.quantity > Decimal::ZERO {
-                let current_price = current_prices
-                    .get(symbol)
-                    .cloned()
-                    .unwrap_or(Decimal::ZERO);
+                let current_price = current_prices.get(symbol).cloned().unwrap_or(Decimal::ZERO);
 
                 // CRITICAL SAFETY: Blind liquidation if price unavailable
                 if current_price <= Decimal::ZERO {

@@ -89,7 +89,10 @@ impl CandleAggregator {
         let timestamp = match Utc.timestamp_millis_opt(timestamp_ms).single() {
             Some(t) => t,
             None => {
-                error!("CandleAggregator: Invalid timestamp {} for {}", timestamp_ms, symbol);
+                error!(
+                    "CandleAggregator: Invalid timestamp {} for {}",
+                    timestamp_ms, symbol
+                );
                 return None;
             }
         };

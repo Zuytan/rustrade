@@ -9,10 +9,10 @@ use thiserror::Error;
 pub enum BrokerConfigError {
     #[error("Empty API key")]
     EmptyApiKey,
-    
+
     #[error("Empty secret key")]
     EmptySecretKey,
-    
+
     #[error("Invalid URL: {field}")]
     InvalidUrl { field: String },
 }
@@ -60,11 +60,11 @@ impl BrokerConfig {
             ws_url,
             data_url,
         };
-        
+
         config.validate()?;
         Ok(config)
     }
-    
+
     fn validate(&self) -> Result<(), BrokerConfigError> {
         // Mock broker doesn't need credentials
         if !matches!(self.broker_type, BrokerType::Mock) {
@@ -75,7 +75,7 @@ impl BrokerConfig {
                 return Err(BrokerConfigError::EmptySecretKey);
             }
         }
-        
+
         // URLs must not be empty for non-Mock
         if !matches!(self.broker_type, BrokerType::Mock) {
             if self.base_url.is_empty() {
@@ -89,10 +89,10 @@ impl BrokerConfig {
                 });
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Create a mock broker config for testing
     pub fn mock() -> Self {
         Self {

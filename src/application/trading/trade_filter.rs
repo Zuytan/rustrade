@@ -1,5 +1,5 @@
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use tracing::{info, warn};
 
 use crate::application::monitoring::cost_evaluator::CostEvaluator;
@@ -37,13 +37,14 @@ impl TradeFilter {
 
         // 2. Pending Order Check
         if let Some(pending) = position_manager.pending_order
-            && pending == signal {
-                info!(
-                    "TradeFilter: Signal {:?} for {} BLOCKED - Pending Order exists",
-                    signal, symbol
-                );
-                return false;
-            }
+            && pending == signal
+        {
+            info!(
+                "TradeFilter: Signal {:?} for {} BLOCKED - Pending Order exists",
+                signal, symbol
+            );
+            return false;
+        }
 
         // 3. Cooldown Check
         let cooldown_ms = config.order_cooldown_seconds * 1000;
@@ -64,17 +65,18 @@ impl TradeFilter {
         min_hold_time_ms: i64,
     ) -> bool {
         if signal == OrderSide::Sell
-            && let Some(entry_time) = last_entry_time {
-                let hold_duration_ms = timestamp - entry_time;
-                if hold_duration_ms < min_hold_time_ms {
-                    let remaining_minutes = (min_hold_time_ms - hold_duration_ms) / 60000;
-                    info!(
-                        "TradeFilter: Sell signal BLOCKED for {} - Min hold time not met ({} min remaining)",
-                        symbol, remaining_minutes
-                    );
-                    return false;
-                }
+            && let Some(entry_time) = last_entry_time
+        {
+            let hold_duration_ms = timestamp - entry_time;
+            if hold_duration_ms < min_hold_time_ms {
+                let remaining_minutes = (min_hold_time_ms - hold_duration_ms) / 60000;
+                info!(
+                    "TradeFilter: Sell signal BLOCKED for {} - Min hold time not met ({} min remaining)",
+                    symbol, remaining_minutes
+                );
+                return false;
             }
+        }
         true
     }
 
@@ -119,11 +121,7 @@ impl TradeFilter {
             let costs = self.cost_evaluator.evaluate(proposal);
             warn!(
                 "TradeFilter [{}]: Trade REJECTED by cost filter - Profit/Cost ratio {:.2} < {:.2} threshold (Expected Profit: ${:.2}, Total Costs: ${:.2})",
-                symbol,
-                ratio,
-                min_profit_ratio,
-                expected_profit,
-                costs.total_cost
+                symbol, ratio, min_profit_ratio, expected_profit, costs.total_cost
             );
             return false;
         }

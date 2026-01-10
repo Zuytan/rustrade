@@ -7,7 +7,7 @@ use rustrade::domain::trading::portfolio::{Portfolio, Position};
 use rustrade::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 #[tokio::test]
 async fn test_consecutive_loss_triggers_circuit_breaker() {
@@ -48,7 +48,8 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         sector_provider: None,
         allow_pdt_risk: false,
         pending_order_ttl_ms: None,
-        correlation_config: rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
+        correlation_config:
+            rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
         volatility_config: rustrade::domain::risk::volatility_manager::VolatilityConfig::default(),
     };
 
@@ -141,7 +142,6 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
     assert_eq!(liquidation.symbol, "AAPL");
     assert_eq!(liquidation.side, OrderSide::Sell);
     assert_eq!(liquidation.order_type, OrderType::Limit); // Emergency liquidations use Limit orders with slippage tolerance
-
 
     // Verify NO other orders (the proposal itself should be rejected)
     let result = tokio::time::timeout(std::time::Duration::from_millis(100), order_rx.recv()).await;

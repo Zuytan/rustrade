@@ -3,7 +3,9 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use tracing::debug;
 
-use crate::domain::risk::filters::validator_trait::{RiskValidator, ValidationContext, ValidationResult};
+use crate::domain::risk::filters::validator_trait::{
+    RiskValidator, ValidationContext, ValidationResult,
+};
 use crate::domain::sentiment::SentimentClassification;
 use crate::domain::trading::types::OrderSide;
 
@@ -23,7 +25,7 @@ impl Default for PositionSizeConfig {
 }
 
 /// Validates that position sizes don't exceed configured limits
-/// 
+///
 /// This validator ensures that no single position can grow too large relative to
 /// total equity. It also applies sentiment-based adjustments, reducing position
 /// sizes during periods of extreme market fear.
@@ -43,7 +45,9 @@ impl PositionSizeValidator {
         // Apply sentiment-based risk adjustment
         if let Some(sentiment) = ctx.current_sentiment {
             // In Extreme Fear, reduce position size by 50% for Long positions
-            if side == OrderSide::Buy && sentiment.classification == SentimentClassification::ExtremeFear {
+            if side == OrderSide::Buy
+                && sentiment.classification == SentimentClassification::ExtremeFear
+            {
                 adjusted_max_pct *= 0.5;
                 debug!(
                     "PositionSizeValidator: Extreme Fear ({}) detected. Reducing max position size to {:.2}%",
@@ -89,7 +93,7 @@ impl RiskValidator for PositionSizeValidator {
         let current_position_qty = ctx.get_current_position_qty();
         let existing_exposure = current_position_qty * ctx.proposal.price;
         let proposal_exposure = ctx.proposal.quantity * ctx.proposal.price;
-        
+
         let total_exposure = existing_exposure + ctx.symbol_pending_exposure + proposal_exposure;
 
         // Calculate adjusted limit based on sentiment
@@ -126,7 +130,12 @@ mod tests {
     use rust_decimal_macros::dec;
     use std::collections::HashMap;
 
-    fn create_test_proposal(symbol: &str, side: OrderSide, price: Decimal, qty: Decimal) -> TradeProposal {
+    fn create_test_proposal(
+        symbol: &str,
+        side: OrderSide,
+        price: Decimal,
+        qty: Decimal,
+    ) -> TradeProposal {
         TradeProposal {
             symbol: symbol.to_string(),
             side,
@@ -262,7 +271,12 @@ mod tests {
         // 12.5% > 10%, so should be rejected
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(result.rejection_reason().unwrap().contains("Sentiment Adjusted"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Sentiment Adjusted")
+        );
     }
 
     #[tokio::test]
@@ -311,7 +325,7 @@ mod tests {
         });
 
         let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(0.1));
-        
+
         let mut portfolio = Portfolio::new();
         portfolio.positions.insert(
             "BTC/USD".to_string(),
@@ -352,7 +366,7 @@ mod tests {
         });
 
         let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(0.15));
-        
+
         let mut portfolio = Portfolio::new();
         portfolio.positions.insert(
             "BTC/USD".to_string(),

@@ -9,7 +9,7 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
 - **Risk Management**:
   - **Modular Architecture**: Chain of Responsibility pattern with independent validators.
   - **Persistent State**: Dedicated State Manager ensures critical metrics (HWM, Daily Loss) survive restarts.
-  - Position sizing based on account risk (e.g., 1% per trade).
+  - Position sizing based on account risk (0.5% to 20% per trade based on risk appetite).
   - Global circuit breakers (Day Loss Limit, Drawdown Limit) and infrastructure-level circuit breakers for API resilience.
   - Dynamic volatility-based position sizing (ATR-based multiplier).
   - Correlation filters to prevent over-exposure.
@@ -25,25 +25,19 @@ Rustrade is a high-performance, algorithmic trading bot written in Rust, designe
   - Slippage and commission modeling.
   - Portfolio state management.
 
-## Latest Updates (Version 0.57.0 - January 2026)
-- **DDD Refactoring - Phases 1-2 Complete**:
-  - **Phase 1: Domain Config Value Objects**:
-    - Extracted configuration validation into domain layer (`RiskConfig`, `StrategyConfig`, `BrokerConfig`).
-    - Added 17 new unit tests for configuration validation.
-    - Implemented adapter methods in infrastructure `Config` for gradual migration.
-  - **Phase 2: RiskManager Decomposition**:
-    - Extracted `SessionManager` (178 lines, 4 tests) - session lifecycle management.
-    - Extracted `PortfolioValuationService` (130 lines) - valuation & volatility tracking.
-    - Extracted `LiquidationService` (100 lines) - emergency liquidation logic.
-    - Refactored RiskManager to use extracted services, reducing complexity by 31%.
-    - Added 5 integration tests for service composition.
-  - **Phase 4: Analyst Decomposition (In Progress -> Complete)**:
-    - Extracted `SymbolContext` to Domain Layer (75 lines).
-    - Extracted `WarmupService` (153 lines) - encapsulated warmup logic.
-    - Extracted `SignalProcessor` (305 lines) - encapsulated signal generation.
-    - **Analyst Refactoring**: Reduced monolithic `analyst.rs` from 2097 -> 1812 lines (-13.6%).
-  - **Test Coverage**: 254 unit + integration tests passing (+8 tests).
-  - **Architecture Benefits**: Improved separation of concerns, testability, and maintainability.
+## Latest Updates (Version 0.59.0 - January 2026)
+- **Extreme Risk Parameter Scaling**:
+  - Rescaled Risk Appetite Score (1-10) to cover a wider range:
+    - **Safe (1)**: 0.5% risk/trade, tight stops.
+    - **Extreme (10)**: 20% risk/trade, 100% max position, "All-In" capability.
+- **CI & Test Suite Overhaul**:
+  - **Reorganization**: Grouped tests into `risk`, `components`, and `scenarios` suites.
+  - **CI Compatibility**: Validated strict `cargo fmt` and `clippy` compliance (zero warnings).
+  - **Reliability**: 291/291 tests passing.
+- **DDD Refactoring - Phases 1-2 Complete (Previous)**:
+  - **Phase 1: Domain Config Value Objects**: Extracted configuration validation.
+  - **Phase 2: RiskManager Decomposition**: Extracted Session/Valuation/Liquidation services.
+
 
 ## Version 0.58.0 - Listener Agent (New)
 - **Listener Agent**: Added a new agent that triggers trades based on news events/keywords.

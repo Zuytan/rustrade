@@ -45,17 +45,24 @@ impl TimeframeCandle {
     }
 
     /// Updates this candle with data from another candle (aggregation)
-    /// 
+    ///
     /// # Arguments
     /// * `candle` - The candle to merge into this one
-    /// 
+    ///
     /// # Note
     /// - Open remains unchanged (first candle's open)
     /// - High becomes max of all highs
     /// - Low becomes min of all lows
     /// - Close becomes the latest close
     /// - Volume is summed
-    pub fn update(&mut self, _open: Decimal, high: Decimal, low: Decimal, close: Decimal, volume: f64) {
+    pub fn update(
+        &mut self,
+        _open: Decimal,
+        high: Decimal,
+        low: Decimal,
+        close: Decimal,
+        volume: f64,
+    ) {
         // Open stays the same (first candle)
         // High is the maximum
         if high > self.high {
@@ -74,7 +81,7 @@ impl TimeframeCandle {
     }
 
     /// Checks if this candle is complete (has received all expected sub-candles)
-    /// 
+    ///
     /// For example, a 5-minute candle should have 5 one-minute candles
     pub fn is_complete(&self) -> bool {
         self.candle_count >= self.timeframe.to_minutes()

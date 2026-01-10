@@ -1,11 +1,11 @@
 use chrono::{TimeZone, Utc};
-use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::prelude::FromPrimitive; // Added
 use rust_decimal::Decimal;
-use rustrade::domain::trading::fee_model::ConstantFeeModel; // Added
+use rust_decimal::prelude::FromPrimitive; // Added
+use rust_decimal::prelude::ToPrimitive;
 use rustrade::application::agents::analyst::AnalystConfig;
 use rustrade::application::optimization::simulator::Simulator;
 use rustrade::config::StrategyMode;
+use rustrade::domain::trading::fee_model::ConstantFeeModel; // Added
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
@@ -497,19 +497,19 @@ async fn run_batch_benchmark(
                 let progress = format!("({}/~{})", batch_num, total_batches_estimate);
 
                 println!(
-                        "{:<4} | {:<12} | {:<12} | {:>9.2}% | {:>9.2}% | ${:>11.2} | {:>6} | {:>8.2} | {:>6.2} | {:>6.2} | {}",
-                        progress,
-                        current_start.format("%Y-%m-%d"),
-                        current_end.format("%Y-%m-%d"),
-                        result.total_return_pct,
-                        result.buy_and_hold_return_pct,
-                        net_profit,
-                        result.trades.len(),
-                        sharpe,
-                        result.alpha * 100.0, // Convert to percentage
-                        result.beta,
-                        status
-                    );
+                    "{:<4} | {:<12} | {:<12} | {:>9.2}% | {:>9.2}% | ${:>11.2} | {:>6} | {:>8.2} | {:>6.2} | {:>6.2} | {}",
+                    progress,
+                    current_start.format("%Y-%m-%d"),
+                    current_end.format("%Y-%m-%d"),
+                    result.total_return_pct,
+                    result.buy_and_hold_return_pct,
+                    net_profit,
+                    result.trades.len(),
+                    sharpe,
+                    result.alpha * 100.0, // Convert to percentage
+                    result.beta,
+                    status
+                );
                 batch_results.push(result);
                 batch_num += 1;
             }

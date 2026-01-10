@@ -1,5 +1,5 @@
-use crate::domain::trading::types::{OrderSide, Candle};
 use crate::domain::market::timeframe::Timeframe;
+use crate::domain::trading::types::{Candle, OrderSide};
 use rust_decimal::Decimal;
 use std::collections::{HashMap, VecDeque};
 
@@ -48,7 +48,7 @@ pub struct AnalysisContext {
 
     // Candle history (for SMC patterns)
     pub candles: VecDeque<Candle>,
-    
+
     // Multi-timeframe data (optional for backward compatibility)
     pub timeframe_features: Option<HashMap<Timeframe, TimeframeFeatures>>,
 }
@@ -86,19 +86,19 @@ impl Signal {
 
 impl AnalysisContext {
     /// Check if a higher timeframe confirms the trend direction
-    /// 
+    ///
     /// Returns true if the specified higher timeframe shows a trend aligned with the signal
     pub fn higher_timeframe_confirms_trend(&self, side: OrderSide, higher_tf: Timeframe) -> bool {
         let Some(ref tf_features) = self.timeframe_features else {
             // No multi-timeframe data available, default to true (backward compatible)
             return true;
         };
-        
+
         let Some(features) = tf_features.get(&higher_tf) else {
             // Requested timeframe not available, default to true
             return true;
         };
-        
+
         // Check if price is above/below trend SMA on higher timeframe
         match side {
             OrderSide::Buy => {
@@ -115,29 +115,37 @@ impl AnalysisContext {
             }
         }
     }
-    
+
     /// Calculate multi-timeframe trend strength (0.0 to 1.0)
-    /// 
+    ///
     /// Returns the percentage of timeframes showing bullish trend
     pub fn multi_timeframe_trend_strength(&self) -> f64 {
         let Some(ref tf_features) = self.timeframe_features else {
             // No multi-timeframe data, use primary timeframe
-            return if self.price_f64 > self.trend_sma { 1.0 } else { 0.0 };
+            return if self.price_f64 > self.trend_sma {
+                1.0
+            } else {
+                0.0
+            };
         };
-        
+
         if tf_features.is_empty() {
-            return if self.price_f64 > self.trend_sma { 1.0 } else { 0.0 };
+            return if self.price_f64 > self.trend_sma {
+                1.0
+            } else {
+                0.0
+            };
         }
-        
+
         let mut bullish_count = 0;
         let mut total_count = 0;
-        
+
         // Check primary timeframe
         if self.price_f64 > self.trend_sma {
             bullish_count += 1;
         }
         total_count += 1;
-        
+
         // Check each higher timeframe
         for features in tf_features.values() {
             if let (Some(price), Some(trend_sma)) = (features.price, features.trend_sma) {
@@ -147,29 +155,35 @@ impl AnalysisContext {
                 total_count += 1;
             }
         }
-        
+
         bullish_count as f64 / total_count as f64
     }
-    
+
     /// Check if all enabled timeframes show bullish trend
     pub fn all_timeframes_bullish(&self) -> bool {
         self.multi_timeframe_trend_strength() >= 1.0
     }
-    
+
     /// Get ADX from highest available timeframe for regime detection
     pub fn get_highest_timeframe_adx(&self) -> f64 {
         let Some(ref tf_features) = self.timeframe_features else {
             return self.adx;
         };
-        
+
         // Try to get ADX from highest timeframe (1Day > 4Hour > 1Hour > ...)
-        for tf in [Timeframe::OneDay, Timeframe::FourHour, Timeframe::OneHour, Timeframe::FifteenMin] {
+        for tf in [
+            Timeframe::OneDay,
+            Timeframe::FourHour,
+            Timeframe::OneHour,
+            Timeframe::FifteenMin,
+        ] {
             if let Some(features) = tf_features.get(&tf)
-                && let Some(adx) = features.adx {
-                    return adx;
-                }
+                && let Some(adx) = features.adx
+            {
+                return adx;
+            }
         }
-        
+
         // Fall back to primary timeframe
         self.adx
     }

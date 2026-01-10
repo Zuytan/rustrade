@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, warn};
 
-use crate::domain::listener::{ListenerConfig, ListenerRule, NewsEvent, ListenerAction};
+use crate::domain::listener::{ListenerAction, ListenerConfig, ListenerRule, NewsEvent};
 use crate::domain::ports::NewsDataService;
 
 pub struct ListenerAgent {
@@ -49,19 +49,22 @@ impl ListenerAgent {
         let mut news_rx = match self.news_service.subscribe_news().await {
             Ok(rx) => rx,
             Err(e) => {
-                error!("Failed to subscribe to news service: {}. Listener Agent stopping.", e);
+                error!(
+                    "Failed to subscribe to news service: {}. Listener Agent stopping.",
+                    e
+                );
                 return;
             }
         };
 
         while let Some(event) = news_rx.recv().await {
             info!("Received news event: {} - {}", event.source, event.title);
-            
+
             // Forward to UI broadcast if available
             if let Some(tx) = &self.news_broadcast_tx {
                 let _ = tx.send(event.clone());
             }
-            
+
             self.process_event(&event).await;
         }
 
@@ -92,16 +95,20 @@ impl ListenerAgent {
         };
 
         let signal = crate::domain::listener::NewsSignal {
-             symbol: rule.target_symbol.clone(),
-             sentiment,
-             headline: event.title.clone(),
-             source: event.source.clone(),
-             url: event.url.clone(),
+            symbol: rule.target_symbol.clone(),
+            sentiment,
+            headline: event.title.clone(),
+            source: event.source.clone(),
+            url: event.url.clone(),
         };
 
-        info!("Listener: Sending News Signal to Analyst: {:?} for {}", signal.sentiment, signal.symbol);
+        info!(
+            "Listener: Sending News Signal to Analyst: {:?} for {}",
+            signal.sentiment, signal.symbol
+        );
 
-        self.analyst_cmd_tx.send(crate::application::agents::analyst::AnalystCommand::ProcessNews(signal))
+        self.analyst_cmd_tx
+            .send(crate::application::agents::analyst::AnalystCommand::ProcessNews(signal))
             .await
             .context("Failed to send news signal to analyst")?;
 
@@ -142,7 +149,9 @@ mod tests {
                 id: "test-rule".to_string(),
                 keywords: vec!["Buy".to_string(), "Now".to_string()],
                 target_symbol: "TEST/USD".to_string(),
-                action: ListenerAction::NotifyAnalyst(crate::domain::listener::NewsSentiment::Bullish),
+                action: ListenerAction::NotifyAnalyst(
+                    crate::domain::listener::NewsSentiment::Bullish,
+                ),
                 active: true,
             }],
         };
@@ -171,8 +180,11 @@ mod tests {
         assert!(cmd.is_some());
         match cmd.unwrap() {
             crate::application::agents::analyst::AnalystCommand::ProcessNews(signal) => {
-                 assert_eq!(signal.symbol, "TEST/USD");
-                 assert_eq!(signal.sentiment, crate::domain::listener::NewsSentiment::Bullish);
+                assert_eq!(signal.symbol, "TEST/USD");
+                assert_eq!(
+                    signal.sentiment,
+                    crate::domain::listener::NewsSentiment::Bullish
+                );
             }
             _ => panic!("Expected ProcessNews command"),
         }

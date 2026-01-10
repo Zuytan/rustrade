@@ -1,8 +1,8 @@
 use crate::application::market_data::spread_cache::SpreadCache;
-use crate::domain::trading::types::TradeProposal;
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
-use rust_decimal::Decimal;
 use crate::domain::trading::fee_model::FeeModel;
+use crate::domain::trading::types::TradeProposal;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use std::sync::Arc;
 
 /// Detailed breakdown of transaction costs for a trade
@@ -93,7 +93,9 @@ impl CostEvaluator {
     /// TradeCost breakdown with detailed cost components
     pub fn evaluate(&self, proposal: &TradeProposal) -> TradeCost {
         // Delegate to FeeModel
-        let trade_costs = self.fee_model.calculate_cost(proposal.quantity, proposal.price, proposal.side);
+        let trade_costs =
+            self.fee_model
+                .calculate_cost(proposal.quantity, proposal.price, proposal.side);
         let commission = trade_costs.fee;
         let estimated_slippage = trade_costs.slippage_cost;
 
@@ -271,8 +273,11 @@ impl Default for CostEvaluator {
     fn default() -> Self {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         Self::new(
-            Arc::new(ConstantFeeModel::new(Decimal::from_f64(0.005).unwrap(), Decimal::from_f64(0.001).unwrap())),
-            5.0
+            Arc::new(ConstantFeeModel::new(
+                Decimal::from_f64(0.005).unwrap(),
+                Decimal::from_f64(0.001).unwrap(),
+            )),
+            5.0,
         )
     }
 }
@@ -300,7 +305,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -324,7 +329,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -339,7 +344,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -354,7 +359,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -369,7 +374,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -384,7 +389,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -412,7 +417,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(500.0), dec!(100.0)); // $50,000 trade
 
@@ -436,7 +441,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(0.0));
 
@@ -452,7 +457,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0
+            5.0,
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::domain::trading::portfolio::Position;
+use std::collections::HashMap;
 
 /// Configuration for correlation-based diversification
 #[derive(Debug, Clone)]
@@ -16,9 +16,11 @@ impl Default for CorrelationFilterConfig {
     }
 }
 
-use async_trait::async_trait;
-use crate::domain::risk::filters::validator_trait::{RiskValidator, ValidationContext, ValidationResult};
+use crate::domain::risk::filters::validator_trait::{
+    RiskValidator, ValidationContext, ValidationResult,
+};
 use crate::domain::trading::types::OrderSide;
+use async_trait::async_trait;
 
 pub struct CorrelationFilter {
     config: CorrelationFilterConfig,
@@ -28,7 +30,7 @@ impl CorrelationFilter {
     pub fn new(config: CorrelationFilterConfig) -> Self {
         Self { config }
     }
-    
+
     // Legacy static method - keep for backward compat if needed, or remove
     pub fn check_correlation(
         target_symbol: &str,
@@ -38,7 +40,7 @@ impl CorrelationFilter {
     ) -> Result<(), String> {
         // ... (existing implementation)
         // Re-implement logic here or call from instance method
-        
+
         if positions.is_empty() {
             return Ok(());
         }
@@ -48,18 +50,18 @@ impl CorrelationFilter {
                 continue;
             }
 
-            let corr = correlation_matrix.get(&(target_symbol.to_string(), existing_symbol.clone()))
-                .or_else(|| correlation_matrix.get(&(existing_symbol.clone(), target_symbol.to_string())))
+            let corr = correlation_matrix
+                .get(&(target_symbol.to_string(), existing_symbol.clone()))
+                .or_else(|| {
+                    correlation_matrix.get(&(existing_symbol.clone(), target_symbol.to_string()))
+                })
                 .cloned()
                 .unwrap_or(0.0);
 
             if corr > config.max_correlation_threshold {
                 return Err(format!(
                     "Correlation too high between {} and existing position {} ({:.2} > {:.2})",
-                    target_symbol,
-                    existing_symbol,
-                    corr,
-                    config.max_correlation_threshold
+                    target_symbol, existing_symbol, corr, config.max_correlation_threshold
                 ));
             }
         }
@@ -90,7 +92,7 @@ impl RiskValidator for CorrelationFilter {
             &ctx.proposal.symbol,
             &ctx.portfolio.positions,
             matrix,
-            &self.config
+            &self.config,
         ) {
             Ok(_) => ValidationResult::Approve,
             Err(e) => ValidationResult::Reject(e),
@@ -110,17 +112,22 @@ mod tests {
     #[test]
     fn test_block_high_correlation() {
         let mut positions = HashMap::new();
-        positions.insert("BTC/USD".to_string(), Position {
-            symbol: "BTC/USD".to_string(),
-            quantity: dec!(1),
-            average_price: dec!(50000),
-        });
+        positions.insert(
+            "BTC/USD".to_string(),
+            Position {
+                symbol: "BTC/USD".to_string(),
+                quantity: dec!(1),
+                average_price: dec!(50000),
+            },
+        );
 
         let mut matrix = HashMap::new();
         matrix.insert(("ETH/USD".to_string(), "BTC/USD".to_string()), 0.95);
 
-        let config = CorrelationFilterConfig { max_correlation_threshold: 0.85 };
-        
+        let config = CorrelationFilterConfig {
+            max_correlation_threshold: 0.85,
+        };
+
         let result = CorrelationFilter::check_correlation("ETH/USD", &positions, &matrix, &config);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Correlation too high"));
@@ -129,17 +136,20 @@ mod tests {
     #[test]
     fn test_allow_low_correlation() {
         let mut positions = HashMap::new();
-        positions.insert("BTC/USD".to_string(), Position {
-            symbol: "BTC/USD".to_string(),
-            quantity: dec!(1),
-            average_price: dec!(50000),
-        });
+        positions.insert(
+            "BTC/USD".to_string(),
+            Position {
+                symbol: "BTC/USD".to_string(),
+                quantity: dec!(1),
+                average_price: dec!(50000),
+            },
+        );
 
         let mut matrix = HashMap::new();
         matrix.insert(("GLD".to_string(), "BTC/USD".to_string()), 0.10);
 
         let config = CorrelationFilterConfig::default();
-        
+
         let result = CorrelationFilter::check_correlation("GLD", &positions, &matrix, &config);
         assert!(result.is_ok());
     }
@@ -147,16 +157,19 @@ mod tests {
     #[test]
     fn test_allow_missing_data() {
         let mut positions = HashMap::new();
-        positions.insert("BTC/USD".to_string(), Position {
-            symbol: "BTC/USD".to_string(),
-            quantity: dec!(1),
-            average_price: dec!(50000),
-        });
+        positions.insert(
+            "BTC/USD".to_string(),
+            Position {
+                symbol: "BTC/USD".to_string(),
+                quantity: dec!(1),
+                average_price: dec!(50000),
+            },
+        );
 
         let matrix = HashMap::new(); // Empty matrix
 
         let config = CorrelationFilterConfig::default();
-        
+
         let result = CorrelationFilter::check_correlation("UNKNOWN", &positions, &matrix, &config);
         assert!(result.is_ok()); // Should not block if we don't know the correlation
     }

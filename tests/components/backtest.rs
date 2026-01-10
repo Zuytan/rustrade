@@ -9,7 +9,7 @@ use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, Level};
+use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 // Run with: cargo test --test backtest_alpaca -- --nocapture
@@ -86,7 +86,10 @@ async fn test_backtest_strategy_on_historical_data() {
         trend_riding_exit_buffer_pct: 0.03,
         mean_reversion_rsi_exit: 50.0,
         mean_reversion_bb_period: 20,
-        fee_model: Arc::new(rustrade::domain::trading::fee_model::ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
+        fee_model: Arc::new(rustrade::domain::trading::fee_model::ConstantFeeModel::new(
+            Decimal::ZERO,
+            Decimal::ZERO,
+        )),
         max_position_size_pct: 0.1,
         bb_period: 20,
         bb_std_dev: 2.0,

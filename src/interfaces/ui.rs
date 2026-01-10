@@ -58,13 +58,15 @@ impl eframe::App for UserAgent {
             // F1 to open help (inside settings)
             if i.key_pressed(egui::Key::F1) {
                 self.current_view = crate::interfaces::ui_components::DashboardView::Settings;
-                self.settings_panel.active_tab = crate::interfaces::ui_components::SettingsTab::Help;
+                self.settings_panel.active_tab =
+                    crate::interfaces::ui_components::SettingsTab::Help;
             }
 
             // Ctrl/Cmd + K to open shortcuts (inside settings)
             if i.modifiers.command && i.key_pressed(egui::Key::K) {
                 self.current_view = crate::interfaces::ui_components::DashboardView::Settings;
-                self.settings_panel.active_tab = crate::interfaces::ui_components::SettingsTab::Shortcuts;
+                self.settings_panel.active_tab =
+                    crate::interfaces::ui_components::SettingsTab::Shortcuts;
             }
         });
 
@@ -78,46 +80,55 @@ impl eframe::App for UserAgent {
             .frame(
                 egui::Frame::NONE
                     .fill(egui::Color32::from_rgb(10, 12, 16))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(40, 44, 52)))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(40, 44, 52))),
             )
             .show(ctx, |ui| {
-                 crate::interfaces::ui_components::render_sidebar(ui, &mut self.current_view, &mut self.settings_panel, &self.i18n);
+                crate::interfaces::ui_components::render_sidebar(
+                    ui,
+                    &mut self.current_view,
+                    &mut self.settings_panel,
+                    &self.i18n,
+                );
             });
 
         // (Removed Right SidePanel for Settings)
-        
+
         // --- 4. Central Panel ---
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::NONE
                     .fill(egui::Color32::from_rgb(10, 12, 16))
-                    .inner_margin(egui::Margin::same(24)) // Increased Margin for breathing room
+                    .inner_margin(egui::Margin::same(24)), // Increased Margin for breathing room
             )
-            .show(ctx, |ui| {
-             match self.current_view {
-                 crate::interfaces::ui_components::DashboardView::Dashboard => {
-                     crate::interfaces::dashboard::render_dashboard(ui, self);
-                 }
-                 crate::interfaces::ui_components::DashboardView::Charts => {
-                      crate::interfaces::dashboard::render_chart_panel(self, ui);
-                 }
-                 crate::interfaces::ui_components::DashboardView::Portfolio => {
-                      ui.centered_and_justified(|ui| ui.label(egui::RichText::new(self.i18n.t("portfolio_coming_soon")).size(20.0).weak()));
-                 }
-                 crate::interfaces::ui_components::DashboardView::Analytics => {
-                      crate::interfaces::dashboard::render_analytics_view(ui, self);
-                 }
-                  crate::interfaces::ui_components::DashboardView::Settings => {
-                       crate::interfaces::ui_components::render_settings_view(
-                           ui, 
-                           &mut self.settings_panel, 
-                           &mut self.i18n,
-                           &self.risk_cmd_tx,
-                           &self.analyst_cmd_tx
-                       );
-                  }
-             }
-        });
+            .show(ctx, |ui| match self.current_view {
+                crate::interfaces::ui_components::DashboardView::Dashboard => {
+                    crate::interfaces::dashboard::render_dashboard(ui, self);
+                }
+                crate::interfaces::ui_components::DashboardView::Charts => {
+                    crate::interfaces::dashboard::render_chart_panel(self, ui);
+                }
+                crate::interfaces::ui_components::DashboardView::Portfolio => {
+                    ui.centered_and_justified(|ui| {
+                        ui.label(
+                            egui::RichText::new(self.i18n.t("portfolio_coming_soon"))
+                                .size(20.0)
+                                .weak(),
+                        )
+                    });
+                }
+                crate::interfaces::ui_components::DashboardView::Analytics => {
+                    crate::interfaces::dashboard::render_analytics_view(ui, self);
+                }
+                crate::interfaces::ui_components::DashboardView::Settings => {
+                    crate::interfaces::ui_components::render_settings_view(
+                        ui,
+                        &mut self.settings_panel,
+                        &mut self.i18n,
+                        &self.risk_cmd_tx,
+                        &self.analyst_cmd_tx,
+                    );
+                }
+            });
 
         // Logs Panel (using extracted helper)
         crate::interfaces::dashboard::render_logs_panel(self, ctx);

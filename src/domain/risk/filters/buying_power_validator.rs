@@ -2,7 +2,9 @@ use async_trait::async_trait;
 
 use tracing::debug;
 
-use crate::domain::risk::filters::validator_trait::{RiskValidator, ValidationContext, ValidationResult};
+use crate::domain::risk::filters::validator_trait::{
+    RiskValidator, ValidationContext, ValidationResult,
+};
 use crate::domain::trading::types::OrderSide;
 
 /// Configuration for buying power validation
@@ -14,9 +16,7 @@ pub struct BuyingPowerConfig {
 
 impl Default for BuyingPowerConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-        }
+        Self { enabled: true }
     }
 }
 
@@ -100,12 +100,12 @@ mod tests {
     async fn test_approve_sufficient_funds() {
         let validator = BuyingPowerValidator::new(BuyingPowerConfig::default());
         let proposal = create_test_proposal(OrderSide::Buy, dec!(100), dec!(5)); // Cost 500
-        
+
         // Mock Context
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
         let risk_state = RiskState::default();
-        
+
         let ctx = ValidationContext::new(
             &proposal,
             &portfolio,
@@ -126,12 +126,12 @@ mod tests {
     async fn test_reject_insufficient_funds() {
         let validator = BuyingPowerValidator::new(BuyingPowerConfig::default());
         let proposal = create_test_proposal(OrderSide::Buy, dec!(100), dec!(10)); // Cost 1000
-        
+
         // Mock Context
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
         let risk_state = RiskState::default();
-        
+
         // Equity is high ($2000), but Cash is low ($500)
         let ctx = ValidationContext::new(
             &proposal,
@@ -148,22 +148,27 @@ mod tests {
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(result.rejection_reason().unwrap().contains("Insufficient buying power"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Insufficient buying power")
+        );
     }
 
     #[tokio::test]
     async fn test_approve_sell_regardless_of_cash() {
         let validator = BuyingPowerValidator::new(BuyingPowerConfig::default());
-        let proposal = create_test_proposal(OrderSide::Sell, dec!(100), dec!(10)); 
-        
+        let proposal = create_test_proposal(OrderSide::Sell, dec!(100), dec!(10));
+
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
         let risk_state = RiskState::default();
-        
+
         let ctx = ValidationContext::new(
             &proposal,
             &portfolio,
-            dec!(2000), 
+            dec!(2000),
             &prices,
             &risk_state,
             None,

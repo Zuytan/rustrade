@@ -1,8 +1,8 @@
 pub use crate::domain::market::strategy_config::StrategyMode;
 use crate::domain::risk::risk_appetite::RiskAppetite;
 use anyhow::{Context, Result};
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::env;
 use std::str::FromStr;
 
@@ -41,7 +41,10 @@ impl std::str::FromStr for Mode {
             "alpaca" => Ok(Mode::Alpaca),
             "oanda" => Ok(Mode::Oanda),
             "binance" => Ok(Mode::Binance),
-            _ => anyhow::bail!("Invalid MODE: {}. Must be 'mock', 'alpaca', 'oanda', or 'binance'", s),
+            _ => anyhow::bail!(
+                "Invalid MODE: {}. Must be 'mock', 'alpaca', 'oanda', or 'binance'",
+                s
+            ),
         }
     }
 }
@@ -158,11 +161,10 @@ impl Config {
 
         let binance_api_key = env::var("BINANCE_API_KEY").unwrap_or_default();
         let binance_secret_key = env::var("BINANCE_SECRET_KEY").unwrap_or_default();
-        let binance_base_url = env::var("BINANCE_BASE_URL")
-            .unwrap_or_else(|_| "https://api.binance.com".to_string());
+        let binance_base_url =
+            env::var("BINANCE_BASE_URL").unwrap_or_else(|_| "https://api.binance.com".to_string());
         let binance_ws_url = env::var("BINANCE_WS_URL")
             .unwrap_or_else(|_| "wss://stream.binance.com:9443".to_string());
-
 
         // Load dynamic mode early to determine SYMBOLS default
         let dynamic_symbol_mode = env::var("DYNAMIC_SYMBOL_MODE")
@@ -488,8 +490,8 @@ impl Config {
             .parse::<crate::domain::market::timeframe::Timeframe>()
             .context("Failed to parse PRIMARY_TIMEFRAME")?;
 
-        let timeframes_str = env::var("TIMEFRAMES")
-            .unwrap_or_else(|_| "1Min,5Min,15Min,1Hour".to_string());
+        let timeframes_str =
+            env::var("TIMEFRAMES").unwrap_or_else(|_| "1Min,5Min,15Min,1Hour".to_string());
         let enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe> = timeframes_str
             .split(',')
             .map(|s| s.trim().parse())
@@ -579,22 +581,22 @@ impl Config {
         })
     }
 
-    pub fn create_fee_model(&self) -> std::sync::Arc<dyn crate::domain::trading::fee_model::FeeModel> {
+    pub fn create_fee_model(
+        &self,
+    ) -> std::sync::Arc<dyn crate::domain::trading::fee_model::FeeModel> {
         use crate::domain::trading::fee_model::{ConstantFeeModel, TieredFeeModel};
         use rust_decimal::prelude::FromPrimitive;
-        
+
         match self.asset_class {
-            AssetClass::Stock => {
-                std::sync::Arc::new(ConstantFeeModel::new(
-                    Decimal::from_f64(self.commission_per_share).unwrap_or(Decimal::ZERO),
-                    Decimal::from_f64(self.slippage_pct).unwrap_or(Decimal::ZERO),
-                ))
-            },
+            AssetClass::Stock => std::sync::Arc::new(ConstantFeeModel::new(
+                Decimal::from_f64(self.commission_per_share).unwrap_or(Decimal::ZERO),
+                Decimal::from_f64(self.slippage_pct).unwrap_or(Decimal::ZERO),
+            )),
             AssetClass::Crypto => {
                 // For crypto, interpret commission_per_share as taker fee % if needed, or use separate env vars later.
                 // For now, mapping commission_per_share to taker_fee_pct for simplicity in this transition.
                 std::sync::Arc::new(TieredFeeModel::new(
-                    Decimal::ZERO, // Maker fee
+                    Decimal::ZERO,                                                         // Maker fee
                     Decimal::from_f64(self.commission_per_share).unwrap_or(Decimal::ZERO), // Taker fee
                     Decimal::from_f64(self.slippage_pct).unwrap_or(Decimal::ZERO),
                 ))
@@ -646,7 +648,7 @@ impl Config {
     /// Create a BrokerConfig domain value object from this Config
     pub fn to_broker_config(&self) -> Result<crate::domain::config::BrokerConfig> {
         use crate::domain::config::BrokerType;
-        
+
         let broker_type = match self.mode {
             Mode::Mock => BrokerType::Mock,
             Mode::Alpaca => BrokerType::Alpaca,
@@ -655,7 +657,13 @@ impl Config {
         };
 
         let (api_key, secret_key, base_url, ws_url, data_url) = match self.mode {
-            Mode::Mock => (String::new(), String::new(), String::new(), String::new(), None),
+            Mode::Mock => (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                None,
+            ),
             Mode::Alpaca => (
                 self.alpaca_api_key.clone(),
                 self.alpaca_secret_key.clone(),
@@ -690,4 +698,3 @@ impl Config {
         .map_err(|e| anyhow::anyhow!("Invalid broker config: {}", e))
     }
 }
-

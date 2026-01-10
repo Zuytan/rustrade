@@ -1,22 +1,22 @@
+use crate::application::agents::analyst::AnalystCommand; // Added
 use crate::application::agents::sentinel::SentinelCommand;
 use crate::application::risk_management::commands::RiskCommand; // Added
-use crate::application::agents::analyst::AnalystCommand; // Added
+use crate::domain::listener::NewsEvent;
 use crate::domain::market::strategy_config::StrategyMode;
+use crate::domain::sentiment::Sentiment;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderSide;
 use crate::domain::trading::types::TradeProposal;
-use crate::domain::sentiment::Sentiment;
-use crate::domain::listener::NewsEvent;
 use crate::domain::ui::I18nService;
 use chrono::{DateTime, Utc};
 use crossbeam_channel::Receiver;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::debug;
 
 /// Activity event type for the activity feed
@@ -99,13 +99,13 @@ pub struct UserAgent {
 
     // Settings panel state
     pub settings_panel: crate::interfaces::ui_components::SettingsPanel,
-    
+
     // Dashboard Navigation State
     pub current_view: crate::interfaces::ui_components::DashboardView,
 
     // Performance & Risk metrics (Dynamic)
     pub latency_ms: u64,
-    pub risk_score: u8,  // Risk appetite score (1-9)
+    pub risk_score: u8, // Risk appetite score (1-9)
     pub market_sentiment: Option<Sentiment>,
 
     // Phase 4: Analytics State
@@ -141,7 +141,6 @@ pub struct StrategyInfo {
     pub trend: TrendDirection,
     pub current_price: Decimal,
 }
-
 
 pub struct UserAgentChannels {
     pub log_rx: Receiver<String>,
@@ -191,8 +190,8 @@ impl UserAgent {
             i18n: I18nService::new(), // Initialize i18n service
             settings_panel: crate::interfaces::ui_components::SettingsPanel::new(),
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
-            latency_ms: 12,    // Default initial value
-            risk_score: config.risk_appetite.map(|r| r.score()).unwrap_or(5),  // Use real risk score or default to 5 (balanced)
+            latency_ms: 12, // Default initial value
+            risk_score: config.risk_appetite.map(|r| r.score()).unwrap_or(5), // Use real risk score or default to 5 (balanced)
             market_sentiment: None,
             monte_carlo_result: None,
             correlation_matrix: std::collections::HashMap::new(),
@@ -206,7 +205,8 @@ impl UserAgent {
             return None;
         }
 
-        self.chat_history.push((self.i18n.t("sender_user").to_string(), input.clone()));
+        self.chat_history
+            .push((self.i18n.t("sender_user").to_string(), input.clone()));
         self.input_text.clear();
 
         // Simple Natural Language Parsing
@@ -249,12 +249,24 @@ impl UserAgent {
             };
 
             match self.proposal_tx.try_send(proposal) {
-                Ok(_) => Some(self.i18n.tf("cmd_proposal_sent", &[
-                    ("side", self.i18n.t(&format!("side_{}", side.to_string().to_lowercase()))),
-                    ("qty", &qty.to_string()),
-                    ("symbol", symbol)
-                ])),
-                Err(e) => Some(self.i18n.tf("cmd_proposal_failed", &[("error", &e.to_string())])),
+                Ok(_) => Some(
+                    self.i18n.tf(
+                        "cmd_proposal_sent",
+                        &[
+                            (
+                                "side",
+                                self.i18n
+                                    .t(&format!("side_{}", side.to_string().to_lowercase())),
+                            ),
+                            ("qty", &qty.to_string()),
+                            ("symbol", symbol),
+                        ],
+                    ),
+                ),
+                Err(e) => Some(
+                    self.i18n
+                        .tf("cmd_proposal_failed", &[("error", &e.to_string())]),
+                ),
             }
         } else {
             Some(self.i18n.tf("cmd_invalid_qty", &[("qty", quantity_str)]))
@@ -271,26 +283,30 @@ impl UserAgent {
 
             // Extract signal information from SignalGenerator logs
             // Format: "SignalGenerator [StrategyName]: SYMBOL - REASON"
-            if msg.contains("SignalGenerator") && msg.contains(": ")
-                && let Some(signal_part) = msg.split("SignalGenerator").nth(1) {
-                    // Extract symbol and reason
-                    if let Some(content) = signal_part.split(" - ").nth(1) {
-                        // Find the symbol (between]: and -)
-                        if let Some(symbol_section) = signal_part.split("]: ").nth(1)
-                            && let Some(symbol) = symbol_section.split(" - ").next() {
-                                // Update strategy info with the signal reason
-                                if let Some(info) = self.strategy_info.get_mut(symbol) {
-                                    info.last_signal = Some(content.trim().to_string());
-                                }
-                            }
+            if msg.contains("SignalGenerator")
+                && msg.contains(": ")
+                && let Some(signal_part) = msg.split("SignalGenerator").nth(1)
+            {
+                // Extract symbol and reason
+                if let Some(content) = signal_part.split(" - ").nth(1) {
+                    // Find the symbol (between]: and -)
+                    if let Some(symbol_section) = signal_part.split("]: ").nth(1)
+                        && let Some(symbol) = symbol_section.split(" - ").next()
+                    {
+                        // Update strategy info with the signal reason
+                        if let Some(info) = self.strategy_info.get_mut(symbol) {
+                            info.last_signal = Some(content.trim().to_string());
+                        }
                     }
                 }
+            }
 
             // Simple heuristic to extract "Sender" from log line if possible,
             // otherwise default to "System"
             // Log format assumed: "TIMESTAMP LEVEL TARGET: MESSAGE"
             // We'll just display the raw message for now, or parse it lightly.
-            self.chat_history.push((self.i18n.t("sender_system").to_string(), msg));
+            self.chat_history
+                .push((self.i18n.t("sender_system").to_string(), msg));
         }
 
         // Keep history manageable
@@ -300,13 +316,19 @@ impl UserAgent {
 
         // 1.5 Sentiment Updates
         if let Ok(sentiment) = self.sentiment_rx.try_recv() {
-             debug!("UserAgent: Received new sentiment: {} ({})", sentiment.value, sentiment.classification);
-             self.market_sentiment = Some(sentiment);
+            debug!(
+                "UserAgent: Received new sentiment: {} ({})",
+                sentiment.value, sentiment.classification
+            );
+            self.market_sentiment = Some(sentiment);
         }
 
         // 1.6 News Events
         while let Ok(news) = self.news_rx.try_recv() {
-            debug!("UserAgent: Received news event: {} - {}", news.source, news.title);
+            debug!(
+                "UserAgent: Received news event: {} - {}",
+                news.source, news.title
+            );
             self.news_events.push_front(news);
             // Keep only last 10 news events
             while self.news_events.len() > 10 {
@@ -467,16 +489,18 @@ impl UserAgent {
                 }
 
                 let entry_val = trade.entry_price.to_f64().unwrap_or(0.0);
-                if entry_val == 0.0 { continue; }
+                if entry_val == 0.0 {
+                    continue;
+                }
 
                 // PnL percentage relative to entry price
                 // For LONG: (exit - entry) / entry
                 // For SHORT: (entry - exit) / entry
                 // This is equivalent to trade.pnl / (entry * quantity), but per unit is simpler
                 let pnl_per_unit = if trade.side == OrderSide::Buy {
-                     trade.exit_price.and_then(|p| p.to_f64()).unwrap_or(0.0) - entry_val
+                    trade.exit_price.and_then(|p| p.to_f64()).unwrap_or(0.0) - entry_val
                 } else {
-                     entry_val - trade.exit_price.and_then(|p| p.to_f64()).unwrap_or(0.0)
+                    entry_val - trade.exit_price.and_then(|p| p.to_f64()).unwrap_or(0.0)
                 };
 
                 let pct = pnl_per_unit / entry_val;
@@ -490,9 +514,17 @@ impl UserAgent {
                 }
             }
 
-            let avg_win = if win_count > 0 { total_win_pct / win_count as f64 } else { 0.0 };
-            let avg_loss = if loss_count > 0 { total_loss_pct / loss_count as f64 } else { 0.0 };
-            
+            let avg_win = if win_count > 0 {
+                total_win_pct / win_count as f64
+            } else {
+                0.0
+            };
+            let avg_loss = if loss_count > 0 {
+                total_loss_pct / loss_count as f64
+            } else {
+                0.0
+            };
+
             // Return safe defaults if no history yet to avoid flat lines in Monte Carlo
             let safe_win = if avg_win == 0.0 { 0.02 } else { avg_win };
             let safe_loss = if avg_loss == 0.0 { 0.015 } else { avg_loss };
@@ -508,7 +540,9 @@ impl UserAgent {
         // Check for order executions
         if msg.contains("Order") && (msg.contains("filled") || msg.contains("executed")) {
             if let Some(symbol) = self.extract_symbol_from_log(msg) {
-                let event_msg = self.i18n.tf("activity_trade_executed", &[("symbol", &symbol)]);
+                let event_msg = self
+                    .i18n
+                    .tf("activity_trade_executed", &[("symbol", &symbol)]);
                 self.add_activity(
                     ActivityEventType::TradeExecuted,
                     event_msg,
@@ -519,18 +553,19 @@ impl UserAgent {
         // Check for buy/sell signals
         else if msg.contains("SignalGenerator") {
             if (msg.contains("BUY") || msg.contains("SELL"))
-                && let Some(symbol) = self.extract_symbol_from_log(msg) {
-                    let signal_type = if msg.contains("BUY") { 
-                        self.i18n.t("side_buy") 
-                    } else { 
-                        self.i18n.t("side_sell") 
-                    };
-                    let event_msg = self.i18n.tf("activity_signal", &[
-                        ("type", signal_type),
-                        ("symbol", &symbol)
-                    ]);
-                    self.add_activity(ActivityEventType::Signal, event_msg, EventSeverity::Info);
-                }
+                && let Some(symbol) = self.extract_symbol_from_log(msg)
+            {
+                let signal_type = if msg.contains("BUY") {
+                    self.i18n.t("side_buy")
+                } else {
+                    self.i18n.t("side_sell")
+                };
+                let event_msg = self.i18n.tf(
+                    "activity_signal",
+                    &[("type", signal_type), ("symbol", &symbol)],
+                );
+                self.add_activity(ActivityEventType::Signal, event_msg, EventSeverity::Info);
+            }
         }
         // Check for filter blocks
         else if msg.contains("REJECT") || msg.contains("blocked") || msg.contains("filtered") {
@@ -544,10 +579,10 @@ impl UserAgent {
                 } else {
                     self.i18n.t("filter_generic")
                 };
-                let event_msg = self.i18n.tf("activity_blocked", &[
-                    ("symbol", &symbol),
-                    ("reason", reason)
-                ]);
+                let event_msg = self.i18n.tf(
+                    "activity_blocked",
+                    &[("symbol", &symbol), ("reason", reason)],
+                );
                 self.add_activity(
                     ActivityEventType::FilterBlock,
                     event_msg,

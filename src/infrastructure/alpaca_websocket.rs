@@ -43,7 +43,7 @@ use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio::time::{self, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{debug, error, info, warn};
@@ -240,7 +240,9 @@ impl AlpacaWebSocketManager {
                 {
                     Ok(authenticated) => {
                         if authenticated {
-                            info!("WebSocketManager: Connection ended cleanly after successful authentication");
+                            info!(
+                                "WebSocketManager: Connection ended cleanly after successful authentication"
+                            );
                         } else {
                             info!("WebSocketManager: Connection ended before authentication");
                         }

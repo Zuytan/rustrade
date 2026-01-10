@@ -84,7 +84,10 @@ impl SessionManager {
         if let Some(repo) = &self.risk_state_repository {
             match repo.load("global").await {
                 Ok(Some(state)) => {
-                    info!("SessionManager: Loaded persistent state from DB: {:?}", state);
+                    info!(
+                        "SessionManager: Loaded persistent state from DB: {:?}",
+                        state
+                    );
 
                     // Restore HWM and Consecutive Losses always
                     risk_state.equity_high_water_mark = state.equity_high_water_mark;
@@ -96,7 +99,9 @@ impl SessionManager {
                         risk_state.session_start_equity = state.session_start_equity;
                         risk_state.daily_start_equity = state.daily_start_equity;
                         risk_state.reference_date = state.reference_date;
-                        info!("SessionManager: Restored intraday equity baselines from persistence.");
+                        info!(
+                            "SessionManager: Restored intraday equity baselines from persistence."
+                        );
                     } else {
                         info!(
                             "SessionManager: Persistent state is from previous day ({} vs {}). Using fresh equity baselines.",
@@ -121,7 +126,9 @@ impl SessionManager {
 
         info!(
             "SessionManager: Session initialized. Equity: {}, Daily Start: {}, HWM: {}",
-            risk_state.session_start_equity, risk_state.daily_start_equity, risk_state.equity_high_water_mark
+            risk_state.session_start_equity,
+            risk_state.daily_start_equity,
+            risk_state.equity_high_water_mark
         );
 
         Ok(risk_state)
@@ -197,7 +204,8 @@ mod tests {
         async fn subscribe(
             &self,
             _symbols: Vec<String>,
-        ) -> Result<tokio::sync::mpsc::Receiver<crate::domain::trading::types::MarketEvent>> {
+        ) -> Result<tokio::sync::mpsc::Receiver<crate::domain::trading::types::MarketEvent>>
+        {
             let (_tx, rx) = tokio::sync::mpsc::channel(1);
             Ok(rx)
         }
@@ -299,7 +307,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_daily_reset() {
-        let manager = SessionManager::new(None, Arc::new(MockMarketData { prices: HashMap::new() }));
+        let manager = SessionManager::new(
+            None,
+            Arc::new(MockMarketData {
+                prices: HashMap::new(),
+            }),
+        );
 
         let yesterday = Utc::now().date_naive() - chrono::Duration::days(1);
         let mut state = RiskState {
@@ -324,7 +337,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_reset_same_day() {
-        let manager = SessionManager::new(None, Arc::new(MockMarketData { prices: HashMap::new() }));
+        let manager = SessionManager::new(
+            None,
+            Arc::new(MockMarketData {
+                prices: HashMap::new(),
+            }),
+        );
 
         let mut state = RiskState {
             id: "global".to_string(),

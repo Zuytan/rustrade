@@ -2,16 +2,15 @@ use crate::domain::ports::OrderUpdate;
 use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{
-    denormalize_crypto_symbol, normalize_crypto_symbol, MarketEvent, Order, OrderSide,
-    OrderType,
+    MarketEvent, Order, OrderSide, OrderType, denormalize_crypto_symbol, normalize_crypto_symbol,
 };
 use crate::infrastructure::binance_websocket::BinanceWebSocketManager;
+use crate::infrastructure::circuit_breaker::CircuitBreaker; // Added
+use crate::infrastructure::http_client_factory::HttpClientFactory;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::TimeZone;
 use hmac::{Hmac, Mac};
-use crate::infrastructure::http_client_factory::HttpClientFactory;
-use crate::infrastructure::circuit_breaker::CircuitBreaker; // Added
 use reqwest_middleware::ClientWithMiddleware;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -168,7 +167,10 @@ impl MarketDataService for BinanceMarketDataService {
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("Binance market event broadcast receiver lagged, missed {} messages", n);
+                        warn!(
+                            "Binance market event broadcast receiver lagged, missed {} messages",
+                            n
+                        );
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         debug!("Binance market event broadcast channel closed");
@@ -266,49 +268,59 @@ impl MarketDataService for BinanceMarketDataService {
             return Ok(std::collections::HashMap::new());
         }
 
-        self.circuit_breaker.call(async move {
-            let url = format!("{}/api/v3/ticker/price", self.base_url);
-            
-            // Binance allows fetching multiple symbols in one call via [\"BTCUSDT\",\"ETHUSDT\"]
-            let api_symbols: Vec<String> = symbols
-                .iter()
-                .map(|s| denormalize_crypto_symbol(s))
-                .collect();
-            
-            let symbols_json = serde_json::to_string(&api_symbols)?;
-            
-            let response = self.client.get(&url)
-                .query(&[("symbols", &symbols_json)])
-                .send()
-                .await
-                .context("Failed to fetch prices from Binance")?;
+        self.circuit_breaker
+            .call(async move {
+                let url = format!("{}/api/v3/ticker/price", self.base_url);
 
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_default();
-                anyhow::bail!("Binance ticker API error: {}", error_text);
-            }
+                // Binance allows fetching multiple symbols in one call via [\"BTCUSDT\",\"ETHUSDT\"]
+                let api_symbols: Vec<String> = symbols
+                    .iter()
+                    .map(|s| denormalize_crypto_symbol(s))
+                    .collect();
 
-            #[derive(Debug, Deserialize)]
-            struct PriceTicker {
-                symbol: String,
-                price: String,
-            }
+                let symbols_json = serde_json::to_string(&api_symbols)?;
 
-            let tickers: Vec<PriceTicker> = response.json().await.context("Failed to parse Binance prices")?;
-            
-            let mut prices = std::collections::HashMap::new();
-            for t in tickers {
-                let normalized = normalize_crypto_symbol(&t.symbol).unwrap_or(t.symbol);
-                if let Ok(p) = Decimal::from_str_exact(&t.price) {
-                    prices.insert(normalized, p);
+                let response = self
+                    .client
+                    .get(&url)
+                    .query(&[("symbols", &symbols_json)])
+                    .send()
+                    .await
+                    .context("Failed to fetch prices from Binance")?;
+
+                if !response.status().is_success() {
+                    let error_text = response.text().await.unwrap_or_default();
+                    anyhow::bail!("Binance ticker API error: {}", error_text);
                 }
-            }
-            
-            Ok(prices)
-        }).await.map_err(|e| match e {
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => anyhow::anyhow!("Binance Market Data circuit breaker open: {}", msg),
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
-        })
+
+                #[derive(Debug, Deserialize)]
+                struct PriceTicker {
+                    symbol: String,
+                    price: String,
+                }
+
+                let tickers: Vec<PriceTicker> = response
+                    .json()
+                    .await
+                    .context("Failed to parse Binance prices")?;
+
+                let mut prices = std::collections::HashMap::new();
+                for t in tickers {
+                    let normalized = normalize_crypto_symbol(&t.symbol).unwrap_or(t.symbol);
+                    if let Ok(p) = Decimal::from_str_exact(&t.price) {
+                        prices.insert(normalized, p);
+                    }
+                }
+
+                Ok(prices)
+            })
+            .await
+            .map_err(|e| match e {
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                    anyhow::anyhow!("Binance Market Data circuit breaker open: {}", msg)
+                }
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+            })
     }
 
     async fn get_historical_bars(
@@ -326,14 +338,15 @@ impl MarketDataService for BinanceMarketDataService {
             let end_ts = end.timestamp();
 
             if let Ok(cached_candles) = repo.get_range(symbol, start_ts, end_ts).await
-                && cached_candles.len() >= MIN_REQUIRED_BARS {
-                    info!(
-                        "BinanceMarketDataService: Using {} cached bars for {}",
-                        cached_candles.len(),
-                        symbol
-                    );
-                    return Ok(cached_candles);
-                }
+                && cached_candles.len() >= MIN_REQUIRED_BARS
+            {
+                info!(
+                    "BinanceMarketDataService: Using {} cached bars for {}",
+                    cached_candles.len(),
+                    symbol
+                );
+                return Ok(cached_candles);
+            }
         }
 
         // Fetch from API
@@ -362,91 +375,96 @@ impl BinanceMarketDataService {
         end: chrono::DateTime<chrono::Utc>,
         timeframe: &str,
     ) -> Result<Vec<crate::domain::trading::types::Candle>> {
-        self.circuit_breaker.call(async move {
-            // Denormalize symbol
-            let api_symbol = denormalize_crypto_symbol(symbol);
+        self.circuit_breaker
+            .call(async move {
+                // Denormalize symbol
+                let api_symbol = denormalize_crypto_symbol(symbol);
 
-            // Convert timeframe (e.g., "1Min" -> "1m")
-            let interval = match timeframe {
-                "1Min" => "1m",
-                "5Min" => "5m",
-                "15Min" => "15m",
-                "1Hour" => "1h",
-                "1Day" => "1d",
-                _ => "1m",
-            };
+                // Convert timeframe (e.g., "1Min" -> "1m")
+                let interval = match timeframe {
+                    "1Min" => "1m",
+                    "5Min" => "5m",
+                    "15Min" => "15m",
+                    "1Hour" => "1h",
+                    "1Day" => "1d",
+                    _ => "1m",
+                };
 
-            let url = format!("{}/api/v3/klines", self.base_url);
+                let url = format!("{}/api/v3/klines", self.base_url);
 
-            let start_ms = start.timestamp_millis();
-            let end_ms = end.timestamp_millis();
+                let start_ms = start.timestamp_millis();
+                let end_ms = end.timestamp_millis();
 
-            let response = self
-                .client
-                .get(&url)
-                .header("X-MBX-APIKEY", &self.api_key)
-                .query(&[
-                    ("symbol", api_symbol.as_str()),
-                    ("interval", interval),
-                    ("startTime", &start_ms.to_string()),
-                    ("endTime", &end_ms.to_string()),
-                    ("limit", "1000"),
-                ])
-                .send()
-                .await
-                .context("Failed to fetch klines from Binance")?;
+                let response = self
+                    .client
+                    .get(&url)
+                    .header("X-MBX-APIKEY", &self.api_key)
+                    .query(&[
+                        ("symbol", api_symbol.as_str()),
+                        ("interval", interval),
+                        ("startTime", &start_ms.to_string()),
+                        ("endTime", &end_ms.to_string()),
+                        ("limit", "1000"),
+                    ])
+                    .send()
+                    .await
+                    .context("Failed to fetch klines from Binance")?;
 
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_default();
-                anyhow::bail!("Binance klines fetch failed: {}", error_text);
-            }
+                if !response.status().is_success() {
+                    let error_text = response.text().await.unwrap_or_default();
+                    anyhow::bail!("Binance klines fetch failed: {}", error_text);
+                }
 
-            // Binance klines format: [timestamp, open, high, low, close, volume, ...]
-            let klines: Vec<serde_json::Value> = response
-                .json()
-                .await
-                .context("Failed to parse Binance klines response")?;
+                // Binance klines format: [timestamp, open, high, low, close, volume, ...]
+                let klines: Vec<serde_json::Value> = response
+                    .json()
+                    .await
+                    .context("Failed to parse Binance klines response")?;
 
-            let candles: Vec<crate::domain::trading::types::Candle> = klines
-                .into_iter()
-                .filter_map(|k| {
-                    let arr = k.as_array()?;
-                    if arr.len() < 6 {
-                        return None;
-                    }
+                let candles: Vec<crate::domain::trading::types::Candle> = klines
+                    .into_iter()
+                    .filter_map(|k| {
+                        let arr = k.as_array()?;
+                        if arr.len() < 6 {
+                            return None;
+                        }
 
-                    let timestamp_ms = arr[0].as_i64()?;
-                    let timestamp = timestamp_ms / 1000;
+                        let timestamp_ms = arr[0].as_i64()?;
+                        let timestamp = timestamp_ms / 1000;
 
-                    let open = arr[1].as_str()?.parse::<f64>().ok()?;
-                    let high = arr[2].as_str()?.parse::<f64>().ok()?;
-                    let low = arr[3].as_str()?.parse::<f64>().ok()?;
-                    let close = arr[4].as_str()?.parse::<f64>().ok()?;
-                    let volume = arr[5].as_str()?.parse::<f64>().ok()?;
+                        let open = arr[1].as_str()?.parse::<f64>().ok()?;
+                        let high = arr[2].as_str()?.parse::<f64>().ok()?;
+                        let low = arr[3].as_str()?.parse::<f64>().ok()?;
+                        let close = arr[4].as_str()?.parse::<f64>().ok()?;
+                        let volume = arr[5].as_str()?.parse::<f64>().ok()?;
 
-                    Some(crate::domain::trading::types::Candle {
-                        symbol: symbol.to_string(),
-                        open: Decimal::from_f64_retain(open).unwrap_or(Decimal::ZERO),
-                        high: Decimal::from_f64_retain(high).unwrap_or(Decimal::ZERO),
-                        low: Decimal::from_f64_retain(low).unwrap_or(Decimal::ZERO),
-                        close: Decimal::from_f64_retain(close).unwrap_or(Decimal::ZERO),
-                        volume,
-                        timestamp,
+                        Some(crate::domain::trading::types::Candle {
+                            symbol: symbol.to_string(),
+                            open: Decimal::from_f64_retain(open).unwrap_or(Decimal::ZERO),
+                            high: Decimal::from_f64_retain(high).unwrap_or(Decimal::ZERO),
+                            low: Decimal::from_f64_retain(low).unwrap_or(Decimal::ZERO),
+                            close: Decimal::from_f64_retain(close).unwrap_or(Decimal::ZERO),
+                            volume,
+                            timestamp,
+                        })
                     })
-                })
-                .collect();
+                    .collect();
 
-            info!(
-                "BinanceMarketDataService: Fetched {} bars for {}",
-                candles.len(),
-                symbol
-            );
+                info!(
+                    "BinanceMarketDataService: Fetched {} bars for {}",
+                    candles.len(),
+                    symbol
+                );
 
-            Ok(candles)
-        }).await.map_err(|e| match e {
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => anyhow::anyhow!("Binance Market Data circuit breaker open: {}", msg),
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
-        })
+                Ok(candles)
+            })
+            .await
+            .map_err(|e| match e {
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                    anyhow::anyhow!("Binance Market Data circuit breaker open: {}", msg)
+                }
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+            })
     }
 }
 
@@ -497,145 +515,152 @@ impl BinanceExecutionService {
 #[async_trait]
 impl ExecutionService for BinanceExecutionService {
     async fn execute(&self, order: Order) -> Result<()> {
-        self.circuit_breaker.call(async move {
-            let api_symbol = denormalize_crypto_symbol(&order.symbol);
+        self.circuit_breaker
+            .call(async move {
+                let api_symbol = denormalize_crypto_symbol(&order.symbol);
 
-            let side = match order.side {
-                OrderSide::Buy => "BUY",
-                OrderSide::Sell => "SELL",
-            };
+                let side = match order.side {
+                    OrderSide::Buy => "BUY",
+                    OrderSide::Sell => "SELL",
+                };
 
-            let order_type = match order.order_type {
-                OrderType::Market => "MARKET",
-                OrderType::Limit => "LIMIT",
-                OrderType::Stop => "STOP_LOSS",
-                OrderType::StopLimit => "STOP_LOSS_LIMIT",
-            };
+                let order_type = match order.order_type {
+                    OrderType::Market => "MARKET",
+                    OrderType::Limit => "LIMIT",
+                    OrderType::Stop => "STOP_LOSS",
+                    OrderType::StopLimit => "STOP_LOSS_LIMIT",
+                };
 
-            let timestamp = chrono::Utc::now().timestamp_millis();
+                let timestamp = chrono::Utc::now().timestamp_millis();
 
-            let mut params = vec![
-                ("symbol", api_symbol.clone()),
-                ("side", side.to_string()),
-                ("type", order_type.to_string()),
-                ("quantity", order.quantity.to_string()),
-                ("timestamp", timestamp.to_string()),
-            ];
+                let mut params = vec![
+                    ("symbol", api_symbol.clone()),
+                    ("side", side.to_string()),
+                    ("type", order_type.to_string()),
+                    ("quantity", order.quantity.to_string()),
+                    ("timestamp", timestamp.to_string()),
+                ];
 
-            if let OrderType::Limit = order.order_type
-                && order.price > Decimal::ZERO
-            {
-                params.push(("price", order.price.to_string()));
-                params.push(("timeInForce", "GTC".to_string()));
-            }
+                if let OrderType::Limit = order.order_type
+                    && order.price > Decimal::ZERO
+                {
+                    params.push(("price", order.price.to_string()));
+                    params.push(("timeInForce", "GTC".to_string()));
+                }
 
-            let query_string: String = params
-                .iter()
-                .map(|(k, v)| format!("{}={}", k, v))
-                .collect::<Vec<_>>()
-                .join("&");
+                let query_string: String = params
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, v))
+                    .collect::<Vec<_>>()
+                    .join("&");
 
-            let signature = self.sign_request(&query_string);
-            let signed_query = format!("{}&signature={}", query_string, signature);
+                let signature = self.sign_request(&query_string);
+                let signed_query = format!("{}&signature={}", query_string, signature);
 
-            let url = format!("{}/api/v3/order?{}", self.base_url, signed_query);
+                let url = format!("{}/api/v3/order?{}", self.base_url, signed_query);
 
-            let response = self
-                .client
-                .post(&url)
-                .header("X-MBX-APIKEY", &self.api_key)
-                .send()
-                .await
-                .context("Failed to place order on Binance")?;
+                let response = self
+                    .client
+                    .post(&url)
+                    .header("X-MBX-APIKEY", &self.api_key)
+                    .send()
+                    .await
+                    .context("Failed to place order on Binance")?;
 
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_default();
-                anyhow::bail!("Binance order placement failed: {}", error_text);
-            }
+                if !response.status().is_success() {
+                    let error_text = response.text().await.unwrap_or_default();
+                    anyhow::bail!("Binance order placement failed: {}", error_text);
+                }
 
-            let response_json: serde_json::Value = response.json().await?;
-            info!(
-                "Binance order placed successfully: {:?}",
-                response_json
-            );
+                let response_json: serde_json::Value = response.json().await?;
+                info!("Binance order placed successfully: {:?}", response_json);
 
-            Ok(())
-        }).await.map_err(|e| match e {
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => anyhow::anyhow!("Binance Execution circuit breaker open: {}", msg),
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
-        })
+                Ok(())
+            })
+            .await
+            .map_err(|e| match e {
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                    anyhow::anyhow!("Binance Execution circuit breaker open: {}", msg)
+                }
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+            })
     }
 
     async fn get_portfolio(&self) -> Result<Portfolio> {
-        self.circuit_breaker.call(async move {
-            let timestamp = chrono::Utc::now().timestamp_millis();
-            let query_string = format!("timestamp={}", timestamp);
-            let signature = self.sign_request(&query_string);
-            let signed_query = format!("{}&signature={}", query_string, signature);
+        self.circuit_breaker
+            .call(async move {
+                let timestamp = chrono::Utc::now().timestamp_millis();
+                let query_string = format!("timestamp={}", timestamp);
+                let signature = self.sign_request(&query_string);
+                let signed_query = format!("{}&signature={}", query_string, signature);
 
-            let url = format!("{}/api/v3/account?{}", self.base_url, signed_query);
+                let url = format!("{}/api/v3/account?{}", self.base_url, signed_query);
 
-            let response = self
-                .client
-                .get(&url)
-                .header("X-MBX-APIKEY", &self.api_key)
-                .send()
-                .await
-                .context("Failed to fetch account from Binance")?;
+                let response = self
+                    .client
+                    .get(&url)
+                    .header("X-MBX-APIKEY", &self.api_key)
+                    .send()
+                    .await
+                    .context("Failed to fetch account from Binance")?;
 
-            let status = response.status();
-            if !status.is_success() {
-                let error_text = response.text().await.unwrap_or_default();
-                warn!(
-                    "Binance account fetch failed - Status: {}, URL: {}, Response: {}",
-                    status, url, error_text
-                );
-                anyhow::bail!("Binance account fetch failed: {} - {}", status, error_text);
-            }
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response.text().await.unwrap_or_default();
+                    warn!(
+                        "Binance account fetch failed - Status: {}, URL: {}, Response: {}",
+                        status, url, error_text
+                    );
+                    anyhow::bail!("Binance account fetch failed: {} - {}", status, error_text);
+                }
 
-            #[derive(Debug, Deserialize)]
-            struct Balance {
-                asset: String,
-                free: String,
-                locked: String,
-            }
+                #[derive(Debug, Deserialize)]
+                struct Balance {
+                    asset: String,
+                    free: String,
+                    locked: String,
+                }
 
-            #[derive(Debug, Deserialize)]
-            struct Account {
-                balances: Vec<Balance>,
-            }
+                #[derive(Debug, Deserialize)]
+                struct Account {
+                    balances: Vec<Balance>,
+                }
 
-            let account: Account = response.json().await?;
-            let mut portfolio = Portfolio::new();
+                let account: Account = response.json().await?;
+                let mut portfolio = Portfolio::new();
 
-            for b in account.balances {
-                let free = b.free.parse::<Decimal>().unwrap_or(Decimal::ZERO);
-                let locked = b.locked.parse::<Decimal>().unwrap_or(Decimal::ZERO);
-                let total = free + locked;
+                for b in account.balances {
+                    let free = b.free.parse::<Decimal>().unwrap_or(Decimal::ZERO);
+                    let locked = b.locked.parse::<Decimal>().unwrap_or(Decimal::ZERO);
+                    let total = free + locked;
 
-                if total > Decimal::ZERO {
-                    if b.asset == "USDT" || b.asset == "USD" {
-                        portfolio.cash += total;
-                    } else {
-                        // Assuming symbols are normalized as ASSET/USDT
-                        let symbol = format!("{}/USDT", b.asset);
-                        portfolio.positions.insert(
-                            symbol.clone(),
-                            crate::domain::trading::portfolio::Position {
-                                symbol,
-                                quantity: total,
-                                average_price: Decimal::ZERO, // Need to fetch average if possible
-                            },
-                        );
+                    if total > Decimal::ZERO {
+                        if b.asset == "USDT" || b.asset == "USD" {
+                            portfolio.cash += total;
+                        } else {
+                            // Assuming symbols are normalized as ASSET/USDT
+                            let symbol = format!("{}/USDT", b.asset);
+                            portfolio.positions.insert(
+                                symbol.clone(),
+                                crate::domain::trading::portfolio::Position {
+                                    symbol,
+                                    quantity: total,
+                                    average_price: Decimal::ZERO, // Need to fetch average if possible
+                                },
+                            );
+                        }
                     }
                 }
-            }
 
-            Ok(portfolio)
-        }).await.map_err(|e| match e {
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => anyhow::anyhow!("Binance Execution circuit breaker open: {}", msg),
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
-        })
+                Ok(portfolio)
+            })
+            .await
+            .map_err(|e| match e {
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                    anyhow::anyhow!("Binance Execution circuit breaker open: {}", msg)
+                }
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+            })
     }
 
     async fn get_today_orders(&self) -> Result<Vec<Order>> {
@@ -650,7 +675,9 @@ impl ExecutionService for BinanceExecutionService {
 
         // Note: Binance requires symbol for allOrders endpoint
         // For simplicity, return empty for now (can be enhanced to query all symbols)
-        warn!("BinanceExecutionService::get_today_orders not fully implemented - requires symbol parameter");
+        warn!(
+            "BinanceExecutionService::get_today_orders not fully implemented - requires symbol parameter"
+        );
         Ok(vec![])
     }
 
@@ -704,8 +731,8 @@ impl ExecutionService for BinanceExecutionService {
                     "LIMIT" => OrderType::Limit,
                     _ => return None,
                 };
-                let quantity = Decimal::from_f64_retain(bo.orig_qty.parse().ok()?)
-                    .unwrap_or(Decimal::ZERO);
+                let quantity =
+                    Decimal::from_f64_retain(bo.orig_qty.parse().ok()?).unwrap_or(Decimal::ZERO);
                 let price = if order_type == OrderType::Limit {
                     Decimal::from_f64_retain(bo.price.parse().ok()?).unwrap_or(Decimal::ZERO)
                 } else {
@@ -760,7 +787,10 @@ impl SectorProvider for BinanceSectorProvider {
             || symbol.starts_with("LINK")
         {
             "DeFi"
-        } else if symbol.starts_with("SOL") || symbol.starts_with("AVAX") || symbol.starts_with("DOT") {
+        } else if symbol.starts_with("SOL")
+            || symbol.starts_with("AVAX")
+            || symbol.starts_with("DOT")
+        {
             "Layer1"
         } else if symbol.starts_with("MATIC") {
             "Layer2"
@@ -800,8 +830,10 @@ mod tests {
             "https://api.binance.com".to_string(),
         );
 
-        let signature = service.sign_request("symbol=BTCUSDT&side=BUY&type=MARKET&quantity=0.001&timestamp=1234567890");
-        
+        let signature = service.sign_request(
+            "symbol=BTCUSDT&side=BUY&type=MARKET&quantity=0.001&timestamp=1234567890",
+        );
+
         // Verify signature is 64 hex characters
         assert_eq!(signature.len(), 64);
         assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));

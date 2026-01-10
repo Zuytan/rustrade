@@ -45,7 +45,7 @@ impl VolatilityManager {
         if volatility_value <= 0.0 {
             return;
         }
-        
+
         self.history.push_back(volatility_value);
         if self.history.len() > self.config.lookback_period {
             self.history.pop_front();
@@ -53,11 +53,11 @@ impl VolatilityManager {
     }
 
     /// Calculate the Position Size Multiplier
-    /// 
+    ///
     /// Logic:
     /// - If current volatility > average volatility -> Low Multiplier (< 1.0)
     /// - If current volatility < average volatility -> High Multiplier (> 1.0)
-    /// 
+    ///
     /// Formula: Multiplier = (Baseline / Current) * Scale
     pub fn calculate_multiplier(&self, current_volatility: f64) -> f64 {
         if self.history.is_empty() {
@@ -76,13 +76,13 @@ impl VolatilityManager {
         // Avg ATR = 2.0, Current ATR = 4.0 (High Vol) -> Ratio = 0.5 (Half size)
         // Avg ATR = 2.0, Current ATR = 1.0 (Low Vol) -> Ratio = 2.0 (Double size)
         let raw_ratio = avg_volatility / current_volatility;
-        
+
         // Apply scaling factor (dampening)
         // If scale is 1.0, we use raw ratio.
         // If scale is 0.5, we move closer to 1.0.
         // Logarithmic scaling might be safer but linear is simple for now.
         // Let's just clamp the raw ratio.
-        
+
         let multiplier = raw_ratio * self.config.scaling_factor;
 
         // Clamp between min and max
@@ -114,7 +114,7 @@ mod tests {
 
         // Current volatility spikes to 4.0
         let multiplier = manager.calculate_multiplier(4.0);
-        
+
         // Expected: 1.0 / 4.0 = 0.25 -> clamped to min 0.5
         assert_eq!(multiplier, 0.5);
     }
@@ -131,7 +131,7 @@ mod tests {
 
         // Current volatility drops to 2.0
         let multiplier = manager.calculate_multiplier(2.0);
-        
+
         // Expected: 4.0 / 2.0 = 2.0 -> clamped to max 1.5
         assert_eq!(multiplier, 1.5);
     }
@@ -148,7 +148,7 @@ mod tests {
 
         // Current = 2.0
         let multiplier = manager.calculate_multiplier(2.0);
-        
+
         // Expected: 1.0
         assert!((multiplier - 1.0).abs() < 0.001);
     }

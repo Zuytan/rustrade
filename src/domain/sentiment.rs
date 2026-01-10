@@ -37,7 +37,7 @@ impl SentimentClassification {
 
     pub fn color_hex(&self) -> &'static str {
         match self {
-            Self::ExtremeFear => "#FF4500", // Orange Red
+            Self::ExtremeFear => "#FF4500",  // Orange Red
             Self::Fear => "#FFA500",         // Orange
             Self::Neutral => "#808080",      // Gray
             Self::Greed => "#90EE90",        // Light Green

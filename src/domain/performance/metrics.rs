@@ -1,6 +1,6 @@
 use crate::domain::trading::types::Trade;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 /// Comprehensive performance metrics for a trading strategy
 ///

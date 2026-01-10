@@ -43,8 +43,8 @@ impl StrategyFactory {
                     adx_threshold: config.adx_threshold,
                 },
             )),
-            StrategyMode::Dynamic => Arc::new(DynamicRegimeStrategy::with_config(
-                DynamicRegimeConfig {
+            StrategyMode::Dynamic => {
+                Arc::new(DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
                     fast_period: config.fast_sma_period,
                     slow_period: config.slow_sma_period,
                     sma_threshold: config.sma_threshold,
@@ -57,8 +57,8 @@ impl StrategyFactory {
                     trend_tolerance_pct: config.trend_tolerance_pct,
                     macd_min_threshold: config.macd_min_threshold,
                     adx_threshold: config.adx_threshold,
-                },
-            )),
+                }))
+            }
             StrategyMode::TrendRiding => Arc::new(TrendRidingStrategy::new(
                 config.fast_sma_period,
                 config.slow_sma_period,
@@ -76,7 +76,7 @@ impl StrategyFactory {
                 config.trend_riding_exit_buffer_pct,
             )),
             StrategyMode::SMC => Arc::new(SMCStrategy::new(
-                20, // Lookback
+                20,    // Lookback
                 0.005, // 0.5% min FVG gap
             )),
         }

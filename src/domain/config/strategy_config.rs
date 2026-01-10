@@ -12,10 +12,10 @@ use thiserror::Error;
 pub enum StrategyConfigError {
     #[error("Invalid period: {field} = {value}. Must be > 0")]
     InvalidPeriod { field: String, value: usize },
-    
+
     #[error("Invalid threshold: {field} = {value}. Must be positive")]
     InvalidThreshold { field: String, value: f64 },
-    
+
     #[error("Empty timeframes list")]
     EmptyTimeframes,
 }
@@ -30,34 +30,34 @@ pub enum StrategyConfigError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StrategyConfig {
     pub strategy_mode: StrategyMode,
-    
+
     // SMA Configuration
     pub fast_sma_period: usize,
     pub slow_sma_period: usize,
     pub trend_sma_period: usize,
-    
+
     // RSI Configuration
     pub rsi_period: usize,
     pub rsi_threshold: f64,
-    
+
     // MACD Configuration
     pub macd_fast_period: usize,
     pub macd_slow_period: usize,
     pub macd_signal_period: usize,
     pub macd_requires_rising: bool,
     pub macd_min_threshold: f64,
-    
+
     // ADX Configuration
     pub adx_period: usize,
     pub adx_threshold: f64,
-    
+
     // Trend Configuration
     pub trend_divergence_threshold: f64,
     pub trend_tolerance_pct: f64,
-    
+
     // Signal Confirmation
     pub signal_confirmation_bars: usize,
-    
+
     // Multi-Timeframe
     pub primary_timeframe: Timeframe,
     pub enabled_timeframes: Vec<Timeframe>,
@@ -109,11 +109,11 @@ impl StrategyConfig {
             enabled_timeframes,
             trend_timeframe,
         };
-        
+
         config.validate()?;
         Ok(config)
     }
-    
+
     fn validate(&self) -> Result<(), StrategyConfigError> {
         // Validate periods
         self.validate_period("fast_sma_period", self.fast_sma_period)?;
@@ -125,20 +125,23 @@ impl StrategyConfig {
         self.validate_period("macd_signal_period", self.macd_signal_period)?;
         self.validate_period("adx_period", self.adx_period)?;
         self.validate_period("signal_confirmation_bars", self.signal_confirmation_bars)?;
-        
+
         // Validate thresholds
         self.validate_threshold("rsi_threshold", self.rsi_threshold)?;
         self.validate_threshold("adx_threshold", self.adx_threshold)?;
-        self.validate_threshold("trend_divergence_threshold", self.trend_divergence_threshold)?;
-        
+        self.validate_threshold(
+            "trend_divergence_threshold",
+            self.trend_divergence_threshold,
+        )?;
+
         // Validate timeframes
         if self.enabled_timeframes.is_empty() {
             return Err(StrategyConfigError::EmptyTimeframes);
         }
-        
+
         Ok(())
     }
-    
+
     fn validate_period(&self, field: &str, value: usize) -> Result<(), StrategyConfigError> {
         if value == 0 {
             return Err(StrategyConfigError::InvalidPeriod {
@@ -148,7 +151,7 @@ impl StrategyConfig {
         }
         Ok(())
     }
-    
+
     fn validate_threshold(&self, field: &str, value: f64) -> Result<(), StrategyConfigError> {
         if value < 0.0 {
             return Err(StrategyConfigError::InvalidThreshold {
@@ -180,7 +183,12 @@ impl Default for StrategyConfig {
             trend_tolerance_pct: 0.0,
             signal_confirmation_bars: 2,
             primary_timeframe: Timeframe::OneMin,
-            enabled_timeframes: vec![Timeframe::OneMin, Timeframe::FiveMin, Timeframe::FifteenMin, Timeframe::OneHour],
+            enabled_timeframes: vec![
+                Timeframe::OneMin,
+                Timeframe::FiveMin,
+                Timeframe::FifteenMin,
+                Timeframe::OneHour,
+            ],
             trend_timeframe: Timeframe::OneHour,
         }
     }
@@ -194,9 +202,21 @@ mod tests {
     fn test_valid_config() {
         let config = StrategyConfig::new(
             StrategyMode::Dynamic,
-            20, 60, 50, 14, 75.0,
-            12, 26, 9, true, 0.0,
-            14, 25.0, 0.005, 0.0, 2,
+            20,
+            60,
+            50,
+            14,
+            75.0,
+            12,
+            26,
+            9,
+            true,
+            0.0,
+            14,
+            25.0,
+            0.005,
+            0.0,
+            2,
             Timeframe::OneMin,
             vec![Timeframe::OneMin],
             Timeframe::OneHour,
@@ -208,9 +228,21 @@ mod tests {
     fn test_invalid_period() {
         let result = StrategyConfig::new(
             StrategyMode::Dynamic,
-            0, 60, 50, 14, 75.0, // fast_sma_period = 0
-            12, 26, 9, true, 0.0,
-            14, 25.0, 0.005, 0.0, 2,
+            0,
+            60,
+            50,
+            14,
+            75.0, // fast_sma_period = 0
+            12,
+            26,
+            9,
+            true,
+            0.0,
+            14,
+            25.0,
+            0.005,
+            0.0,
+            2,
             Timeframe::OneMin,
             vec![Timeframe::OneMin],
             Timeframe::OneHour,
@@ -222,9 +254,21 @@ mod tests {
     fn test_empty_timeframes() {
         let result = StrategyConfig::new(
             StrategyMode::Dynamic,
-            20, 60, 50, 14, 75.0,
-            12, 26, 9, true, 0.0,
-            14, 25.0, 0.005, 0.0, 2,
+            20,
+            60,
+            50,
+            14,
+            75.0,
+            12,
+            26,
+            9,
+            true,
+            0.0,
+            14,
+            25.0,
+            0.005,
+            0.0,
+            2,
             Timeframe::OneMin,
             vec![], // Empty
             Timeframe::OneHour,

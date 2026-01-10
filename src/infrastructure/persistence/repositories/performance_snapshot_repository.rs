@@ -4,8 +4,8 @@ use crate::domain::repositories::PerformanceSnapshotRepository;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use sqlx::{Row, SqlitePool};
 
 /// Safely parse a Unix timestamp into a DateTime, handling invalid values

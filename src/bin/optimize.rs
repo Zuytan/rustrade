@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive; // Added
 use rustrade::application::optimization::optimizer::{GridSearchOptimizer, ParameterGrid};
 use rustrade::config::StrategyMode;
+use rustrade::domain::trading::fee_model::ConstantFeeModel; // Added
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use rustrade::infrastructure::mock::MockExecutionService;
@@ -10,8 +12,6 @@ use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use rustrade::domain::trading::fee_model::ConstantFeeModel; // Added
-use rust_decimal::prelude::FromPrimitive; // Added
 use tracing::info;
 
 #[tokio::main]
@@ -187,10 +187,7 @@ async fn main() -> Result<()> {
         let commission = Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO);
         let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
 
-        Arc::new(MockExecutionService::with_costs(
-            portfolio_lock,
-            fee_model,
-        ))
+        Arc::new(MockExecutionService::with_costs(portfolio_lock, fee_model))
     });
 
     // 6.5. Load Config to get min_profit_ratio (scales with Risk Appetite)
@@ -288,7 +285,9 @@ fn print_help() {
     println!("  --symbol <SYMBOL>           Symbol to optimize (default: TSLA)");
     println!("  --start <YYYY-MM-DD>        Start date (default: 2020-01-01)");
     println!("  --end <YYYY-MM-DD>          End date (default: 2023-12-31)");
-    println!("  --strategy <MODE>           Strategy mode: standard, advanced, dynamic, trendriding, meanreversion");
+    println!(
+        "  --strategy <MODE>           Strategy mode: standard, advanced, dynamic, trendriding, meanreversion"
+    );
     println!("  --grid-config <FILE>        TOML file with parameter grid (optional)");
     println!("  --output <FILE>             Output JSON file (default: optimization_results.json)");
     println!("  --top-n <N>                 Show top N results (default: 10)");

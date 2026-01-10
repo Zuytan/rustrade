@@ -56,16 +56,14 @@ impl SignalProcessor {
         reason: String,
     ) -> Option<TradeProposal> {
         // Calculate quantity
-        let quantity = Self::calculate_trade_quantity(
-            config,
-            execution_service,
-            &symbol,
-            price,
-        )
-        .await;
+        let quantity =
+            Self::calculate_trade_quantity(config, execution_service, &symbol, price).await;
 
         if quantity <= Decimal::ZERO {
-            debug!("SignalProcessor [{}]: Quantity is ZERO. Skipping proposal.", symbol);
+            debug!(
+                "SignalProcessor [{}]: Quantity is ZERO. Skipping proposal.",
+                symbol
+            );
             return None;
         }
 
@@ -101,7 +99,7 @@ impl SignalProcessor {
         // Get current prices for total equity calculation
         let mut current_prices = std::collections::HashMap::new();
         current_prices.insert(symbol.to_string(), price);
-        
+
         let total_equity = portfolio.total_equity(&current_prices);
 
         let sizing_config = crate::application::risk_management::sizing_engine::SizingConfig {
@@ -211,7 +209,7 @@ mod tests {
     #[test]
     fn test_rsi_filter_blocks_overbought() {
         let mut context = create_test_context();
-        
+
         // Set RSI to overbought level
         context.last_features.rsi = Some(75.0);
         context.config.rsi_threshold = 70.0;
@@ -226,7 +224,7 @@ mod tests {
     #[test]
     fn test_rsi_filter_allows_normal() {
         let mut context = create_test_context();
-        
+
         // Set RSI to normal level
         context.last_features.rsi = Some(50.0);
         context.config.rsi_threshold = 70.0;
@@ -241,7 +239,7 @@ mod tests {
     #[test]
     fn test_rsi_filter_ignores_sell() {
         let mut context = create_test_context();
-        
+
         // Set RSI to overbought level
         context.last_features.rsi = Some(75.0);
         context.config.rsi_threshold = 70.0;
@@ -256,21 +254,16 @@ mod tests {
     #[test]
     fn test_trailing_stop_suppression() {
         let mut context = create_test_context();
-        
+
         // Activate trailing stop
-        context.position_manager.trailing_stop = 
+        context.position_manager.trailing_stop =
             crate::application::risk_management::trailing_stops::StopState::on_buy(
-                50000.0,
-                100.0,
-                2.0,
+                50000.0, 100.0, 2.0,
             );
 
         let signal = Some(OrderSide::Sell);
         let filtered = SignalProcessor::suppress_sell_if_trailing_stop(
-            signal,
-            &context,
-            "BTC/USD",
-            false, // trailing stop not triggered
+            signal, &context, "BTC/USD", false, // trailing stop not triggered
         );
 
         // Should suppress the sell signal
@@ -280,21 +273,16 @@ mod tests {
     #[test]
     fn test_trailing_stop_allows_when_triggered() {
         let mut context = create_test_context();
-        
+
         // Activate trailing stop
-        context.position_manager.trailing_stop = 
+        context.position_manager.trailing_stop =
             crate::application::risk_management::trailing_stops::StopState::on_buy(
-                50000.0,
-                100.0,
-                2.0,
+                50000.0, 100.0, 2.0,
             );
 
         let signal = Some(OrderSide::Sell);
         let filtered = SignalProcessor::suppress_sell_if_trailing_stop(
-            signal,
-            &context,
-            "BTC/USD",
-            true, // trailing stop triggered
+            signal, &context, "BTC/USD", true, // trailing stop triggered
         );
 
         // Should allow the sell signal when trailing stop triggered

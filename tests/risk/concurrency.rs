@@ -7,7 +7,7 @@ use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService
 
 use rust_decimal::Decimal;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 /// Test: Concurrent proposals for the same symbol respect position size limits
 ///
@@ -36,7 +36,8 @@ async fn test_concurrent_proposals_respect_limits() {
         sector_provider: None,
         allow_pdt_risk: false,
         pending_order_ttl_ms: None,
-        correlation_config: rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
+        correlation_config:
+            rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
         volatility_config: rustrade::domain::risk::volatility_manager::VolatilityConfig::default(),
     };
 

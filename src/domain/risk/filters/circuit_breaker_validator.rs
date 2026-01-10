@@ -2,17 +2,19 @@ use async_trait::async_trait;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 
-use crate::domain::risk::filters::validator_trait::{RiskValidator, ValidationContext, ValidationResult};
+use crate::domain::risk::filters::validator_trait::{
+    RiskValidator, ValidationContext, ValidationResult,
+};
 
 /// Configuration for circuit breaker validation
 #[derive(Debug, Clone)]
 pub struct CircuitBreakerConfig {
     /// Maximum daily loss as percentage of starting equity (e.g., 0.02 = 2%)
     pub max_daily_loss_pct: f64,
-    
+
     /// Maximum drawdown from high water mark as percentage (e.g., 0.10 = 10%)
     pub max_drawdown_pct: f64,
-    
+
     /// Maximum consecutive losing trades before halt
     pub consecutive_loss_limit: usize,
 }
@@ -20,20 +22,20 @@ pub struct CircuitBreakerConfig {
 impl Default for CircuitBreakerConfig {
     fn default() -> Self {
         Self {
-            max_daily_loss_pct: 0.02,    // 2%
-            max_drawdown_pct: 0.05,      // 5%
+            max_daily_loss_pct: 0.02, // 2%
+            max_drawdown_pct: 0.05,   // 5%
             consecutive_loss_limit: 3,
         }
     }
 }
 
 /// Validates that circuit breaker conditions haven't been triggered
-/// 
+///
 /// This validator implements three critical safety checks:
 /// 1. Daily Loss Limit: Prevents excessive losses in a single trading session
 /// 2. Drawdown Limit: Prevents portfolio from declining too much from peak
 /// 3. Consecutive Loss Limit: Halts trading after too many losing trades in a row
-/// 
+///
 /// If any of these limits are breached, all new trades are blocked until
 /// manual intervention or automatic reset (e.g., new trading day).
 pub struct CircuitBreakerValidator {
@@ -90,8 +92,7 @@ impl CircuitBreakerValidator {
         if ctx.risk_state.consecutive_losses >= self.config.consecutive_loss_limit {
             return Some(format!(
                 "Consecutive loss limit reached: {} trades (limit: {})",
-                ctx.risk_state.consecutive_losses,
-                self.config.consecutive_loss_limit
+                ctx.risk_state.consecutive_losses, self.config.consecutive_loss_limit
             ));
         }
         None
@@ -154,11 +155,13 @@ mod tests {
         let proposal = create_test_proposal();
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
-        
-        let mut risk_state = RiskState::default();
-        risk_state.session_start_equity = dec!(100000);
-        risk_state.equity_high_water_mark = dec!(100000);
-        risk_state.consecutive_losses = 0;
+
+        let risk_state = RiskState {
+            session_start_equity: dec!(100000),
+            equity_high_water_mark: dec!(100000),
+            consecutive_losses: 0,
+            ..Default::default()
+        };
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -187,10 +190,12 @@ mod tests {
         let proposal = create_test_proposal();
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
-        
-        let mut risk_state = RiskState::default();
-        risk_state.session_start_equity = dec!(100000);
-        risk_state.equity_high_water_mark = dec!(100000);
+
+        let risk_state = RiskState {
+            session_start_equity: dec!(100000),
+            equity_high_water_mark: dec!(100000),
+            ..Default::default()
+        };
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -207,7 +212,12 @@ mod tests {
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(result.rejection_reason().unwrap().contains("Daily loss limit breached"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Daily loss limit breached")
+        );
         assert!(result.rejection_reason().unwrap().contains("-10.00%"));
     }
 
@@ -221,10 +231,12 @@ mod tests {
         let proposal = create_test_proposal();
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
-        
-        let mut risk_state = RiskState::default();
-        risk_state.session_start_equity = dec!(100000);
-        risk_state.equity_high_water_mark = dec!(120000); // Peak was $120k
+
+        let risk_state = RiskState {
+            session_start_equity: dec!(100000),
+            equity_high_water_mark: dec!(120000),
+            ..Default::default()
+        };
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -241,7 +253,12 @@ mod tests {
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(result.rejection_reason().unwrap().contains("Max drawdown breached"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Max drawdown breached")
+        );
         assert!(result.rejection_reason().unwrap().contains("-16.67%"));
     }
 
@@ -255,11 +272,13 @@ mod tests {
         let proposal = create_test_proposal();
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
-        
-        let mut risk_state = RiskState::default();
-        risk_state.session_start_equity = dec!(100000);
-        risk_state.equity_high_water_mark = dec!(100000);
-        risk_state.consecutive_losses = 3; // Hit the limit
+
+        let risk_state = RiskState {
+            session_start_equity: dec!(100000),
+            equity_high_water_mark: dec!(100000),
+            consecutive_losses: 3,
+            ..Default::default()
+        };
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -276,7 +295,12 @@ mod tests {
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(result.rejection_reason().unwrap().contains("Consecutive loss limit reached"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Consecutive loss limit reached")
+        );
         assert!(result.rejection_reason().unwrap().contains("3 trades"));
     }
 
@@ -291,11 +315,13 @@ mod tests {
         let proposal = create_test_proposal();
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
-        
-        let mut risk_state = RiskState::default();
-        risk_state.session_start_equity = dec!(100000);
-        risk_state.equity_high_water_mark = dec!(100000);
-        risk_state.consecutive_losses = 2; // Below limit
+
+        let risk_state = RiskState {
+            session_start_equity: dec!(100000),
+            equity_high_water_mark: dec!(100000),
+            consecutive_losses: 2,
+            ..Default::default()
+        };
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -321,11 +347,13 @@ mod tests {
         let proposal = create_test_proposal();
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
-        
-        let mut risk_state = RiskState::default();
-        risk_state.session_start_equity = dec!(100000);
-        risk_state.equity_high_water_mark = dec!(100000);
-        risk_state.consecutive_losses = 0;
+
+        let risk_state = RiskState {
+            session_start_equity: dec!(100000),
+            equity_high_water_mark: dec!(100000),
+            consecutive_losses: 0,
+            ..Default::default()
+        };
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -355,11 +383,13 @@ mod tests {
         let proposal = create_test_proposal();
         let portfolio = Portfolio::new();
         let prices = HashMap::new();
-        
-        let mut risk_state = RiskState::default();
-        risk_state.session_start_equity = dec!(100000);
-        risk_state.equity_high_water_mark = dec!(100000);
-        risk_state.consecutive_losses = 3; // Breaches consecutive loss limit
+
+        let risk_state = RiskState {
+            session_start_equity: dec!(100000),
+            equity_high_water_mark: dec!(100000),
+            consecutive_losses: 3,
+            ..Default::default()
+        };
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -377,6 +407,11 @@ mod tests {
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
         // Should return daily loss breach first (checked first in code)
-        assert!(result.rejection_reason().unwrap().contains("Daily loss limit breached"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Daily loss limit breached")
+        );
     }
 }

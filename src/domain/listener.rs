@@ -48,7 +48,9 @@ pub struct ListenerRule {
 impl ListenerRule {
     pub fn matches(&self, text: &str) -> bool {
         let text_lower = text.to_lowercase();
-        self.keywords.iter().all(|k| text_lower.contains(&k.to_lowercase()))
+        self.keywords
+            .iter()
+            .all(|k| text_lower.contains(&k.to_lowercase()))
     }
 }
 

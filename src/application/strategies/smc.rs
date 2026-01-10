@@ -1,10 +1,10 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
-use crate::domain::trading::types::{OrderSide, Candle};
-use std::collections::VecDeque;
+use crate::domain::trading::types::{Candle, OrderSide};
 use rust_decimal::prelude::ToPrimitive;
+use std::collections::VecDeque;
 
 /// Smart Money Concepts (SMC) Strategy
-/// 
+///
 /// Focuses on institutional footprints:
 /// 1. Order Blocks (OB): Zones where significant buying/selling occurred.
 /// 2. Fair Value Gaps (FVG): Imbalances in price action.
@@ -24,7 +24,7 @@ impl SMCStrategy {
     }
 
     /// Detect Fair Value Gaps (FVG)
-    /// A bullish FVG is a gap between the High of Candle 1 and the Low of Candle 3, 
+    /// A bullish FVG is a gap between the High of Candle 1 and the Low of Candle 3,
     /// where Candle 2 is a large impulsive candle.
     fn detect_fvg(&self, candles: &VecDeque<Candle>) -> Option<(OrderSide, f64)> {
         if candles.len() < 3 {
@@ -36,7 +36,7 @@ impl SMCStrategy {
 
         let high1 = c1.high.to_f64().unwrap_or(0.0);
         let low3 = c3.low.to_f64().unwrap_or(0.0);
-        
+
         // Bullish FVG: High of C1 < Low of C3 (Gap exists)
         if low3 > high1 {
             let gap = low3 - high1;
@@ -74,16 +74,16 @@ impl SMCStrategy {
                 // Find last bearish candle followed by bullish candles
                 for i in (1..candles.len() - 1).rev() {
                     let curr = &candles[i];
-                    let next = &candles[i+1];
+                    let next = &candles[i + 1];
                     if curr.close < curr.open && next.close > next.open {
                         return Some(curr.low.to_f64().unwrap_or(0.0));
                     }
                 }
             }
             OrderSide::Sell => {
-                 for i in (1..candles.len() - 1).rev() {
+                for i in (1..candles.len() - 1).rev() {
                     let curr = &candles[i];
-                    let next = &candles[i+1];
+                    let next = &candles[i + 1];
                     if curr.close > curr.open && next.close < next.open {
                         return Some(curr.high.to_f64().unwrap_or(0.0));
                     }
@@ -101,16 +101,25 @@ impl SMCStrategy {
         }
 
         let curr_close = candles.back().unwrap().close.to_f64().unwrap_or(0.0);
-        
+
         // Simplified MSS: check for break of recent 10-candle high/low
         let mut max_high = 0.0;
         let mut min_low = f64::MAX;
 
-        for (i, _candle) in candles.iter().enumerate().take(candles.len() - 1).skip(candles.len() - 10) {
+        for (i, _candle) in candles
+            .iter()
+            .enumerate()
+            .take(candles.len() - 1)
+            .skip(candles.len() - 10)
+        {
             let h = candles[i].high.to_f64().unwrap_or(0.0);
             let l = candles[i].low.to_f64().unwrap_or(0.0);
-            if h > max_high { max_high = h; }
-            if l < min_low { min_low = l; }
+            if h > max_high {
+                max_high = h;
+            }
+            if l < min_low {
+                min_low = l;
+            }
         }
 
         if curr_close > max_high {
@@ -127,33 +136,41 @@ impl TradingStrategy for SMCStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
         let fvg = self.detect_fvg(&ctx.candles);
         let mss = self.detect_mss(&ctx.candles);
-        
+
         if let Some((side, _gap)) = fvg {
             let ob = self.find_last_ob(&ctx.candles, side);
-            
+
             match side {
                 OrderSide::Buy => {
                     // Bullish Bias if MSS is bullish or price is above SMA
-                    let structure_bullish = mss == Some(OrderSide::Buy) || ctx.price_f64 > ctx.trend_sma;
-                    
+                    let structure_bullish =
+                        mss == Some(OrderSide::Buy) || ctx.price_f64 > ctx.trend_sma;
+
                     if structure_bullish {
-                         let reason = if let Some(ob_level) = ob {
-                             format!("SMC: Bullish FVG detected with OB at {:.2}. Structure is bullish.", ob_level)
-                         } else {
-                             "SMC: Bullish FVG detected. Structure is bullish.".to_string()
-                         };
-                         return Some(Signal::buy(reason).with_confidence(0.85));
+                        let reason = if let Some(ob_level) = ob {
+                            format!(
+                                "SMC: Bullish FVG detected with OB at {:.2}. Structure is bullish.",
+                                ob_level
+                            )
+                        } else {
+                            "SMC: Bullish FVG detected. Structure is bullish.".to_string()
+                        };
+                        return Some(Signal::buy(reason).with_confidence(0.85));
                     }
                 }
                 OrderSide::Sell => {
-                    let structure_bearish = mss == Some(OrderSide::Sell) || ctx.price_f64 < ctx.trend_sma;
+                    let structure_bearish =
+                        mss == Some(OrderSide::Sell) || ctx.price_f64 < ctx.trend_sma;
 
                     if structure_bearish {
                         let reason = if let Some(ob_level) = ob {
-                             format!("SMC: Bearish FVG detected with OB at {:.2}. Structure is bearish.", ob_level)
-                         } else {
-                             "SMC: Bearish FVG detected. Structure is bearish.".to_string()
-                         };
+                            format!(
+                                "SMC: Bearish FVG detected with OB at {:.2}. Structure is bearish.",
+                                ob_level
+                            )
+                        } else {
+                            "SMC: Bearish FVG detected. Structure is bearish.".to_string()
+                        };
                         return Some(Signal::sell(reason).with_confidence(0.85));
                     }
                 }
@@ -191,7 +208,7 @@ mod tests {
     fn test_bullish_fvg_detection() {
         let strategy = SMCStrategy::new(20, 0.001);
         let mut candles = VecDeque::new();
-        
+
         // C1: Small candle
         candles.push_back(mock_candle(100.0, 102.0, 99.0, 101.0));
         // C2: Big impulsive candle (should be bigger but FVG is between C1 high and C3 low)
@@ -206,12 +223,12 @@ mod tests {
         assert_eq!(side, OrderSide::Buy);
         assert_eq!(gap, 3.0);
     }
-    
+
     #[test]
     fn test_bearish_fvg_detection() {
         let strategy = SMCStrategy::new(20, 0.001);
         let mut candles = VecDeque::new();
-        
+
         // C1: Small candle
         candles.push_back(mock_candle(100.0, 101.0, 98.0, 99.0));
         // C2: Big impulsive candle
@@ -231,7 +248,7 @@ mod tests {
     fn test_ob_detection() {
         let strategy = SMCStrategy::new(20, 0.001);
         let mut candles = VecDeque::new();
-        
+
         // Add 5 candles
         candles.push_back(mock_candle(100.0, 101.0, 99.0, 100.5));
         candles.push_back(mock_candle(100.5, 102.0, 100.0, 101.5));
@@ -250,7 +267,7 @@ mod tests {
     fn test_mss_detection() {
         let strategy = SMCStrategy::new(20, 0.001);
         let mut candles = VecDeque::new();
-        
+
         // Add 9 candles with high around 110
         for _i in 0..9 {
             candles.push_back(mock_candle(100.0, 110.0, 90.0, 105.0));

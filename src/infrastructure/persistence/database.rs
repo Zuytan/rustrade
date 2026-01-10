@@ -19,11 +19,12 @@ impl Database {
         if let Some(path_part) = db_url.strip_prefix("sqlite://") {
             let path = Path::new(path_part);
             if let Some(parent) = path.parent()
-                && !parent.exists() {
-                    fs::create_dir_all(parent)
-                        .await
-                        .context("Failed to create database directory")?;
-                }
+                && !parent.exists()
+            {
+                fs::create_dir_all(parent)
+                    .await
+                    .context("Failed to create database directory")?;
+            }
         }
 
         let options = SqliteConnectOptions::from_str(db_url)?
@@ -181,7 +182,7 @@ impl Database {
         )
         .execute(&mut *conn)
         .await
-            .context("Failed to create reoptimization_triggers table")?;
+        .context("Failed to create reoptimization_triggers table")?;
 
         // 7. Risk State Table (Global Singleton)
         sqlx::query(

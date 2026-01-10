@@ -1,16 +1,16 @@
 use crate::domain::market::market_regime::MarketRegimeDetector;
+use crate::domain::performance::calculator;
 use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
 use crate::domain::ports::MarketDataService;
+use crate::domain::repositories::TradeRepository;
 use crate::domain::repositories::{CandleRepository, PerformanceSnapshotRepository};
 use crate::domain::trading::portfolio::Portfolio;
+use crate::domain::trading::types::Order;
 use anyhow::Result;
 use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
-use crate::domain::repositories::TradeRepository;
-use crate::domain::performance::calculator;
-use crate::domain::trading::types::Order;
 
 pub struct PerformanceMonitoringService {
     snapshot_repository: Arc<dyn PerformanceSnapshotRepository>,
@@ -120,16 +120,16 @@ impl PerformanceMonitoringService {
 
         // Filter by date (approximate timestamp check)
         let cutoff = chrono::Utc::now().timestamp() - (days * 24 * 3600);
-        let relevant_orders: Vec<&Order> = trades
-            .iter()
-            .filter(|t| t.timestamp >= cutoff)
-            .collect();
+        let relevant_orders: Vec<&Order> =
+            trades.iter().filter(|t| t.timestamp >= cutoff).collect();
 
         if relevant_orders.is_empty() {
             return (0.0, 0.0);
         }
 
         // Delegate to domain utility
-        calculator::calculate_metrics_from_orders(&relevant_orders.into_iter().cloned().collect::<Vec<_>>())
+        calculator::calculate_metrics_from_orders(
+            &relevant_orders.into_iter().cloned().collect::<Vec<_>>(),
+        )
     }
 }

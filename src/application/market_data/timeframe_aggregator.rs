@@ -4,7 +4,7 @@ use crate::domain::trading::types::Candle;
 use std::collections::HashMap;
 
 /// Aggregates 1-minute candles into higher timeframes
-/// 
+///
 /// This service maintains state for each symbol and timeframe combination,
 /// accumulating 1-minute candles until a complete higher-timeframe candle is formed.
 pub struct TimeframeAggregator {
@@ -21,11 +21,11 @@ impl TimeframeAggregator {
     }
 
     /// Process a 1-minute candle and generate higher timeframe candles if periods complete
-    /// 
+    ///
     /// # Arguments
     /// * `candle` - The 1-minute base candle to process
     /// * `timeframes` - The timeframes to aggregate into
-    /// 
+    ///
     /// # Returns
     /// A vector of completed TimeframeCandles (may be empty if no periods completed)
     pub fn process_candle(
@@ -101,10 +101,10 @@ impl TimeframeAggregator {
     }
 
     /// Manually complete all active candles (useful for end-of-session or testing)
-    /// 
+    ///
     /// # Arguments
     /// * `symbol` - Optional symbol filter (if None, completes all symbols)
-    /// 
+    ///
     /// # Returns
     /// All active candles that were completed
     pub fn flush(&mut self, symbol: Option<&str>) -> Vec<TimeframeCandle> {

@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::domain::ports::SectorProvider;
-use crate::domain::risk::filters::validator_trait::{RiskValidator, ValidationContext, ValidationResult};
+use crate::domain::risk::filters::validator_trait::{
+    RiskValidator, ValidationContext, ValidationResult,
+};
 use crate::domain::trading::types::OrderSide;
 
 /// Configuration for sector exposure validator
@@ -13,7 +15,7 @@ use crate::domain::trading::types::OrderSide;
 pub struct SectorExposureConfig {
     /// Maximum exposure per sector as percentage of equity (e.g., 0.30 = 30%)
     pub max_sector_exposure_pct: f64,
-    
+
     /// Optional provider for sector data
     pub sector_provider: Option<Arc<dyn SectorProvider>>,
 }
@@ -28,7 +30,7 @@ impl Default for SectorExposureConfig {
 }
 
 /// Validates that portfolio exposure to a single sector doesn't exceed limits
-/// 
+///
 /// This validator prevents over-concentration in specific market sectors (e.g., "Technology", "Energy").
 /// It maintains a local cache of symbol->sector mappings to minimize API calls.
 pub struct SectorExposureValidator {
@@ -61,7 +63,7 @@ impl SectorExposureValidator {
                 .get_sector(symbol)
                 .await
                 .unwrap_or_else(|_| "Unknown".to_string());
-            
+
             // Update cache
             let mut cache = self.sector_cache.lock().unwrap();
             cache.insert(symbol.to_string(), sector.clone());
@@ -109,7 +111,8 @@ impl RiskValidator for SectorExposureValidator {
 
             if pos_sector == target_sector {
                 // Use current market price if available, otherwise cost basis
-                let price = ctx.current_prices
+                let price = ctx
+                    .current_prices
                     .get(sym)
                     .cloned()
                     .unwrap_or(position.average_price);
@@ -161,7 +164,11 @@ mod tests {
     #[async_trait]
     impl SectorProvider for MockSectorProvider {
         async fn get_sector(&self, symbol: &str) -> std::result::Result<String, anyhow::Error> {
-            Ok(self.sectors.get(symbol).cloned().unwrap_or("Unknown".to_string()))
+            Ok(self
+                .sectors
+                .get(symbol)
+                .cloned()
+                .unwrap_or("Unknown".to_string()))
         }
     }
 
@@ -185,7 +192,18 @@ mod tests {
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal,  &portfolio, dec!(10000), &prices, &risk_state, None, None, None, Decimal::ZERO, dec!(10000));
+        let ctx = ValidationContext::new(
+            &proposal,
+            &portfolio,
+            dec!(10000),
+            &prices,
+            &risk_state,
+            None,
+            None,
+            None,
+            Decimal::ZERO,
+            dec!(10000),
+        );
 
         // Without provider, sector is "Unknown", so approves
         let result = validator.validate(&ctx).await;
@@ -208,7 +226,18 @@ mod tests {
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None, None, Decimal::ZERO, dec!(10000));
+        let ctx = ValidationContext::new(
+            &proposal,
+            &portfolio,
+            dec!(10000),
+            &prices,
+            &risk_state,
+            None,
+            None,
+            None,
+            Decimal::ZERO,
+            dec!(10000),
+        );
 
         // Exposure: $1000/$10000 = 10% (Limit 20%) -> Approve
         let result = validator.validate(&ctx).await;
@@ -231,15 +260,31 @@ mod tests {
         // Assume equity $5000. 10% limit = $500.
         // Proposal $1000 > $500 -> Reject
         // Note: Equity isn't derived from portfolio in context, it's passed explicitly
-        
+
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(5000), &prices, &risk_state, None, None, None, Decimal::ZERO, dec!(5000));
+        let ctx = ValidationContext::new(
+            &proposal,
+            &portfolio,
+            dec!(5000),
+            &prices,
+            &risk_state,
+            None,
+            None,
+            None,
+            Decimal::ZERO,
+            dec!(5000),
+        );
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(result.rejection_reason().unwrap().contains("Sector exposure limit exceeded"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Sector exposure limit exceeded")
+        );
     }
 
     #[tokio::test]
@@ -256,19 +301,33 @@ mod tests {
 
         let proposal = create_test_proposal("AAPL"); // $1000 value
         let mut portfolio = Portfolio::new();
-        
+
         // Already hold MSFT ($2500)
-        portfolio.positions.insert("MSFT".to_string(), Position {
-            symbol: "MSFT".to_string(),
-            quantity: dec!(25),
-            average_price: dec!(100),
-        });
+        portfolio.positions.insert(
+            "MSFT".to_string(),
+            Position {
+                symbol: "MSFT".to_string(),
+                quantity: dec!(25),
+                average_price: dec!(100),
+            },
+        );
 
         let mut prices = HashMap::new();
         prices.insert("MSFT".to_string(), dec!(100)); // Current price matches cost
 
         let risk_state = RiskState::default();
-        let ctx = ValidationContext::new(&proposal, &portfolio, dec!(10000), &prices, &risk_state, None, None, None, Decimal::ZERO, dec!(10000));
+        let ctx = ValidationContext::new(
+            &proposal,
+            &portfolio,
+            dec!(10000),
+            &prices,
+            &risk_state,
+            None,
+            None,
+            None,
+            Decimal::ZERO,
+            dec!(10000),
+        );
 
         // Current Sector Exp: $2500 (MSFT)
         // New Trade: $1000 (AAPL)

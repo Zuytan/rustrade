@@ -2,7 +2,7 @@ use rustrade::application::agents::user_agent::{UserAgent, UserAgentChannels, Us
 use rustrade::application::system::Application;
 use rustrade::config::Config;
 // use rustrade::interfaces::ui; // Unused
-use tracing::{info, Level};
+use tracing::{Level, info};
 use tracing_subscriber::prelude::*;
 
 // A writer that sends logs to the UI via a crossbeam channel
@@ -140,11 +140,7 @@ fn main() -> anyhow::Result<()> {
         risk_appetite: system_handle.risk_appetite,
     };
 
-    let agent = UserAgent::new(
-        channels,
-        system_handle.portfolio,
-        config,
-    );
+    let agent = UserAgent::new(channels, system_handle.portfolio, config);
 
     // 6. Run UI (Blocks Main Thread)
     let native_options = eframe::NativeOptions {

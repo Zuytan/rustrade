@@ -1,5 +1,5 @@
-use crate::domain::risk::state::RiskState;
 use crate::domain::repositories::RiskStateRepository;
+use crate::domain::risk::state::RiskState;
 use crate::infrastructure::persistence::database::Database;
 use anyhow::{Context, Result};
 use async_trait::async_trait;

@@ -3,13 +3,13 @@ use crate::domain::trading::fee_model::{ConstantFeeModel, FeeModel}; // Added
 use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::{
-    mpsc::{self, Receiver, Sender},
     RwLock,
+    mpsc::{self, Receiver, Sender},
 };
 use tracing::info;
 
@@ -234,10 +234,7 @@ impl MockExecutionService {
         }
     }
 
-    pub fn with_costs(
-        portfolio: Arc<RwLock<Portfolio>>,
-        fee_model: Arc<dyn FeeModel>,
-    ) -> Self {
+    pub fn with_costs(portfolio: Arc<RwLock<Portfolio>>, fee_model: Arc<dyn FeeModel>) -> Self {
         Self {
             portfolio,
             orders: Arc::new(RwLock::new(Vec::new())),
@@ -262,23 +259,25 @@ impl ExecutionService for MockExecutionService {
                 })?;
 
         // Calculate costs using FeeModel
-        let costs = self.fee_model.calculate_cost(order.quantity, order.price, order.side);
-        
+        let costs = self
+            .fee_model
+            .calculate_cost(order.quantity, order.price, order.side);
+
         let slippage_amount = costs.slippage_cost; // Value lost due to slippage
         let commission = costs.fee;
-        
+
         // Effective price adjustment due to slippage
         // For Buy: we pay more -> price + slippage_per_unit
         // For Sell: we get less -> price - slippage_per_unit
         let slippage_per_unit = if order.quantity > Decimal::ZERO {
             slippage_amount / order.quantity
-        } else { 
-            Decimal::ZERO 
+        } else {
+            Decimal::ZERO
         };
-        
+
         let execution_price = match order.side {
-             crate::domain::trading::types::OrderSide::Buy => order.price + slippage_per_unit,
-             crate::domain::trading::types::OrderSide::Sell => order.price - slippage_per_unit,
+            crate::domain::trading::types::OrderSide::Buy => order.price + slippage_per_unit,
+            crate::domain::trading::types::OrderSide::Sell => order.price - slippage_per_unit,
         };
 
         // Total cost value (base value)
@@ -287,10 +286,7 @@ impl ExecutionService for MockExecutionService {
         if !commission.is_zero() || !slippage_amount.is_zero() {
             info!(
                 "MockExecution: Order {} - Slippage: ${:.4}, Commission: ${:.4}, Total Impact: ${:.4}",
-                order.id,
-                slippage_amount,
-                commission,
-                costs.total_impact
+                order.id, slippage_amount, commission, costs.total_impact
             );
         }
 

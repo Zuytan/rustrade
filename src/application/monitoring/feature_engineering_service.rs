@@ -2,11 +2,11 @@ use crate::application::agents::analyst::AnalystConfig;
 use crate::domain::ports::FeatureEngineeringService;
 use crate::domain::trading::types::{Candle, FeatureSet};
 use rust_decimal::prelude::ToPrimitive;
+use ta::Next;
 use ta::indicators::{
     AverageTrueRange, BollingerBands, ExponentialMovingAverage, MovingAverageConvergenceDivergence,
     RelativeStrengthIndex, SimpleMovingAverage,
 };
-use ta::Next;
 
 pub struct ManualAdx {
     period: usize,
@@ -75,16 +75,16 @@ impl ManualAdx {
         // For first 'period' values, usually sum. But simpler approach:
         // smooth = (prev_smooth * (n-1) + current) / n
         if !self.initialized {
-             self.count += 1;
-             self.tr_smooth += tr;
-             self.plus_dm_smooth += plus_dm;
-             self.minus_dm_smooth += minus_dm;
+            self.count += 1;
+            self.tr_smooth += tr;
+            self.plus_dm_smooth += plus_dm;
+            self.minus_dm_smooth += minus_dm;
 
-             if self.count >= self.period {
-                 self.initialized = true;
-                 // Initial average
-                 // But typically Wilder starts subsequent smoothing
-             }
+            if self.count >= self.period {
+                self.initialized = true;
+                // Initial average
+                // But typically Wilder starts subsequent smoothing
+            }
         } else {
             let n = self.period as f64;
             self.tr_smooth = self.tr_smooth - (self.tr_smooth / n) + tr;
@@ -98,7 +98,7 @@ impl ManualAdx {
             let plus_di = 100.0 * self.plus_dm_smooth / self.tr_smooth;
             let minus_di = 100.0 * self.minus_dm_smooth / self.tr_smooth;
             let sum_di = plus_di + minus_di;
-            
+
             let dx = if sum_di > 0.0 {
                 100.0 * (plus_di - minus_di).abs() / sum_di
             } else {
@@ -106,7 +106,7 @@ impl ManualAdx {
             };
 
             // Smooth DX to get ADX
-            // First ADX is average of DX over period? 
+            // First ADX is average of DX over period?
             // Simplified: use same smoothing
             let n = self.period as f64;
             if self.dx_smooth == 0.0 {

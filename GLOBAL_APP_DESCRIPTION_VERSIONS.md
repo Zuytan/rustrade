@@ -1,5 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.59.0 (Janvier 2026) - Extreme Risk Parameter Scaling
+- **Rescaled Risk Appetite**:
+  - **Concept**: Drastically widened the range of risk parameters to allow for "Extremely Safe" (Score 1) to "Extremely Risky" (Score 9) profiles.
+  - **Score 1 (Safe)**: Risk per trade 0.5% (was 2%), Trailing Stop 1.5x ATR, Min Profit Ratio 4.0.
+  - **Score 9 (Risky)**: Risk per trade 20% (was 10%), Max Position Size 100% (was 30%), Trailing Stop 8.0x ATR, Trend Tolerance 15%.
+  - **Impact**: Score 9 can now go "All-In" on high conviction trades.
+- **Verification**: Updated unit tests in `risk_appetite.rs`.
+- **Test Suite Optimization**:
+  - **Consolidation**: Reduced 11 top-level test binaries to 3 logical suites (`risk`, `components`, `scenarios`).
+  - **CI Readiness**: Fixed all `clippy` lints (redundant fields, bool assertions) and format issues.
+  - **Result**: Faster compilation and cleaner project structure.
+
+
 ## Version 0.58.4 (Janvier 2026) - Risk Management Fixes: Buying Power Validation
 - **Buying Power Validation (CRITICAL Fix)**:
   - **Problem**: The Risk Manager was using Total Equity to check affordability of trades, which allowed the system to approve trades even when Available Cash (Buying Power) was insufficient (e.g., tied up in open orders).

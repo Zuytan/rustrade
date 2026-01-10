@@ -8,8 +8,8 @@ use crate::domain::trading::types::{Candle, Order};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -248,7 +248,10 @@ impl Simulator {
         let mut executed_trades = Vec::new();
 
         while let Some(prop) = proposal_rx.recv().await {
-            let costs = self.config.fee_model.calculate_cost(prop.quantity, prop.price, prop.side);
+            let costs = self
+                .config
+                .fee_model
+                .calculate_cost(prop.quantity, prop.price, prop.side);
             let slippage_amount = costs.slippage_cost;
             let slippage_per_unit = if prop.quantity.is_zero() {
                 Decimal::ZERO
@@ -349,9 +352,10 @@ impl Simulator {
 
                     if let (Some(&prev_spy), Some(&curr_spy)) =
                         (spy_daily_map.get(&prev_dt), spy_daily_map.get(&curr_dt))
-                        && prev_spy > 0.0 {
-                            benchmark_returns.push((curr_spy - prev_spy) / prev_spy);
-                        }
+                        && prev_spy > 0.0
+                    {
+                        benchmark_returns.push((curr_spy - prev_spy) / prev_spy);
+                    }
                 }
 
                 // Only calculate if we have matching returns

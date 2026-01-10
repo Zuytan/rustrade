@@ -1,10 +1,10 @@
-use crate::domain::trading::types::{normalize_crypto_symbol, MarketEvent};
+use crate::domain::trading::types::{MarketEvent, normalize_crypto_symbol};
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, warn};
 
@@ -72,7 +72,10 @@ impl BinanceWebSocketManager {
                     backoff = 1;
                 }
                 Err(e) => {
-                    error!("Binance WebSocket error: {}. Reconnecting in {}s...", e, backoff);
+                    error!(
+                        "Binance WebSocket error: {}. Reconnecting in {}s...",
+                        e, backoff
+                    );
                     tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
                     backoff = (backoff * 2).min(MAX_BACKOFF);
                 }
@@ -185,8 +188,8 @@ impl BinanceWebSocketManager {
             let trade: TradeData = serde_json::from_value(msg.data)?;
 
             // Normalize symbol
-            let normalized_symbol = normalize_crypto_symbol(&trade.symbol)
-                .unwrap_or_else(|_| trade.symbol.clone());
+            let normalized_symbol =
+                normalize_crypto_symbol(&trade.symbol).unwrap_or_else(|_| trade.symbol.clone());
 
             let price = trade
                 .price

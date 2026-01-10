@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::application::market_data::spread_cache::SpreadCache;
 use crate::config::{Config, Mode};
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::CandleRepository;
 use crate::domain::trading::portfolio::Portfolio;
-use crate::application::market_data::spread_cache::SpreadCache;
 use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
 use crate::infrastructure::binance::{BinanceExecutionService, BinanceMarketDataService};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::oanda::{OandaExecutionService, OandaMarketDataService};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub struct ServiceFactory;
 
@@ -23,13 +23,14 @@ impl ServiceFactory {
         Arc<SpreadCache>,
     ) {
         match config.mode {
-            Mode::Mock => {
-                (
-                    Arc::new(MockMarketDataService::new()),
-                    Arc::new(MockExecutionService::with_costs(portfolio, config.create_fee_model())),
-                    Arc::new(SpreadCache::new()),
-                )
-            }
+            Mode::Mock => (
+                Arc::new(MockMarketDataService::new()),
+                Arc::new(MockExecutionService::with_costs(
+                    portfolio,
+                    config.create_fee_model(),
+                )),
+                Arc::new(SpreadCache::new()),
+            ),
             Mode::Alpaca => {
                 let market_service = AlpacaMarketDataService::builder()
                     .api_key(config.alpaca_api_key.clone())
@@ -55,22 +56,20 @@ impl ServiceFactory {
                     spread_cache,
                 )
             }
-            Mode::Oanda => {
-                (
-                    Arc::new(OandaMarketDataService::new(
-                        config.oanda_api_key.clone(),
-                        config.oanda_stream_base_url.clone(),
-                        config.oanda_api_base_url.clone(),
-                        config.oanda_account_id.clone(),
-                    )),
-                    Arc::new(OandaExecutionService::new(
-                        config.oanda_api_key.clone(),
-                        config.oanda_api_base_url.clone(),
-                        config.oanda_account_id.clone(),
-                    )),
-                    Arc::new(SpreadCache::new()),
-                )
-            }
+            Mode::Oanda => (
+                Arc::new(OandaMarketDataService::new(
+                    config.oanda_api_key.clone(),
+                    config.oanda_stream_base_url.clone(),
+                    config.oanda_api_base_url.clone(),
+                    config.oanda_account_id.clone(),
+                )),
+                Arc::new(OandaExecutionService::new(
+                    config.oanda_api_key.clone(),
+                    config.oanda_api_base_url.clone(),
+                    config.oanda_account_id.clone(),
+                )),
+                Arc::new(SpreadCache::new()),
+            ),
             Mode::Binance => {
                 let market_service = BinanceMarketDataService::builder()
                     .api_key(config.binance_api_key.clone())

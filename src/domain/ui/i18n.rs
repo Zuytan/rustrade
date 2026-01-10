@@ -51,11 +51,12 @@ impl I18nService {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("json")
                     && let Ok(json_content) = std::fs::read_to_string(&path)
-                        && let Ok(data) = serde_json::from_str::<TranslationData>(&json_content) {
-                            let lang_code = data.language.code.clone();
-                            available_languages.push(data.language.clone());
-                            translations.insert(lang_code, data);
-                        }
+                    && let Ok(data) = serde_json::from_str::<TranslationData>(&json_content)
+                {
+                    let lang_code = data.language.code.clone();
+                    available_languages.push(data.language.clone());
+                    translations.insert(lang_code, data);
+                }
             }
         }
 

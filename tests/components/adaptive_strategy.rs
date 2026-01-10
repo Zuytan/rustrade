@@ -7,25 +7,22 @@ use rustrade::domain::market::strategy_config::StrategyMode;
 #[test]
 fn test_strategy_selector_ranging_to_mean_reversion() {
     let config = AnalystConfig::default();
-    
+
     // Create a Ranging regime
     let ranging_regime = MarketRegime::new(
         MarketRegimeType::Ranging,
-        0.8, // High confidence
-        1.0, // Low volatility
+        0.8,  // High confidence
+        1.0,  // Low volatility
         10.0, // Low trend strength
     );
-    
+
     // Start with Standard strategy
     let current_mode = StrategyMode::Standard;
-    
+
     // Select strategy based on regime
-    let (new_mode, _strategy) = StrategySelector::select_strategy(
-        &ranging_regime,
-        &config,
-        current_mode,
-    );
-    
+    let (new_mode, _strategy) =
+        StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
+
     // Should switch to MeanReversion for Ranging regime
     assert_eq!(
         new_mode,
@@ -37,23 +34,20 @@ fn test_strategy_selector_ranging_to_mean_reversion() {
 #[test]
 fn test_strategy_selector_trending_up_to_trend_riding() {
     let config = AnalystConfig::default();
-    
+
     // Create a TrendingUp regime
     let trending_regime = MarketRegime::new(
         MarketRegimeType::TrendingUp,
-        0.9, // High confidence
-        1.5, // Moderate volatility
+        0.9,  // High confidence
+        1.5,  // Moderate volatility
         35.0, // High trend strength
     );
-    
+
     let current_mode = StrategyMode::Standard;
-    
-    let (new_mode, _strategy) = StrategySelector::select_strategy(
-        &trending_regime,
-        &config,
-        current_mode,
-    );
-    
+
+    let (new_mode, _strategy) =
+        StrategySelector::select_strategy(&trending_regime, &config, current_mode);
+
     // Should switch to TrendRiding for trending markets
     assert_eq!(
         new_mode,
@@ -65,22 +59,14 @@ fn test_strategy_selector_trending_up_to_trend_riding() {
 #[test]
 fn test_strategy_selector_trending_down_to_trend_riding() {
     let config = AnalystConfig::default();
-    
-    let trending_regime = MarketRegime::new(
-        MarketRegimeType::TrendingDown,
-        0.85,
-        2.0,
-        40.0,
-    );
-    
+
+    let trending_regime = MarketRegime::new(MarketRegimeType::TrendingDown, 0.85, 2.0, 40.0);
+
     let current_mode = StrategyMode::Standard;
-    
-    let (new_mode, _strategy) = StrategySelector::select_strategy(
-        &trending_regime,
-        &config,
-        current_mode,
-    );
-    
+
+    let (new_mode, _strategy) =
+        StrategySelector::select_strategy(&trending_regime, &config, current_mode);
+
     assert_eq!(
         new_mode,
         StrategyMode::TrendRiding,
@@ -91,22 +77,19 @@ fn test_strategy_selector_trending_down_to_trend_riding() {
 #[test]
 fn test_strategy_selector_volatile_to_mean_reversion() {
     let config = AnalystConfig::default();
-    
+
     let volatile_regime = MarketRegime::new(
         MarketRegimeType::Volatile,
         0.7,
         5.0, // High volatility
         15.0,
     );
-    
+
     let current_mode = StrategyMode::Standard;
-    
-    let (new_mode, _strategy) = StrategySelector::select_strategy(
-        &volatile_regime,
-        &config,
-        current_mode,
-    );
-    
+
+    let (new_mode, _strategy) =
+        StrategySelector::select_strategy(&volatile_regime, &config, current_mode);
+
     // Volatile markets should use MeanReversion (as per strategy_selector.rs)
     assert_eq!(
         new_mode,
@@ -118,17 +101,14 @@ fn test_strategy_selector_volatile_to_mean_reversion() {
 #[test]
 fn test_strategy_selector_unknown_to_standard() {
     let config = AnalystConfig::default();
-    
+
     let unknown_regime = MarketRegime::unknown();
-    
+
     let current_mode = StrategyMode::TrendRiding;
-    
-    let (new_mode, _strategy) = StrategySelector::select_strategy(
-        &unknown_regime,
-        &config,
-        current_mode,
-    );
-    
+
+    let (new_mode, _strategy) =
+        StrategySelector::select_strategy(&unknown_regime, &config, current_mode);
+
     // Unknown regime should fallback to Standard
     assert_eq!(
         new_mode,
@@ -140,23 +120,15 @@ fn test_strategy_selector_unknown_to_standard() {
 #[test]
 fn test_strategy_selector_no_change_when_same() {
     let config = AnalystConfig::default();
-    
-    let ranging_regime = MarketRegime::new(
-        MarketRegimeType::Ranging,
-        0.8,
-        1.0,
-        10.0,
-    );
-    
+
+    let ranging_regime = MarketRegime::new(MarketRegimeType::Ranging, 0.8, 1.0, 10.0);
+
     // Already using MeanReversion
     let current_mode = StrategyMode::MeanReversion;
-    
-    let (new_mode, _strategy) = StrategySelector::select_strategy(
-        &ranging_regime,
-        &config,
-        current_mode,
-    );
-    
+
+    let (new_mode, _strategy) =
+        StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
+
     // Should stay with MeanReversion
     assert_eq!(
         new_mode,

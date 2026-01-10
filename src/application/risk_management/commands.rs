@@ -1,22 +1,22 @@
 use crate::domain::ports::OrderUpdate;
-use crate::domain::trading::types::TradeProposal;
 use crate::domain::sentiment::Sentiment;
+use crate::domain::trading::types::TradeProposal;
 
 /// Command abstraction for RiskManager operations
-/// 
+///
 /// This enum represents all possible commands that can be processed by the RiskManager.
 /// Using the Command Pattern allows for better testability and separation of concerns.
 #[derive(Debug)]
 pub enum RiskCommand {
     /// Process an order status update from the broker
     OrderUpdate(OrderUpdate),
-    
+
     /// Periodic portfolio valuation tick (triggered by interval timer)
     ValuationTick,
-    
+
     /// Refresh portfolio state from broker (triggered by interval timer)
     RefreshPortfolio,
-    
+
     /// Validate and potentially execute a trade proposal from Analyst
     ProcessProposal(TradeProposal),
 

@@ -2,7 +2,7 @@ use super::advanced::{AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy};
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
 
 /// Configuration for Dynamic Regime Strategy
-/// 
+///
 /// These parameters are derived from RiskAppetite when available
 #[derive(Debug, Clone)]
 pub struct DynamicRegimeConfig {
@@ -52,7 +52,7 @@ pub struct DynamicRegimeStrategy {
 
 impl DynamicRegimeStrategy {
     /// Creates a new DynamicRegimeStrategy with full configuration
-    /// 
+    ///
     /// Use this constructor when you have risk_appetite parameters available
     pub fn with_config(config: DynamicRegimeConfig) -> Self {
         Self {
@@ -73,7 +73,7 @@ impl DynamicRegimeStrategy {
     }
 
     /// Creates a new DynamicRegimeStrategy with basic parameters (legacy compatibility)
-    /// 
+    ///
     /// Deprecated: Use with_config() for proper risk_appetite support
     #[deprecated(note = "Use with_config() for proper risk_appetite support")]
     pub fn new(
@@ -99,7 +99,7 @@ impl DynamicRegimeStrategy {
         // Use highest available timeframe ADX for more reliable regime detection
         // Higher timeframes give better signal for overall market regime
         let adx = ctx.get_highest_timeframe_adx();
-        
+
         // ADX-based regime detection (more reliable than SMA divergence)
         // ADX > threshold = Strong Trend, otherwise Choppy
         if adx > self.advanced_strategy.adx_threshold {

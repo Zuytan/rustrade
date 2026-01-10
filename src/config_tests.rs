@@ -14,7 +14,9 @@ fn get_env_lock() -> &'static Mutex<()> {
 fn test_config_with_risk_score() {
     let _guard = get_env_lock().lock().unwrap();
     // Set up risk score
-    unsafe { env::set_var("RISK_APPETITE_SCORE", "7"); }
+    unsafe {
+        env::set_var("RISK_APPETITE_SCORE", "7");
+    }
 
     let config = Config::from_env().unwrap();
 
@@ -35,14 +37,18 @@ fn test_config_with_risk_score() {
     assert!((config.max_position_size_pct - expected_max_position).abs() < 0.001);
 
     // Cleanup
-    unsafe { env::remove_var("RISK_APPETITE_SCORE"); }
+    unsafe {
+        env::remove_var("RISK_APPETITE_SCORE");
+    }
 }
 
 #[test]
 fn test_config_without_risk_score() {
     let _guard = get_env_lock().lock().unwrap();
     // Remove RISK_APPETITE_SCORE if set
-    unsafe { env::remove_var("RISK_APPETITE_SCORE"); }
+    unsafe {
+        env::remove_var("RISK_APPETITE_SCORE");
+    }
 
     // Set individual params
     unsafe {
@@ -104,7 +110,9 @@ fn test_config_risk_params_override() {
 #[test]
 fn test_invalid_risk_score_returns_error() {
     let _guard = get_env_lock().lock().unwrap();
-    unsafe { env::set_var("RISK_APPETITE_SCORE", "15"); } // Invalid score
+    unsafe {
+        env::set_var("RISK_APPETITE_SCORE", "15");
+    } // Invalid score
 
     let result = Config::from_env();
 
@@ -114,24 +122,32 @@ fn test_invalid_risk_score_returns_error() {
     assert!(err_msg.contains("must be between 1 and 9"));
 
     // Cleanup
-    unsafe { env::remove_var("RISK_APPETITE_SCORE"); }
+    unsafe {
+        env::remove_var("RISK_APPETITE_SCORE");
+    }
 }
 
 #[test]
 fn test_risk_score_boundary_values() {
     let _guard = get_env_lock().lock().unwrap();
     // Test minimum score
-    unsafe { env::set_var("RISK_APPETITE_SCORE", "1"); }
+    unsafe {
+        env::set_var("RISK_APPETITE_SCORE", "1");
+    }
     let config = Config::from_env().unwrap();
     assert!(config.risk_appetite.is_some());
     assert_eq!(config.risk_appetite.unwrap().score(), 1);
 
     // Test maximum score
-    unsafe { env::set_var("RISK_APPETITE_SCORE", "9"); }
+    unsafe {
+        env::set_var("RISK_APPETITE_SCORE", "9");
+    }
     let config = Config::from_env().unwrap();
     assert!(config.risk_appetite.is_some());
     assert_eq!(config.risk_appetite.unwrap().score(), 9);
 
     // Cleanup
-    unsafe { env::remove_var("RISK_APPETITE_SCORE"); }
+    unsafe {
+        env::remove_var("RISK_APPETITE_SCORE");
+    }
 }

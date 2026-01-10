@@ -1,8 +1,8 @@
 use crate::application::optimization::win_rate_provider::WinRateProvider;
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
 use crate::domain::ports::{Expectancy, ExpectancyEvaluator};
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 
 pub struct MarketExpectancyEvaluator {

@@ -37,32 +37,32 @@ impl ValidationResult {
 }
 
 /// Context shared across all validators during a validation run
-/// 
+///
 /// This struct provides all the necessary information for validators to make decisions
 /// without needing direct access to the RiskManager's internal state.
 #[derive(Debug)]
 pub struct ValidationContext<'a> {
     /// The trade proposal being validated
     pub proposal: &'a TradeProposal,
-    
+
     /// Current portfolio state
     pub portfolio: &'a Portfolio,
-    
+
     /// Current total equity (cash + positions value)
     pub current_equity: Decimal,
-    
+
     /// Current market prices for all symbols
     pub current_prices: &'a HashMap<String, Decimal>,
-    
+
     /// Current risk state (HWM, consecutive losses, etc.)
     pub risk_state: &'a RiskState,
-    
+
     /// Current market sentiment (if available)
     pub current_sentiment: Option<&'a Sentiment>,
-    
+
     /// Current correlation matrix (if available)
     pub correlation_matrix: Option<&'a HashMap<(String, String), f64>>,
-    
+
     /// Current volatility multiplier (if available, e.g. from VolatilityManager)
     pub volatility_multiplier: Option<f64>,
 
@@ -126,7 +126,7 @@ impl<'a> ValidationContext<'a> {
 }
 
 /// Trait for all risk validators
-/// 
+///
 /// Each validator implements a specific risk check (e.g., position size, circuit breaker).
 /// Validators are executed in priority order by the ValidationPipeline.
 #[async_trait]
@@ -135,14 +135,14 @@ pub trait RiskValidator: Send + Sync {
     fn name(&self) -> &str;
 
     /// Perform validation check
-    /// 
+    ///
     /// Returns:
     /// - `ValidationResult::Approve` if the trade passes this validator's checks
     /// - `ValidationResult::Reject(reason)` if the trade should be blocked
     async fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult;
 
     /// Whether this validator is currently enabled
-    /// 
+    ///
     /// Disabled validators are skipped during pipeline execution.
     /// Default: true (always enabled)
     fn is_enabled(&self) -> bool {
@@ -150,11 +150,11 @@ pub trait RiskValidator: Send + Sync {
     }
 
     /// Priority order (lower = earlier execution)
-    /// 
+    ///
     /// Validators with lower priority values execute first.
     /// This allows critical checks (e.g., circuit breakers) to run before
     /// less critical ones (e.g., correlation filters).
-    /// 
+    ///
     /// Default: 100 (medium priority)
     fn priority(&self) -> u8 {
         100
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn test_validation_context_get_proposal_price() {
         use crate::domain::trading::types::{OrderSide, OrderType};
-        
+
         let proposal = TradeProposal {
             symbol: "BTC/USD".to_string(),
             side: OrderSide::Buy,
@@ -204,7 +204,7 @@ mod tests {
         let portfolio = Portfolio::new();
         let mut prices = HashMap::new();
         prices.insert("BTC/USD".to_string(), dec!(51000));
-        
+
         let risk_state = RiskState::default();
 
         let ctx = ValidationContext::new(
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn test_validation_context_calculate_exposure() {
         use crate::domain::trading::types::{OrderSide, OrderType};
-        
+
         let proposal = TradeProposal {
             symbol: "BTC/USD".to_string(),
             side: OrderSide::Buy,

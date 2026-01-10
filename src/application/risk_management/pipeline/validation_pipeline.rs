@@ -5,7 +5,7 @@ use crate::domain::risk::filters::validator_trait::{
 };
 
 /// Orchestrates the execution of multiple risk validators
-/// 
+///
 /// The pipeline executes validators in a specific order (defined by their priority).
 /// If any validator returns a Rejection, the pipeline stops immediately and returns
 /// that rejection. This implements a "Fail Fast" strategy.
@@ -19,7 +19,7 @@ impl RiskValidationPipeline {
     pub fn new(validators: Vec<Box<dyn RiskValidator>>) -> Self {
         let mut sorted_validators = validators;
         sorted_validators.sort_by_key(|v| v.priority());
-        
+
         Self {
             validators: sorted_validators,
         }
@@ -35,7 +35,9 @@ impl RiskValidationPipeline {
     pub async fn validate(&self, ctx: &ValidationContext<'_>) -> ValidationResult {
         debug!(
             "Starting validation pipeline for {} {} (Val: {:.2})",
-            ctx.proposal.side, ctx.proposal.symbol, ctx.calculate_proposal_exposure()
+            ctx.proposal.side,
+            ctx.proposal.symbol,
+            ctx.calculate_proposal_exposure()
         );
 
         for validator in &self.validators {
@@ -46,11 +48,7 @@ impl RiskValidationPipeline {
 
             match validator.validate(ctx).await {
                 ValidationResult::Reject(reason) => {
-                    warn!(
-                        "Validation failed at step {}: {}",
-                        validator.name(),
-                        reason
-                    );
+                    warn!("Validation failed at step {}: {}", validator.name(), reason);
                     return ValidationResult::Reject(reason);
                 }
                 ValidationResult::Approve => {
@@ -63,7 +61,7 @@ impl RiskValidationPipeline {
         debug!("All validators passed");
         ValidationResult::Approve
     }
-    
+
     /// Get list of active validator names (for introspection/API)
     pub fn list_active_validators(&self) -> Vec<&str> {
         self.validators
@@ -77,10 +75,10 @@ impl RiskValidationPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::domain::risk::state::RiskState;
     use crate::domain::trading::portfolio::Portfolio;
     use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
+    use async_trait::async_trait;
 
     use rust_decimal_macros::dec;
     use std::collections::HashMap;
@@ -105,7 +103,7 @@ mod tests {
                 ValidationResult::Reject(format!("Rejected by {}", self.name))
             }
         }
-        
+
         fn priority(&self) -> u8 {
             self.priority
         }
@@ -115,47 +113,55 @@ mod tests {
         // Dummy values, mocked validators don't use them
         // But we need valid references with sufficiently long lifetimes
         // We use Box::leak to fake 'static (or long enough) lifetime for the REFERENCED objects
-        
+
         let proposal = Box::leak(Box::new(TradeProposal {
-             symbol: "TEST".to_string(),
-             side: OrderSide::Buy,
-             price: dec!(100),
-             quantity: dec!(1),
-             order_type: OrderType::Market,
-             reason: String::new(),
-             timestamp: 0,
+            symbol: "TEST".to_string(),
+            side: OrderSide::Buy,
+            price: dec!(100),
+            quantity: dec!(1),
+            order_type: OrderType::Market,
+            reason: String::new(),
+            timestamp: 0,
         }));
-        
+
         let portfolio = Box::leak(Box::new(Portfolio::new()));
         let prices = Box::leak(Box::new(HashMap::new()));
         let risk_state = Box::leak(Box::new(RiskState::default()));
-        
+
         ValidationContext {
-             proposal,
-             portfolio,
-             current_equity: dec!(10000),
-             current_prices: prices,
-             risk_state,
-             current_sentiment: None,
-             correlation_matrix: None,
-             volatility_multiplier: None,
-             symbol_pending_exposure: rust_decimal::Decimal::ZERO,
-             available_cash: dec!(100000),
+            proposal,
+            portfolio,
+            current_equity: dec!(10000),
+            current_prices: prices,
+            risk_state,
+            current_sentiment: None,
+            correlation_matrix: None,
+            volatility_multiplier: None,
+            symbol_pending_exposure: rust_decimal::Decimal::ZERO,
+            available_cash: dec!(100000),
         }
     }
-    
+
     #[tokio::test]
     async fn test_pipeline_execution_order() {
-        let v1 = MockValidator { name: "V1".to_string(), should_pass: true, priority: 10 };
-        let v2 = MockValidator { name: "V2".to_string(), should_pass: true, priority: 5 }; // Should run first
-        
+        let v1 = MockValidator {
+            name: "V1".to_string(),
+            should_pass: true,
+            priority: 10,
+        };
+        let v2 = MockValidator {
+            name: "V2".to_string(),
+            should_pass: true,
+            priority: 5,
+        }; // Should run first
+
         let pipeline = RiskValidationPipeline::new(vec![Box::new(v1), Box::new(v2)]);
-        
+
         // V2 has priority 5, V1 has 10. V2 should be first in the list
         let names = pipeline.list_active_validators();
         assert_eq!(names[0], "V2");
         assert_eq!(names[1], "V1");
-        
+
         let ctx = create_context();
         let result = pipeline.validate(&ctx).await;
         assert!(result.is_approved());
@@ -163,36 +169,46 @@ mod tests {
 
     #[tokio::test]
     async fn test_pipeline_fail_fast() {
-        let v1 = MockValidator { name: "V1".to_string(), should_pass: true, priority: 5 };
-        let v2 = MockValidator { name: "V2".to_string(), should_pass: false, priority: 10 }; // Fails
-        let v3 = MockValidator { name: "V3".to_string(), should_pass: true, priority: 15 }; // Shouldn't run
-        
-        let pipeline = RiskValidationPipeline::new(vec![
-            Box::new(v1), Box::new(v2), Box::new(v3)
-        ]);
-        
+        let v1 = MockValidator {
+            name: "V1".to_string(),
+            should_pass: true,
+            priority: 5,
+        };
+        let v2 = MockValidator {
+            name: "V2".to_string(),
+            should_pass: false,
+            priority: 10,
+        }; // Fails
+        let v3 = MockValidator {
+            name: "V3".to_string(),
+            should_pass: true,
+            priority: 15,
+        }; // Shouldn't run
+
+        let pipeline = RiskValidationPipeline::new(vec![Box::new(v1), Box::new(v2), Box::new(v3)]);
+
         let ctx = create_context();
         let result = pipeline.validate(&ctx).await;
         assert!(result.is_rejected());
         assert_eq!(result.rejection_reason(), Some("Rejected by V2"));
     }
-    
+
     #[tokio::test]
     async fn test_add_validator() {
         let mut pipeline = RiskValidationPipeline::new(vec![]);
-        
-        pipeline.add_validator(Box::new(MockValidator { 
-            name: "HighPrio".to_string(), 
-            should_pass: true, 
-            priority: 100 
+
+        pipeline.add_validator(Box::new(MockValidator {
+            name: "HighPrio".to_string(),
+            should_pass: true,
+            priority: 100,
         }));
-        
-        pipeline.add_validator(Box::new(MockValidator { 
-            name: "LowPrio".to_string(), 
-            should_pass: true, 
-            priority: 10 
+
+        pipeline.add_validator(Box::new(MockValidator {
+            name: "LowPrio".to_string(),
+            should_pass: true,
+            priority: 10,
         }));
-        
+
         let names = pipeline.list_active_validators();
         assert_eq!(names, vec!["LowPrio", "HighPrio"]);
     }

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::Timelike;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{error, info, warn};
 
 use crate::application::optimization::win_rate_provider::HistoricalWinRateProvider;
@@ -10,9 +10,9 @@ use crate::application::{
     agents::{
         analyst::{Analyst, AnalystCommand, AnalystConfig, AnalystDependencies},
         executor::Executor,
+        listener::ListenerAgent,
         scanner::MarketScanner,
         sentinel::{Sentinel, SentinelCommand}, // Added SentinelCommand
-        listener::ListenerAgent,
     },
     market_data::spread_cache::SpreadCache,
     monitoring::{
@@ -24,40 +24,38 @@ use crate::application::{
         optimizer::{GridSearchOptimizer, ParameterGrid},
     },
     risk_management::{
-        order_throttler::OrderThrottler,
-        risk_manager::RiskManager,
-        commands::RiskCommand,
+        commands::RiskCommand, order_throttler::OrderThrottler, risk_manager::RiskManager,
     },
     strategies::*,
 };
 use crate::config::{Config, Mode};
 
+use crate::domain::listener::{ListenerAction, ListenerConfig, ListenerRule}; // Added Listener imports
 use crate::domain::performance::performance_evaluator::{
     EvaluationThresholds, PerformanceEvaluator,
 };
 use crate::domain::ports::SectorProvider;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
+use crate::domain::sentiment::Sentiment; // Added Sentiment import
+use crate::domain::sentiment::SentimentProvider;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::TradeProposal; // Added TradeProposal import
-use crate::domain::sentiment::Sentiment; // Added Sentiment import
-use crate::domain::listener::{ListenerConfig, ListenerRule, ListenerAction}; // Added Listener imports
 use crate::infrastructure::alpaca::AlpacaSectorProvider;
 use crate::infrastructure::binance::BinanceSectorProvider;
 use crate::infrastructure::factory::ServiceFactory;
 use crate::infrastructure::mock::MockExecutionService; // Added
+use crate::infrastructure::news::mock_news::MockNewsService;
+use crate::infrastructure::news::rss::RssNewsService;
 use crate::infrastructure::oanda::OandaSectorProvider;
 use crate::infrastructure::persistence::database::Database;
 use crate::infrastructure::persistence::repositories::{
     SqliteCandleRepository, SqliteOptimizationHistoryRepository, SqliteOrderRepository,
     SqlitePerformanceSnapshotRepository, SqliteReoptimizationTriggerRepository,
-    SqliteStrategyRepository, SqliteRiskStateRepository,
+    SqliteRiskStateRepository, SqliteStrategyRepository,
 };
 use crate::infrastructure::sentiment::alternative_me::AlternativeMeSentimentProvider;
-use crate::domain::sentiment::SentimentProvider;
-use crate::infrastructure::news::mock_news::MockNewsService;
-use crate::infrastructure::news::rss::RssNewsService;
 
 pub struct SystemHandle {
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
@@ -107,16 +105,13 @@ impl Application {
         let candle_repo = Arc::new(SqliteCandleRepository::new(db.pool.clone()));
 
         // 3. Initialize Infrastructure Services (Using Factory)
-        let (market_service, execution_service, spread_cache) = ServiceFactory::create_services(
-            &config,
-            Some(candle_repo.clone()),
-            portfolio.clone(),
-        );
+        let (market_service, execution_service, spread_cache) =
+            ServiceFactory::create_services(&config, Some(candle_repo.clone()), portfolio.clone());
 
         // 4. Initialize remaining Persistence repositories
         let order_repo = Arc::new(SqliteOrderRepository::new(db.pool.clone()));
         let strategy_repo = Arc::new(SqliteStrategyRepository::new(db.pool.clone()));
-        let risk_state_repo: Arc<dyn crate::domain::repositories::RiskStateRepository> = 
+        let risk_state_repo: Arc<dyn crate::domain::repositories::RiskStateRepository> =
             Arc::new(SqliteRiskStateRepository::new(db.clone()));
 
         // 4. Initialize Adaptive Optimization Repositories
@@ -267,7 +262,9 @@ impl Application {
 
         let candle_repo = self.candle_repository.clone(); // Option<Arc<..>> impls Clone
 
-        let correlation_service = candle_repo.as_ref().map(|repo| Arc::new(CorrelationService::new(repo.clone())));
+        let correlation_service = candle_repo
+            .as_ref()
+            .map(|repo| Arc::new(CorrelationService::new(repo.clone())));
 
         // Return handle BEFORE moving self members, so we clone what we need.
         let system_handle = SystemHandle {
@@ -276,9 +273,9 @@ impl Application {
             analyst_cmd_tx: analyst_cmd_tx.clone(),
             proposal_tx: proposal_tx.clone(),
             portfolio: self.portfolio.clone(),
-            candle_rx, // Move the receiver to the handle
+            candle_rx,                            // Move the receiver to the handle
             sentiment_rx: sentiment_broadcast_rx, // Move the receiver to the handle
-            news_rx: news_broadcast_rx, // Move the receiver to the handle
+            news_rx: news_broadcast_rx,           // Move the receiver to the handle
             strategy_mode: self.config.strategy_mode,
             risk_appetite: self.config.risk_appetite,
         };
@@ -406,7 +403,7 @@ impl Application {
             }
             crate::domain::market::strategy_config::StrategyMode::SMC => {
                 Arc::new(SMCStrategy::new(
-                    20, // Lookback
+                    20,    // Lookback
                     0.005, // 0.5% min FVG gap
                 ))
             }
@@ -456,9 +453,10 @@ impl Application {
             sector_provider,
             pending_order_ttl_ms: self.config.pending_order_ttl_ms,
             allow_pdt_risk: false, // Safer default
-            correlation_config: crate::domain::risk::filters::correlation_filter::CorrelationFilterConfig {
-                max_correlation_threshold: 0.85, // Default threshold
-            },
+            correlation_config:
+                crate::domain::risk::filters::correlation_filter::CorrelationFilterConfig {
+                    max_correlation_threshold: 0.85, // Default threshold
+                },
             volatility_config: crate::domain::risk::volatility_manager::VolatilityConfig::default(),
         };
 
@@ -473,7 +471,6 @@ impl Application {
             ),
         );
 
-        
         let mut risk_manager = RiskManager::new(
             proposal_rx,
             risk_cmd_rx,
@@ -523,30 +520,44 @@ impl Application {
                         id: "elon-doge".to_string(),
                         keywords: vec!["Elon Musk".to_string(), "Dogecoin".to_string()],
                         target_symbol: "DOGE/USD".to_string(),
-                        action: ListenerAction::NotifyAnalyst(crate::domain::listener::NewsSentiment::Bullish),
+                        action: ListenerAction::NotifyAnalyst(
+                            crate::domain::listener::NewsSentiment::Bullish,
+                        ),
                         active: true,
                     },
                     ListenerRule {
                         id: "sec-lawsuit".to_string(),
-                        keywords: vec!["SEC".to_string(), "Lawsuit".to_string(), "Binance".to_string()],
+                        keywords: vec![
+                            "SEC".to_string(),
+                            "Lawsuit".to_string(),
+                            "Binance".to_string(),
+                        ],
                         target_symbol: "BNB/USD".to_string(), // Assuming Binance Coin or broad market selloff
-                        action: ListenerAction::NotifyAnalyst(crate::domain::listener::NewsSentiment::Bearish),
+                        action: ListenerAction::NotifyAnalyst(
+                            crate::domain::listener::NewsSentiment::Bearish,
+                        ),
                         active: true,
                     },
                 ],
             };
-            
-            let news_rss_url = std::env::var("NEWS_RSS_URL").ok();
-            
-            let news_service: Arc<dyn crate::domain::ports::NewsDataService> = if let Some(url) = news_rss_url {
-                info!("Using RSS News Service with URL: {}", url);
-                Arc::new(RssNewsService::new(&url, 60))
-            } else {
-                info!("Using Mock News Service (NEWS_RSS_URL not set)");
-                Arc::new(MockNewsService::new())
-            };
 
-            let listener = ListenerAgent::with_news_broadcast(news_service, config, listener_analyst_tx, news_tx_for_listener);
+            let news_rss_url = std::env::var("NEWS_RSS_URL").ok();
+
+            let news_service: Arc<dyn crate::domain::ports::NewsDataService> =
+                if let Some(url) = news_rss_url {
+                    info!("Using RSS News Service with URL: {}", url);
+                    Arc::new(RssNewsService::new(&url, 60))
+                } else {
+                    info!("Using Mock News Service (NEWS_RSS_URL not set)");
+                    Arc::new(MockNewsService::new())
+                };
+
+            let listener = ListenerAgent::with_news_broadcast(
+                news_service,
+                config,
+                listener_analyst_tx,
+                news_tx_for_listener,
+            );
             listener.run().await;
         });
 
@@ -559,10 +570,12 @@ impl Application {
             if asset_class == crate::config::AssetClass::Crypto {
                 info!("Starting Sentiment Polling Task (Alternative.me)...");
                 let provider = AlternativeMeSentimentProvider::new();
-                
+
                 // Initial fetch
                 if let Ok(sentiment) = provider.fetch_sentiment().await {
-                    let _ = sentiment_tx.send(RiskCommand::UpdateSentiment(sentiment.clone())).await;
+                    let _ = sentiment_tx
+                        .send(RiskCommand::UpdateSentiment(sentiment.clone()))
+                        .await;
                     let _ = sentiment_broadcast_tx.send(sentiment);
                 }
 
@@ -570,10 +583,13 @@ impl Application {
                     tokio::time::sleep(tokio::time::Duration::from_secs(4 * 3600)).await; // Every 4 hours
                     match provider.fetch_sentiment().await {
                         Ok(sentiment) => {
-                            if let Err(e) = sentiment_tx.send(RiskCommand::UpdateSentiment(sentiment.clone())).await {
+                            if let Err(e) = sentiment_tx
+                                .send(RiskCommand::UpdateSentiment(sentiment.clone()))
+                                .await
+                            {
                                 error!("Failed to send sentiment update: {}", e);
                             }
-                             let _ = sentiment_broadcast_tx.send(sentiment);
+                            let _ = sentiment_broadcast_tx.send(sentiment);
                         }
                         Err(e) => {
                             warn!("Failed to fetch sentiment: {}", e);

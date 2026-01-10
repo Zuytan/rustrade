@@ -115,12 +115,17 @@ impl PortfolioValuationService {
                     vm.update(range);
                     debug!(
                         "PortfolioValuationService: Volatility updated for {}. Range: {:.2}, Avg: {:.2}",
-                        benchmark, range, vm.get_average_volatility()
+                        benchmark,
+                        range,
+                        vm.get_average_volatility()
                     );
                 }
             }
             Err(e) => {
-                warn!("PortfolioValuationService: Failed to fetch volatility data: {}", e);
+                warn!(
+                    "PortfolioValuationService: Failed to fetch volatility data: {}",
+                    e
+                );
             }
         }
 

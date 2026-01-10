@@ -1,31 +1,31 @@
+use crate::application::risk_management::liquidation_service::LiquidationService;
+use crate::application::risk_management::pipeline::validation_pipeline::RiskValidationPipeline;
+use crate::application::risk_management::portfolio_valuation_service::PortfolioValuationService;
+use crate::application::risk_management::session_manager::SessionManager;
+use crate::application::risk_management::state::pending_orders_tracker::PendingOrdersTracker;
+use crate::application::risk_management::state::risk_state_manager::RiskStateManager;
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate, SectorProvider};
 use crate::domain::repositories::RiskStateRepository;
+use crate::domain::risk::filters::{
+    RiskValidator, ValidationContext, ValidationResult,
+    buying_power_validator::{BuyingPowerConfig, BuyingPowerValidator},
+    circuit_breaker_validator::{CircuitBreakerConfig, CircuitBreakerValidator},
+    correlation_filter::{CorrelationFilter, CorrelationFilterConfig},
+    pdt_validator::{PdtConfig, PdtValidator},
+    position_size_validator::{PositionSizeConfig, PositionSizeValidator},
+    sector_exposure_validator::{SectorExposureConfig, SectorExposureValidator},
+    sentiment_validator::{SentimentConfig, SentimentValidator},
+};
 use crate::domain::risk::state::RiskState;
+use crate::domain::risk::volatility_manager::{VolatilityConfig, VolatilityManager}; // Added
 use crate::domain::sentiment::Sentiment;
 #[cfg(test)]
 use crate::domain::sentiment::SentimentClassification;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, OrderSide, OrderStatus, TradeProposal};
-use crate::application::risk_management::pipeline::validation_pipeline::RiskValidationPipeline;
-use crate::application::risk_management::state::risk_state_manager::RiskStateManager;
-use crate::application::risk_management::state::pending_orders_tracker::PendingOrdersTracker;
-use crate::application::risk_management::session_manager::SessionManager;
-use crate::application::risk_management::portfolio_valuation_service::PortfolioValuationService;
-use crate::application::risk_management::liquidation_service::LiquidationService;
-use crate::domain::risk::filters::{
-    RiskValidator, ValidationContext, ValidationResult,
-    position_size_validator::{PositionSizeValidator, PositionSizeConfig},
-    circuit_breaker_validator::{CircuitBreakerValidator, CircuitBreakerConfig},
-    pdt_validator::{PdtValidator, PdtConfig},
-    sector_exposure_validator::{SectorExposureValidator, SectorExposureConfig},
-    sentiment_validator::{SentimentValidator, SentimentConfig},
-    correlation_filter::{CorrelationFilter, CorrelationFilterConfig},
-    buying_power_validator::{BuyingPowerValidator, BuyingPowerConfig},
-};
-use crate::domain::risk::volatility_manager::{VolatilityConfig, VolatilityManager}; // Added
 use chrono::Utc;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock; // Added
@@ -154,20 +154,20 @@ pub struct RiskManager {
     state_manager: RiskStateManager,
     #[allow(dead_code)]
     pending_orders_tracker: PendingOrdersTracker,
-    
+
     // Extracted Services
     session_manager: SessionManager,
     portfolio_valuation_service: PortfolioValuationService,
     liquidation_service: LiquidationService,
 
-    // Legacy State (Deprecated/To be removed) 
+    // Legacy State (Deprecated/To be removed)
     // Kept briefly if needed for transition, but aim to remove usage
-    risk_state: RiskState, // REPLACED BY state_manager
+    risk_state: RiskState,                         // REPLACED BY state_manager
     pending_orders: HashMap<String, PendingOrder>, // REPLACED BY pending_orders_tracker
 
     // Runtime flags
     halted: bool,
-    daily_pnl: Decimal, 
+    daily_pnl: Decimal,
 
     // Cache
     current_prices: HashMap<String, Decimal>,
@@ -188,8 +188,7 @@ struct PendingOrder {
     filled_at: Option<i64>,      // Timestamp when filled (for TTL cleanup)
 }
 
-impl PendingOrder {
-}
+impl PendingOrder {}
 
 impl RiskManager {
     #[allow(clippy::too_many_arguments)]
@@ -221,33 +220,27 @@ impl RiskManager {
                 max_drawdown_pct: risk_config.max_drawdown_pct,
                 consecutive_loss_limit: risk_config.consecutive_loss_limit,
             })),
-
             // 2. Regulatory: PDT
             Box::new(PdtValidator::new(PdtConfig {
-                enabled: !non_pdt_mode && !risk_config.allow_pdt_risk, 
+                enabled: !non_pdt_mode && !risk_config.allow_pdt_risk,
                 asset_class,
                 ..Default::default()
             })),
-
             // 3. Diversification: Sector Exposure
             Box::new(SectorExposureValidator::new(SectorExposureConfig {
                 max_sector_exposure_pct: risk_config.max_sector_exposure_pct,
                 sector_provider: risk_config.sector_provider.clone(),
             })),
-
             // 4. Diversification: Correlation
             Box::new(CorrelationFilter::new(
-                 risk_config.correlation_config.clone()
+                risk_config.correlation_config.clone(),
             )),
-
             // 5. Risk Sizing: Position Size
             Box::new(PositionSizeValidator::new(PositionSizeConfig {
                 max_position_size_pct: risk_config.max_position_size_pct,
             })),
-
             // 6. Optimization: Sentiment
             Box::new(SentimentValidator::new(SentimentConfig::default())),
-
             // 7. Affordability: Buying Power (Available Cash)
             Box::new(BuyingPowerValidator::new(BuyingPowerConfig::default())),
         ];
@@ -264,24 +257,20 @@ impl RiskManager {
         let volatility_manager = Arc::new(RwLock::new(VolatilityManager::new(
             risk_config.volatility_config.clone(),
         )));
-        
+
         // Initialize extracted services
-        let session_manager = SessionManager::new(
-            risk_state_repository.clone(),
-            market_service.clone(),
-        );
-        
+        let session_manager =
+            SessionManager::new(risk_state_repository.clone(), market_service.clone());
+
         let portfolio_valuation_service = PortfolioValuationService::new(
             market_service.clone(),
             portfolio_state_manager.clone(),
             volatility_manager.clone(),
             asset_class,
         );
-        
-        let liquidation_service = LiquidationService::new(
-            order_tx.clone(),
-            portfolio_state_manager.clone(),
-        );
+
+        let liquidation_service =
+            LiquidationService::new(order_tx.clone(), portfolio_state_manager.clone());
 
         Ok(Self {
             proposal_rx,
@@ -294,12 +283,12 @@ impl RiskManager {
             asset_class,
             risk_config,
             volatility_manager,
-            
+
             // New Components
             validation_pipeline,
             state_manager,
             pending_orders_tracker,
-            
+
             // Extracted Services
             session_manager,
             portfolio_valuation_service,
@@ -308,14 +297,14 @@ impl RiskManager {
             // Legacy State (Initialized to defaults, will be synced or ignored)
             risk_state: RiskState::default(),
             pending_orders: HashMap::new(),
-            
+
             current_prices: HashMap::new(),
             performance_monitor,
             correlation_service,
 
             halted: false,
             daily_pnl: Decimal::ZERO,
-            
+
             pending_reservations: HashMap::new(),
             current_sentiment: None,
             risk_state_repository,
@@ -335,7 +324,7 @@ impl RiskManager {
                 updated_at: Utc::now().timestamp(),
                 daily_drawdown_reset: false, // Default or track it
             };
-            
+
             if let Err(e) = repo.save(&state).await {
                 error!("RiskManager: Failed to persist risk state: {}", e);
             } else {
@@ -349,30 +338,29 @@ impl RiskManager {
     pub async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Get portfolio snapshot
         let snapshot = self.portfolio_state_manager.refresh().await?;
-        
+
         // Delegate session initialization to SessionManager
-        let risk_state = self.session_manager
+        let risk_state = self
+            .session_manager
             .initialize_session(&snapshot.portfolio, &mut self.current_prices)
             .await?;
-        
+
         // Sync to legacy state (will be removed in future)
         self.risk_state = risk_state;
-        
+
         info!(
             "RiskManager: Session initialized. Equity: {}, Daily Start: {}, HWM: {}",
-            self.risk_state.session_start_equity, 
-            self.risk_state.daily_start_equity, 
+            self.risk_state.session_start_equity,
+            self.risk_state.daily_start_equity,
             self.risk_state.equity_high_water_mark
         );
 
         // SYNC Fix: Ensure state_manager is also updated with the initialized state
         // otherwise update_portfolio_valuation will overwrite self.risk_state with empty state
         *self.state_manager.get_state_mut() = self.risk_state.clone();
-        
+
         Ok(())
     }
-
-
 
     /// Check if circuit breaker should trigger
     fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<String> {
@@ -457,28 +445,32 @@ impl RiskManager {
 
                         // Track P&L for SELL orders to update consecutive loss counter
                         if pending.side == OrderSide::Sell
-                            && let Some(fill_price) = update.filled_avg_price {
-                                let pnl = (fill_price - pending.entry_price) * pending.filled_qty;
-                                if pnl < Decimal::ZERO {
-                                    self.state_manager.get_state_mut().consecutive_losses += 1;
-                                    warn!(
-                                        "RiskManager: Trade LOSS detected for {} (${:.2}). Consecutive losses: {}",
-                                        pending.symbol, pnl, self.state_manager.get_state().consecutive_losses
-                                    );
-                                    state_changed = true;
-                                } else {
-                                    self.state_manager.get_state_mut().consecutive_losses = 0;
-                                    state_changed = true; // Resetting is also a change we want to persist
-                                    info!(
-                                        "RiskManager: Trade PROFIT for {} (${:.2}). Loss streak reset.",
-                                        pending.symbol, pnl
-                                    );
-                                }
+                            && let Some(fill_price) = update.filled_avg_price
+                        {
+                            let pnl = (fill_price - pending.entry_price) * pending.filled_qty;
+                            if pnl < Decimal::ZERO {
+                                self.state_manager.get_state_mut().consecutive_losses += 1;
+                                warn!(
+                                    "RiskManager: Trade LOSS detected for {} (${:.2}). Consecutive losses: {}",
+                                    pending.symbol,
+                                    pnl,
+                                    self.state_manager.get_state().consecutive_losses
+                                );
+                                state_changed = true;
+                            } else {
+                                self.state_manager.get_state_mut().consecutive_losses = 0;
+                                state_changed = true; // Resetting is also a change we want to persist
+                                info!(
+                                    "RiskManager: Trade PROFIT for {} (${:.2}). Loss streak reset.",
+                                    pending.symbol, pnl
+                                );
                             }
+                        }
 
                         info!(
                             "RiskManager: Order {} FILLED (tentative) - awaiting portfolio sync for {}",
-                            &update.client_order_id[..8], pending.symbol
+                            &update.client_order_id[..8],
+                            pending.symbol
                         );
                     }
                 }
@@ -508,44 +500,44 @@ impl RiskManager {
                 }
             }
         }
-        
+
         state_changed
     }
-
-
 
     /// Fetch latest prices for all held positions and update valuation
     /// Delegates to PortfolioValuationService for valuation updates
     pub async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Delegate valuation to PortfolioValuationService
-        let (_portfolio, current_equity) = self.portfolio_valuation_service
+        let (_portfolio, current_equity) = self
+            .portfolio_valuation_service
             .update_portfolio_valuation(&mut self.current_prices)
             .await?;
-        
+
         // Update volatility
         let _ = self.portfolio_valuation_service.update_volatility().await;
-        
+
         // Update High Water Mark via State Manager
         self.state_manager.update(current_equity, Utc::now()).await;
         // Sync legacy copy
         self.risk_state = self.state_manager.get_state().clone();
-        
+
         // Check Risks (Async check)
         // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
         if !self.halted
-            && let Some(reason) = self.check_circuit_breaker(current_equity) {
-                tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
-                self.halted = true;
-                self.liquidate_portfolio(&reason).await;
-            }
-        
+            && let Some(reason) = self.check_circuit_breaker(current_equity)
+        {
+            tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
+            self.halted = true;
+            self.liquidate_portfolio(&reason).await;
+        }
+
         // Capture performance snapshot if monitor available
         if let Some(monitor) = &self.performance_monitor {
             for sym in self.current_prices.keys() {
                 let _ = monitor.capture_snapshot(sym).await;
             }
         }
-        
+
         Ok(())
     }
 
@@ -561,9 +553,10 @@ impl RiskManager {
         let now = Utc::now();
         let start = now - chrono::Duration::days(30); // 30 days to get enough candles
 
-        match self.market_service
+        match self
+            .market_service
             .get_historical_bars(benchmark, start, now, "1D")
-            .await 
+            .await
         {
             Ok(candles) => {
                 if candles.len() < 2 {
@@ -581,8 +574,12 @@ impl RiskManager {
                 if range > 0.0 {
                     let mut vm = self.volatility_manager.write().await;
                     vm.update(range);
-                    debug!("RiskManager: Volatility updated for {}. Latest range: {:.2}, Avg: {:.2}", 
-                        benchmark, range, vm.get_average_volatility());
+                    debug!(
+                        "RiskManager: Volatility updated for {}. Latest range: {:.2}, Avg: {:.2}",
+                        benchmark,
+                        range,
+                        vm.get_average_volatility()
+                    );
                 }
             }
             Err(e) => {
@@ -606,32 +603,32 @@ impl RiskManager {
     fn check_daily_reset(&mut self, current_equity: Decimal) -> bool {
         // Delegate to RiskStateManager
         self.state_manager.check_daily_reset(current_equity);
-        
+
         // Sync local legacy state
         let old_reset = self.risk_state.daily_drawdown_reset;
         self.risk_state = self.state_manager.get_state().clone();
-        
+
         if self.risk_state.daily_drawdown_reset && !old_reset {
-             self.daily_pnl = Decimal::ZERO;
-             return true;
+            self.daily_pnl = Decimal::ZERO;
+            return true;
         }
-        
+
         // If reference date changed, it was a reset
         let today = Utc::now().date_naive();
         if self.asset_class == AssetClass::Crypto && self.risk_state.reference_date == today {
-             // It might have been updated by manager just now.
-             // But we need to know if it CHANGED just now. 
-             // We can assume state_manager handles it.
-             // Returning false is safe if manager handles persistence (via update called elsewhere).
-             // But caller expects bool to call persist.
-             
-             // Simplification: always return false here and rely on update_portfolio_valuation to persist state changes?
-             // But daily reset happens on proposal too.
-             
-             // Check if updated_at is recent?
-             if self.risk_state.updated_at >= Utc::now().timestamp() - 1 {
-                 return true;
-             }
+            // It might have been updated by manager just now.
+            // But we need to know if it CHANGED just now.
+            // We can assume state_manager handles it.
+            // Returning false is safe if manager handles persistence (via update called elsewhere).
+            // But caller expects bool to call persist.
+
+            // Simplification: always return false here and rely on update_portfolio_valuation to persist state changes?
+            // But daily reset happens on proposal too.
+
+            // Check if updated_at is recent?
+            if self.risk_state.updated_at >= Utc::now().timestamp() - 1 {
+                return true;
+            }
         }
         false
     }
@@ -709,24 +706,38 @@ impl RiskManager {
             RiskCommand::ValuationTick => self.cmd_handle_valuation().await,
             RiskCommand::RefreshPortfolio => self.cmd_handle_refresh().await,
             RiskCommand::ProcessProposal(proposal) => self.cmd_handle_proposal(proposal).await,
-            RiskCommand::UpdateSentiment(sentiment) => self.cmd_handle_update_sentiment(sentiment).await,
+            RiskCommand::UpdateSentiment(sentiment) => {
+                self.cmd_handle_update_sentiment(sentiment).await
+            }
             RiskCommand::UpdateConfig(config) => self.cmd_handle_update_config(config).await,
             RiskCommand::CircuitBreakerTrigger => {
-                warn!("RiskManager: MANUAL CIRCUIT BREAKER TRIGGERED! Executing Panic Liquidation.");
-                self.liquidate_portfolio("Manual Circuit Breaker Trigger").await;
+                warn!(
+                    "RiskManager: MANUAL CIRCUIT BREAKER TRIGGERED! Executing Panic Liquidation."
+                );
+                self.liquidate_portfolio("Manual Circuit Breaker Trigger")
+                    .await;
                 Ok(())
-            },
+            }
         }
     }
 
-    async fn cmd_handle_update_config(&mut self, config: Box<RiskConfig>) -> Result<(), Box<dyn std::error::Error>> {
+    async fn cmd_handle_update_config(
+        &mut self,
+        config: Box<RiskConfig>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         info!("RiskManager: Updating risk configuration: {:?}", config);
         self.risk_config = *config;
         Ok(())
     }
-    
-    async fn cmd_handle_update_sentiment(&mut self, sentiment: Sentiment) -> Result<(), Box<dyn std::error::Error>> {
-        info!("RiskManager: Received Market Sentiment: {} ({})", sentiment.value, sentiment.classification);
+
+    async fn cmd_handle_update_sentiment(
+        &mut self,
+        sentiment: Sentiment,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!(
+            "RiskManager: Received Market Sentiment: {} ({})",
+            sentiment.value, sentiment.classification
+        );
         self.current_sentiment = Some(sentiment);
         Ok(())
     }
@@ -738,9 +749,12 @@ impl RiskManager {
     }
 
     /// Handle order update command
-    async fn cmd_handle_order_update(&mut self, update: OrderUpdate) -> Result<(), Box<dyn std::error::Error>> {
+    async fn cmd_handle_order_update(
+        &mut self,
+        update: OrderUpdate,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if self.handle_order_update(update) {
-             self.persist_state().await; 
+            self.persist_state().await;
         }
         Ok(())
     }
@@ -761,16 +775,23 @@ impl RiskManager {
     }
 
     /// Handle trade proposal command
-    async fn cmd_handle_proposal(&mut self, proposal: TradeProposal) -> Result<(), Box<dyn std::error::Error>> {
+    async fn cmd_handle_proposal(
+        &mut self,
+        proposal: TradeProposal,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if self.halted {
-            warn!("RiskManager: Trading HALTED. Rejecting proposal for {}", proposal.symbol);
+            warn!(
+                "RiskManager: Trading HALTED. Rejecting proposal for {}",
+                proposal.symbol
+            );
             return Ok(());
         }
 
         debug!("RiskManager: reviewing proposal {:?}", proposal);
 
         // Update current price
-        self.current_prices.insert(proposal.symbol.clone(), proposal.price);
+        self.current_prices
+            .insert(proposal.symbol.clone(), proposal.price);
 
         // Get portfolio snapshot
         let mut snapshot = self.portfolio_state_manager.get_snapshot().await;
@@ -793,7 +814,7 @@ impl RiskManager {
 
         // Check daily reset
         if self.check_daily_reset(current_equity) {
-             self.persist_state().await;
+            self.persist_state().await;
         }
 
         // Circuit breaker check (Trigger Liquidation logic)
@@ -807,16 +828,16 @@ impl RiskManager {
 
         // Prepare Validation Context
         let correlation_matrix = if let Some(service) = &self.correlation_service {
-             // Pre-fetch correlation matrix if service available
-             // Optimization: We could let the validator ask for it, but context is passive.
-             // We get existing symbols + proposal symbol
-             let mut symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
-             if !symbols.contains(&proposal.symbol) {
-                 symbols.push(proposal.symbol.clone());
-             }
-             service.calculate_correlation_matrix(&symbols).await.ok()
+            // Pre-fetch correlation matrix if service available
+            // Optimization: We could let the validator ask for it, but context is passive.
+            // We get existing symbols + proposal symbol
+            let mut symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
+            if !symbols.contains(&proposal.symbol) {
+                symbols.push(proposal.symbol.clone());
+            }
+            service.calculate_correlation_matrix(&symbols).await.ok()
         } else {
-             None
+            None
         };
 
         let volatility_multiplier = {
@@ -828,9 +849,13 @@ impl RiskManager {
             Some(vm.calculate_multiplier(vm.get_average_volatility()))
         };
 
-        let pending_exposure = self.pending_orders.values()
+        let pending_exposure = self
+            .pending_orders
+            .values()
             .filter(|p| p.symbol == proposal.symbol && p.side == OrderSide::Buy)
-            .fold(Decimal::ZERO, |acc, p| acc + (p.requested_qty * p.entry_price));
+            .fold(Decimal::ZERO, |acc, p| {
+                acc + (p.requested_qty * p.entry_price)
+            });
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -849,7 +874,8 @@ impl RiskManager {
         match self.validation_pipeline.validate(&ctx).await {
             ValidationResult::Approve => {
                 // All checks passed
-                self.execute_proposal_internal(proposal, &snapshot.portfolio).await?;
+                self.execute_proposal_internal(proposal, &snapshot.portfolio)
+                    .await?;
             }
             ValidationResult::Reject(reason) => {
                 warn!(
@@ -934,7 +960,10 @@ impl RiskManager {
         let mut order_update_rx = match self.execution_service.subscribe_order_updates().await {
             Ok(rx) => Some(rx),
             Err(e) => {
-                error!("RiskManager: Failed to subscribe to order updates: {}. Pending tracking will be limited.", e);
+                error!(
+                    "RiskManager: Failed to subscribe to order updates: {}. Pending tracking will be limited.",
+                    e
+                );
                 None
             }
         };
@@ -957,7 +986,7 @@ impl RiskManager {
                         error!("RiskManager: Portfolio refresh failed: {}", e);
                     }
                 }
-                
+
                 // Listen for Order Updates (handle lag explicitly)
                 result = async {
                     if let Some(rx) = &mut order_update_rx {
@@ -987,14 +1016,14 @@ impl RiskManager {
                         }
                     }
                 }
-                
+
                 // Periodic valuation
                 _ = valuation_interval.tick() => {
                     if let Err(e) = self.handle_command(RiskCommand::ValuationTick).await {
                         error!("RiskManager: Valuation failed: {}", e);
                     }
                 }
-                
+
                 // Process trade proposals
                 Some(proposal) = self.proposal_rx.recv() => {
                     if let Err(e) = self.handle_command(RiskCommand::ProcessProposal(proposal)).await {
@@ -1013,9 +1042,6 @@ impl RiskManager {
     }
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1024,10 +1050,10 @@ mod tests {
     use crate::domain::trading::types::{OrderSide, OrderType};
     use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
     use chrono::Utc;
-    
+
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
-    use tokio::sync::{mpsc, RwLock};
+    use tokio::sync::{RwLock, mpsc};
 
     use std::sync::Mutex;
 
@@ -1294,7 +1320,7 @@ mod tests {
         let (proposal_tx, proposal_rx) = mpsc::channel(1);
         let (order_tx, mut order_rx) = mpsc::channel(1);
         let mut port = Portfolio::new();
-        port.cash = Decimal::from(1000); 
+        port.cash = Decimal::from(1000);
         // High equity via positions
         port.positions.insert(
             "AAPL".to_string(),
@@ -1306,7 +1332,7 @@ mod tests {
         );
         let portfolio = Arc::new(RwLock::new(port));
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
-        
+
         // Mock Market Data (Need AAPL price for Equity calc)
         let market_data = Arc::new(ConfigurableMockMarketData::new());
         market_data.set_price("AAPL", Decimal::from(100)); // $100k Equity
@@ -1326,7 +1352,7 @@ mod tests {
             dummy_cmd_rx,
             order_tx,
             exec_service,
-            market_service.clone(), 
+            market_service.clone(),
             state_manager,
             false,
             AssetClass::Stock,
@@ -1336,10 +1362,10 @@ mod tests {
             None,
         )
         .expect("Test config should be valid");
-        
+
         // Ensure price map is populated in RM
         // RiskManager refreshes prices on run loop.
-        
+
         tokio::spawn(async move { rm.run().await });
 
         // Initialize session
@@ -1361,9 +1387,12 @@ mod tests {
 
         // Give it a moment to process
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        
+
         // Assert NO order was generated
-        assert!(order_rx.try_recv().is_err(), "Order should be rejected due to insufficient buying power despite high equity");
+        assert!(
+            order_rx.try_recv().is_err(),
+            "Order should be rejected due to insufficient buying power despite high equity"
+        );
     }
 
     #[tokio::test]
@@ -1464,10 +1493,9 @@ mod tests {
             ),
         );
 
-
         let risk_config = RiskConfig {
             max_daily_loss_pct: 0.5, // 50% max allowed
-            max_drawdown_pct: 0.5, // 50%
+            max_drawdown_pct: 0.5,   // 50%
             ..Default::default()
         };
 
@@ -1487,7 +1515,7 @@ mod tests {
             None,
         )
         .expect("Test config should be valid");
-        
+
         // Initialize state (this fetches initial portfolio and prices)
         rm.initialize_session().await.unwrap();
 
@@ -1500,12 +1528,17 @@ mod tests {
             reason: "Test PDT".to_string(),
             timestamp: Utc::now().timestamp_millis(),
         };
-        
+
         // Handle command directly (via Command Pattern!)
-        rm.handle_command(RiskCommand::ProcessProposal(proposal)).await.unwrap();
+        rm.handle_command(RiskCommand::ProcessProposal(proposal))
+            .await
+            .unwrap();
 
         // Should be REJECTED (no order sent to order_rx)
-        assert!(order_rx.try_recv().is_err(), "Order should have been rejected by PDT protection but was sent!");
+        assert!(
+            order_rx.try_recv().is_err(),
+            "Order should have been rejected by PDT protection but was sent!"
+        );
     }
 
     struct MockSectorProvider {
@@ -1751,7 +1784,7 @@ mod tests {
         // Manually manipulate last_reset_date to yesterday in STATE MANAGER
         let yesterday = Utc::now().date_naive() - chrono::Duration::days(1);
         let yesterday_ts = (Utc::now() - chrono::Duration::days(1)).timestamp();
-        
+
         rm.state_manager.get_state_mut().reference_date = yesterday;
         rm.state_manager.get_state_mut().updated_at = yesterday_ts;
         rm.state_manager.get_state_mut().session_start_equity = Decimal::from(5000); // Old baseline
@@ -1824,8 +1857,11 @@ mod tests {
             timestamp: Utc::now(),
             source: "Test".to_string(),
         };
-        risk_cmd_tx.send(RiskCommand::UpdateSentiment(sentiment)).await.unwrap();
-        
+        risk_cmd_tx
+            .send(RiskCommand::UpdateSentiment(sentiment))
+            .await
+            .unwrap();
+
         // Wait for processing
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
@@ -1845,16 +1881,22 @@ mod tests {
 
         // 3. Verify Rejection
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        assert!(order_rx.try_recv().is_err(), "Should be rejected due to Sentiment adjustment");
+        assert!(
+            order_rx.try_recv().is_err(),
+            "Should be rejected due to Sentiment adjustment"
+        );
 
         // 4. Inject Sentiment: Greed (60)
-         let sentiment_greed = Sentiment {
+        let sentiment_greed = Sentiment {
             value: 60,
             classification: SentimentClassification::from_score(60),
             timestamp: Utc::now(),
             source: "Test".to_string(),
         };
-        risk_cmd_tx.send(RiskCommand::UpdateSentiment(sentiment_greed)).await.unwrap();
+        risk_cmd_tx
+            .send(RiskCommand::UpdateSentiment(sentiment_greed))
+            .await
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         // 5. Resend Proposal (Should Pass now, limit is back to 10%)
@@ -1870,7 +1912,10 @@ mod tests {
         proposal_tx.send(proposal2).await.unwrap();
 
         // 6. Verify Acceptance
-        let order = order_rx.recv().await.expect("Should be approved in Greed mode");
+        let order = order_rx
+            .recv()
+            .await
+            .expect("Should be approved in Greed mode");
         assert_eq!(order.symbol, "BTC");
     }
 
@@ -1879,11 +1924,11 @@ mod tests {
         // 1. Setup
         let portfolio = Portfolio::new();
         let portfolio = Arc::new(RwLock::new(portfolio));
-        
+
         let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
         // MockMarketDataService returns 0 if price not set
-        let market_service = Arc::new(MockMarketDataService::new()); 
-        
+        let market_service = Arc::new(MockMarketDataService::new());
+
         let (_proposal_tx, proposal_rx) = mpsc::channel(1);
         let (risk_cmd_tx, risk_cmd_rx) = mpsc::channel(1);
         let (order_tx, mut order_rx) = mpsc::channel(1);
@@ -1897,11 +1942,14 @@ mod tests {
         {
             let mut p = portfolio.write().await;
             p.cash = Decimal::from(1000);
-            p.positions.insert("BTC".to_string(), crate::domain::trading::portfolio::Position {
-                symbol: "BTC".to_string(),
-                quantity: Decimal::from(10),
-                average_price: Decimal::from(100),
-            });
+            p.positions.insert(
+                "BTC".to_string(),
+                crate::domain::trading::portfolio::Position {
+                    symbol: "BTC".to_string(),
+                    quantity: Decimal::from(10),
+                    average_price: Decimal::from(100),
+                },
+            );
         }
 
         let state_manager = Arc::new(
@@ -1931,19 +1979,28 @@ mod tests {
         // 2. Trigger Liquidation (with 0 price)
         // We do NOT set price on MockMarketDataService, so it returns None or 0 depending on implementation.
         // Even if it returns 0, logic should proceed.
-        
+
         // Wait for init
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         info!("Triggering Liquidation with NO PRICE data (Panic Mode)...");
-        risk_cmd_tx.send(RiskCommand::CircuitBreakerTrigger).await.unwrap();
+        risk_cmd_tx
+            .send(RiskCommand::CircuitBreakerTrigger)
+            .await
+            .unwrap();
 
         // 3. Expect Market Sell Order
-        let order = order_rx.recv().await.expect("Should receive liquidation order even without price");
-        
+        let order = order_rx
+            .recv()
+            .await
+            .expect("Should receive liquidation order even without price");
+
         assert_eq!(order.symbol, "BTC");
         assert_eq!(order.side, OrderSide::Sell);
         assert_eq!(order.quantity, Decimal::from(10));
-        assert!(matches!(order.order_type, OrderType::Market), "Must be Market order in panic mode");
+        assert!(
+            matches!(order.order_type, OrderType::Market),
+            "Must be Market order in panic mode"
+        );
     }
 }

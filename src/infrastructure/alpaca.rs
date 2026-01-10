@@ -1,14 +1,14 @@
 use crate::config::AssetClass; // Added
 use crate::domain::ports::OrderUpdate; // Added
 use crate::domain::ports::{ExecutionService, MarketDataService};
-use crate::domain::trading::types::{normalize_crypto_symbol, MarketEvent, Order, OrderSide};
+use crate::domain::trading::types::{MarketEvent, Order, OrderSide, normalize_crypto_symbol};
 use crate::infrastructure::alpaca_trading_stream::AlpacaTradingStream; // Added
 use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
+use crate::infrastructure::circuit_breaker::CircuitBreaker; // Added
+use crate::infrastructure::http_client_factory::HttpClientFactory;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{NaiveDate, TimeZone};
-use crate::infrastructure::http_client_factory::HttpClientFactory;
-use crate::infrastructure::circuit_breaker::CircuitBreaker; // Added
 use reqwest_middleware::ClientWithMiddleware;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ pub struct AlpacaMarketDataService {
     asset_class: AssetClass, // Added
     spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>, // Shared spread cache for real-time cost tracking
     candle_repository: Option<Arc<dyn crate::domain::repositories::CandleRepository>>, // For intelligent caching
-    circuit_breaker: Arc<CircuitBreaker>, // Added
+    circuit_breaker: Arc<CircuitBreaker>,                                              // Added
 }
 
 impl AlpacaMarketDataService {
@@ -160,8 +160,8 @@ impl AlpacaMarketDataServiceBuilder {
 
         let circuit_breaker = Arc::new(CircuitBreaker::new(
             "AlpacaMarketData",
-            5, // Open after 5 failures
-            3, // Close after 3 successes in HalfOpen
+            5,                                  // Open after 5 failures
+            3,                                  // Close after 3 successes in HalfOpen
             std::time::Duration::from_secs(60), // Wait 60s before retrying
         ));
 
@@ -196,9 +196,7 @@ impl MarketDataService for AlpacaMarketDataService {
         // Immediate Warmup: Send subscription events for each symbol BEFORE the loop
         // This tells the Analyst to start loading historical data immediately
         for symbol in symbols {
-            let _ = tx
-                .send(MarketEvent::SymbolSubscription { symbol })
-                .await;
+            let _ = tx.send(MarketEvent::SymbolSubscription { symbol }).await;
         }
 
         let tx_forward = tx; // Rename for clarity in spawn
@@ -387,90 +385,91 @@ impl MarketDataService for AlpacaMarketDataService {
             return Ok(std::collections::HashMap::new());
         }
 
-        self.circuit_breaker.call(async move {
-            // Detect if we're dealing with crypto symbols (contain '/')
-            let is_crypto = symbols.iter().any(|s| s.contains('/'));
+        self.circuit_breaker
+            .call(async move {
+                // Detect if we're dealing with crypto symbols (contain '/')
+                let is_crypto = symbols.iter().any(|s| s.contains('/'));
 
-            // For crypto, denormalize symbols (remove slashes) before API call
-            let api_symbols: Vec<String> = if is_crypto {
-                symbols
-                    .iter()
-                    .map(|s| crate::domain::trading::types::denormalize_crypto_symbol(s))
-                    .collect()
-            } else {
-                symbols.clone()
-            };
-
-            let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
-            let symbols_param = api_symbols.join(",");
-
-            let response = self
-                .client
-                .get(url)
-                .header("APCA-API-KEY-ID", &self.api_key)
-                .header("APCA-API-SECRET-KEY", &self.api_secret)
-                .query(&[("symbols", &symbols_param)])
-                .send()
-                .await
-                .context("Failed to fetch snapshots from Alpaca")?;
-
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_default();
-                anyhow::bail!("Alpaca snapshots fetch failed: {}", error_text);
-            }
-
-            #[derive(Debug, Deserialize)]
-            struct SnapshotTrade {
-                #[serde(rename = "p")]
-                price: f64,
-            }
-            #[derive(Debug, Deserialize)]
-            struct Snapshot {
-                #[serde(rename = "latestTrade")]
-                latest_trade: Option<SnapshotTrade>,
-                #[serde(rename = "prevDailyBar")]
-                prev_daily_bar: Option<AlpacaBar>,
-            }
-
-            let resp: std::collections::HashMap<String, Snapshot> = response
-                .json()
-                .await
-                .context("Failed to parse Alpaca snapshots response")?;
-
-            let mut prices = std::collections::HashMap::new();
-
-            for (alp_sym, snapshot) in resp {
-                let normalized_sym = if is_crypto {
-                    crate::domain::trading::types::normalize_crypto_symbol(&alp_sym)
-                        .unwrap_or(alp_sym.clone())
+                // For crypto, denormalize symbols (remove slashes) before API call
+                let api_symbols: Vec<String> = if is_crypto {
+                    symbols
+                        .iter()
+                        .map(|s| crate::domain::trading::types::denormalize_crypto_symbol(s))
+                        .collect()
                 } else {
-                    alp_sym
+                    symbols.clone()
                 };
 
-                let price_f64 = if let Some(trade) = snapshot.latest_trade {
-                    trade.price
-                } else if let Some(bar) = snapshot.prev_daily_bar {
-                    bar.close
-                } else {
-                    0.0
-                };
+                let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
+                let symbols_param = api_symbols.join(",");
 
-                if price_f64 > 0.0
-                    && let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64)
-                {
-                    prices.insert(normalized_sym, dec);
+                let response = self
+                    .client
+                    .get(url)
+                    .header("APCA-API-KEY-ID", &self.api_key)
+                    .header("APCA-API-SECRET-KEY", &self.api_secret)
+                    .query(&[("symbols", &symbols_param)])
+                    .send()
+                    .await
+                    .context("Failed to fetch snapshots from Alpaca")?;
+
+                if !response.status().is_success() {
+                    let error_text = response.text().await.unwrap_or_default();
+                    anyhow::bail!("Alpaca snapshots fetch failed: {}", error_text);
                 }
-            }
 
-            Ok(prices)
-        })
-        .await
-        .map_err(|e| match e {
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
-                anyhow::anyhow!("Alpaca Market Data circuit breaker open: {}", msg)
-            }
-            crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
-        })
+                #[derive(Debug, Deserialize)]
+                struct SnapshotTrade {
+                    #[serde(rename = "p")]
+                    price: f64,
+                }
+                #[derive(Debug, Deserialize)]
+                struct Snapshot {
+                    #[serde(rename = "latestTrade")]
+                    latest_trade: Option<SnapshotTrade>,
+                    #[serde(rename = "prevDailyBar")]
+                    prev_daily_bar: Option<AlpacaBar>,
+                }
+
+                let resp: std::collections::HashMap<String, Snapshot> = response
+                    .json()
+                    .await
+                    .context("Failed to parse Alpaca snapshots response")?;
+
+                let mut prices = std::collections::HashMap::new();
+
+                for (alp_sym, snapshot) in resp {
+                    let normalized_sym = if is_crypto {
+                        crate::domain::trading::types::normalize_crypto_symbol(&alp_sym)
+                            .unwrap_or(alp_sym.clone())
+                    } else {
+                        alp_sym
+                    };
+
+                    let price_f64 = if let Some(trade) = snapshot.latest_trade {
+                        trade.price
+                    } else if let Some(bar) = snapshot.prev_daily_bar {
+                        bar.close
+                    } else {
+                        0.0
+                    };
+
+                    if price_f64 > 0.0
+                        && let Some(dec) = rust_decimal::Decimal::from_f64_retain(price_f64)
+                    {
+                        prices.insert(normalized_sym, dec);
+                    }
+                }
+
+                Ok(prices)
+            })
+            .await
+            .map_err(|e| match e {
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                    anyhow::anyhow!("Alpaca Market Data circuit breaker open: {}", msg)
+                }
+                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+            })
     }
 
     async fn get_historical_bars(
@@ -500,7 +499,10 @@ impl MarketDataService for AlpacaMarketDataService {
                                 .timestamp_opt(latest_ts, 0)
                                 .single()
                                 .ok_or_else(|| {
-                                    anyhow::anyhow!("Invalid timestamp in candle cache: {}", latest_ts)
+                                    anyhow::anyhow!(
+                                        "Invalid timestamp in candle cache: {}",
+                                        latest_ts
+                                    )
                                 })?;
 
                             // If latest cache is recent enough (within requested range), use cache + incremental
@@ -522,7 +524,8 @@ impl MarketDataService for AlpacaMarketDataService {
                                     Ok(new_bars) => {
                                         info!(
                                             "AlpacaMarketDataService: Fetched {} new bars from API for {}",
-                                            new_bars.len(), symbol
+                                            new_bars.len(),
+                                            symbol
                                         );
 
                                         // Save new bars to database
@@ -587,7 +590,9 @@ impl MarketDataService for AlpacaMarketDataService {
                                         // API failed - use cached data gracefully
                                         tracing::warn!(
                                             "AlpacaMarketDataService: API fetch failed for {}: {}. Using {} cached bars (DEGRADED MODE)",
-                                            symbol, e, cached_count
+                                            symbol,
+                                            e,
+                                            cached_count
                                         );
                                         return Ok(cached_candles);
                                     }
@@ -664,13 +669,16 @@ impl MarketDataService for AlpacaMarketDataService {
                     let end_ts = end.timestamp();
 
                     if let Ok(cached_candles) = repo.get_range(symbol, start_ts, end_ts).await
-                        && !cached_candles.is_empty() {
-                            tracing::warn!(
-                                "AlpacaMarketDataService: API failed for {}: {}. Falling back to {} cached bars (DEGRADED MODE)",
-                                symbol, e, cached_candles.len()
-                            );
-                            return Ok(cached_candles);
-                        }
+                        && !cached_candles.is_empty()
+                    {
+                        tracing::warn!(
+                            "AlpacaMarketDataService: API failed for {}: {}. Falling back to {} cached bars (DEGRADED MODE)",
+                            symbol,
+                            e,
+                            cached_candles.len()
+                        );
+                        return Ok(cached_candles);
+                    }
                 }
 
                 // No cache available and API failed - propagate error
@@ -737,13 +745,13 @@ impl AlpacaMarketDataService {
                     ("timeframe", timeframe.to_string()),
                     ("limit", "10000".to_string()),
                 ];
-                
+
                 // Add feed parameter for stocks (required for Alpaca Data API)
                 // Use IEX for free/paper accounts, SIP for paid accounts
                 if !is_crypto {
                     query_params.push(("feed", "iex".to_string()));
                 }
-                
+
                 if let Some(token) = &page_token {
                     query_params.push(("page_token", token.clone()));
                 }
@@ -923,7 +931,7 @@ impl AlpacaMarketDataService {
             base_url: &self.data_base_url,
             min_volume: self.min_volume_threshold,
         };
-        
+
         scanner.scan().await
     }
 }
@@ -1107,7 +1115,10 @@ impl ExecutionService for AlpacaExecutionService {
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
             .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&order_request).context("Failed to serialize order request")?)
+            .body(
+                serde_json::to_string(&order_request)
+                    .context("Failed to serialize order request")?,
+            )
             .send()
             .await
             .context("Failed to send order to Alpaca")?;
@@ -1441,7 +1452,7 @@ impl crate::domain::ports::SectorProvider for AlpacaSectorProvider {
 mod response_parser {
     use super::*;
     use serde_json::Value;
-    
+
     #[derive(Debug, Deserialize)]
     pub struct Mover {
         pub symbol: String,
@@ -1449,15 +1460,14 @@ mod response_parser {
         #[allow(dead_code)]
         pub price: f64,
     }
-    
+
     /// Parse movers response from Alpaca API (handles both v1beta1 and v2 formats)
     pub fn parse_movers(json: Value) -> Result<Vec<Mover>> {
         let movers: Vec<Mover> = if let Some(gainers) = json.get("gainers") {
             if gainers.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(gainers.clone())
-                    .context("Failed to parse gainers array")?
+                serde_json::from_value(gainers.clone()).context("Failed to parse gainers array")?
             }
         } else if let Some(movers_array) = json.as_array() {
             serde_json::from_value(Value::Array(movers_array.clone()))
@@ -1465,22 +1475,22 @@ mod response_parser {
         } else {
             vec![]
         };
-        
+
         Ok(movers)
     }
-    
+
     #[derive(Debug, Deserialize)]
     pub struct SnapshotTrade {
         #[serde(rename = "p")]
         pub price: f64,
     }
-    
+
     #[derive(Debug, Deserialize)]
     pub struct SnapshotDay {
         #[serde(rename = "v")]
         pub volume: f64,
     }
-    
+
     #[derive(Debug, Deserialize)]
     pub struct Snapshot {
         #[serde(rename = "latestTrade")]
@@ -1490,28 +1500,30 @@ mod response_parser {
         #[serde(rename = "prevDailyBar")]
         pub prev_daily_bar: Option<SnapshotDay>,
     }
-    
+
     /// Parse snapshots response for volume validation
     pub fn parse_snapshots(json: Value) -> Result<std::collections::HashMap<String, Snapshot>> {
         serde_json::from_value(json).context("Failed to parse snapshots response")
     }
-    
+
     #[derive(Debug, Deserialize)]
     pub struct CryptoBarsResponse {
         pub bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
     }
-    
+
     /// Parse crypto bars response
-    pub fn parse_crypto_bars(json: Value) -> Result<std::collections::HashMap<String, Vec<AlpacaBar>>> {
-        let response: CryptoBarsResponse = serde_json::from_value(json)
-            .context("Failed to parse crypto bars response")?;
+    pub fn parse_crypto_bars(
+        json: Value,
+    ) -> Result<std::collections::HashMap<String, Vec<AlpacaBar>>> {
+        let response: CryptoBarsResponse =
+            serde_json::from_value(json).context("Failed to parse crypto bars response")?;
         Ok(response.bars)
     }
 }
 /// Crypto movers scanner for detecting top gainers in crypto markets
 mod crypto_movers {
     use super::*;
-    
+
     pub struct Scanner<'a> {
         pub client: &'a ClientWithMiddleware,
         pub api_key: &'a str,
@@ -1519,26 +1531,26 @@ mod crypto_movers {
         pub base_url: &'a str,
         pub min_volume: f64,
     }
-    
+
     impl<'a> Scanner<'a> {
         /// Scan for top crypto movers by analyzing 24-hour price changes
         pub async fn scan(&self) -> Result<Vec<String>> {
             let now = chrono::Utc::now();
             let start = now - chrono::Duration::hours(24);
-            
+
             // Crypto bars API expects slash format (BTC/USD)
             let symbols: Vec<String> = CRYPTO_UNIVERSE.iter().map(|s| s.to_string()).collect();
             let symbols_param = symbols.join(",");
-            
+
             info!("MarketScanner: DEBUG - symbols_param = '{}'", symbols_param);
-            
+
             let url = format!("{}/v1beta3/crypto/us/bars", self.base_url);
-            
+
             info!(
                 "MarketScanner: Fetching 24h bars for {} crypto pairs",
                 CRYPTO_UNIVERSE.len()
             );
-            
+
             let response = self
                 .client
                 .get(&url)
@@ -1554,35 +1566,38 @@ mod crypto_movers {
                 .send()
                 .await
                 .context("Failed to fetch crypto bars for movers detection")?;
-            
+
             if !response.status().is_success() {
                 let err = response.text().await.unwrap_or_default();
                 error!("MarketScanner: Crypto bars fetch failed: {}", err);
                 return Ok(vec![]); // Graceful degradation
             }
-            
+
             let json_val: serde_json::Value = response.json().await?;
             let bars_map = response_parser::parse_crypto_bars(json_val)?;
-            
+
             info!(
                 "MarketScanner: API returned bars for {} symbols",
                 bars_map.len()
             );
-            
+
             let movers = self.calculate_changes(bars_map);
             self.select_top_movers(movers)
         }
-        
-        fn calculate_changes(&self, bars_map: std::collections::HashMap<String, Vec<AlpacaBar>>) -> Vec<(String, f64, f64)> {
+
+        fn calculate_changes(
+            &self,
+            bars_map: std::collections::HashMap<String, Vec<AlpacaBar>>,
+        ) -> Vec<(String, f64, f64)> {
             let mut movers: Vec<(String, f64, f64)> = Vec::new();
-            
+
             for (symbol, bars) in bars_map {
                 info!(
                     "MarketScanner: Processing symbol '{}' with {} bars",
                     symbol,
                     bars.len()
                 );
-                
+
                 if let Some(bar) = bars.first() {
                     // Calculate 24h percentage change
                     let change_pct = if bar.open != 0.0 {
@@ -1590,18 +1605,18 @@ mod crypto_movers {
                     } else {
                         0.0
                     };
-                    
+
                     let abs_change = change_pct.abs();
-                    
+
                     // Filter by volume threshold (but allow zero-volume in Paper Trading mode)
                     let has_volume = bar.volume >= self.min_volume;
                     let is_zero_volume = bar.volume == 0.0;
-                    
+
                     info!(
                         "MarketScanner: {} - change: {:.2}%, volume: {:.0}, threshold: {:.0}, pass: {}",
                         symbol, change_pct, bar.volume, self.min_volume, has_volume
                     );
-                    
+
                     // Include symbol if it has sufficient volume OR if volume is zero (Paper Trading limitation)
                     if abs_change > 0.0 && (has_volume || is_zero_volume) {
                         if is_zero_volume {
@@ -1621,14 +1636,14 @@ mod crypto_movers {
                     info!("MarketScanner: {} - NO BARS in response", symbol);
                 }
             }
-            
+
             movers
         }
-        
+
         fn select_top_movers(&self, mut movers: Vec<(String, f64, f64)>) -> Result<Vec<String>> {
             // Sort by absolute change (descending)
             movers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            
+
             // Return top 5 movers
             let top_movers: Vec<String> = movers
                 .into_iter()
@@ -1641,12 +1656,12 @@ mod crypto_movers {
                     symbol
                 })
                 .collect();
-            
+
             info!(
                 "MarketScanner: Found {} crypto top movers",
                 top_movers.len()
             );
-            
+
             Ok(top_movers)
         }
     }

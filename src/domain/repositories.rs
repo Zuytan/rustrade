@@ -32,9 +32,9 @@
 //! # };
 //! ```
 
+use crate::domain::risk::state::RiskState;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Order;
-use crate::domain::risk::state::RiskState;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

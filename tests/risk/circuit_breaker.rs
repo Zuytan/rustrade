@@ -5,8 +5,8 @@ use rustrade::domain::trading::portfolio::{Portfolio, Position};
 use rustrade::domain::trading::types::{OrderSide, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
-use tracing::{info, Level};
+use tokio::sync::{RwLock, mpsc};
+use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 #[tokio::test]
@@ -50,7 +50,8 @@ async fn test_circuit_breaker_triggers_on_crash() {
         max_sector_exposure_pct: 1.0,
         sector_provider: None,
         allow_pdt_risk: false,
-        correlation_config: rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
+        correlation_config:
+            rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
         volatility_config: rustrade::domain::risk::volatility_manager::VolatilityConfig::default(),
     };
 

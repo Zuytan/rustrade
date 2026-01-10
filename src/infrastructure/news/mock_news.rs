@@ -29,7 +29,7 @@ impl NewsDataService for MockNewsService {
         // Spawn a task to generate mock news
         tokio::spawn(async move {
             info!("Starting Mock News Generator...");
-            
+
             // Wait a bit before sending the first news
             tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
 
@@ -43,7 +43,7 @@ impl NewsDataService for MockNewsService {
                 timestamp: Utc::now(),
                 sentiment_score: Some(0.9),
             };
-            
+
             if let Err(e) = tx.send(event1).await {
                 info!("Receiver dropped, stopping mock news generator: {}", e);
                 return;
@@ -53,8 +53,8 @@ impl NewsDataService for MockNewsService {
             // Wait...
             tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 
-             // Scenario 2: SEC Lawsuit (Sell Signal)
-             let event2 = NewsEvent {
+            // Scenario 2: SEC Lawsuit (Sell Signal)
+            let event2 = NewsEvent {
                 id: Uuid::new_v4().to_string(),
                 source: "CryptoPanic".to_string(),
                 title: "SEC Lawsuit".to_string(),
@@ -65,8 +65,8 @@ impl NewsDataService for MockNewsService {
             };
 
             if let Err(e) = tx.send(event2).await {
-                 info!("Receiver dropped, stopping mock news generator: {}", e);
-                 return;
+                info!("Receiver dropped, stopping mock news generator: {}", e);
+                return;
             }
             info!("Sent mock news: SEC Lawsuit");
         });

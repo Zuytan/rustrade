@@ -148,7 +148,12 @@ mod tests {
         let invalid_ts = i64::MAX;
         let result = parse_timestamp(invalid_ts);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid timestamp"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid timestamp")
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -81,16 +81,16 @@ impl Timeframe {
     }
 
     /// Checks if a timestamp aligns with the start of this timeframe period
-    /// 
+    ///
     /// # Arguments
     /// * `timestamp_ms` - Unix timestamp in milliseconds
-    /// 
+    ///
     /// # Returns
     /// `true` if this timestamp represents the start of a new period for this timeframe
     pub fn is_period_start(&self, timestamp_ms: i64) -> bool {
         let timestamp_sec = timestamp_ms / 1000;
         let period_sec = self.to_seconds();
-        
+
         match self {
             Timeframe::OneDay => {
                 // Daily candles start at midnight UTC
@@ -105,16 +105,16 @@ impl Timeframe {
     }
 
     /// Returns the start timestamp of the period containing the given timestamp
-    /// 
+    ///
     /// # Arguments
     /// * `timestamp_ms` - Unix timestamp in milliseconds
-    /// 
+    ///
     /// # Returns
     /// The start timestamp (in ms) of the period containing this timestamp
     pub fn period_start(&self, timestamp_ms: i64) -> i64 {
         let timestamp_sec = timestamp_ms / 1000;
         let period_sec = self.to_seconds();
-        
+
         let period_start_sec = match self {
             Timeframe::OneDay => {
                 // Round down to midnight UTC
@@ -125,15 +125,15 @@ impl Timeframe {
                 timestamp_sec - (timestamp_sec % period_sec)
             }
         };
-        
+
         period_start_sec * 1000
     }
 
     /// Calculates how many candles of this timeframe are needed for warmup
-    /// 
+    ///
     /// # Arguments
     /// * `indicator_period` - The period of the indicator (e.g., 50 for SMA-50)
-    /// 
+    ///
     /// # Returns
     /// Number of 1-minute candles needed to generate enough data for this timeframe
     pub fn warmup_candles(&self, indicator_period: usize) -> usize {
@@ -201,16 +201,16 @@ mod tests {
         let tf = Timeframe::FiveMin;
         // 2024-01-01 00:00:00 UTC = 1704067200000 ms
         let base = 1704067200000i64;
-        
+
         // 00:00:00 should align to 00:00:00
         assert_eq!(tf.period_start(base), base);
-        
+
         // 00:03:00 should align to 00:00:00
         assert_eq!(tf.period_start(base + 3 * 60 * 1000), base);
-        
+
         // 00:05:00 should align to 00:05:00
         assert_eq!(tf.period_start(base + 5 * 60 * 1000), base + 5 * 60 * 1000);
-        
+
         // 00:07:00 should align to 00:05:00
         assert_eq!(tf.period_start(base + 7 * 60 * 1000), base + 5 * 60 * 1000);
     }
@@ -219,7 +219,7 @@ mod tests {
     fn test_is_period_start() {
         let tf = Timeframe::FiveMin;
         let base = 1704067200000i64; // 2024-01-01 00:00:00 UTC
-        
+
         assert!(tf.is_period_start(base)); // 00:00:00
         assert!(tf.is_period_start(base + 5 * 60 * 1000)); // 00:05:00
         assert!(!tf.is_period_start(base + 3 * 60 * 1000)); // 00:03:00
@@ -230,7 +230,7 @@ mod tests {
         // For SMA-50 on 15-min timeframe
         let tf = Timeframe::FifteenMin;
         let warmup = tf.warmup_candles(50);
-        
+
         // Need 50 * 15 = 750 minutes of data
         // With 10% buffer = 825 candles
         assert_eq!(warmup, 825);
@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(Timeframe::OneMin.to_alpaca_string(), "1Min");
         assert_eq!(Timeframe::OneMin.to_binance_string(), "1m");
         assert_eq!(Timeframe::OneMin.to_oanda_string(), "M1");
-        
+
         assert_eq!(Timeframe::FourHour.to_alpaca_string(), "4Hour");
         assert_eq!(Timeframe::FourHour.to_binance_string(), "4h");
         assert_eq!(Timeframe::FourHour.to_oanda_string(), "H4");

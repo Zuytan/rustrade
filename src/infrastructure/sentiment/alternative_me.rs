@@ -49,8 +49,9 @@ impl AlternativeMeSentimentProvider {
 impl SentimentProvider for AlternativeMeSentimentProvider {
     async fn fetch_sentiment(&self) -> anyhow::Result<Sentiment> {
         info!("Fetching sentiment from Alternative.me...");
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&self.url)
             .send()
             .await
@@ -66,11 +67,24 @@ impl SentimentProvider for AlternativeMeSentimentProvider {
             .context("Failed to parse Alternative.me response")?;
 
         if let Some(data) = body.data.first() {
-            let value: u8 = data.value.parse().context("Failed to parse sentiment value")?;
-            let timestamp_secs: i64 = data.timestamp.parse().context("Failed to parse timestamp")?;
-            let timestamp = Utc.timestamp_opt(timestamp_secs, 0).single()
-                .ok_or_else(|| anyhow::anyhow!("Invalid timestamp from Alternative.me API: {}", timestamp_secs))?;
-            
+            let value: u8 = data
+                .value
+                .parse()
+                .context("Failed to parse sentiment value")?;
+            let timestamp_secs: i64 = data
+                .timestamp
+                .parse()
+                .context("Failed to parse timestamp")?;
+            let timestamp = Utc
+                .timestamp_opt(timestamp_secs, 0)
+                .single()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Invalid timestamp from Alternative.me API: {}",
+                        timestamp_secs
+                    )
+                })?;
+
             // Re-classify based on our domain rules to ensure consistency
             let classification = SentimentClassification::from_score(value);
 
@@ -80,8 +94,11 @@ impl SentimentProvider for AlternativeMeSentimentProvider {
                 timestamp,
                 source: "Alternative.me (Crypto Fear & Greed)".to_string(),
             };
-            
-            info!("Fetched Sentiment: {} ({}) from {}", value, classification, sentiment.timestamp);
+
+            info!(
+                "Fetched Sentiment: {} ({}) from {}",
+                value, classification, sentiment.timestamp
+            );
             Ok(sentiment)
         } else {
             anyhow::bail!("No sentiment data found in response");

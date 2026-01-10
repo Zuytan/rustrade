@@ -1,5 +1,5 @@
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use rustrade::application::system::Application;
 use rustrade::config::{Config, Mode};
 use rustrade::domain::ports::ExecutionService;
@@ -143,8 +143,18 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     struct NullRiskStateRepository;
     #[async_trait::async_trait]
     impl rustrade::domain::repositories::RiskStateRepository for NullRiskStateRepository {
-        async fn save(&self, _state: &rustrade::domain::risk::state::RiskState) -> anyhow::Result<()> { Ok(()) }
-        async fn load(&self, _id: &str) -> anyhow::Result<Option<rustrade::domain::risk::state::RiskState>> { Ok(None) }
+        async fn save(
+            &self,
+            _state: &rustrade::domain::risk::state::RiskState,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn load(
+            &self,
+            _id: &str,
+        ) -> anyhow::Result<Option<rustrade::domain::risk::state::RiskState>> {
+            Ok(None)
+        }
     }
     let null_risk_state = std::sync::Arc::new(NullRiskStateRepository);
 
@@ -172,7 +182,9 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         strategy_repository: null_strategy_repo,
         adaptive_optimization_service: None,
         performance_monitor: None,
-        spread_cache: std::sync::Arc::new(rustrade::application::market_data::spread_cache::SpreadCache::new()),
+        spread_cache: std::sync::Arc::new(
+            rustrade::application::market_data::spread_cache::SpreadCache::new(),
+        ),
         risk_state_repository: null_risk_state,
     };
 

@@ -1,7 +1,7 @@
-use rust_decimal::Decimal;
-use rust_decimal::prelude::{ToPrimitive, FromPrimitive};
 use rand::Rng;
-use serde::{Serialize, Deserialize};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonteCarloConfig {
@@ -46,7 +46,7 @@ impl MonteCarloEngine {
                 };
 
                 current_equity *= 1.0 + pnl_pct;
-                
+
                 if current_equity > peak_equity {
                     peak_equity = current_equity;
                 } else {
@@ -100,7 +100,7 @@ mod tests {
         };
 
         let result = MonteCarloEngine::simulate(&config);
-        
+
         assert!(result.probability_of_profit > 0.5);
         assert!(result.final_equity_mean > config.initial_equity);
         assert!(result.max_drawdown_mean >= 0.0);

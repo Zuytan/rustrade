@@ -110,25 +110,26 @@ impl AdvancedTripleFilterStrategy {
 
         // If requires rising, check that condition too
         if self.macd_requires_rising
-            && let Some(prev_hist) = ctx.last_macd_histogram {
-                return ctx.macd_histogram > prev_hist;
-            }
+            && let Some(prev_hist) = ctx.last_macd_histogram
+        {
+            return ctx.macd_histogram > prev_hist;
+        }
 
         // Passed all checks
         true
     }
 
     fn adx_filter(&self, ctx: &AnalysisContext, side: OrderSide) -> bool {
-         match side {
+        match side {
             OrderSide::Buy => {
                 // Require strong trend for buying
                 ctx.adx > self.adx_threshold
             }
             OrderSide::Sell => {
-                 // Sells can happen in weak trends (e.g. stop loss or reversal)
-                 // But generally we want to exit if trend breaks.
-                 // For now, let's keep it asymmetric like other filters: stricter on Entry.
-                 true
+                // Sells can happen in weak trends (e.g. stop loss or reversal)
+                // But generally we want to exit if trend breaks.
+                // For now, let's keep it asymmetric like other filters: stricter on Entry.
+                true
             }
         }
     }
@@ -138,23 +139,23 @@ impl AdvancedTripleFilterStrategy {
         if ctx.timeframe_features.is_none() {
             return self.trend_filter(ctx, side);
         }
-        
+
         match side {
             OrderSide::Buy => {
                 // For buy signals, check if higher timeframes confirm bullish trend
                 // We check 1Hour and 4Hour if available
                 use crate::domain::market::timeframe::Timeframe;
-                
+
                 // Check 1Hour timeframe first (most common for day trading)
                 if !ctx.higher_timeframe_confirms_trend(OrderSide::Buy, Timeframe::OneHour) {
                     return false;
                 }
-                
+
                 // Also check 4Hour if it's in the enabled timeframes
                 if !ctx.higher_timeframe_confirms_trend(OrderSide::Buy, Timeframe::FourHour) {
                     return false;
                 }
-                
+
                 true
             }
             OrderSide::Sell => {
@@ -170,16 +171,18 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
         // First, check ADX for general trend strength (Fail-Fast)
         // We only block Entries (Buys) on weak trend.
         // Existing positions might need to be closed even in weak trend.
-        
+
         let sma_signal = self.sma_strategy.analyze(ctx)?;
 
         // Apply filters based on signal type
         match sma_signal.side {
             OrderSide::Buy => {
-                 if !self.adx_filter(ctx, OrderSide::Buy) {
+                if !self.adx_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
                         "AdvancedFilter [{}]: BUY BLOCKED - Weak Trend (ADX={:.2} <= threshold={:.2})",
-                        ctx.symbol, ctx.adx, self.adx_threshold
+                        ctx.symbol,
+                        ctx.adx,
+                        self.adx_threshold
                     );
                     return None;
                 }
@@ -197,7 +200,9 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                 if !self.trend_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
                         "AdvancedFilter [{}]: BUY BLOCKED - Trend Filter (price={:.2} <= trend_sma={:.2})",
-                        ctx.symbol, ctx.price_f64, ctx.trend_sma
+                        ctx.symbol,
+                        ctx.price_f64,
+                        ctx.trend_sma
                     );
                     return None;
                 }
@@ -205,7 +210,9 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                 if !self.rsi_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
                         "AdvancedFilter [{}]: BUY BLOCKED - RSI Filter (rsi={:.2} >= threshold={:.2})",
-                        ctx.symbol, ctx.rsi, self.rsi_threshold
+                        ctx.symbol,
+                        ctx.rsi,
+                        self.rsi_threshold
                     );
                     return None;
                 }

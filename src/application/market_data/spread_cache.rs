@@ -59,7 +59,9 @@ impl SpreadCache {
         };
 
         match self.spreads.write() {
-            Ok(mut guard) => { guard.insert(symbol, data); }
+            Ok(mut guard) => {
+                guard.insert(symbol, data);
+            }
             Err(poisoned) => {
                 tracing::error!("SpreadCache: Lock poisoned during write, recovering");
                 poisoned.into_inner().insert(symbol, data);
@@ -71,7 +73,10 @@ impl SpreadCache {
     pub fn get_spread_pct(&self, symbol: &str) -> Option<f64> {
         match self.spreads.read() {
             Ok(guard) => guard.get(symbol).map(|d| d.spread_bps / 10000.0),
-            Err(poisoned) => poisoned.into_inner().get(symbol).map(|d| d.spread_bps / 10000.0),
+            Err(poisoned) => poisoned
+                .into_inner()
+                .get(symbol)
+                .map(|d| d.spread_bps / 10000.0),
         }
     }
 

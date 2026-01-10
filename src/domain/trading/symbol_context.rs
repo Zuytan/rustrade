@@ -11,7 +11,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 /// Per-symbol trading context managing state, indicators, and strategy.
-/// 
+///
 /// This is a domain entity representing all the state needed to analyze
 /// and generate trading signals for a single symbol. It encapsulates:
 /// - Technical indicators and features
@@ -37,7 +37,8 @@ pub struct SymbolContext {
     pub warmup_succeeded: bool,
     pub candle_history: VecDeque<Candle>,
     // Multi-timeframe support
-    pub timeframe_aggregator: crate::application::market_data::timeframe_aggregator::TimeframeAggregator,
+    pub timeframe_aggregator:
+        crate::application::market_data::timeframe_aggregator::TimeframeAggregator,
     pub timeframe_features: HashMap<crate::domain::market::timeframe::Timeframe, FeatureSet>,
     pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
 }
@@ -75,7 +76,8 @@ impl SymbolContext {
             cached_reward_risk_ratio: 2.0, // Default to 2:1
             warmup_succeeded: false,
             candle_history: VecDeque::with_capacity(100),
-            timeframe_aggregator: crate::application::market_data::timeframe_aggregator::TimeframeAggregator::new(),
+            timeframe_aggregator:
+                crate::application::market_data::timeframe_aggregator::TimeframeAggregator::new(),
             timeframe_features: HashMap::new(),
             enabled_timeframes,
         }
@@ -134,10 +136,13 @@ mod tests {
         let context = SymbolContext::new(config.clone(), strategy, win_rate_provider, timeframes);
 
         assert_eq!(context.candle_history.len(), 0);
-        assert_eq!(context.warmup_succeeded, false);
-        assert_eq!(context.taken_profit, false);
+        assert!(!context.warmup_succeeded);
+        assert!(!context.taken_profit);
         assert_eq!(context.cached_reward_risk_ratio, 2.0);
-        assert_eq!(context.min_hold_time_ms, config.min_hold_time_minutes * 60 * 1000);
+        assert_eq!(
+            context.min_hold_time_ms,
+            config.min_hold_time_minutes * 60 * 1000
+        );
     }
 
     #[test]
@@ -185,7 +190,7 @@ mod tests {
         // (actual value depends on feature service calculation)
         // We just verify the mechanism works
         let _first_macd = context.last_macd_histogram;
-        
+
         let candle = create_test_candle("BTC/USD", 50100.0, 50);
         context.update(&candle);
 
@@ -213,3 +218,4 @@ mod tests {
         assert_eq!(context.enabled_timeframes, timeframes);
     }
 }
+// Force recompile

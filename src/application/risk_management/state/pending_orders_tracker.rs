@@ -1,6 +1,6 @@
 use crate::domain::trading::types::Order;
-use std::collections::HashMap;
 use chrono::{DateTime, Duration, Utc};
+use std::collections::HashMap;
 use tracing::warn;
 
 /// Tracks orders that have been sent but not yet confirmed/filled/cancelled
@@ -46,8 +46,12 @@ impl PendingOrdersTracker {
     pub fn calculate_pending_exposure(&self, symbol: &str) -> rust_decimal::Decimal {
         self.pending_orders
             .values()
-            .filter(|o| o.symbol == symbol && o.side == crate::domain::trading::types::OrderSide::Buy)
-            .fold(rust_decimal::Decimal::ZERO, |acc, o| acc + (o.quantity * o.price))
+            .filter(|o| {
+                o.symbol == symbol && o.side == crate::domain::trading::types::OrderSide::Buy
+            })
+            .fold(rust_decimal::Decimal::ZERO, |acc, o| {
+                acc + (o.quantity * o.price)
+            })
     }
 
     /// Clean up stale pending orders (timeouts)
@@ -61,11 +65,14 @@ impl PendingOrdersTracker {
             // Verify timeout comparison with explicit types
             // assuming order.timestamp is in milliseconds based on usage (or update logic if seconds)
             // If order.timestamp is ms:
-            let order_time = DateTime::<Utc>::from_timestamp(order.timestamp / 1000, (order.timestamp % 1000) as u32 * 1_000_000)
-                .unwrap_or(Utc::now());
-            
+            let order_time = DateTime::<Utc>::from_timestamp(
+                order.timestamp / 1000,
+                (order.timestamp % 1000) as u32 * 1_000_000,
+            )
+            .unwrap_or(Utc::now());
+
             let age = now.signed_duration_since(order_time);
-            
+
             if age > timeout {
                 warn!("Pending order {} timed out (stale)", id);
                 expired.push(id.clone());

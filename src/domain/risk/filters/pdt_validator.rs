@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use rust_decimal::Decimal;
 
 use crate::config::AssetClass;
-use crate::domain::risk::filters::validator_trait::{RiskValidator, ValidationContext, ValidationResult};
+use crate::domain::risk::filters::validator_trait::{
+    RiskValidator, ValidationContext, ValidationResult,
+};
 use crate::domain::trading::types::OrderSide;
 
 /// Configuration for PDT (Pattern Day Trader) protection
@@ -10,13 +12,13 @@ use crate::domain::trading::types::OrderSide;
 pub struct PdtConfig {
     /// Whether PDT protection is enabled
     pub enabled: bool,
-    
+
     /// Minimum equity threshold for PDT rules ($25,000 for US stocks)
     pub min_equity_threshold: Decimal,
-    
+
     /// Maximum day trades allowed before restriction
     pub max_day_trades: u64,
-    
+
     /// Asset class (PDT only applies to US stocks)
     pub asset_class: AssetClass,
 }
@@ -33,11 +35,11 @@ impl Default for PdtConfig {
 }
 
 /// Validates Pattern Day Trader (PDT) protection rules
-/// 
+///
 /// PDT rules apply to US stock trading accounts with less than $25,000 equity.
 /// If an account has made 3 or more day trades in a rolling 5-day period,
 /// additional day trades are blocked to prevent PDT violations.
-/// 
+///
 /// This validator blocks:
 /// 1. Any BUY order if day trade count >= 3 (prevents opening new positions)
 /// 2. Any SELL order that would complete a day trade if count >= 3
@@ -56,7 +58,7 @@ impl PdtValidator {
     }
 
     /// Check if this sell would complete a day trade
-    /// 
+    ///
     /// Note: This is a simplified check. In a real system, we'd check if the
     /// position was opened today by examining the buy timestamp.
     fn is_closing_day_trade(&self, ctx: &ValidationContext<'_>) -> bool {
@@ -91,8 +93,7 @@ impl RiskValidator for PdtValidator {
         if matches!(ctx.proposal.side, OrderSide::Buy) {
             return ValidationResult::Reject(format!(
                 "PDT PROTECT: Cannot open new position (Day trades: {}, Equity: {})",
-                ctx.portfolio.day_trades_count,
-                ctx.current_equity
+                ctx.portfolio.day_trades_count, ctx.current_equity
             ));
         }
 
@@ -100,8 +101,7 @@ impl RiskValidator for PdtValidator {
         if matches!(ctx.proposal.side, OrderSide::Sell) && self.is_closing_day_trade(ctx) {
             return ValidationResult::Reject(format!(
                 "PDT PROTECT: Cannot complete day trade (Day trades: {}, Equity: {})",
-                ctx.portfolio.day_trades_count,
-                ctx.current_equity
+                ctx.portfolio.day_trades_count, ctx.current_equity
             ));
         }
 
@@ -141,7 +141,7 @@ mod tests {
         let proposal = create_test_proposal(OrderSide::Buy);
         let mut portfolio = Portfolio::new();
         portfolio.day_trades_count = 5; // Exceeded limit
-        
+
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
@@ -170,7 +170,7 @@ mod tests {
         let proposal = create_test_proposal(OrderSide::Buy);
         let mut portfolio = Portfolio::new();
         portfolio.day_trades_count = 2; // Below limit of 3
-        
+
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
@@ -199,7 +199,7 @@ mod tests {
         let proposal = create_test_proposal(OrderSide::Buy);
         let mut portfolio = Portfolio::new();
         portfolio.day_trades_count = 3; // At limit
-        
+
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
@@ -220,7 +220,12 @@ mod tests {
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
         assert!(result.rejection_reason().unwrap().contains("PDT PROTECT"));
-        assert!(result.rejection_reason().unwrap().contains("Cannot open new position"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Cannot open new position")
+        );
     }
 
     #[tokio::test]
@@ -230,7 +235,7 @@ mod tests {
         let proposal = create_test_proposal(OrderSide::Sell);
         let mut portfolio = Portfolio::new();
         portfolio.day_trades_count = 3; // At limit
-        
+
         // Add existing position (indicates we bought today, so selling = day trade)
         portfolio.positions.insert(
             "AAPL".to_string(),
@@ -240,7 +245,7 @@ mod tests {
                 average_price: dec!(145),
             },
         );
-        
+
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
@@ -261,7 +266,12 @@ mod tests {
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
         assert!(result.rejection_reason().unwrap().contains("PDT PROTECT"));
-        assert!(result.rejection_reason().unwrap().contains("Cannot complete day trade"));
+        assert!(
+            result
+                .rejection_reason()
+                .unwrap()
+                .contains("Cannot complete day trade")
+        );
     }
 
     #[tokio::test]
@@ -272,7 +282,7 @@ mod tests {
         let mut portfolio = Portfolio::new();
         portfolio.day_trades_count = 3; // At limit
         // No position in AAPL
-        
+
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
@@ -304,7 +314,7 @@ mod tests {
         let proposal = create_test_proposal(OrderSide::Buy);
         let mut portfolio = Portfolio::new();
         portfolio.day_trades_count = 5; // Way over limit
-        
+
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
@@ -336,7 +346,7 @@ mod tests {
         let proposal = create_test_proposal(OrderSide::Buy);
         let mut portfolio = Portfolio::new();
         portfolio.day_trades_count = 10; // Way over limit
-        
+
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 

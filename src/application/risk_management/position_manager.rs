@@ -31,10 +31,9 @@ impl PositionManager {
     }
 
     pub fn check_timeout(&mut self, current_time: i64, ttl_ms: i64) -> bool {
-        if self.pending_order.is_some()
-            && current_time - self.pending_order_timestamp > ttl_ms {
-                return true;
-            }
+        if self.pending_order.is_some() && current_time - self.pending_order_timestamp > ttl_ms {
+            return true;
+        }
         false
     }
 
@@ -75,13 +74,14 @@ impl PositionManager {
         }
 
         if atr > 0.0
-            && let Some(trigger) = self.trailing_stop.on_price_update(price, atr, multiplier) {
-                info!(
-                    "PositionManager: Trailing stop HIT for {} at {:.2} (Stop: {:.2}, Entry: {:.2})",
-                    symbol, trigger.exit, trigger.stop, trigger.entry
-                );
-                return Some(OrderSide::Sell);
-            }
+            && let Some(trigger) = self.trailing_stop.on_price_update(price, atr, multiplier)
+        {
+            info!(
+                "PositionManager: Trailing stop HIT for {} at {:.2} (Stop: {:.2}, Entry: {:.2})",
+                symbol, trigger.exit, trigger.stop, trigger.entry
+            );
+            return Some(OrderSide::Sell);
+        }
         None
     }
 }

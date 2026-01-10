@@ -9,9 +9,9 @@ use rss::Channel;
 use std::collections::HashSet;
 use std::io::Cursor;
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::Mutex;
-use tracing::{error, info, debug};
+use tokio::sync::mpsc::{self, Receiver};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 pub struct RssNewsService {
@@ -32,8 +32,6 @@ impl RssNewsService {
             sentiment_analyzer: Arc::new(SentimentAnalyzer::new()),
         }
     }
-
-
 }
 
 #[async_trait]
@@ -47,13 +45,16 @@ impl NewsDataService for RssNewsService {
         let sentiment_analyzer = self.sentiment_analyzer.clone();
 
         tokio::spawn(async move {
-            info!("Starting RSS News Poller for: {} (with NLP sentiment analysis)", url);
-            
+            info!(
+                "Starting RSS News Poller for: {} (with NLP sentiment analysis)",
+                url
+            );
+
             // Initial fetch to populate seen_guids without sending events (optional, or we can send them)
-            // For now, let's treat the first fetch as "historical" and not trigger actions, 
+            // For now, let's treat the first fetch as "historical" and not trigger actions,
             // OR let's trigger actions for very recent items.
             // A common pattern is to fetch once to fill the cache, then fetch loop.
-            
+
             // Let's populate seen_guids first to avoid flooding on restart
             // Let's populate seen_guids first to avoid flooding on restart
             let fetch_result = async {
@@ -63,7 +64,8 @@ impl NewsDataService for RssNewsService {
                     Ok(c) => Ok(c),
                     Err(e) => Err(anyhow::anyhow!(e)),
                 }
-            }.await;
+            }
+            .await;
 
             if let Ok(channel) = fetch_result {
                 let mut guids = seen_guids.lock().await;
@@ -72,7 +74,10 @@ impl NewsDataService for RssNewsService {
                         guids.insert(guid.value.to_string());
                     }
                 }
-                info!("Initialized RSS Poller: Marked {} items as seen.", guids.len());
+                info!(
+                    "Initialized RSS Poller: Marked {} items as seen.",
+                    guids.len()
+                );
             }
 
             loop {
@@ -80,7 +85,7 @@ impl NewsDataService for RssNewsService {
 
                 debug!("Polling RSS feed...");
                 let content_result = client.get(&url).send().await;
-                
+
                 match content_result {
                     Ok(resp) => {
                         match resp.bytes().await {
@@ -89,23 +94,34 @@ impl NewsDataService for RssNewsService {
                                     Ok(channel) => {
                                         let mut guids = seen_guids.lock().await;
                                         for item in channel.items() {
-                                            let guid_str = item.guid().map(|g| g.value.to_string())
+                                            let guid_str = item
+                                                .guid()
+                                                .map(|g| g.value.to_string())
                                                 .or_else(|| item.link().map(|l| l.to_string()))
                                                 .unwrap_or_else(|| Uuid::new_v4().to_string());
 
                                             if !guids.contains(&guid_str) {
                                                 guids.insert(guid_str.clone());
-                                                
+
                                                 // Create event
                                                 // RSS dates are RFC-2822 usually.
-                                                let pub_date = item.pub_date().and_then(|d| DateTime::parse_from_rfc2822(d).ok()).map(|d| d.with_timezone(&Utc)).unwrap_or(Utc::now());
-                                                
-                                                let title = item.title().unwrap_or("No Title").to_string();
-                                                let content = item.description().unwrap_or("").to_string();
-                                                
+                                                let pub_date = item
+                                                    .pub_date()
+                                                    .and_then(|d| {
+                                                        DateTime::parse_from_rfc2822(d).ok()
+                                                    })
+                                                    .map(|d| d.with_timezone(&Utc))
+                                                    .unwrap_or(Utc::now());
+
+                                                let title =
+                                                    item.title().unwrap_or("No Title").to_string();
+                                                let content =
+                                                    item.description().unwrap_or("").to_string();
+
                                                 // Analyze sentiment using local NLP
-                                                let sentiment_score = sentiment_analyzer.analyze_news(&title, &content);
-                                                
+                                                let sentiment_score = sentiment_analyzer
+                                                    .analyze_news(&title, &content);
+
                                                 let event = NewsEvent {
                                                     id: guid_str,
                                                     source: "RSS".to_string(), // Could parse channel title
@@ -120,7 +136,7 @@ impl NewsDataService for RssNewsService {
                                                     error!("Failed to send RSS event: {}", e);
                                                     return; // Channel closed
                                                 }
-                                                
+
                                                 let sentiment_label = if sentiment_score > 0.3 {
                                                     "📈 Bullish"
                                                 } else if sentiment_score < -0.3 {
@@ -128,7 +144,10 @@ impl NewsDataService for RssNewsService {
                                                 } else {
                                                     "➖ Neutral"
                                                 };
-                                                info!("RSS New Item: {} [{}] (score: {:.2})", title, sentiment_label, sentiment_score);
+                                                info!(
+                                                    "RSS New Item: {} [{}] (score: {:.2})",
+                                                    title, sentiment_label, sentiment_score
+                                                );
                                             }
                                         }
                                     }
