@@ -107,3 +107,11 @@ Metrics include:
 - System status (circuit breaker, uptime, version)
 
 **Security Note**: The system only SENDS data, it never accepts incoming requests.
+
+## 9. Contributor Documentation
+
+The project includes comprehensive documentation for contributors:
+- **LICENSE**: MIT License for open-source compliance.
+- **CONTRIBUTING.md**: Development setup, code style guidelines, PR process.
+- **docs/STRATEGIES.md**: Technical documentation for all 10 trading strategies.
+- **README.md**: Badges, architecture diagram, screenshots, and quick start guide.

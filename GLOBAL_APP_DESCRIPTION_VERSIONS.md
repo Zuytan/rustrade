@@ -1,6 +1,26 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.63.0 (Janvier 2026) - Repository Documentation for Contributors
+
+- **Open Source Licensing**:
+  - **MIT License**: Added LICENSE file for open-source compliance and contributor clarity.
+
+- **Contributor Documentation**:
+  - **CONTRIBUTING.md**: Comprehensive guide covering development setup, code style (`cargo fmt`, `cargo clippy`), testing requirements, and PR process.
+  - **docs/STRATEGIES.md**: Technical documentation for all 10 trading strategies with algorithms, parameters, and use cases.
+
+- **README Enhancements**:
+  - **Badges**: Added License (MIT) and Rust (2024) badges.
+  - **Screenshots Section**: Placeholder for UI dashboard screenshots.
+  - **Architecture Diagram**: Mermaid flowchart visualizing agent communication.
+  - **Contributing Section**: Link to CONTRIBUTING.md with guidelines summary.
+  - **License Section**: Link to LICENSE file.
+  - **Documentation Links**: Added link to new STRATEGIES.md.
+
+- **Files Created** (3): `LICENSE`, `CONTRIBUTING.md`, `docs/STRATEGIES.md`
+- **Files Modified** (2): `README.md`, `GLOBAL_APP_DESCRIPTION.md`
+
 ## Version 0.62.0 (Janvier 2026) - Server Mode & Observability
 
 - **Headless Server Mode**:

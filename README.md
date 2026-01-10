@@ -1,12 +1,20 @@
 # RustTrade Agentic Bot 🦀
 
 [![CI](https://github.com/zuytan/rustrade/actions/workflows/ci.yml/badge.svg)](https://github.com/zuytan/rustrade/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](https://www.rust-lang.org/)
 
 > [!WARNING]
 > **This project is not production-ready and should not be used with real money.**
 > Using this trading bot involves significant financial risks. Use it only in simulation mode (Paper Trading) or for educational purposes.
 
 A high-performance, multi-agent algorithmic trading system built in Rust. Capable of real-time market surveillance, trend analysis, and autonomous execution. Now featuring a full **Native Desktop Interface**.
+
+## 📸 Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Rustrade Dashboard" width="800"/>
+</p>
 
 ## 🚀 Key Features
 
@@ -87,6 +95,8 @@ The application is configured primarily via environment variables. You can set t
 | `RSI_THRESHOLD` | `75.0` | RSI Overbought threshold. |
 
 ## 📚 Documentation
+
+- [Trading Strategies](docs/STRATEGIES.md): Comprehensive guide to all 10 strategies.
 - [Global App Description](GLOBAL_APP_DESCRIPTION.md): Full architecture details.
 - [Version History](GLOBAL_APP_DESCRIPTION_VERSIONS.md): Changelog.
 - [Walkthrough](walkthrough.md): Guide for Benchmark and Backtesting tools.
@@ -115,3 +125,43 @@ cargo run --bin benchmark -- --symbol NVDA --start 2023-01-01 --end 2023-12-31 -
 # Optimize parameters
 cargo run --bin optimize -- --symbol TSLA --grid-config grid.toml
 ```
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TB
+    subgraph Agents
+        S[Sentinel] --> A[Analyst]
+        A --> R[Risk Manager]
+        R --> E[Executor]
+        L[Listener] --> A
+        U[User Agent] --> A
+    end
+    
+    subgraph External
+        WS[WebSocket] --> S
+        REST[REST API] --> S
+        NEWS[News RSS] --> L
+    end
+    
+    subgraph Core
+        A --> STR[Strategy Engine]
+        STR --> SIG[Signal Generator]
+        R --> VAL[Validation Pipeline]
+    end
+    
+    E --> BROKER[Broker API]
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+
+- Development setup
+- Code style guidelines (`cargo fmt`, `cargo clippy`)
+- Testing requirements
+- Pull request process
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
