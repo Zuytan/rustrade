@@ -83,8 +83,9 @@ pub struct AnalystConfig {
     pub adx_period: usize,
     pub adx_threshold: f64,
     // SMC Strategy Configuration
-    pub smc_ob_lookback: usize,    // Order Block lookback period
-    pub smc_min_fvg_size_pct: f64, // Minimum Fair Value Gap size (e.g., 0.005 = 0.5%)
+    pub smc_ob_lookback: usize,          // Order Block lookback period
+    pub smc_min_fvg_size_pct: f64,       // Minimum Fair Value Gap size (e.g., 0.005 = 0.5%)
+    pub risk_appetite_score: Option<u8>, // Base Risk Appetite Score (1-9) for dynamic scaling
 }
 
 impl Default for AnalystConfig {
@@ -135,6 +136,7 @@ impl Default for AnalystConfig {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            risk_appetite_score: None,
         }
     }
 }
@@ -184,7 +186,25 @@ impl From<crate::config::Config> for AnalystConfig {
             adx_threshold: config.adx_threshold,
             smc_ob_lookback: config.smc_ob_lookback,
             smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
+            risk_appetite_score: config.risk_appetite.map(|r| r.score()),
         }
+    }
+}
+
+impl AnalystConfig {
+    pub fn apply_risk_appetite(
+        &mut self,
+        appetite: &crate::domain::risk::risk_appetite::RiskAppetite,
+    ) {
+        self.risk_per_trade_percent = appetite.calculate_risk_per_trade_percent();
+        self.trailing_stop_atr_multiplier = appetite.calculate_trailing_stop_multiplier();
+        self.rsi_threshold = appetite.calculate_rsi_threshold();
+        self.max_position_size_pct = appetite.calculate_max_position_size_pct();
+        self.min_profit_ratio = appetite.calculate_min_profit_ratio();
+        self.macd_requires_rising = appetite.requires_macd_rising();
+        self.trend_tolerance_pct = appetite.calculate_trend_tolerance_pct();
+        self.macd_min_threshold = appetite.calculate_macd_min_threshold();
+        self.profit_target_multiplier = appetite.calculate_profit_target_multiplier();
     }
 }
 
@@ -302,24 +322,32 @@ impl Analyst {
 
         loop {
             tokio::select! {
-                Some(event) = self.market_rx.recv() => {
-                    match event {
-                        MarketEvent::Quote {
-                            symbol,
-                            price,
-                            timestamp,
-                        } => {
-                            if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, timestamp)
-                            {
-                                self.process_candle(candle).await;
+                res = self.market_rx.recv() => {
+                    match res {
+                        Some(event) => {
+                            match event {
+                                MarketEvent::Quote {
+                                    symbol,
+                                    price,
+                                    timestamp,
+                                } => {
+                                    if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, timestamp)
+                                    {
+                                        self.process_candle(candle).await;
+                                    }
+                                }
+                                MarketEvent::Candle(candle) => {
+                                    self.process_candle(candle).await;
+                                }
+                                MarketEvent::SymbolSubscription { symbol } => {
+                                    info!("Analyst: Received immediate warmup request for {}", symbol);
+                                    self.ensure_symbol_initialized(&symbol, chrono::Utc::now()).await;
+                                }
                             }
                         }
-                        MarketEvent::Candle(candle) => {
-                            self.process_candle(candle).await;
-                        }
-                        MarketEvent::SymbolSubscription { symbol } => {
-                            info!("Analyst: Received immediate warmup request for {}", symbol);
-                            self.ensure_symbol_initialized(&symbol, chrono::Utc::now()).await;
+                        None => {
+                            info!("Analyst: Market event channel closed. Exiting main loop.");
+                            break;
                         }
                     }
                 }
@@ -427,10 +455,37 @@ impl Analyst {
             }
         };
 
+        // RESET Config to Master (Base) to clear any previous temporary dynamic overrides
+        // This ensures transient regime spikes don't permanently alter the symbol's config
+        context.config = self.config.clone();
+
         // 1.5 Detect Market Regime
         let regime =
             Self::detect_market_regime(&self.candle_repository, &symbol, candle.timestamp, context)
                 .await;
+
+        // 1.5.5 Dynamic Risk Scaling
+        // AUTOMATICALLY lower risk in Volatile or Bearish regimes
+        if let Some(base_score) = context.config.risk_appetite_score {
+            let modifier = match regime.regime_type {
+                crate::domain::market::market_regime::MarketRegimeType::Volatile => -3,
+                crate::domain::market::market_regime::MarketRegimeType::TrendingDown => -2,
+                _ => 0,
+            };
+
+            if modifier != 0 {
+                let new_score = (base_score as i8 + modifier).clamp(1, 9) as u8;
+                if let Ok(new_appetite) =
+                    crate::domain::risk::risk_appetite::RiskAppetite::new(new_score)
+                {
+                    context.config.apply_risk_appetite(&new_appetite);
+                    info!(
+                        "Analyst [{}]: Dynamic Risk Scaling active. Score {} -> {} ({:?})",
+                        symbol, base_score, new_score, regime.regime_type
+                    );
+                }
+            }
+        }
 
         // 1.6 Adaptive Strategy Switching (Phase 3)
         if context.config.strategy_mode
@@ -1124,6 +1179,7 @@ mod tests {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            risk_appetite_score: None,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1240,6 +1296,7 @@ mod tests {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            risk_appetite_score: None,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1373,6 +1430,7 @@ mod tests {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            risk_appetite_score: None,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1497,6 +1555,7 @@ mod tests {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            risk_appetite_score: None,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1627,6 +1686,7 @@ mod tests {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            risk_appetite_score: None,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1773,6 +1833,7 @@ mod tests {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            risk_appetite_score: None,
         };
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
             config.fast_sma_period,
@@ -1916,6 +1977,7 @@ mod tests {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            risk_appetite_score: None,
         };
 
         let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(

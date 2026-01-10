@@ -1,131 +1,90 @@
-# Rustrade Application Description
+# Rustrade - High-Performance Algorithmic Trading Bot
 
-## Overview
-Rustrade is a high-performance, algorithmic trading bot written in Rust, designed for reliability, concurrency, and modularity. It supports multiple asset classes (Stocks, Crypto) and brokers (Alpaca, OANDA, Binance, Mock).
+## 1. System Overview
+Rustrade is a sophisticated, high-performance algorithmic trading system written in Rust. Designed for reliability, safe concurrency, and modularity, it leverages the **Tokio** runtime and a **Domain-Driven Design (DDD)** architecture to trade multiple asset classes (Stocks, Crypto) across different brokers (Alpaca, Binance, Mock).
 
-## Core Features
-- **Multi-Strategy Engine**: Supports 10 trading strategies:
-  - **Standard** (Dual SMA), **Advanced** (Triple Filter: SMA+RSI+MACD+ADX), **Dynamic Regime Adaptive**, **Mean Reversion**, **Smart Money Concepts (SMC)**, **Trend Riding**
-  - **NEW**: **VWAP** (Volume Weighted Average Price), **Breakout** (Range/Volume), **Momentum Divergence** (RSI divergences), **Ensemble** (Multi-strategy voting)
-- **Intelligent Regime Adaptation**: RegimeAdaptive mode automatically switches strategies based on market conditions:
-  - Trending → TrendRiding | Ranging → VWAP | Volatile → Momentum | Range→Trend transition → Breakout
-- **Risk Management**:
-  - **Modular Architecture**: Chain of Responsibility pattern with independent validators.
-  - **Persistent State**: Dedicated State Manager ensures critical metrics (HWM, Daily Loss) survive restarts.
-  - Position sizing based on account risk (0.5% to 20% per trade based on risk appetite).
-  - Global circuit breakers (Day Loss Limit, Drawdown Limit) and infrastructure-level circuit breakers for API resilience.
-  - Dynamic volatility-based position sizing (ATR-based multiplier).
-  - Correlation filters to prevent over-exposure.
-  - Sector exposure limits.
-  - **Buying Power Validation**: Ensures trades are affordable using available cash, accounting for reserved funds.
-- **Data Pipeline**:
-  - Real-time market data streaming (Polygon/Alpaca/Mock).
-  - Historical data warmup for indicators.
-  - Dynamic symbol scanning (Top Movers).
-  - **News & Social Monitoring**: 'Listener' agent reacting to news keywords (e.g. "Elon Musk", "SEC") for immediate trade proposals.
-- **Execution**:
-  - Order throttling.
-  - Slippage and commission modeling.
-  - Portfolio state management.
+The system prioritizes capital preservation through a "Paranoid" Risk Management engine while employing adaptive strategies that react to changing market regimes (Trending, Ranging, Volatile).
 
-## Latest Updates (Version 0.59.0 - January 2026)
-- **Extreme Risk Parameter Scaling**:
-  - Rescaled Risk Appetite Score (1-10) to cover a wider range:
-    - **Safe (1)**: 0.5% risk/trade, tight stops.
-    - **Extreme (10)**: 20% risk/trade, 100% max position, "All-In" capability.
-- **CI & Test Suite Overhaul**:
-  - **Reorganization**: Grouped tests into `risk`, `components`, and `scenarios` suites.
-  - **CI Compatibility**: Validated strict `cargo fmt` and `clippy` compliance (zero warnings).
-  - **Reliability**: 291/291 tests passing.
-- **DDD Refactoring - Phases 1-2 Complete (Previous)**:
-  - **Phase 1: Domain Config Value Objects**: Extracted configuration validation.
-  - **Phase 2: RiskManager Decomposition**: Extracted Session/Valuation/Liquidation services.
+## 2. Core Architecture
 
+### Agent System
+The application operates as a mesh of autonomous agents communicating via high-performance channels:
+- **Sentinel Agent**: Ingests real-time market data (WebSockets/REST) and normalizes it.
+- **Analyst Agent**: The "Brain". Maintains symbol state, computes technical indicators, and generates trade proposals based on active strategies.
+- **Risk Manager**: The "Gatekeeper". Validates every proposal against a strict set of risk rules and portfolio limits.
+- **Executor Agent**: Handles order placement, modification, and reconciliation with the broker.
+- **Listener Agent**: Monitors news feeds (RSS, Social) and uses NLP to trigger immediate reactions to market-moving events.
+- **User Agent**: Manages the UI/Dashboard state and handles user commands.
 
-## Version 0.58.0 - Listener Agent (New)
-- **Listener Agent**: Added a new agent that triggers trades based on news events/keywords.
-  - **Lagging Indicator Solution**: Reacts to news (Elon Musk tweets, SEC lawsuits) before price moves.
-  - **Architecture**: `ListenerAgent` consumes `NewsDataService` streams and outputs `TradeProposal`s.
-  - **Mock Integration**: Includes `MockNewsService` for verifying the flow.
-  - **Intelligent Processing**:
-    - **Bullish**: Buys only if Price > SMA50 (Trend) AND RSI < 75 (Not Overbought).
-    - **Bearish**: Checks PnL. Tightens stops if green, panic sells if red.
+### Resilience & Safety
+- **State Persistence ("No Amnesia")**: Critical state (Daily Loss, High Water Mark) is persisted to SQLite, preventing rule bypass via restarts.
+- **Circuit Breakers**:
+  - **Global**: Halts trading if Daily Loss or Drawdown limits are breached.
+  - **Infrastructure**: Wraps API calls with retry policies and breakers to handle broker outages gracefully.
+  - **Panic Mode**: "Blind Liquidation" logic ensures positions can be exited even if price feeds are down.
+- **Concurrency**: Deadlock-free design using timeouts on locks and message-passing patterns.
 
+## 3. Trading Intelligence
 
-## Version 0.55.0
-- **Dynamic Risk Management (P2)**:
-  - **Volatility Adaptation**: Implemented `VolatilityManager` to calculate ATR-based multipliers, dynamically scaling position sizes based on market conditions.
-  - **Infrastructure Resilience**: Integrated `CircuitBreaker` pattern into `Alpaca` and `Binance` services to prevent system stalls during API outages.
-- **Centralized Cost Model (P1)**:
-  - Unified transaction cost logic (commission/slippage) via `FeeModel` trait, ensuring consistency between simulation and live trading.
-- **API Resilience (P0)**:
-  - Implemented `HttpClientFactory` with standard `ExponentialBackoff` retry policies for all HTTP integrations.
+### Strategy Engine
+Rustrade supports a diverse suite of strategies, dynamically interchangeable:
+- **Trend Following**: `TrendRiding` (EMA Crossovers), `AdvancedTripleFilter` (SMA + RSI + MACD + ADX).
+- **Mean Reversion**: `MeanReversion` (Bollinger Bands), `VWAP` (Volume Weighted Average Price).
+- **Market Structure**: `SMC` (Smart Money Concepts - Order Blocks, FVGs), `Breakout` (Volume/Range).
+- **Momentum**: `MomentumDivergence` (RSI Divergences).
+- **Ensemble**: Voting system combining multiple strategies for high-conviction signals.
 
-## Version 0.50.0
-- **P0 Critical Security Fixes**:
-  - **Risk State Persistence**: Implemented `SqliteRiskStateRepository` to persist critical risk metrics (Daily Loss, HWM) across restarts, preventing verification bypass ("Amnesia").
-  - **Blind Liquidation (Panic Mode)**: `RiskManager` now bypasses price checks during emergency liquidations, ensuring market exit even without data feed.
-- **P2 & P3 Metrics & Hardening**:
-  - **Performance Metrics**: Added Rolling Sharpe Ratio (30d), Win Rate (30d), and FIFO PnL reconstruction.
-  - **Logic Hardening**: Eliminated unsafe unwraps in Analyst components.
+### Adaptive Features
+- **Regime Adaptation**: The `RegimeAdaptive` mode employs a `RegimeDetector` (using ADX, Variance, Linear Regression) to classify the market as `Trending` (Up/Down), `Ranging`, or `Volatile`. It automatically switches the active strategy (e.g., Trend -> VWAP in range) to match conditions.
+- **Dynamic Risk Scaling**: Automatically scales down risk exposure (Risk Score) during adverse regimes (e.g., Flash Crashes).
+- **Multi-Timeframe Analysis**: Aggregates 1-minute data into higher timeframes (5m, 15m, 1h, 4h, 1d) to validate trends ("Zoom Out" confirmation).
 
-## Version 0.46.0
-- **Unified Configuration Modes**: Two distinct modes for system configuration:
-  - **Simple (Novice)**: Single "Risk Appetite Score" (1-10) slider that auto-tunes all 12+ deeply technical parameters. Includes "Conservative", "Balanced", and "Aggressive" profile visualizers.
-  - **Advanced (Expert)**: Full granular control over every parameter (SMA periods, RSI thresholds, etc.).
-- **Dynamic Configuration System**: Runtime adjustment of Risk and Strategy parameters without restarting.
-- **System Config UI**: New settings tab with granular controls (Risk Limits, SMA Periods, RSI Thresholds, etc.).
-- **Internationalization (I18n)**: Full localization of the new configuration UI including helpful tooltips for every parameter.
-- **Market Sentiment Analysis**: Integrated "Fear & Greed Index" (Crypto) analysis. Risk Manager automatically reduces position sizing by 50% during "Extreme Fear" periods. "Market Mood" is visualized on the Dashboard with dynamic color coding and improved reliability (buffered broadcast channel).
-- **News Feed Display**: Real-time news events displayed in the dashboard with sentiment badges (Bullish/Bearish/Neutral), source attribution, and timestamps. News events are analyzed using local NLP (VADER + financial keyword boosting) to provide sentiment classification without external API calls.
+### News & Sentiment
+- **NLP Analysis**: Uses local VADER sentiment analysis with financial keyword boosting to classify news headlines (Bullish/Bearish).
+- **Macro Sentiment**: Integrates "Fear & Greed Index" to adjust global risk appetite.
 
-## Version 0.43.0
-- **Dynamic Dashboard Metrics**: User Interface now reflects real-time trading statistics:
-  - **Dynamic Win Rate**: Replaced static chart with dynamic arc visualization based on portfolio history.
-  - **Monte Carlo Integration**: Simulation uses actual Average Win/Loss percentages derived from closed trades.
-  - **Risk Score Display**: Dynamic "Low/Medium/High" label and color coding based on risk appetite configuration.
+## 4. Risk Management System
 
-## Version 0.42.0
-- **Multi-Timeframe Analysis Infrastructure**: Added comprehensive multi-timeframe support:
-  - New domain types: `Timeframe` enum (1Min, 5Min, 15Min, 1Hour, 4Hour, 1Day) with API conversions for Alpaca, Binance, and OANDA.
-  - `TimeframeCandle` struct for aggregated OHLCV data across timeframes.
-  - `TimeframeAggregator` service for real-time candle aggregation (1-min → higher timeframes).
-  - Extended `SymbolContext` to track multiple timeframes simultaneously.
-  - Configuration support via `PRIMARY_TIMEFRAME`, `TIMEFRAMES`, and `TREND_TIMEFRAME` environment variables.
-  - **Performance Improvement**: Reduced `TREND_SMA_PERIOD` from 2000 to 50 (93% reduction in warmup candles: ~2200 → ~55).
-  - Preset configurations for Day Trading, Swing Trading, Crypto 24/7, and Scalping strategies.
-  - 14 new unit tests for timeframe logic and aggregation (171 total tests passing).
-- **Multi-Timeframe Strategy Integration (Phase 3)**:
-  - Extended `AnalysisContext` with `TimeframeFeatures` and multi-timeframe helper methods.
-  - `AdvancedTripleFilterStrategy` now validates higher timeframe trend confirmation before buy signals.
-  - `DynamicRegimeStrategy` uses highest timeframe ADX for more reliable regime detection.
-  - Helper methods: `higher_timeframe_confirms_trend()`, `multi_timeframe_trend_strength()`, `all_timeframes_bullish()`, `get_highest_timeframe_adx()`.
-  - Backward compatible: existing strategies work without multi-timeframe data (optional feature).
-  - Improved signal quality: blocks trades when primary timeframe signal conflicts with higher timeframe trend.
+### Dynamic Risk Profile
+- **Risk Appetite Score (1-10)**: A single "Master Knob" that auto-tunes 12+ underlying technical parameters.
+  - **Score 1 (Safe)**: Tight stops (1.5x ATR), small size (0.5%), strict trend requirements.
+  - **Score 10 (Extreme)**: Loose stops (8x ATR), "All-In" sizing (20%+), aggressive entry.
 
-## Version 0.41.0
-- **Binance Integration**: Added Binance as a third broker option for cryptocurrency trading:
-  - Implemented `BinanceMarketDataService` with REST API and WebSocket support.
-  - Implemented `BinanceExecutionService` with HMAC-SHA256 authentication.
-  - Added `BinanceSectorProvider` for crypto categorization (Layer1, DeFi, Layer2, etc.).
-  - Symbol normalization support (BTCUSDT ↔ BTC/USDT).
-  - Top movers scanner using 24h ticker API.
-  - Candle caching integration for historical data.
-  - Configuration via `MODE=binance` environment variable.
+### Validation Pipeline
+Every trade proposal passes through a Chain of Responsibility validation:
+1.  **Buying Power Validator**: Ensures sufficient cash (accounting for open orders).
+2.  **Circuit Breaker Validator**: Checks global loss limits.
+3.  **PDT Validator**: Prevents Pattern Day Trading violations for small accounts (<$25k).
+4.  **Position Size Validator**: Enforces max risk per trade and max position size.
+5.  **Sector/Correlation Validator**: Prevents over-exposure to a single sector or highly correlated assets.
+6.  **Sentiment Validator**: Blocks aggressive buys during "Extreme Fear".
 
-## Version 0.40.1
-- **RiskAppetite Propagation Fix**: Fixed `DynamicRegimeStrategy` to properly receive all risk_appetite parameters:
-  - Added `DynamicRegimeConfig` struct for full parameter support.
-  - `StrategyFactory` and `system.rs` now pass `macd_requires_rising`, `trend_tolerance_pct`, `macd_min_threshold`, `adx_threshold` to Dynamic strategy.
-  - Previously hardcoded conservative defaults now respect user's configured risk profile.
+## 5. User Interface & Experience
 
-## Version 0.40.0
-- **ADX Integration**: implemented Average Directional Index (ADX) to filter out weak trends in `AdvancedTripleFilterStrategy`.
-  - Configurable `ADX_PERIOD` and `ADX_THRESHOLD`.
-  - Manual ADX implementation for precision.
-- **Refactoring**: Updated `FeatureEngineeringService` to use `Candle` data (High/Low/Close) for advanced indicators.
+### Agentic Desktop UI
+Built with `egui` (Native) for low-latency performance:
+- **Dashboard**: Real-time visualization of Portfolio Value, Win Rate (Donut), P&L History (Chart), and Active Positions.
+- **Activity Feed**: Live log of system events, trades, and rejected proposals.
+- **News Feed**: Real-time stream of analyzed news with sentiment badges.
+- **Configuration Panel**:
+  - **Simple Mode**: Slider for Risk Score.
+  - **Advanced Mode**: Granular control over SMA periods, RSI thresholds, etc.
+- **Internationalization (I18n)**: Full support for English and French, with dynamic language switching.
 
-## Architecture
-- **Agents**: Sentinel (Data ingestion), Scanner (Opportunity finding), Analyst (Strategy execution), Listener (News reaction), RiskManager (Safety), Executor (Order placement).
-- **Domain-Driven Design (DDD)**: Clear separation of Domain, Application, and Infrastructure layers.
-- **Async/Await**: Built on Tokio for non-blocking concurrency.
+## 6. Infrastructure & Data
+
+### Connectivity
+- **Broker Agnostic**: Seamlessly switches between Alpaca (Stocks/Crypto), Binance (Crypto), and Mock (Paper Trading).
+- **Cost Modeling**: Unified `FeeModel` handles commission and slippage calculations for accurate simulation.
+
+### Data Optimization
+- **Smart Caching**: `CandleRepository` caches historical data locally (SQLite). Services use an incremental load strategy to minimize API calls and vastly speed up startup (Warmup).
+- **Crypto Scanner**: dedicated "Top Movers" scanner for 24/7 crypto markets.
+
+## 7. Performance & Verification
+
+- **Simulator**: Detailed backtesting engine capable of replaying historical data (including specific crash scenarios) to verify strategy logic and metrics (Alpha, Beta, Sharpe).
+- **Quality Assurance**: 
+  - 100% Test Coverage on core logic (Risk, Sizing).
+  - CI pipeline enforcing `clippy` (linting) and `fmt` standards.
+  - "No Unwraps" policy in production code for stability.

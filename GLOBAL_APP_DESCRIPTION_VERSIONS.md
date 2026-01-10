@@ -1,5 +1,21 @@
 # Rustrade - Historique des Versions
 
+
+## Version 0.61.0 (Janvier 2026) - Dynamic Risk Scaling & Simulator Fixes
+- **Dynamic Risk Scaling**:
+  - **Adaptive Risk Control**: Automatically scales down Risk Appetite Score during adverse market regimes.
+    - **Volatile Regime**: Reduces score by -3 (e.g., Aggressive 8 -> Balanced 5).
+    - **Trending Down**: Reduces score by -2.
+  - **Goal**: Protect capital during crashes while remaining aggressive/profitable during Bull Markets.
+  - **Verification**: Validated against Flash Crash scenario (Aug 5, 2024) with RegimeAdaptive strategy.
+- **Simulator & Benchmark Infrastructure**:
+  - **Stateful Simulation Fix**: Implemented `InMemoryCandleRepository` for the Simulator.
+    - **Problem**: Previously, the Simulator didn't provide historical context to `Analyst`, causing `RegimeDetector` to always return "Unknown".
+    - **Solution**: Simulator now populates a full repository with fetched history, allowing `Analyst` to correctly detect regimes (Ranging, Trending, Volatile) during backtests.
+  - **Targeted Benchmarks**: Added ability to scan specific historical dates (e.g. `2024-08-02`) to replay specific market events (Flash Crashes).
+- **Compliance**:
+  - Updated documentation (`GLOBAL_APP_DESCRIPTION`) to reflect the new dynamic capabilities.
+
 ## Version 0.60.0 (Janvier 2026) - Extended Strategy Panel
 - **4 New Trading Strategies**:
   - **VWAP Strategy**: Volume Weighted Average Price strategy for institutional-style trading. Buys when price is significantly below VWAP with RSI oversold confirmation. Sells when price rises above VWAP.

@@ -152,6 +152,7 @@ impl GridSearchOptimizer {
                                     adx_threshold: 25.0,
                                     smc_ob_lookback: 20,
                                     smc_min_fvg_size_pct: 0.005,
+                                    risk_appetite_score: None,
                                 });
                             }
                         }
@@ -393,6 +394,7 @@ mod tests {
                 adx_threshold: 25.0,
                 smc_ob_lookback: 20,
                 smc_min_fvg_size_pct: 0.005,
+                risk_appetite_score: None,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

@@ -17,8 +17,13 @@ use tokio::sync::RwLock;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Setup Logging
+    // 1. Setup Logging
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(tracing::Level::INFO)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::ERROR.into())
+                .add_directive("benchmark=info".parse().unwrap()),
+        )
         .finish();
     tracing::subscriber::set_global_default(subscriber).ok();
 

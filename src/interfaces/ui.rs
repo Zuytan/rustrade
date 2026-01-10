@@ -134,3 +134,56 @@ impl eframe::App for UserAgent {
         crate::interfaces::dashboard::render_logs_panel(self, ctx);
     }
 }
+
+/// Configure custom fonts for the UI (Cross-platform Emoji support)
+pub fn configure_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // Priority list of emoji fonts based on OS
+    let font_paths = if cfg!(target_os = "macos") {
+        vec![
+            "/System/Library/Fonts/Apple Color Emoji.ttc",
+            "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+        ]
+    } else if cfg!(target_os = "windows") {
+        vec!["C:\\Windows\\Fonts\\seguiemj.ttf"]
+    } else {
+        // Linux / Unix candidates
+        vec![
+            "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+            "/usr/share/fonts/noto/NotoColorEmoji.ttf",
+            "/usr/share/fonts/emoji/NotoColorEmoji.ttf",
+            "/usr/share/fonts/TTF/NotoColorEmoji.ttf",
+            "/usr/share/fonts/noto-emoji/NotoColorEmoji.ttf",
+        ]
+    };
+
+    let mut loaded = false;
+    for path in font_paths {
+        if let Ok(data) = std::fs::read(path) {
+            fonts
+                .font_data
+                .insert("emoji".to_owned(), egui::FontData::from_owned(data).into());
+
+            // Add to Proportional (default) family LAST (fallback)
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                family.push("emoji".to_owned());
+            }
+
+            // Add to Monospace family LAST (fallback)
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                family.push("emoji".to_owned());
+            }
+
+            tracing::info!("Successfully loaded emoji font from: {}", path);
+            loaded = true;
+            break;
+        }
+    }
+
+    if !loaded {
+        tracing::warn!("Failed to load any emoji font. Icons may not render correctly.");
+    }
+
+    ctx.set_fonts(fonts);
+}

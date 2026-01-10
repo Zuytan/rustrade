@@ -153,7 +153,10 @@ fn main() -> anyhow::Result<()> {
     eframe::run_native(
         "Rustrade Agent",
         native_options,
-        Box::new(|_cc| Ok(Box::new(agent))),
+        Box::new(|cc| {
+            rustrade::interfaces::ui::configure_fonts(&cc.egui_ctx);
+            Ok(Box::new(agent))
+        }),
     )
     .map_err(|e| anyhow::anyhow!("Eframe error: {}", e))?;
 

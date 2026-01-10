@@ -8,9 +8,12 @@ use crate::domain::trading::types::{Candle, Order};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
+use crate::domain::repositories::CandleRepository;
+use async_trait::async_trait;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -169,7 +172,19 @@ impl Simulator {
             AnalystDependencies {
                 execution_service: self.execution_service.clone(),
                 market_service: self.market_data.clone(),
-                candle_repository: None,
+                candle_repository: Some(Arc::new(InMemoryCandleRepository::new(
+                    bars.iter()
+                        .map(|b| Candle {
+                            symbol: symbol.to_string(),
+                            open: b.open,
+                            high: b.high,
+                            low: b.low,
+                            close: b.close,
+                            volume: b.volume,
+                            timestamp: b.timestamp,
+                        })
+                        .collect(),
+                ))),
                 strategy_repository: None,
                 win_rate_provider: None,
                 ui_candle_tx: None,
@@ -392,6 +407,48 @@ impl Simulator {
             beta,
             benchmark_correlation,
         })
+    }
+}
+
+// Helper Repository for Simulator
+struct InMemoryCandleRepository {
+    candles: Mutex<Vec<Candle>>,
+}
+
+impl InMemoryCandleRepository {
+    fn new(candles: Vec<Candle>) -> Self {
+        Self {
+            candles: Mutex::new(candles),
+        }
+    }
+}
+
+#[async_trait]
+impl CandleRepository for InMemoryCandleRepository {
+    async fn save(&self, _candle: &Candle) -> Result<()> {
+        Ok(())
+    }
+
+    async fn get_range(&self, _symbol: &str, start_ts: i64, end_ts: i64) -> Result<Vec<Candle>> {
+        let candles = self.candles.lock().unwrap();
+        Ok(candles
+            .iter()
+            .filter(|c| c.timestamp >= start_ts && c.timestamp <= end_ts)
+            .cloned()
+            .collect())
+    }
+
+    async fn get_latest_timestamp(&self, _symbol: &str) -> Result<Option<i64>> {
+        let candles = self.candles.lock().unwrap();
+        Ok(candles.last().map(|c| c.timestamp))
+    }
+
+    async fn count_candles(&self, _symbol: &str, _start_ts: i64, _end_ts: i64) -> Result<usize> {
+        Ok(0)
+    }
+
+    async fn prune(&self, _days_retention: i64) -> Result<u64> {
+        Ok(0)
     }
 }
 

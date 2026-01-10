@@ -86,6 +86,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         adx_threshold: 25.0,
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: 0.005,
+        risk_appetite_score: None,
     };
 
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));

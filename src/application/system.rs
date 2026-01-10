@@ -341,6 +341,7 @@ impl Application {
             adx_threshold: self.config.adx_threshold,
             smc_ob_lookback: self.config.smc_ob_lookback,
             smc_min_fvg_size_pct: self.config.smc_min_fvg_size_pct,
+            risk_appetite_score: self.config.risk_appetite.map(|r| r.score()),
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {
