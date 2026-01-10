@@ -12,7 +12,7 @@ use crate::application::{
         executor::Executor,
         listener::ListenerAgent,
         scanner::MarketScanner,
-        sentinel::{Sentinel, SentinelCommand}, // Added SentinelCommand
+        sentinel::{Sentinel, SentinelCommand},
     },
     market_data::spread_cache::SpreadCache,
     monitoring::{
@@ -30,22 +30,22 @@ use crate::application::{
 };
 use crate::config::{Config, Mode};
 
-use crate::domain::listener::{ListenerAction, ListenerConfig, ListenerRule}; // Added Listener imports
+use crate::domain::listener::{ListenerAction, ListenerConfig, ListenerRule};
 use crate::domain::performance::performance_evaluator::{
     EvaluationThresholds, PerformanceEvaluator,
 };
 use crate::domain::ports::SectorProvider;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository, TradeRepository};
-use crate::domain::sentiment::Sentiment; // Added Sentiment import
+use crate::domain::sentiment::Sentiment;
 use crate::domain::sentiment::SentimentProvider;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
-use crate::domain::trading::types::TradeProposal; // Added TradeProposal import
+use crate::domain::trading::types::TradeProposal;
 use crate::infrastructure::alpaca::AlpacaSectorProvider;
 use crate::infrastructure::binance::BinanceSectorProvider;
 use crate::infrastructure::factory::ServiceFactory;
-use crate::infrastructure::mock::MockExecutionService; // Added
+use crate::infrastructure::mock::MockExecutionService;
 use crate::infrastructure::news::mock_news::MockNewsService;
 use crate::infrastructure::news::rss::RssNewsService;
 use crate::infrastructure::oanda::OandaSectorProvider;
@@ -64,8 +64,8 @@ pub struct SystemHandle {
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub candle_rx: broadcast::Receiver<Candle>,
-    pub sentiment_rx: broadcast::Receiver<Sentiment>, // Added sentiment rx
-    pub news_rx: broadcast::Receiver<crate::domain::listener::NewsEvent>, // Added news rx
+    pub sentiment_rx: broadcast::Receiver<Sentiment>,
+    pub news_rx: broadcast::Receiver<crate::domain::listener::NewsEvent>,
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
 }

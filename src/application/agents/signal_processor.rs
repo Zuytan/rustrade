@@ -2,6 +2,7 @@ use crate::domain::ports::ExecutionService;
 use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -159,6 +160,65 @@ impl SignalProcessor {
             return None;
         }
         signal
+    }
+
+    /// Check if partial take-profit conditions are met.
+    ///
+    /// Returns a TradeProposal for a partial sell if:
+    /// - Position exists and has quantity
+    /// - PnL exceeds take_profit_pct
+    /// - Partial profit hasn't been taken yet
+    pub fn check_partial_take_profit(
+        context: &SymbolContext,
+        symbol: &str,
+        current_price: Decimal,
+        timestamp: i64,
+        portfolio_positions: Option<
+            &std::collections::HashMap<String, crate::domain::trading::portfolio::Position>,
+        >,
+    ) -> Option<TradeProposal> {
+        if context.taken_profit {
+            return None;
+        }
+
+        let positions = portfolio_positions?;
+        let pos = positions.get(symbol)?;
+
+        if pos.quantity <= Decimal::ZERO {
+            return None;
+        }
+
+        let price_f64 = current_price.to_f64().unwrap_or(0.0);
+        let avg_price = pos.average_price.to_f64().unwrap_or(1.0);
+
+        let pnl_pct = if avg_price != 0.0 {
+            (price_f64 - avg_price) / avg_price
+        } else {
+            0.0
+        };
+
+        if pnl_pct >= context.config.take_profit_pct {
+            let quantity_to_sell = (pos.quantity * Decimal::new(5, 1)).round_dp(4); // 50%
+
+            if quantity_to_sell > Decimal::ZERO {
+                debug!(
+                    "SignalProcessor: Triggering Partial Take-Profit (50%) for {} at {:.2}% Gain",
+                    symbol,
+                    pnl_pct * 100.0
+                );
+
+                return Some(TradeProposal {
+                    symbol: symbol.to_string(),
+                    side: OrderSide::Sell,
+                    price: current_price,
+                    quantity: quantity_to_sell,
+                    order_type: OrderType::Market,
+                    reason: format!("Partial Take-Profit (+{:.2}%)", pnl_pct * 100.0),
+                    timestamp,
+                });
+            }
+        }
+        None
     }
 }
 

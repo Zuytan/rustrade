@@ -15,7 +15,7 @@
 //!
 //! ```rust,no_run
 //! use rustrade::application::market_data::spread_cache::SpreadCache;
-//! use rustrade::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
+//! use rustrade::infrastructure::alpaca::websocket::AlpacaWebSocketManager;
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> anyhow::Result<()> {

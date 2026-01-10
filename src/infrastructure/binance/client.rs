@@ -4,9 +4,9 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{
     MarketEvent, Order, OrderSide, OrderType, denormalize_crypto_symbol, normalize_crypto_symbol,
 };
-use crate::infrastructure::binance_websocket::BinanceWebSocketManager;
-use crate::infrastructure::circuit_breaker::CircuitBreaker; // Added
-use crate::infrastructure::http_client_factory::{HttpClientFactory, build_url_with_query};
+use crate::infrastructure::binance::websocket::BinanceWebSocketManager;
+use crate::infrastructure::core::circuit_breaker::CircuitBreaker; // Added
+use crate::infrastructure::core::http_client_factory::{HttpClientFactory, build_url_with_query};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::TimeZone;
@@ -316,10 +316,12 @@ impl MarketDataService for BinanceMarketDataService {
             })
             .await
             .map_err(|e| match e {
-                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Open(msg) => {
                     anyhow::anyhow!("Binance Market Data circuit breaker open: {}", msg)
                 }
-                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Inner(inner) => {
+                    inner
+                }
             })
     }
 
@@ -467,10 +469,12 @@ impl BinanceMarketDataService {
             })
             .await
             .map_err(|e| match e {
-                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Open(msg) => {
                     anyhow::anyhow!("Binance Market Data circuit breaker open: {}", msg)
                 }
-                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Inner(inner) => {
+                    inner
+                }
             })
     }
 }
@@ -586,10 +590,12 @@ impl ExecutionService for BinanceExecutionService {
             })
             .await
             .map_err(|e| match e {
-                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Open(msg) => {
                     anyhow::anyhow!("Binance Execution circuit breaker open: {}", msg)
                 }
-                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Inner(inner) => {
+                    inner
+                }
             })
     }
 
@@ -663,10 +669,12 @@ impl ExecutionService for BinanceExecutionService {
             })
             .await
             .map_err(|e| match e {
-                crate::infrastructure::circuit_breaker::CircuitBreakerError::Open(msg) => {
+                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Open(msg) => {
                     anyhow::anyhow!("Binance Execution circuit breaker open: {}", msg)
                 }
-                crate::infrastructure::circuit_breaker::CircuitBreakerError::Inner(inner) => inner,
+                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Inner(inner) => {
+                    inner
+                }
             })
     }
 

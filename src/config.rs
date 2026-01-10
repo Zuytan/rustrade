@@ -56,7 +56,7 @@ pub struct Config {
     pub alpaca_api_key: String,
     pub alpaca_secret_key: String,
     pub alpaca_base_url: String,
-    pub alpaca_data_url: String, // Added for Data API
+    pub alpaca_data_url: String,
     pub alpaca_ws_url: String,
     // OANDA Config
     pub oanda_api_base_url: String,
@@ -93,11 +93,11 @@ pub struct Config {
     pub atr_period: usize,
     // Risk Management
     pub max_position_size_pct: f64,
-    pub max_sector_exposure_pct: f64, // Added
+    pub max_sector_exposure_pct: f64,
     pub max_daily_loss_pct: f64,
     pub max_drawdown_pct: f64,
     pub consecutive_loss_limit: usize,
-    pub pending_order_ttl_ms: Option<i64>, // Added
+    pub pending_order_ttl_ms: Option<i64>,
     // Transaction Costs
     pub slippage_pct: f64,
     pub commission_per_share: f64,
@@ -108,21 +108,19 @@ pub struct Config {
     pub mean_reversion_bb_period: usize,
     pub risk_appetite: Option<RiskAppetite>,
     // Metadata
-    pub sector_map: std::collections::HashMap<String, String>, // Added
+    pub sector_map: std::collections::HashMap<String, String>,
     pub portfolio_staleness_ms: u64,
-    pub portfolio_refresh_interval_ms: u64, // New: interval for periodic portfolio refresh
-    // Adaptive Optimization
+    pub portfolio_refresh_interval_ms: u64,
     pub adaptive_optimization_enabled: bool,
     pub regime_detection_window: usize,
     pub adaptive_evaluation_hour: u32,
-    pub min_volume_threshold: f64,       // Added for symbol screening
-    pub max_position_value_usd: f64,     // New: cap on position value in USD
-    pub signal_confirmation_bars: usize, // Phase 2: require N bars of confirmation
-    pub min_hold_time_minutes: i64,      // Phase 2: minimum hold time in minutes
+    pub min_volume_threshold: f64,
+    pub max_position_value_usd: f64,
+    pub signal_confirmation_bars: usize,
+    pub min_hold_time_minutes: i64,
     pub ema_fast_period: usize,
     pub ema_slow_period: usize,
     pub take_profit_pct: f64,
-    // Risk-based adaptive filters
     pub macd_requires_rising: bool,
     pub trend_tolerance_pct: f64,
     pub macd_min_threshold: f64,
@@ -369,7 +367,7 @@ impl Config {
             .parse::<f64>()
             .context("Failed to parse MAX_SECTOR_EXPOSURE_PCT")?;
 
-        // Phase 2: Strategy Refinement Parameters
+        // Strategy Refinement Parameters
         let signal_confirmation_bars = env::var("SIGNAL_CONFIRMATION_BARS")
             .unwrap_or_else(|_| "2".to_string())
             .parse::<usize>()

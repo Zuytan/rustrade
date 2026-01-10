@@ -8,10 +8,11 @@ use crate::application::risk_management::trailing_stops::StopState;
 use crate::application::strategies::TradingStrategy;
 use crate::application::strategies::strategy_selector::StrategySelector;
 
+use crate::application::agents::trade_evaluator::{EvaluationInput, TradeEvaluator};
 use crate::domain::market::market_regime::MarketRegime;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
-use crate::domain::trading::fee_model::FeeModel; // Added
+use crate::domain::trading::fee_model::FeeModel;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderStatus; // Added
 use crate::domain::trading::types::{MarketEvent, OrderSide, TradeProposal};
@@ -226,7 +227,7 @@ pub struct AnalystDependencies {
     pub strategy_repository: Option<Arc<dyn StrategyRepository>>,
     pub win_rate_provider: Option<Arc<dyn WinRateProvider>>,
     pub ui_candle_tx: Option<broadcast::Sender<Candle>>,
-    pub spread_cache: Arc<SpreadCache>, // NEW: For real-time cost calculation
+    pub spread_cache: Arc<SpreadCache>,
 }
 
 pub struct Analyst {
@@ -240,8 +241,8 @@ pub struct Analyst {
     candle_repository: Option<Arc<dyn CandleRepository>>,
     win_rate_provider: Arc<dyn WinRateProvider>,
 
-    trade_filter: crate::application::trading::trade_filter::TradeFilter,
-    warmup_service: super::warmup_service::WarmupService, // NEW: Extracted warmup logic
+    trade_evaluator: TradeEvaluator,
+    warmup_service: super::warmup_service::WarmupService,
     // Multi-timeframe configuration
     enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     cmd_rx: Receiver<AnalystCommand>,
@@ -261,15 +262,16 @@ impl Analyst {
             .win_rate_provider
             .unwrap_or_else(|| Arc::new(StaticWinRateProvider::new(0.50)));
 
-        // Initialize Cost Evaluator for profit-aware trading WITH real-time spreads
+        // Initialize Cost Evaluator for profit-aware trading
         let cost_evaluator = CostEvaluator::with_spread_cache(
             config.fee_model.clone(),
-            config.spread_bps, // Default fallback if real spread unavailable
-            dependencies.spread_cache.clone(), // Real-time spreads from WebSocket!
+            config.spread_bps,
+            dependencies.spread_cache.clone(),
         );
 
         let trade_filter =
             crate::application::trading::trade_filter::TradeFilter::new(cost_evaluator.clone());
+        let trade_evaluator = TradeEvaluator::new(trade_filter);
 
         // Extract enabled timeframes from config (will be passed from system.rs)
         // For now, default to primary timeframe only to maintain backward compatibility
@@ -295,11 +297,21 @@ impl Analyst {
             ),
             candle_repository: dependencies.candle_repository,
             win_rate_provider,
-            trade_filter,
+            trade_evaluator,
             warmup_service,
             enabled_timeframes,
             cmd_rx,
         }
+    }
+
+    #[doc(hidden)]
+    pub fn get_context(&self, symbol: &str) -> Option<&SymbolContext> {
+        self.symbol_states.get(symbol)
+    }
+
+    #[doc(hidden)]
+    pub fn get_context_mut(&mut self, symbol: &str) -> Option<&mut SymbolContext> {
+        self.symbol_states.get_mut(symbol)
     }
 
     pub async fn run(&mut self) {
@@ -427,15 +439,61 @@ impl Analyst {
         MarketRegime::unknown()
     }
 
+    async fn manage_pending_orders(
+        execution_service: &std::sync::Arc<dyn ExecutionService>,
+        context: &mut SymbolContext,
+        symbol: &str,
+        timestamp: i64,
+    ) {
+        if context.position_manager.check_timeout(timestamp, 60000) {
+            // 60s timeout
+            info!(
+                "Analyst [{}]: Pending order TIMEOUT detected. Checking open orders to CANCEL...",
+                symbol
+            );
+
+            // 1. Fetch Open Orders
+            match execution_service.get_open_orders().await {
+                Ok(orders) => {
+                    // 2. Find orders for this symbol
+                    let symbol_orders: Vec<_> =
+                        orders.iter().filter(|o| o.symbol == symbol).collect();
+
+                    if symbol_orders.is_empty() {
+                        info!(
+                            "Analyst [{}]: No open orders found on exchange. Clearing local pending state.",
+                            symbol
+                        );
+                        context.position_manager.clear_pending();
+                    } else {
+                        // 3. Cancel them
+                        for order in symbol_orders {
+                            info!(
+                                "Analyst [{}]: Cancelling orphaned order {}...",
+                                symbol, order.id
+                            );
+                            if let Err(e) = execution_service.cancel_order(&order.id).await {
+                                error!(
+                                    "Analyst [{}]: Failed to cancel order {}: {}",
+                                    symbol, order.id, e
+                                );
+                            }
+                        }
+                        // Order status update will clear pending state
+                    }
+                }
+                Err(e) => {
+                    error!("Analyst [{}]: Failed to fetch open orders: {}", symbol, e);
+                }
+            }
+        }
+    }
+
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
         let price = candle.close;
         let timestamp = candle.timestamp * 1000;
         let price_f64 = price.to_f64().unwrap_or(0.0);
-
-        // Broadcast to UI
-        // Broadcast to UI (via warmup_service which has ui_candle_tx)
-        // UI broadcasting is now handled by warmup_service during warmup
 
         // 1. Get/Init Context (Consolidated with ensure_symbol_initialized)
         let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
@@ -455,7 +513,6 @@ impl Analyst {
             }
         };
 
-        // RESET Config to Master (Base) to clear any previous temporary dynamic overrides
         // This ensures transient regime spikes don't permanently alter the symbol's config
         context.config = self.config.clone();
 
@@ -539,7 +596,7 @@ impl Analyst {
             context.taken_profit = false;
         }
 
-        // 3.5. Auto-initialize Trailing Stop for existing positions (P0 Fix)
+        // 3.5. Auto-initialize Trailing Stop for existing positions
         // If we have a position but no active trailing stop, initialize it
         // This handles cases where:
         // - Position existed from previous session
@@ -578,109 +635,36 @@ impl Analyst {
         let trailing_stop_triggered = signal.is_some();
 
         // Check Partial Take-Profit (Swing Trading Upgrade)
-        if !trailing_stop_triggered
-            && has_position
-            && let Some(portfolio) = portfolio_data
-            && let Some(pos) = portfolio.positions.get(&symbol)
-            && pos.quantity > Decimal::ZERO
-        {
-            let avg_price = pos.average_price.to_f64().unwrap_or(1.0);
-            let pnl_pct = (price_f64 - avg_price) / avg_price;
-
-            // Check if we hit profit target and haven't taken profit yet
-            if pnl_pct >= context.config.take_profit_pct && !context.taken_profit {
-                let quantity_to_sell = (pos.quantity * Decimal::new(5, 1)).round_dp(4); // 50%
-
-                if quantity_to_sell > Decimal::ZERO {
-                    info!(
-                        "Analyst: Triggering Partial Take-Profit (50%) for {} at {:.2}% Gain",
-                        symbol,
-                        pnl_pct * 100.0
-                    );
-
-                    let proposal = TradeProposal {
-                        symbol: symbol.clone(),
-                        side: OrderSide::Sell,
-                        price, // Use original Decimal
-
-                        quantity: quantity_to_sell,
-                        order_type: crate::domain::trading::types::OrderType::Market,
-                        reason: format!("Partial Take-Profit (+{:.2}%)", pnl_pct * 100.0),
-                        timestamp,
-                    };
-
-                    match self.proposal_tx.try_send(proposal) {
+        #[allow(clippy::collapsible_if)]
+        if !trailing_stop_triggered && has_position {
+            if let Some(proposal) = crate::application::agents::signal_processor::SignalProcessor::check_partial_take_profit(
+                 context,
+                 &symbol,
+                 price,
+                 timestamp,
+                 portfolio_data.map(|p| &p.positions)
+             ) {
+                 info!("Analyst [{}]: Executing Partial Take-Profit...", symbol);
+                  match self.proposal_tx.try_send(proposal) {
                         Ok(_) => {
                             context.taken_profit = true;
                             // Don't process further signals this tick
                             return;
                         }
                         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                            warn!(
-                                "Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, skipping proposal.",
-                                symbol
-                            );
+                            warn!("Analyst [{}]: Proposal channel FULL.", symbol);
                             return;
                         }
                         Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                            error!(
-                                "Analyst [{}]: Proposal channel CLOSED. Shutting down.",
-                                symbol
-                            );
+                            error!("Analyst [{}]: Proposal channel CLOSED.", symbol);
                             return;
                         }
-                    }
-                }
-            }
+                  }
+             }
         }
 
         // Monitor pending order timeout
-        if context.position_manager.check_timeout(timestamp, 60000) {
-            // 60s timeout
-            info!(
-                "Analyst [{}]: Pending order TIMEOUT detected. Checking open orders to CANCEL...",
-                symbol
-            );
-
-            // 1. Fetch Open Orders
-            match self.execution_service.get_open_orders().await {
-                Ok(orders) => {
-                    // 2. Find orders for this symbol
-                    let symbol_orders: Vec<_> =
-                        orders.iter().filter(|o| o.symbol == symbol).collect();
-
-                    if symbol_orders.is_empty() {
-                        info!(
-                            "Analyst [{}]: No open orders found on exchange. Clearing local pending state.",
-                            symbol
-                        );
-                        context.position_manager.clear_pending();
-                    } else {
-                        // 3. Cancel them
-                        for order in symbol_orders {
-                            info!(
-                                "Analyst [{}]: Cancelling orphaned order {}...",
-                                symbol, order.id
-                            );
-                            if let Err(e) = self.execution_service.cancel_order(&order.id).await {
-                                error!(
-                                    "Analyst [{}]: Failed to cancel order {}: {}",
-                                    symbol, order.id, e
-                                );
-                            }
-                        }
-                        // 4. Clear local state (Optimistic or wait for update)
-                        context.position_manager.clear_pending();
-                    }
-                }
-                Err(e) => {
-                    error!(
-                        "Analyst [{}]: Failed to fetch open orders for cancellation check: {}",
-                        symbol, e
-                    );
-                }
-            }
-        }
+        Self::manage_pending_orders(&self.execution_service, context, &symbol, timestamp).await;
 
         // 5. Generate Trading Signal
         if !trailing_stop_triggered {
@@ -706,147 +690,61 @@ impl Analyst {
             );
         }
 
-        // 6. Post-Signal Validation (Long-Only, Pending, Cooldown)
+        // 6. Post-Signal Validation & Execution Logic
         if let Some(side) = signal {
-            // DELEGATED TO TRADE FILTER
-            if !self.trade_filter.validate_signal(
-                side,
-                &symbol,
-                &context.position_manager,
-                &context.config,
-                timestamp,
-                has_position,
-            ) {
-                return;
-            }
-
-            // 7. Execution Logic (Expectancy & Quantity)
-            context.position_manager.last_signal_time = timestamp;
-
-            // Use already calculated regime for expectancy
-            let expectancy = context
-                .expectancy_evaluator
-                .evaluate(&symbol, price, &regime)
-                .await;
-
-            let risk_ratio = if expectancy.reward_risk_ratio > 0.0 {
-                expectancy.reward_risk_ratio
-            } else {
-                context.cached_reward_risk_ratio
-            };
-
-            // Validate using calculated or cached ratio
-            if !self.trade_filter.validate_expectancy(&symbol, risk_ratio) {
-                return;
-            }
-
-            // Phase 2: Check minimum hold time for sell signals
-            if !self.trade_filter.validate_min_hold_time(
-                side,
-                &symbol,
-                timestamp,
-                context.last_entry_time,
-                context.min_hold_time_ms,
-            ) {
-                return;
-            }
-
-            let order_type = match side {
-                OrderSide::Buy => crate::domain::trading::types::OrderType::Limit,
-                OrderSide::Sell => crate::domain::trading::types::OrderType::Market,
-            };
-
-            let reason = format!(
-                "Strategy: {} (Regime: {})",
-                context.active_strategy_mode, regime.regime_type
-            );
-
-            let mut proposal = match super::signal_processor::SignalProcessor::build_proposal(
-                &self.config,
-                &self.execution_service,
-                symbol.clone(),
-                side,
+            let input = EvaluationInput {
+                signal: side,
+                symbol: &symbol,
                 price,
                 timestamp,
-                reason,
-            )
-            .await
+                regime: &regime,
+                execution_service: &self.execution_service,
+                has_position,
+            };
+
+            if let Some(proposal) = self
+                .trade_evaluator
+                .evaluate_and_propose(context, input)
+                .await
             {
-                Some(p) => p,
-                None => return,
-            };
+                match self.proposal_tx.try_send(proposal) {
+                    Ok(_) => {
+                        context.position_manager.set_pending_order(side, timestamp);
 
-            proposal.order_type = order_type;
-
-            // ============ COST-AWARE TRADING FILTER ============
-            let atr = context.last_features.atr.unwrap_or(0.0);
-
-            info!(
-                "Analyst [{}]: Calculating Profit Expectancy - ATR=${:.4}, Multiplier={:.2}, Quantity={}",
-                symbol, atr, context.config.profit_target_multiplier, proposal.quantity
-            );
-
-            // Use fresh expectancy value if available
-            let expected_profit = if expectancy.expected_value > 0.0 {
-                Decimal::from_f64_retain(expectancy.expected_value).unwrap_or(Decimal::ZERO)
-                    * proposal.quantity
-            } else {
-                self.trade_filter.calculate_expected_profit(
-                    &proposal,
-                    atr,
-                    context.config.profit_target_multiplier,
-                )
-            };
-
-            let costs = self.trade_filter.evaluate_costs(&proposal);
-
-            if !self.trade_filter.validate_profitability(
-                &proposal,
-                expected_profit,
-                costs.total_cost,
-                context.config.min_profit_ratio,
-                &symbol,
-            ) {
-                return;
-            }
-            // ====================================================
-
-            match self.proposal_tx.try_send(proposal) {
-                Ok(_) => {
-                    context.position_manager.set_pending_order(side, timestamp);
-
-                    // Phase 2: Track entry time on buy signals
-                    if side == OrderSide::Buy {
-                        context.last_entry_time = Some(timestamp);
+                        // Phase 2: Track entry time on buy signals
+                        if side == OrderSide::Buy {
+                            context.last_entry_time = Some(timestamp);
+                        }
+                        if side == OrderSide::Buy
+                            && let Some(atr) = context.last_features.atr
+                            && atr > 0.0
+                        {
+                            context.position_manager.trailing_stop = StopState::on_buy(
+                                price_f64,
+                                atr,
+                                context.config.trailing_stop_atr_multiplier,
+                            );
+                        }
                     }
-                    if side == OrderSide::Buy
-                        && let Some(atr) = context.last_features.atr
-                        && atr > 0.0
-                    {
-                        context.position_manager.trailing_stop = StopState::on_buy(
-                            price_f64,
-                            atr,
-                            context.config.trailing_stop_atr_multiplier,
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                        warn!(
+                            "Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, proposal dropped.",
+                            symbol
                         );
                     }
-                }
-                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                    warn!(
-                        "Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, proposal dropped.",
-                        symbol
-                    );
-                }
-                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                    error!(
-                        "Analyst [{}]: Proposal channel CLOSED. Shutting down.",
-                        symbol
-                    );
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                        error!(
+                            "Analyst [{}]: Proposal channel CLOSED. Shutting down.",
+                            symbol
+                        );
+                    }
                 }
             }
         }
     }
 
-    async fn ensure_symbol_initialized(
+    #[doc(hidden)]
+    pub async fn ensure_symbol_initialized(
         &mut self,
         symbol: &str,
         end_time: chrono::DateTime<chrono::Utc>,
@@ -876,7 +774,8 @@ impl Analyst {
             self.symbol_states.insert(symbol.to_string(), context);
         }
     }
-    async fn handle_news_signal(&mut self, signal: crate::domain::listener::NewsSignal) {
+    #[doc(hidden)]
+    pub async fn handle_news_signal(&mut self, signal: crate::domain::listener::NewsSignal) {
         // Ensure context exists
         let timestamp = chrono::Utc::now();
         self.ensure_symbol_initialized(&signal.symbol, timestamp)
@@ -1027,1253 +926,6 @@ impl Analyst {
                 }
             }
             _ => {}
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain::trading::types::Candle;
-    use rust_decimal::prelude::FromPrimitive;
-    use std::sync::Once;
-    use tokio::sync::RwLock;
-    use tokio::sync::mpsc;
-
-    static INIT: Once = Once::new();
-
-    fn setup_logging() {
-        INIT.call_once(|| {
-            let subscriber = tracing_subscriber::FmtSubscriber::builder()
-                .with_max_level(tracing::Level::INFO)
-                .finish();
-            let _ = tracing::subscriber::set_global_default(subscriber);
-        });
-    }
-
-    #[tokio::test]
-    async fn test_immediate_warmup() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, _proposal_rx) = mpsc::channel(10);
-
-        use crate::domain::trading::portfolio::Portfolio;
-        let portfolio = Portfolio::new();
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-        let config = AnalystConfig::default();
-        let strategy = crate::application::strategies::StrategyFactory::create(
-            crate::domain::market::strategy_config::StrategyMode::Advanced,
-            &config,
-        );
-
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(
-                    crate::application::market_data::spread_cache::SpreadCache::new(),
-                ),
-            },
-        );
-
-        // Send subscription event
-        market_tx
-            .send(MarketEvent::SymbolSubscription {
-                symbol: "BTC/USD".to_string(),
-            })
-            .await
-            .unwrap();
-
-        // Run analyst briefly
-        tokio::select! {
-            _ = analyst.run() => {},
-            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
-        }
-
-        // Check if context was created
-        assert!(analyst.symbol_states.contains_key("BTC/USD"));
-        let _context = analyst.symbol_states.get("BTC/USD").unwrap();
-        // Warmup should have been attempted (even if it yielded 0 bars in mock)
-        // We can't easily check internal warmup state without exposing it,
-        // but the presence of the context proves the branch was hit.
-    }
-
-    #[tokio::test]
-    async fn test_golden_cross() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-
-        use crate::domain::trading::portfolio::Portfolio;
-        let mut portfolio = Portfolio::new();
-        portfolio.cash = Decimal::from(100000);
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-        let config = AnalystConfig {
-            fast_sma_period: 2,
-            slow_sma_period: 3,
-            max_positions: 1,
-            trade_quantity: Decimal::from(1),
-            sma_threshold: 0.0,
-            order_cooldown_seconds: 0,
-            risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
-            trend_sma_period: 100,
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.005,
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            rsi_threshold: 99.0,
-            trend_riding_exit_buffer_pct: 0.03,
-            mean_reversion_rsi_exit: 50.0,
-            mean_reversion_bb_period: 20,
-            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-                Decimal::ZERO,
-                Decimal::ZERO,
-            )),
-            max_position_size_pct: 0.0,
-            bb_period: 20,
-            bb_std_dev: 2.0,
-            macd_fast: 12,
-            macd_slow: 26,
-            macd_signal: 9,
-            ema_fast_period: 50,
-            ema_slow_period: 150,
-            take_profit_pct: 0.05,
-            min_hold_time_minutes: 0,
-            signal_confirmation_bars: 1,
-            spread_bps: 5.0,
-            min_profit_ratio: 2.0,
-
-            macd_requires_rising: true,
-
-            trend_tolerance_pct: 0.0,
-
-            macd_min_threshold: 0.0,
-
-            profit_target_multiplier: 1.5,
-            adx_period: 14,
-            adx_threshold: 25.0,
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            risk_appetite_score: None,
-        };
-        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
-            config.fast_sma_period,
-            config.slow_sma_period,
-            config.sma_threshold,
-        ));
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(SpreadCache::new()),
-            },
-        );
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        use crate::domain::trading::types::Candle;
-
-        // Dual SMA (2, 3)
-        let prices = [100.0, 100.0, 100.0, 90.0, 110.0, 120.0];
-
-        for (i, p) in prices.iter().enumerate() {
-            let candle = Candle {
-                symbol: "BTC".to_string(),
-                open: Decimal::from_f64_retain(*p).unwrap(),
-                high: Decimal::from_f64_retain(*p).unwrap(),
-                low: Decimal::from_f64_retain(*p).unwrap(),
-                close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100.0,
-                timestamp: i as i64,
-            };
-            let event = MarketEvent::Candle(candle);
-            market_tx.send(event).await.unwrap();
-        }
-
-        let proposal = proposal_rx.recv().await.expect("Should receive buy signal");
-        assert_eq!(proposal.side, OrderSide::Buy);
-        assert_eq!(proposal.quantity, Decimal::from(1));
-    }
-
-    #[tokio::test]
-    async fn test_prevent_short_selling() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-
-        use crate::domain::trading::portfolio::Portfolio;
-        let mut portfolio = Portfolio::new();
-        portfolio.cash = Decimal::from(100000);
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-
-        let config = AnalystConfig {
-            fast_sma_period: 2,
-            slow_sma_period: 3,
-            max_positions: 1,
-            trade_quantity: Decimal::from(1),
-            sma_threshold: 0.0,
-            order_cooldown_seconds: 0,
-            risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
-            trend_sma_period: 100,
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.005,
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            rsi_threshold: 55.0,
-            trend_riding_exit_buffer_pct: 0.03,
-            mean_reversion_rsi_exit: 50.0,
-            mean_reversion_bb_period: 20,
-            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-                Decimal::ZERO,
-                Decimal::ZERO,
-            )),
-            max_position_size_pct: 0.1,
-            bb_period: 20,
-            bb_std_dev: 2.0,
-            macd_fast: 12,
-            macd_slow: 26,
-            macd_signal: 9,
-            ema_fast_period: 50,
-            ema_slow_period: 150,
-            take_profit_pct: 0.05,
-            min_hold_time_minutes: 0,
-            signal_confirmation_bars: 1,
-            spread_bps: 5.0,
-            min_profit_ratio: 2.0,
-
-            macd_requires_rising: true,
-
-            trend_tolerance_pct: 0.0,
-
-            macd_min_threshold: 0.0,
-            profit_target_multiplier: 1.5,
-            adx_period: 14,
-            adx_threshold: 25.0,
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            risk_appetite_score: None,
-        };
-        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
-            config.fast_sma_period,
-            config.slow_sma_period,
-            config.sma_threshold,
-        ));
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(SpreadCache::new()),
-            },
-        );
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        use crate::domain::trading::types::Candle;
-
-        // Simulating a Death Cross without holding the asset
-        let prices = [100.0, 100.0, 100.0, 120.0, 70.0];
-
-        for (i, p) in prices.iter().enumerate() {
-            let candle = Candle {
-                symbol: "AAPL".to_string(),
-                open: Decimal::from_f64_retain(*p).unwrap(),
-                high: Decimal::from_f64_retain(*p).unwrap(),
-                low: Decimal::from_f64_retain(*p).unwrap(),
-                close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100.0,
-                timestamp: i as i64,
-            };
-            let event = MarketEvent::Candle(candle);
-            market_tx.send(event).await.unwrap();
-        }
-
-        let mut sell_detected = false;
-        #[allow(clippy::collapsible_if)]
-        if let Ok(Some(proposal)) =
-            tokio::time::timeout(std::time::Duration::from_millis(100), proposal_rx.recv()).await
-        {
-            if proposal.side == OrderSide::Sell {
-                sell_detected = true;
-            }
-        }
-        assert!(
-            !sell_detected,
-            "Should NOT receive sell signal on empty portfolio (Short Selling Prevented)"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_sell_signal_with_position() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-
-        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
-        portfolio.cash = Decimal::new(100000, 0);
-        // Pre-load position so Sell matches verify logic
-        let pos = crate::domain::trading::portfolio::Position {
-            symbol: "BTC".to_string(),
-            quantity: Decimal::from(10),
-            average_price: Decimal::from(100),
-        };
-        portfolio.positions.insert("BTC".to_string(), pos);
-
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-
-        let config = AnalystConfig {
-            fast_sma_period: 2,
-            slow_sma_period: 3,
-            max_positions: 1,
-            trade_quantity: Decimal::from(1),
-            sma_threshold: 0.0,
-            order_cooldown_seconds: 0,
-            risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
-            trend_sma_period: 100,
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.005,
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            rsi_threshold: 55.0,
-            trend_riding_exit_buffer_pct: 0.03,
-            mean_reversion_rsi_exit: 50.0,
-            mean_reversion_bb_period: 20,
-            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-                Decimal::ZERO,
-                Decimal::ZERO,
-            )),
-            max_position_size_pct: 0.1,
-            bb_period: 20,
-            bb_std_dev: 2.0,
-            macd_fast: 12,
-            macd_slow: 26,
-            macd_signal: 9,
-            ema_fast_period: 50,
-            ema_slow_period: 150,
-            take_profit_pct: 0.05,
-            min_hold_time_minutes: 0,
-            signal_confirmation_bars: 1,
-            spread_bps: 5.0,
-            min_profit_ratio: 2.0,
-
-            macd_requires_rising: true,
-
-            trend_tolerance_pct: 0.0,
-
-            macd_min_threshold: 0.0,
-            profit_target_multiplier: 1.5,
-            adx_period: 14,
-            adx_threshold: 25.0,
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            risk_appetite_score: None,
-        };
-        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
-            config.fast_sma_period,
-            config.slow_sma_period,
-            config.sma_threshold,
-        ));
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(SpreadCache::new()),
-            },
-        );
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        let prices = [100.0, 100.0, 100.0, 120.0, 70.0];
-
-        for (i, p) in prices.iter().enumerate() {
-            let candle = Candle {
-                symbol: "BTC".to_string(),
-                open: Decimal::from_f64_retain(*p).unwrap(),
-                high: Decimal::from_f64_retain(*p).unwrap(),
-                low: Decimal::from_f64_retain(*p).unwrap(),
-                close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100.0,
-                timestamp: i as i64,
-            };
-            let event = MarketEvent::Candle(candle);
-            market_tx.send(event).await.unwrap();
-        }
-
-        let mut sell_detected = false;
-        while let Ok(Some(proposal)) =
-            tokio::time::timeout(std::time::Duration::from_millis(100), proposal_rx.recv()).await
-        {
-            if proposal.side == OrderSide::Sell {
-                sell_detected = true;
-                break;
-            }
-        }
-        assert!(
-            sell_detected,
-            "Should receive sell signal when holding position"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_dynamic_quantity_scaling() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-
-        // 100k account
-        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
-        portfolio.cash = Decimal::new(100000, 0);
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-        // Risk 2% (0.02)
-        let config = AnalystConfig {
-            fast_sma_period: 1,
-            slow_sma_period: 2,
-            max_positions: 1,
-            trade_quantity: Decimal::from(1),
-            sma_threshold: 0.0,
-            order_cooldown_seconds: 0,
-            risk_per_trade_percent: 0.02,
-            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
-            trend_sma_period: 100,
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.005,
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            rsi_threshold: 55.0,
-            trend_riding_exit_buffer_pct: 0.03,
-            mean_reversion_rsi_exit: 50.0,
-            mean_reversion_bb_period: 20,
-            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-                Decimal::ZERO,
-                Decimal::ZERO,
-            )),
-            max_position_size_pct: 0.1,
-            bb_period: 20,
-            bb_std_dev: 2.0,
-            macd_fast: 12,
-            macd_slow: 26,
-            macd_signal: 9,
-            ema_fast_period: 50,
-            ema_slow_period: 150,
-            take_profit_pct: 0.05,
-            min_hold_time_minutes: 0,
-            signal_confirmation_bars: 1,
-            spread_bps: 5.0,
-            min_profit_ratio: 2.0,
-
-            macd_requires_rising: true,
-
-            trend_tolerance_pct: 0.0,
-
-            macd_min_threshold: 0.0,
-            profit_target_multiplier: 1.5,
-            adx_period: 14,
-            adx_threshold: 25.0,
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            risk_appetite_score: None,
-        };
-        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
-            config.fast_sma_period,
-            config.slow_sma_period,
-            config.sma_threshold,
-        ));
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(SpreadCache::new()),
-            },
-        );
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        // P: 110, 110 -> SMAs 110
-        // P: 90 -> fast 90, slow 100 (F < S)
-        // P: 100 -> fast 100, slow 95 (F > S) -> Golden Cross at $100
-        let prices = [110.0, 110.0, 90.0, 100.0];
-
-        for (i, p) in prices.iter().enumerate() {
-            let candle = Candle {
-                symbol: "AAPL".to_string(),
-                open: Decimal::from_f64_retain(*p).unwrap(),
-                high: Decimal::from_f64_retain(*p).unwrap(),
-                low: Decimal::from_f64_retain(*p).unwrap(),
-                close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100.0,
-                timestamp: i as i64,
-            };
-            let event = MarketEvent::Candle(candle);
-            market_tx.send(event).await.unwrap();
-        }
-
-        let proposal = proposal_rx.recv().await.expect("Should receive buy signal");
-        assert_eq!(proposal.side, OrderSide::Buy);
-
-        // Final Price = 100
-        // Equity = 100,000
-        // Risk = 2% of 100,000 = 2,000
-        // Qty = 2,000 / 100 = 20
-        assert_eq!(proposal.quantity, Decimal::from(20));
-    }
-
-    #[tokio::test]
-    async fn test_multi_symbol_isolation() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-
-        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
-        // Give explicit ETH position so Sell works
-        portfolio.positions.insert(
-            "ETH".to_string(),
-            crate::domain::trading::portfolio::Position {
-                symbol: "ETH".to_string(),
-                quantity: Decimal::from(10),
-                average_price: Decimal::from(100),
-            },
-        );
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-
-        // 2 slots
-        let config = AnalystConfig {
-            fast_sma_period: 2,
-            slow_sma_period: 3,
-            max_positions: 2,
-            trade_quantity: Decimal::from(1),
-            sma_threshold: 0.0,
-            order_cooldown_seconds: 0,
-            risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Standard,
-            trend_sma_period: 100,
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.005,
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            rsi_threshold: 99.0,
-            trend_riding_exit_buffer_pct: 0.03,
-            mean_reversion_rsi_exit: 50.0,
-            mean_reversion_bb_period: 20,
-            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-                Decimal::ZERO,
-                Decimal::ZERO,
-            )),
-            max_position_size_pct: 0.1,
-            bb_period: 20,
-            bb_std_dev: 2.0,
-            macd_fast: 12,
-            macd_slow: 26,
-            macd_signal: 9,
-            ema_fast_period: 50,
-            ema_slow_period: 150,
-            take_profit_pct: 0.05,
-            min_hold_time_minutes: 0,
-            signal_confirmation_bars: 1,
-            spread_bps: 5.0,
-            min_profit_ratio: 2.0,
-
-            macd_requires_rising: true,
-
-            trend_tolerance_pct: 0.0,
-
-            macd_min_threshold: 0.0,
-            profit_target_multiplier: 1.5,
-            adx_period: 14,
-            adx_threshold: 25.0,
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            risk_appetite_score: None,
-        };
-        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
-            config.fast_sma_period,
-            config.slow_sma_period,
-            config.sma_threshold,
-        ));
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(SpreadCache::new()),
-            },
-        );
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        // Interleave BTC and ETH
-        // BTC: 100, 100, 100, 90 (init false), 120 (flip true)
-        // ETH: 100, 100, 100, 120 (init true), 70 (flip false)
-        let sequence = [
-            ("BTC", 100.0),
-            ("ETH", 100.0),
-            ("BTC", 100.0),
-            ("ETH", 100.0),
-            ("BTC", 100.0),
-            ("ETH", 100.0),
-            ("BTC", 90.0),
-            ("ETH", 120.0),
-            ("BTC", 120.0),
-            ("ETH", 70.0),
-        ];
-
-        for (i, (sym, p)) in sequence.iter().enumerate() {
-            let candle = Candle {
-                symbol: sym.to_string(),
-                open: Decimal::from_f64_retain(*p).unwrap(),
-                high: Decimal::from_f64_retain(*p).unwrap(),
-                low: Decimal::from_f64_retain(*p).unwrap(),
-                close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100.0,
-                timestamp: i as i64,
-            };
-            let event = MarketEvent::Candle(candle);
-            market_tx.send(event).await.unwrap();
-        }
-
-        // Give Analyst time to process all candles
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let mut btc_buy = false;
-        let mut eth_sell = false;
-
-        for _ in 0..5 {
-            if let Ok(Some(proposal)) =
-                tokio::time::timeout(std::time::Duration::from_millis(100), proposal_rx.recv())
-                    .await
-            {
-                if proposal.symbol == "BTC" && proposal.side == OrderSide::Buy {
-                    btc_buy = true;
-                }
-                if proposal.symbol == "ETH" && proposal.side == OrderSide::Sell {
-                    eth_sell = true;
-                }
-            }
-        }
-
-        assert!(btc_buy, "Should receive BTC buy signal");
-        assert!(eth_sell, "Should receive ETH sell signal");
-    }
-
-    #[tokio::test]
-    async fn test_advanced_strategy_trend_filter() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-        let portfolio = Arc::new(RwLock::new(
-            crate::domain::trading::portfolio::Portfolio::new(),
-        ));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio,
-        ));
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-
-        // Advanced mode with long trend SMA
-        let config = AnalystConfig {
-            fast_sma_period: 2,
-            slow_sma_period: 3,
-            max_positions: 1,
-            trade_quantity: Decimal::from(1),
-            sma_threshold: 0.0,
-            order_cooldown_seconds: 0,
-            risk_per_trade_percent: 0.0,
-            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Advanced,
-            trend_sma_period: 10, // Long trend
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.005,
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            rsi_threshold: 55.0,
-            trend_riding_exit_buffer_pct: 0.03,
-            mean_reversion_rsi_exit: 50.0,
-            mean_reversion_bb_period: 20,
-            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-                Decimal::ZERO,
-                Decimal::ZERO,
-            )),
-            max_position_size_pct: 0.1,
-            bb_period: 20,
-            bb_std_dev: 2.0,
-            macd_fast: 12,
-            macd_slow: 26,
-            macd_signal: 9,
-            ema_fast_period: 50,
-            ema_slow_period: 150,
-            take_profit_pct: 0.05,
-            min_hold_time_minutes: 0,
-            signal_confirmation_bars: 1,
-            spread_bps: 5.0,
-            min_profit_ratio: 2.0,
-
-            macd_requires_rising: true,
-
-            trend_tolerance_pct: 0.0,
-
-            macd_min_threshold: 0.0,
-
-            profit_target_multiplier: 1.5,
-            adx_period: 14,
-            adx_threshold: 25.0,
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            risk_appetite_score: None,
-        };
-        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
-            config.fast_sma_period,
-            config.slow_sma_period,
-            config.sma_threshold,
-        ));
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(SpreadCache::new()),
-            },
-        );
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        // Prices are low, but SMA cross happens. Trend (SMA 10) will be around 50.
-        // Fast/Slow cross happens at 45 -> 55.
-        let prices = [50.0, 50.0, 50.0, 45.0, 55.0];
-
-        for (i, p) in prices.iter().enumerate() {
-            let candle = Candle {
-                symbol: "AAPL".to_string(),
-                open: Decimal::from_f64_retain(*p).unwrap(),
-                high: Decimal::from_f64_retain(*p).unwrap(),
-                low: Decimal::from_f64_retain(*p).unwrap(),
-                close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100.0,
-                timestamp: i as i64,
-            };
-            let event = MarketEvent::Candle(candle);
-            market_tx.send(event).await.unwrap();
-        }
-
-        // Should NOT receive buy signal because price (55) is likely not ABOVE the trend SMA yet
-        // OR RSI filter prevents it if it's too volatile.
-        // Actually, with these prices, trend SMA will be < 55.
-        // Let's make price definitely BELOW trend.
-        // Prices: 100, 100, 100, 90, 95. Trend SMA will be ~97. Current Price 95 < 97.
-        let prices2 = [100.0, 100.0, 100.0, 90.0, 95.0];
-        for (i, p) in prices2.iter().enumerate() {
-            let candle = Candle {
-                symbol: "MSFT".to_string(),
-                open: Decimal::from_f64_retain(*p).unwrap(),
-                high: Decimal::from_f64_retain(*p).unwrap(),
-                low: Decimal::from_f64_retain(*p).unwrap(),
-                close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 100.0,
-                timestamp: (i + 10) as i64,
-            };
-            let event = MarketEvent::Candle(candle);
-            market_tx.send(event).await.unwrap();
-        }
-
-        let mut received = false;
-        while let Ok(Some(_)) =
-            tokio::time::timeout(std::time::Duration::from_millis(100), proposal_rx.recv()).await
-        {
-            received = true;
-        }
-        assert!(
-            !received,
-            "Should NOT receive signal when trend filter rejects it"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_risk_based_quantity_calculation() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-
-        use crate::domain::trading::portfolio::Portfolio;
-        // Start with empty portfolio - this is the production issue scenario
-        let mut portfolio = Portfolio::new();
-        portfolio.cash = Decimal::from(100000); // $100,000 starting cash
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-
-        // Production-like configuration
-        let config = AnalystConfig {
-            fast_sma_period: 20,
-            slow_sma_period: 60,
-            max_positions: 5,
-            trade_quantity: Decimal::from(1), // Fallback if risk sizing not used
-            sma_threshold: 0.0005,
-            order_cooldown_seconds: 0,
-            risk_per_trade_percent: 0.01, // 1% of equity per trade
-            strategy_mode: crate::domain::market::strategy_config::StrategyMode::Dynamic,
-            trend_sma_period: 200,
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.005,
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            rsi_threshold: 100.0,
-            trend_riding_exit_buffer_pct: 0.03,
-            mean_reversion_rsi_exit: 50.0,
-            mean_reversion_bb_period: 20,
-            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-                Decimal::ZERO,
-                Decimal::from_f64(0.001).unwrap(),
-            )),
-            max_position_size_pct: 0.1, // 10% maximum position size
-            bb_period: 20,
-            bb_std_dev: 2.0,
-            macd_fast: 12,
-            macd_slow: 26,
-            macd_signal: 9,
-            ema_fast_period: 50,
-            ema_slow_period: 150,
-            take_profit_pct: 0.05,
-            min_hold_time_minutes: 0,
-            signal_confirmation_bars: 1,
-            spread_bps: 5.0,
-            min_profit_ratio: 2.0,
-
-            macd_requires_rising: true,
-
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            profit_target_multiplier: 1.5,
-            adx_period: 14,
-            adx_threshold: 25.0,
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            risk_appetite_score: None,
-        };
-
-        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
-            config.fast_sma_period,
-            config.slow_sma_period,
-            config.sma_threshold,
-        ));
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(SpreadCache::new()),
-            },
-        );
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        // Generate a golden cross scenario
-        let prices = vec![
-            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
-            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 102.0, 103.0, 104.0, 105.0,
-            106.0, 107.0, 108.0, 109.0, 110.0, 111.0, 112.0, 113.0, 114.0, 115.0, 116.0, 117.0,
-            118.0, 119.0, 120.0, 121.0, 122.0, 123.0, 124.0, 125.0, 126.0, 127.0, 128.0, 129.0,
-            130.0, 131.0, 132.0, 133.0, 134.0, 135.0, 136.0, 137.0, 138.0, 139.0, 140.0, 141.0,
-            142.0, 143.0, 144.0, 145.0,
-        ];
-
-        for (i, p) in prices.iter().enumerate() {
-            let candle = Candle {
-                symbol: "NVDA".to_string(),
-                open: Decimal::from_f64_retain(*p).unwrap(),
-                high: Decimal::from_f64_retain(*p).unwrap(),
-                low: Decimal::from_f64_retain(*p).unwrap(),
-                close: Decimal::from_f64_retain(*p).unwrap(),
-                volume: 1000000.0,
-                timestamp: (i * 1000) as i64,
-            };
-            let event = MarketEvent::Candle(candle);
-            market_tx.send(event).await.unwrap();
-        }
-
-        // Should receive at least one buy signal
-        let proposal =
-            tokio::time::timeout(std::time::Duration::from_millis(500), proposal_rx.recv())
-                .await
-                .expect("Should receive a proposal within timeout")
-                .expect("Should receive a buy signal");
-
-        assert_eq!(
-            proposal.side,
-            OrderSide::Buy,
-            "Should generate a buy signal"
-        );
-
-        assert!(
-            proposal.quantity > Decimal::ZERO,
-            "Quantity should be greater than zero (was {})",
-            proposal.quantity
-        );
-        assert!(
-            proposal.quantity > Decimal::from(1),
-            "Quantity should be risk-based, not the static fallback of 1 share (was {})",
-            proposal.quantity
-        );
-        assert!(
-            proposal.quantity < Decimal::from(100),
-            "Quantity should be reasonable (was {})",
-            proposal.quantity
-        );
-    }
-
-    #[tokio::test]
-    async fn test_news_intelligence_filters() {
-        setup_logging();
-        let (_market_tx, _market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-
-        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
-        portfolio.cash = Decimal::from(100000);
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-
-        let config = AnalystConfig::default();
-        let strategy = Arc::new(crate::application::strategies::DualSMAStrategy::new(
-            10, 20, 0.0,
-        ));
-
-        let deps = AnalystDependencies {
-            execution_service: exec_service,
-            market_service,
-            candle_repository: None,
-            strategy_repository: None,
-            win_rate_provider: None,
-            ui_candle_tx: None,
-            spread_cache: Arc::new(SpreadCache::new()),
-        };
-
-        let mut analyst = Analyst::new(_market_rx, cmd_rx, proposal_tx, config, strategy, deps);
-
-        analyst
-            .ensure_symbol_initialized("BTC/USD", chrono::Utc::now())
-            .await;
-
-        {
-            let context = analyst.symbol_states.get_mut("BTC/USD").unwrap();
-            // Scenario 1: Bullish OK (Price > SMA)
-            context.last_features.sma_50 = Some(40000.0);
-            context.last_features.rsi = Some(50.0);
-            let candle = Candle {
-                symbol: "BTC/USD".to_string(),
-                open: Decimal::from(50000),
-                high: Decimal::from(50000),
-                low: Decimal::from(50000),
-                close: Decimal::from(50000),
-                volume: 100.0,
-                timestamp: 1000,
-            };
-            context.candle_history.push_back(candle);
-        }
-
-        // Send Bullish Signal
-        let signal = crate::domain::listener::NewsSignal {
-            symbol: "BTC/USD".to_string(),
-            sentiment: crate::domain::listener::NewsSentiment::Bullish,
-            headline: "Moon".to_string(),
-            source: "Twitter".to_string(),
-            url: Some("".to_string()),
-        };
-
-        analyst.handle_news_signal(signal.clone()).await;
-
-        let proposal = proposal_rx
-            .try_recv()
-            .expect("Should have generated proposal for Bullish+Technical OK");
-        assert_eq!(proposal.side, OrderSide::Buy);
-
-        {
-            let context = analyst.symbol_states.get_mut("BTC/USD").unwrap();
-            // Scenario 2: Bullish REJECTED (Price < SMA)
-            context.last_features.sma_50 = Some(40000.0);
-            context.candle_history.back_mut().unwrap().close = Decimal::from(30000);
-        }
-
-        analyst.handle_news_signal(signal.clone()).await;
-        assert!(
-            proposal_rx.try_recv().is_err(),
-            "Should NOT generate proposal in bearish trend"
-        );
-
-        {
-            let context = analyst.symbol_states.get_mut("BTC/USD").unwrap();
-            // Scenario 3: Bullish REJECTED (RSI > 75)
-            context.last_features.sma_50 = Some(20000.0);
-            context.last_features.rsi = Some(80.0);
-            context.candle_history.back_mut().unwrap().close = Decimal::from(30000);
-        }
-        analyst.handle_news_signal(signal.clone()).await;
-        assert!(
-            proposal_rx.try_recv().is_err(),
-            "Should NOT generate proposal when RSI > 75"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_trailing_stop_suppresses_sell_signal() {
-        setup_logging();
-        let (market_tx, market_rx) = mpsc::channel(10);
-        let (_cmd_tx, cmd_rx) = mpsc::channel(10);
-        let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
-
-        let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
-        portfolio.cash = Decimal::from(100000);
-        // Add position with existing trailing stop
-        let pos = crate::domain::trading::portfolio::Position {
-            symbol: "AAPL".to_string(),
-            quantity: Decimal::from(10),
-            average_price: Decimal::from(150),
-        };
-        portfolio.positions.insert("AAPL".to_string(), pos);
-
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        let exec_service = Arc::new(crate::infrastructure::mock::MockExecutionService::new(
-            portfolio_lock,
-        ));
-        let market_service = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
-
-        // Config with trailing stop enabled
-        let config = AnalystConfig {
-            trailing_stop_atr_multiplier: 3.0,
-            atr_period: 14,
-            order_cooldown_seconds: 0,
-            ..AnalystConfig::default()
-        };
-
-        // Custom strategy that always sells
-        struct AlwaysSellStrategy;
-        impl crate::application::strategies::TradingStrategy for AlwaysSellStrategy {
-            fn name(&self) -> &str {
-                "AlwaysSell"
-            }
-            fn analyze(
-                &self,
-                _ctx: &crate::application::strategies::AnalysisContext,
-            ) -> Option<crate::application::strategies::Signal> {
-                Some(crate::application::strategies::Signal::sell("Force Sell"))
-            }
-        }
-
-        let strategy = Arc::new(AlwaysSellStrategy);
-
-        let mut analyst = Analyst::new(
-            market_rx,
-            cmd_rx,
-            proposal_tx,
-            config,
-            strategy,
-            AnalystDependencies {
-                execution_service: exec_service,
-                market_service,
-                candle_repository: None,
-                strategy_repository: None,
-                win_rate_provider: None,
-                ui_candle_tx: None,
-                spread_cache: Arc::new(SpreadCache::new()),
-            },
-        );
-
-        tokio::spawn(async move {
-            analyst.run().await;
-        });
-
-        // 1. Manually set a trailing stop in the analyst's context
-        // Since we can't access internals directly, we rely on auto-initialization.
-        // Analyst auto-initializes trailing stop if we have a position and config.trailing_stop_atr_multiplier > 0
-        // We set config to have multiplier 3.0.
-        // On the first candle, Analyst should see the position, see no T-Stop, and init it.
-        // However, auto-init might happen AFTER signal processing?
-        // Let's check:
-        // 3.5 Auto-init Trailing Stop
-        // 4. Check Trailing Stop
-        // 5. Generate Signal
-
-        // So on the FIRST candle:
-        // - Auto-init happens. T-Stop is now active (set to entry price - 3*ATR).
-        // - Check T-Stop matches price? If price is 150 (entry), stop is below. Not triggered.
-        // - Generate Signal -> AlwaysSell says SELL.
-        // - Suppress logic -> Checks if T-Stop is active. It IS active (just initialized).
-        // - Result: Suppressed.
-
-        // So just sending one candle equal to entry price should work.
-
-        use crate::domain::trading::types::Candle;
-        let candle = Candle {
-            symbol: "AAPL".to_string(),
-            open: Decimal::from(150),
-            high: Decimal::from(150),
-            low: Decimal::from(150),
-            close: Decimal::from(150),
-            volume: 100.0,
-            timestamp: 1000,
-        };
-
-        market_tx.send(MarketEvent::Candle(candle)).await.unwrap();
-
-        // 2. Expect NO Proposal
-        // We wait a bit. If we get a proposal, it's a failure.
-        let result =
-            tokio::time::timeout(std::time::Duration::from_millis(200), proposal_rx.recv()).await;
-
-        match result {
-            Ok(Some(p)) => {
-                panic!(
-                    "Received unexpected proposal: {:?}. Sell signal should have been suppressed by Trailing Stop!",
-                    p
-                );
-            }
-            Ok(None) => {} // Channel closed
-            Err(_) => {
-                // Timeout = Success (No proposal received)
-                println!("✅ Sell signal successfully suppressed by active Trailing Stop.");
-            }
         }
     }
 }

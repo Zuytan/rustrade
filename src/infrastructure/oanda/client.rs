@@ -1,6 +1,3 @@
-// STUBBED OUT DUE TO COMPILATION ERRORS IN UNRELATED TASK
-// TODO: Fix OANDA implementation
-
 use crate::domain::ports::OrderUpdate;
 use crate::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
 use crate::domain::trading::portfolio::Portfolio;

@@ -5,5 +5,6 @@ pub mod listener;
 pub mod scanner;
 pub mod sentinel;
 pub mod signal_processor;
+pub mod trade_evaluator;
 pub mod user_agent;
 pub mod warmup_service;

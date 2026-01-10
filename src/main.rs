@@ -1,7 +1,7 @@
 use rustrade::application::agents::user_agent::{UserAgent, UserAgentChannels, UserAgentConfig};
 use rustrade::application::system::Application;
 use rustrade::config::Config;
-// use rustrade::interfaces::ui; // Unused
+
 use tracing::{Level, info};
 use tracing_subscriber::prelude::*;
 
@@ -123,7 +123,7 @@ fn main() -> anyhow::Result<()> {
     info!("System Connected. Launching UI.");
 
     // 5. Initialize User Agent
-    // 5. Initialize User Agent
+
     let channels = UserAgentChannels {
         log_rx,
         candle_rx: system_handle.candle_rx,
