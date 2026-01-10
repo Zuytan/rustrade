@@ -1,6 +1,14 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.65.1 (Janvier 2026) - Risk Manager Decomposition
+
+- **Risk Manager Refactoring**:
+  - **Circuit Breaker Service**: Extracted circuit breaker logic (Drawdown, Daily Loss, Consecutive Losses) into a dedicated `CircuitBreakerService`.
+  - **Order Reconciler**: Extracted order reconciliation and pending order tracking into `OrderReconciler`.
+  - **Risk Manager Cleanup**: Simplified `RiskManager` to be a high-level orchestrator delegation to these services.
+  - **Verification**: 32 unit tests verified the integrity of the risk logic after refactoring.
+
 ## Version 0.65.0 (Janvier 2026) - Code Decomposition & Infrastructure Refactoring
 
 - **Analyst Logic Decomposition**:

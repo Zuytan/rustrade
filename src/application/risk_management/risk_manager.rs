@@ -1,4 +1,8 @@
+use crate::application::risk_management::circuit_breaker_service::{
+    CircuitBreakerConfig as ServiceCircuitBreakerConfig, CircuitBreakerService,
+}; // Added and Aliased
 use crate::application::risk_management::liquidation_service::LiquidationService;
+use crate::application::risk_management::order_reconciler::{OrderReconciler, PendingOrder}; // Added PendingOrder import
 use crate::application::risk_management::pipeline::validation_pipeline::RiskValidationPipeline;
 use crate::application::risk_management::portfolio_valuation_service::PortfolioValuationService;
 use crate::application::risk_management::session_manager::SessionManager;
@@ -22,7 +26,7 @@ use crate::domain::sentiment::Sentiment;
 #[cfg(test)]
 use crate::domain::sentiment::SentimentClassification;
 use crate::domain::trading::portfolio::Portfolio;
-use crate::domain::trading::types::{Order, OrderSide, OrderStatus, TradeProposal};
+use crate::domain::trading::types::{Order, OrderSide, TradeProposal};
 use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
@@ -159,36 +163,25 @@ pub struct RiskManager {
     session_manager: SessionManager,
     portfolio_valuation_service: PortfolioValuationService,
     liquidation_service: LiquidationService,
+    circuit_breaker_service: CircuitBreakerService, // New
+    order_reconciler: OrderReconciler,              // New
 
     // Legacy State (Deprecated/To be removed)
     // Kept briefly if needed for transition, but aim to remove usage
-    risk_state: RiskState,                         // REPLACED BY state_manager
-    pending_orders: HashMap<String, PendingOrder>, // REPLACED BY pending_orders_tracker
+    risk_state: RiskState, // REPLACED BY state_manager
+    // pending_orders removed - replaced by order_reconciler
 
     // Runtime flags
-    halted: bool,
+    // halted moved to CircuitBreakerService
     daily_pnl: Decimal,
 
     // Cache
     current_prices: HashMap<String, Decimal>,
-    pending_reservations:
-        HashMap<String, crate::application::monitoring::portfolio_state_manager::ReservationToken>, // Exposure reservations
+    // pending_reservations moved to OrderReconciler
     current_sentiment: Option<Sentiment>,
     risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
 }
-
-#[derive(Debug, Clone)]
-struct PendingOrder {
-    symbol: String,
-    side: OrderSide,
-    requested_qty: Decimal,
-    filled_qty: Decimal,
-    filled_but_not_synced: bool, // Track filled orders awaiting portfolio confirmation
-    entry_price: Decimal,        // Track for P&L calculation on sell
-    filled_at: Option<i64>,      // Timestamp when filled (for TTL cleanup)
-}
-
-impl PendingOrder {}
+// PendingOrder struct moved to order_reconciler.rs
 
 impl RiskManager {
     #[allow(clippy::too_many_arguments)]
@@ -281,31 +274,37 @@ impl RiskManager {
             portfolio_state_manager,
 
             asset_class,
-            risk_config,
+
             volatility_manager,
 
             // New Components
             validation_pipeline,
             state_manager,
             pending_orders_tracker,
+            risk_config: risk_config.clone(), // Fix move error
 
             // Extracted Services
             session_manager,
             portfolio_valuation_service,
             liquidation_service,
+            circuit_breaker_service: CircuitBreakerService::new(ServiceCircuitBreakerConfig {
+                max_daily_loss_pct: risk_config.max_daily_loss_pct,
+                max_drawdown_pct: risk_config.max_drawdown_pct,
+                consecutive_loss_limit: risk_config.consecutive_loss_limit,
+            }),
+            order_reconciler: OrderReconciler::new(risk_config.pending_order_ttl_ms),
 
             // Legacy State (Initialized to defaults, will be synced or ignored)
             risk_state: RiskState::default(),
-            pending_orders: HashMap::new(),
-
+            // pending_orders removed
             current_prices: HashMap::new(),
             performance_monitor,
             correlation_service,
 
-            halted: false,
+            // halted removed
             daily_pnl: Decimal::ZERO,
 
-            pending_reservations: HashMap::new(),
+            // pending_reservations removed
             current_sentiment: None,
             risk_state_repository,
         })
@@ -364,144 +363,20 @@ impl RiskManager {
 
     /// Check if circuit breaker should trigger
     fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<String> {
-        // Check daily loss limit
-        if self.risk_state.session_start_equity > Decimal::ZERO {
-            let daily_loss_pct = ((current_equity - self.risk_state.session_start_equity)
-                / self.risk_state.session_start_equity)
-                .to_f64()
-                .unwrap_or(0.0);
-
-            if daily_loss_pct < -self.risk_config.max_daily_loss_pct {
-                let msg = format!(
-                    "Daily loss limit breached: {:.2}% (limit: {:.2}%) [Start: {}, Current: {}]",
-                    daily_loss_pct * 100.0,
-                    self.risk_config.max_daily_loss_pct * 100.0,
-                    self.risk_state.session_start_equity,
-                    current_equity
-                );
-                return Some(msg);
-            }
-        }
-
-        // Check drawdown limit
-        if self.risk_state.equity_high_water_mark > Decimal::ZERO {
-            let drawdown_pct = ((current_equity - self.risk_state.equity_high_water_mark)
-                / self.risk_state.equity_high_water_mark)
-                .to_f64()
-                .unwrap_or(0.0);
-
-            if drawdown_pct < -self.risk_config.max_drawdown_pct {
-                return Some(format!(
-                    "Max drawdown breached: {:.2}% (limit: {:.2}%)",
-                    drawdown_pct * 100.0,
-                    self.risk_config.max_drawdown_pct * 100.0
-                ));
-            }
-        }
-
-        // Check consecutive losses
-        if self.risk_state.consecutive_losses >= self.risk_config.consecutive_loss_limit {
-            return Some(format!(
-                "Consecutive loss limit reached: {} trades (limit: {})",
-                self.risk_state.consecutive_losses, self.risk_config.consecutive_loss_limit
-            ));
-        }
-
-        None
+        self.circuit_breaker_service
+            .check_circuit_breaker(&self.risk_state, current_equity)
     }
 
     /// Handle real-time order updates to maintain pending state
     /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
+    /// Handle real-time order updates to maintain pending state
+    /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
     fn handle_order_update(&mut self, update: OrderUpdate) -> bool {
-        // info!("RiskManager: processing update for order {}", update.order_id);
-
-        // If we don't have the order in pending, we might have started tracking after it was sent?
-        // Or it's from another session. We can only track what we know.
-        // Try both order_id and client_order_id potentially if we tracked by COID?
-        // But we tracked by Order.id (which is usually UUID we generated).
-        // Alpaca returns their ID in order_id?
-        // Wait. `Order` struct has `id`. We set it to UUID.
-        // `AlpacaExecutionService` maps `order.id` (our UUID) to `client_order_id` in Alpaca.
-        // The `OrderUpdate` from stream has `client_order_id`.
-        // So we should match on `client_order_id` (our UUID) OR `order_id` (Alpaca ID)?
-        // RiskManager keys `pending_orders` by the UUID it generated.
-        // `OrderUpdate.client_order_id` SHOULD match that UUID.
-
-        let mut state_changed = false;
-
-        if let Some(pending) = self.pending_orders.get_mut(&update.client_order_id) {
-            match update.status {
-                OrderStatus::Filled | OrderStatus::PartiallyFilled => {
-                    pending.filled_qty = update.filled_qty;
-                    if pending.filled_qty >= pending.requested_qty {
-                        // Full fill: Mark as tentative instead of removing
-                        // Keep order in pending until REST portfolio confirms position
-                        // This prevents "phantom position" race condition where:
-                        // 1. WebSocket confirms fill
-                        // 2. Portfolio REST API not yet updated
-                        // 3. Next signal sees 0 exposure and double-allocates
-                        pending.filled_but_not_synced = true;
-                        pending.filled_at = Some(chrono::Utc::now().timestamp_millis());
-
-                        // Track P&L for SELL orders to update consecutive loss counter
-                        if pending.side == OrderSide::Sell
-                            && let Some(fill_price) = update.filled_avg_price
-                        {
-                            let pnl = (fill_price - pending.entry_price) * pending.filled_qty;
-                            if pnl < Decimal::ZERO {
-                                self.state_manager.get_state_mut().consecutive_losses += 1;
-                                warn!(
-                                    "RiskManager: Trade LOSS detected for {} (${:.2}). Consecutive losses: {}",
-                                    pending.symbol,
-                                    pnl,
-                                    self.state_manager.get_state().consecutive_losses
-                                );
-                                state_changed = true;
-                            } else {
-                                self.state_manager.get_state_mut().consecutive_losses = 0;
-                                state_changed = true; // Resetting is also a change we want to persist
-                                info!(
-                                    "RiskManager: Trade PROFIT for {} (${:.2}). Loss streak reset.",
-                                    pending.symbol, pnl
-                                );
-                            }
-                        }
-
-                        info!(
-                            "RiskManager: Order {} FILLED (tentative) - awaiting portfolio sync for {}",
-                            &update.client_order_id[..8],
-                            pending.symbol
-                        );
-                    }
-                }
-                OrderStatus::Cancelled
-                | OrderStatus::Rejected
-                | OrderStatus::Expired
-                | OrderStatus::Suspended => {
-                    // Terminal states that don't result in positions: remove immediately
-                }
-                _ => {}
-            }
-
-            // Cleanup only non-fill terminal states (Cancelled/Rejected/Expired)
-            // Filled orders stay in pending until portfolio confirms
-            if matches!(
-                update.status,
-                OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired
-            ) {
-                self.pending_orders.remove(&update.client_order_id);
-
-                // Release any exposure reservation
-                if let Some(token) = self.pending_reservations.remove(&update.client_order_id) {
-                    let state_manager = self.portfolio_state_manager.clone();
-                    tokio::spawn(async move {
-                        state_manager.release_reservation(token).await;
-                    });
-                }
-            }
-        }
-
-        state_changed
+        self.order_reconciler.handle_order_update(
+            &update,
+            &mut self.risk_state,
+            &self.portfolio_state_manager,
+        )
     }
 
     /// Fetch latest prices for all held positions and update valuation
@@ -523,11 +398,13 @@ impl RiskManager {
 
         // Check Risks (Async check)
         // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
-        if !self.halted
+        // Check Risks (Async check)
+        // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
+        if !self.circuit_breaker_service.is_halted()
             && let Some(reason) = self.check_circuit_breaker(current_equity)
         {
             tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
-            self.halted = true;
+            self.circuit_breaker_service.set_halted(true);
             self.liquidate_portfolio(&reason).await;
         }
 
@@ -635,64 +512,12 @@ impl RiskManager {
 
     /// Cleanup tentative filled orders and release reservations
     fn reconcile_pending_orders(&mut self, portfolio: &Portfolio) {
-        let ttl_ms = self.risk_config.pending_order_ttl_ms.unwrap_or(300_000);
-
-        // We need to capture pending_reservations and portfolio_state_manager for the closure
-        // But we can't capture `self` fully if we borrow `pending_orders`.
-        // However, since `pending_reservations` is a separate field, split borrowing works.
-        // We might need to clone the manager outside or access safely.
-
-        let pending_reservations = &mut self.pending_reservations;
-        let state_manager = self.portfolio_state_manager.clone();
-
-        self.pending_orders.retain(|order_id, pending| {
-            if pending.filled_but_not_synced {
-                // Check TTL for stuck orders - cleanup if older than TTL
-                if let Some(filled_at) = pending.filled_at {
-                    let age_ms = chrono::Utc::now().timestamp_millis() - filled_at;
-                    if age_ms > ttl_ms {
-                        warn!(
-                            "RiskManager: Pending order {} TTL expired after {}ms. Forcing cleanup for {}",
-                            &order_id[..8], age_ms, pending.symbol
-                        );
-                        // Release reservation if exists
-                        if let Some(token) = pending_reservations.remove(order_id) {
-                            let mgr = state_manager.clone();
-                            tokio::spawn(async move { mgr.release_reservation(token).await; });
-                        }
-                        return false; // Remove from pending
-                    }
-                }
-
-                // Check if position exists in portfolio for this symbol
-                let normalized_symbol = pending.symbol.replace("/", "").replace(" ", "");
-                let in_portfolio = portfolio.positions.iter().any(|(sym, pos)| {
-                    let normalized_sym = sym.replace("/", "").replace(" ", "");
-                    normalized_sym == normalized_symbol && pos.quantity > Decimal::ZERO
-                });
-
-                if in_portfolio {
-                    // Portfolio synced! Remove pending and release reservation
-                    info!(
-                        "RiskManager: Reconciled order {} - {} now confirmed in portfolio",
-                        &order_id[..8], pending.symbol
-                    );
-
-                    if let Some(token) = pending_reservations.remove(order_id) {
-                        let mgr = state_manager.clone();
-                        tokio::spawn(async move {
-                            mgr.release_reservation(token).await;
-                        });
-                    }
-                    return false; // Remove from pending
-                }
-            }
-            true // Keep in pending
-        });
+        self.order_reconciler
+            .reconcile_pending_orders(portfolio, &self.portfolio_state_manager);
     }
 
     pub fn is_halted(&self) -> bool {
-        self.halted
+        self.circuit_breaker_service.is_halted()
     }
 
     // ============================================================================
@@ -763,7 +588,7 @@ impl RiskManager {
     async fn cmd_handle_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.update_portfolio_valuation().await?;
 
-        if !self.halted {
+        if !self.circuit_breaker_service.is_halted() {
             let snapshot = self.portfolio_state_manager.get_snapshot().await;
             if self.check_daily_reset(snapshot.portfolio.total_equity(&self.current_prices)) {
                 self.persist_state().await;
@@ -779,7 +604,7 @@ impl RiskManager {
         &mut self,
         proposal: TradeProposal,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.halted {
+        if self.circuit_breaker_service.is_halted() {
             warn!(
                 "RiskManager: Trading HALTED. Rejecting proposal for {}",
                 proposal.symbol
@@ -821,7 +646,7 @@ impl RiskManager {
         // Keeps the system safe by checking global health before processing specific trade rules
         if let Some(reason) = self.check_circuit_breaker(current_equity) {
             error!("RiskManager: CIRCUIT BREAKER TRIGGERED - {}", reason);
-            self.halted = true;
+            self.circuit_breaker_service.set_halted(true);
             self.liquidate_portfolio(&reason).await;
             return Ok(());
         }
@@ -850,12 +675,8 @@ impl RiskManager {
         };
 
         let pending_exposure = self
-            .pending_orders
-            .values()
-            .filter(|p| p.symbol == proposal.symbol && p.side == OrderSide::Buy)
-            .fold(Decimal::ZERO, |acc, p| {
-                acc + (p.requested_qty * p.entry_price)
-            });
+            .order_reconciler
+            .get_pending_exposure(&proposal.symbol, OrderSide::Buy);
 
         let ctx = ValidationContext::new(
             &proposal,
@@ -906,7 +727,7 @@ impl RiskManager {
         };
 
         // Track as pending
-        self.pending_orders.insert(
+        self.order_reconciler.track_order(
             order.id.clone(),
             PendingOrder {
                 symbol: proposal.symbol.clone(),
@@ -927,7 +748,8 @@ impl RiskManager {
 
         if let Err(e) = self.order_tx.send(order.clone()).await {
             error!("RiskManager: Failed to send order: {}", e);
-            self.pending_orders.remove(&order.id);
+            self.order_reconciler
+                .remove_order(&order.id, &self.portfolio_state_manager);
             return Err(Box::new(e));
         }
 

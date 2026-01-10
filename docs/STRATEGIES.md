@@ -437,6 +437,5 @@ let signal = strategy.analyze(&context);
 
 ## Further Reading
 
-- [French Strategy Guide](guide_strategie_simplifie.md) - Simplified explanation for non-specialists
 - [Global App Description](../GLOBAL_APP_DESCRIPTION.md) - Full system architecture
 - [Risk Management](../GLOBAL_APP_DESCRIPTION.md#4-risk-management-system) - Position sizing and risk controls
