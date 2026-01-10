@@ -6,7 +6,7 @@ use crate::domain::trading::types::{
 };
 use crate::infrastructure::binance_websocket::BinanceWebSocketManager;
 use crate::infrastructure::circuit_breaker::CircuitBreaker; // Added
-use crate::infrastructure::http_client_factory::HttpClientFactory;
+use crate::infrastructure::http_client_factory::{HttpClientFactory, build_url_with_query};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::TimeZone;
@@ -279,11 +279,11 @@ impl MarketDataService for BinanceMarketDataService {
                     .collect();
 
                 let symbols_json = serde_json::to_string(&api_symbols)?;
+                let url_with_query = build_url_with_query(&url, &[("symbols", &symbols_json)]);
 
                 let response = self
                     .client
-                    .get(&url)
-                    .query(&[("symbols", &symbols_json)])
+                    .get(&url_with_query)
                     .send()
                     .await
                     .context("Failed to fetch prices from Binance")?;
@@ -395,17 +395,24 @@ impl BinanceMarketDataService {
                 let start_ms = start.timestamp_millis();
                 let end_ms = end.timestamp_millis();
 
-                let response = self
-                    .client
-                    .get(&url)
-                    .header("X-MBX-APIKEY", &self.api_key)
-                    .query(&[
+                let start_ms_str = start_ms.to_string();
+                let end_ms_str = end_ms.to_string();
+
+                let url_with_query = build_url_with_query(
+                    &url,
+                    &[
                         ("symbol", api_symbol.as_str()),
                         ("interval", interval),
-                        ("startTime", &start_ms.to_string()),
-                        ("endTime", &end_ms.to_string()),
+                        ("startTime", &start_ms_str),
+                        ("endTime", &end_ms_str),
                         ("limit", "1000"),
-                    ])
+                    ],
+                );
+
+                let response = self
+                    .client
+                    .get(&url_with_query)
+                    .header("X-MBX-APIKEY", &self.api_key)
                     .send()
                     .await
                     .context("Failed to fetch klines from Binance")?;

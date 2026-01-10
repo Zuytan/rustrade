@@ -1,25 +1,25 @@
 # Rustrade - Historique des Versions
 
 
-## Version 0.63.0 (Janvier 2026) - Repository Documentation for Contributors
+## Version 0.64.0 (Janvier 2026) - Dependency Upgrade & API Modernization
 
-- **Open Source Licensing**:
-  - **MIT License**: Added LICENSE file for open-source compliance and contributor clarity.
+- **Major Dependency Updates**:
+  - **egui/eframe**: 0.31.0 → 0.33.3 (Breaking API changes fixed)
+  - **egui_plot**: 0.31.0 → 0.34.0 (New constructor signatures)
+  - **reqwest**: 0.12 → 0.13 (Added `query` feature flag)
+  - **reqwest-middleware**: 0.3 → 0.5 (Breaking change: `.query()` removed)
+  - **reqwest-retry**: 0.5 → 0.9
+  - **prometheus**: 0.13 → 0.14
+  - **crossbeam-channel**: 0.5.14 → 0.5.15
+  - **serde_json**, **url**, **rust_decimal_macros** updated
 
-- **Contributor Documentation**:
-  - **CONTRIBUTING.md**: Comprehensive guide covering development setup, code style (`cargo fmt`, `cargo clippy`), testing requirements, and PR process.
-  - **docs/STRATEGIES.md**: Technical documentation for all 10 trading strategies with algorithms, parameters, and use cases.
+- **Infrastructure Improvements**:
+  - **build_url_with_query()**: New helper function to construct URLs with query parameters since `reqwest-middleware` 0.5 removed `.query()` method.
+  - Updated 9 HTTP calls in `alpaca.rs` and `binance.rs`.
+  - Fixed `egui_plot` constructor calls in `dashboard.rs`.
 
-- **README Enhancements**:
-  - **Badges**: Added License (MIT) and Rust (2024) badges.
-  - **Screenshots Section**: Placeholder for UI dashboard screenshots.
-  - **Architecture Diagram**: Mermaid flowchart visualizing agent communication.
-  - **Contributing Section**: Link to CONTRIBUTING.md with guidelines summary.
-  - **License Section**: Link to LICENSE file.
-  - **Documentation Links**: Added link to new STRATEGIES.md.
-
-- **Files Created** (3): `LICENSE`, `CONTRIBUTING.md`, `docs/STRATEGIES.md`
-- **Files Modified** (2): `README.md`, `GLOBAL_APP_DESCRIPTION.md`
+- **Verification**: 25 tests passing, zero clippy warnings, clean build.
+- **Files Modified** (5): `Cargo.toml`, `http_client_factory.rs`, `alpaca.rs`, `binance.rs`, `dashboard.rs`
 
 ## Version 0.62.0 (Janvier 2026) - Server Mode & Observability
 

@@ -1147,20 +1147,19 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                             }
                         }
 
-                        plot_ui.box_plot(egui_plot::BoxPlot::new(box_elems).name(selected_symbol));
+                        plot_ui
+                            .box_plot(egui_plot::BoxPlot::new(selected_symbol.clone(), box_elems));
 
                         if !fast_sma_points.is_empty() {
                             plot_ui.line(
-                                egui_plot::Line::new(fast_sma_points)
-                                    .color(egui::Color32::from_rgb(100, 200, 255))
-                                    .name(agent.i18n.t("sma_20_label")),
+                                egui_plot::Line::new(agent.i18n.t("sma_20_label"), fast_sma_points)
+                                    .color(egui::Color32::from_rgb(100, 200, 255)),
                             );
                         }
                         if !slow_sma_points.is_empty() {
                             plot_ui.line(
-                                egui_plot::Line::new(slow_sma_points)
-                                    .color(egui::Color32::from_rgb(255, 165, 0))
-                                    .name(agent.i18n.t("sma_50_label")),
+                                egui_plot::Line::new(agent.i18n.t("sma_50_label"), slow_sma_points)
+                                    .color(egui::Color32::from_rgb(255, 165, 0)),
                             );
                         }
                     });

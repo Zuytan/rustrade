@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.63.0"
+version = "0.64.0"
 edition = "2024"
 
 [features]
@@ -26,13 +26,13 @@ path = "src/bin/optimize.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"
-rust_decimal_macros = "1.36"
+rust_decimal_macros = "1.39"
 
 [dependencies]
-crossbeam-channel = "0.5.14"
-eframe = { version = "0.31.0", optional = true }
-egui = { version = "0.31.0", optional = true }
-egui_plot = { version = "0.31.0", optional = true }
+crossbeam-channel = "0.5.15"
+eframe = { version = "0.33.3", optional = true }
+egui = { version = "0.33.3", optional = true }
+egui_plot = { version = "0.34.0", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros", "chrono", "uuid", "rust_decimal"] }
 anyhow = "1.0"
 async-trait = "0.1.89"
@@ -40,10 +40,10 @@ chrono = { version = "0.4.42", features = ["serde"] }
 dotenv = "0.15.0"
 futures-util = "0.3.31"
 rand = "0.9.2"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json", "query"] }
 rust_decimal = "1.39.0"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.148"
+serde_json = "1.0.149"
 ta = "0.5.0"
 thiserror = "2.0"
 tokio = { version = "1.49.0", features = ["full"] }
@@ -51,7 +51,7 @@ tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 toml = "0.9"  # For grid config parsing
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
-url = "2.5.7"
+url = "2.5.8"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 # Binance API dependencies
 hmac = "0.12"
@@ -60,12 +60,12 @@ hex = "0.4"
 futures = "0.3.31"
 
 # HTTP Client Middleware & Retry
-reqwest-middleware = "0.3"
-reqwest-retry = "0.5"
+reqwest-middleware = "0.5"
+reqwest-retry = "0.9"
 task-local-extensions = "0.1"
 rss = "2.0.12"
 vader_sentiment = "0.1"
 
 # Observability (push-based, no HTTP server)
-prometheus = "0.13"
+prometheus = "0.14"
 

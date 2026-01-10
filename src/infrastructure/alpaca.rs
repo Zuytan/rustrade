@@ -5,7 +5,7 @@ use crate::domain::trading::types::{MarketEvent, Order, OrderSide, normalize_cry
 use crate::infrastructure::alpaca_trading_stream::AlpacaTradingStream; // Added
 use crate::infrastructure::alpaca_websocket::AlpacaWebSocketManager;
 use crate::infrastructure::circuit_breaker::CircuitBreaker; // Added
-use crate::infrastructure::http_client_factory::HttpClientFactory;
+use crate::infrastructure::http_client_factory::{HttpClientFactory, build_url_with_query};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{NaiveDate, TimeZone};
@@ -316,13 +316,13 @@ impl MarketDataService for AlpacaMarketDataService {
         // We will just call the raw API here to avoid exposing internal logic or modifying get_prices return type too much.
         let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
         let symbols_param = candidates.join(",");
+        let url_with_query = build_url_with_query(&url, &[("symbols", &symbols_param)]);
 
         let response = self
             .client
-            .get(&url)
+            .get(&url_with_query)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .query(&[("symbols", &symbols_param)])
             .send()
             .await
             .context("Failed to fetch snapshots for validation")?;
@@ -402,13 +402,13 @@ impl MarketDataService for AlpacaMarketDataService {
 
                 let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
                 let symbols_param = api_symbols.join(",");
+                let url_with_query = build_url_with_query(&url, &[("symbols", &symbols_param)]);
 
                 let response = self
                     .client
-                    .get(url)
+                    .get(&url_with_query)
                     .header("APCA-API-KEY-ID", &self.api_key)
                     .header("APCA-API-SECRET-KEY", &self.api_secret)
-                    .query(&[("symbols", &symbols_param)])
                     .send()
                     .await
                     .context("Failed to fetch snapshots from Alpaca")?;
@@ -441,9 +441,9 @@ impl MarketDataService for AlpacaMarketDataService {
                 for (alp_sym, snapshot) in resp {
                     let normalized_sym = if is_crypto {
                         crate::domain::trading::types::normalize_crypto_symbol(&alp_sym)
-                            .unwrap_or(alp_sym.clone())
+                            .unwrap_or_else(|_| alp_sym.clone())
                     } else {
-                        alp_sym
+                        alp_sym.clone()
                     };
 
                     let price_f64 = if let Some(trade) = snapshot.latest_trade {
@@ -766,12 +766,15 @@ impl AlpacaMarketDataService {
                     end
                 );
 
+                // Build query params for URL
+                let query_pairs: Vec<(&str, String)> = query_params.iter().map(|(k, v)| (*k, v.clone())).collect();
+                let url_with_query = build_url_with_query(&url, &query_pairs);
+
                 let response = self
                     .client
-                    .get(&url)
+                    .get(&url_with_query)
                     .header("APCA-API-KEY-ID", &self.api_key)
                     .header("APCA-API-SECRET-KEY", &self.api_secret)
-                    .query(&query_params)
                     .send()
                     .await
                     .context("Failed to fetch bars from Alpaca")?;
@@ -857,19 +860,25 @@ impl AlpacaMarketDataService {
 
             let start_rfc = format!("{}T00:00:00Z", date);
             let end_rfc = format!("{}T23:59:59Z", date);
+            let timeframe_str = timeframe_param.to_string();
+            let limit_str = "10".to_string();
+
+            let url_with_query = build_url_with_query(
+                &url,
+                &[
+                    ("symbols", &symbols_param),
+                    ("timeframe", &timeframe_str),
+                    ("start", &start_rfc),
+                    ("end", &end_rfc),
+                    ("limit", &limit_str),
+                ],
+            );
 
             let response = self
                 .client
-                .get(&url)
+                .get(&url_with_query)
                 .header("APCA-API-KEY-ID", &self.api_key)
                 .header("APCA-API-SECRET-KEY", &self.api_secret)
-                .query(&[
-                    ("symbols", &symbols_param),
-                    ("timeframe", &timeframe_param.to_string()),
-                    ("start", &start_rfc),
-                    ("end", &end_rfc),
-                    ("limit", &"10".to_string()),
-                ])
                 .send()
                 .await
                 .context("Failed to fetch historical bars")?;
@@ -1252,13 +1261,13 @@ impl ExecutionService for AlpacaExecutionService {
 
     async fn get_open_orders(&self) -> Result<Vec<Order>> {
         let url = format!("{}/v2/orders", self.base_url);
+        let url_with_query = build_url_with_query(&url, &[("status", "open")]);
 
         let response = self
             .client
-            .get(&url)
+            .get(&url_with_query)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .query(&[("status", "open")])
             .send()
             .await
             .context("Failed to fetch open orders")?;
@@ -1337,13 +1346,13 @@ impl ExecutionService for AlpacaExecutionService {
         // Only fetch closed orders for today (default status=closed, limit=500)
         // Alpaca defaults to open, use status=closed for "today's filled orders"
         let url = format!("{}/v2/orders", self.base_url);
+        let url_with_query = build_url_with_query(&url, &[("status", "all"), ("limit", "100")]); // Fetch all recent
 
         let response = self
             .client
-            .get(&url)
+            .get(&url_with_query)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .query(&[("status", "all"), ("limit", "100")]) // Fetch all recent
             .send()
             .await
             .context("Failed to fetch today orders from Alpaca")?;
@@ -1551,18 +1560,27 @@ mod crypto_movers {
                 CRYPTO_UNIVERSE.len()
             );
 
+            let timeframe_str = "1Day".to_string();
+            let start_str = start.to_rfc3339();
+            let end_str = now.to_rfc3339();
+            let limit_str = "1".to_string();
+
+            let url_with_query = build_url_with_query(
+                &url,
+                &[
+                    ("symbols", &symbols_param),
+                    ("timeframe", &timeframe_str),
+                    ("start", &start_str),
+                    ("end", &end_str),
+                    ("limit", &limit_str),
+                ],
+            );
+
             let response = self
                 .client
-                .get(&url)
+                .get(&url_with_query)
                 .header("APCA-API-KEY-ID", self.api_key)
                 .header("APCA-API-SECRET-KEY", self.api_secret)
-                .query(&[
-                    ("symbols", &symbols_param),
-                    ("timeframe", &"1Day".to_string()),
-                    ("start", &start.to_rfc3339()),
-                    ("end", &now.to_rfc3339()),
-                    ("limit", &"1".to_string()),
-                ])
                 .send()
                 .await
                 .context("Failed to fetch crypto bars for movers detection")?;
