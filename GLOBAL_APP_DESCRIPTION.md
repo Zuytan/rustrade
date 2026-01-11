@@ -85,7 +85,9 @@ Built with `egui` (Native) for low-latency performance:
 
 ## 7. Performance & Verification
 
-- **Simulator**: Detailed backtesting engine capable of replaying historical data (including specific crash scenarios) to verify strategy logic and metrics (Alpha, Beta, Sharpe).
+- **Simulator & Optimization**:
+  - Detailed backtesting engine capable of replaying historical data (including specific crash scenarios) to verify strategy logic and metrics (Alpha, Beta, Sharpe).
+  - **Parallel Execution**: Leverages `Rayon` for multi-threaded backtesting, delivering massive speedups on multi-core CPU architectures.
 - **Quality Assurance**: 
   - 100% Test Coverage on core logic (Risk, Sizing).
   - CI pipeline enforcing `clippy` (linting) and `fmt` standards.

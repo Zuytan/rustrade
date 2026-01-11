@@ -36,12 +36,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Parse Args
     let args: Vec<String> = env::args().collect();
-    let mut symbol = "TSLA".to_string();
+    let mut symbols_arg: Vec<String> = Vec::new();
+    let mut symbol = "TSLA".to_string(); // Keep for backward compat defaults and single symbol logic
     let mut start_date_str = "2024-12-20".to_string();
     let mut end_date_str = start_date_str.clone();
     let mut strategy_mode_str = "standard".to_string();
     let mut batch_days: Option<i64> = None;
     let mut dynamic_mode = false;
+    let mut parallel_mode = false;
     let mut historical_scan_date: Option<chrono::NaiveDate> = None;
     let mut lookback_days = 30;
 
@@ -50,7 +52,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match args[i].as_str() {
             "--symbol" => {
                 if i + 1 < args.len() {
-                    symbol = args[i + 1].clone();
+                    let s = args[i + 1].clone();
+                    symbol = s.clone(); // Keep last one as primary for legacy checks
+                    for part in s.split(',') {
+                        let trimmed = part.trim();
+                        if !trimmed.is_empty() {
+                            symbols_arg.push(trimmed.to_string());
+                        }
+                    }
                     i += 1;
                 }
             }
@@ -80,6 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--dynamic" => {
                 dynamic_mode = true;
+            }
+            "--parallel" => {
+                parallel_mode = true;
             }
             "--historical-scan" => {
                 if i + 1 < args.len() {
@@ -225,7 +237,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             start, final_end, lookback_days
         );
     } else {
-        targets = vec![symbol];
+        if !symbols_arg.is_empty() {
+            targets = symbols_arg;
+        } else {
+            targets = vec![symbol];
+        }
 
         let start_date_parsed = chrono::NaiveDate::parse_from_str(&start_date_str, "%Y-%m-%d")?;
         start = Utc.from_utc_datetime(&start_date_parsed.and_hms_opt(14, 30, 0).unwrap());
@@ -241,40 +257,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Result Aggregation
     let mut all_results = Vec::new();
 
-    for target_symbol in targets {
-        println!("\n>> Benchmarking {}...", target_symbol);
+    // Parallel Mode: Process all symbols concurrently
+    if parallel_mode && targets.len() > 1 && batch_days.is_none() {
+        use rustrade::application::optimization::parallel_benchmark::ParallelBenchmarkRunner;
+        use rustrade::application::optimization::benchmark_metrics::BenchmarkTimer;
 
-        // Single Run Benchmarking Logic (Reused)
-        // If batch_days is set, we do batch mode for THIS symbol.
-        // If not, we do single run.
+        println!("\n{}", "=".repeat(95));
+        println!("🚀 PARALLEL BENCHMARK MODE - {} symbols", targets.len());
+        println!("{}", "=".repeat(95));
 
-        if let Some(days) = batch_days {
-            run_batch_benchmark(
-                &target_symbol,
-                start,
-                final_end,
-                days,
-                market_service.clone(),
-                config.clone(),
-            )
-            .await?;
-        } else {
-            let res = run_single_benchmark(
-                &target_symbol,
-                start,
-                final_end,
-                market_service.clone(),
-                config.clone(),
-            )
-            .await?;
-            // Print summary for this symbol
-            println!(
-                "   Return: {:.2}% | Net: ${:.2} | Trades: {}",
-                res.total_return_pct,
-                res.final_equity - res.initial_equity,
-                res.trades.len()
-            );
-            all_results.push(res);
+        let _timer = BenchmarkTimer::new(&format!("Parallel Benchmark ({} symbols)", targets.len()));
+        
+        let runner = ParallelBenchmarkRunner::new(market_service.clone(), config.clone());
+        let batch_results = runner.run_parallel(targets.clone(), start, final_end).await;
+
+        let mut _successful = 0;
+        let mut _failed = 0;
+
+        println!(
+            "\n{:<10} | {:>9} | {:>9} | {:>13} | {:>6}",
+            "Symbol", "Return%", "B&H%", "Net Profit", "Trades"
+        );
+        println!("{}", "-".repeat(60));
+
+        for batch_result in batch_results {
+            match batch_result.result {
+                Ok(res) => {
+                    let net = res.final_equity - res.initial_equity;
+                    println!(
+                        "{:<10} | {:>8.2}% | {:>8.2}% | ${:>11.2} | {:>6} ✅",
+                        batch_result.symbol,
+                        res.total_return_pct,
+                        res.buy_and_hold_return_pct,
+                        net,
+                        res.trades.len()
+                    );
+                    all_results.push(res);
+                    _successful += 1;
+                }
+                Err(e) => {
+                    println!("{:<10} | Error: {} ❌", batch_result.symbol, e);
+                    _failed += 1;
+                }
+            }
+        }
+
+        // Note: Timer will automatically log completion time on drop
+        
+    } else {
+        // Sequential Mode: Process symbols one by one
+        for target_symbol in targets {
+            println!("\n>> Benchmarking {}...", target_symbol);
+
+            // Single Run Benchmarking Logic (Reused)
+            // If batch_days is set, we do batch mode for THIS symbol.
+            // If not, we do single run.
+
+            if let Some(days) = batch_days {
+                run_batch_benchmark(
+                    &target_symbol,
+                    start,
+                    final_end,
+                    days,
+                    market_service.clone(),
+                    config.clone(),
+                )
+                .await?;
+            } else {
+                let res = run_single_benchmark(
+                    &target_symbol,
+                    start,
+                    final_end,
+                    market_service.clone(),
+                    config.clone(),
+                )
+                .await?;
+                // Print summary for this symbol
+                println!(
+                    "   Return: {:.2}% | Net: ${:.2} | Trades: {}",
+                    res.total_return_pct,
+                    res.final_equity - res.initial_equity,
+                    res.trades.len()
+                );
+                all_results.push(res);
+            }
         }
     }
 

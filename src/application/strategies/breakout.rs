@@ -63,10 +63,7 @@ impl BreakoutStrategy {
         Some((highest_high, lowest_low, avg_volume))
     }
 
-    /// Get current candle volume
-    fn current_volume(&self, ctx: &AnalysisContext) -> f64 {
-        ctx.candles.back().map(|c| c.volume).unwrap_or(0.0)
-    }
+
 }
 
 impl Default for BreakoutStrategy {

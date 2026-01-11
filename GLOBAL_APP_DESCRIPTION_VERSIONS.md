@@ -1,6 +1,14 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.67.0 (Janvier 2026) - Parallel Backtesting
+
+- **Performance**:
+  - **Parallel Execution**: Implemented multi-threaded backtesting using `Rayon` for optimizing batch simulations.
+  - **Benchmark CLI**: Added `--parallel` flag to process multiple symbols concurrently.
+  - **Metrics**: Added automated timing and per-symbol results aggregation.
+  - **CLI Improvements**: Support for multiple symbols via comma-separated list or multiple `--symbol` flags.
+
 ## Version 0.66.0 (Janvier 2026) - Benchmark Optimization
 
 - **Signal Sensitivity Scaling**:

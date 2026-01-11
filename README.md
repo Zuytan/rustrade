@@ -46,6 +46,7 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 
 ### 🔬 Backtesting & Optimization
 - **Historical Backtesting**: Simulate strategies against past data with S&P500 benchmark comparison.
+- **Parallel Execution**: Ultra-fast multi-symbol batched backtesting using CPU parallelization.
 - **Grid Search Optimizer**: Systematically find best parameters (Sharpe, Sortino, Calmar optimization).
 - **Performance Metrics**: Calculates Alpha, Beta, Win Rate, and Risk-Adjusted Returns.
 
@@ -121,6 +122,9 @@ cargo run --bin rustrade
 ```bash
 # Backtest a strategy
 cargo run --bin benchmark -- --symbol NVDA --start 2023-01-01 --end 2023-12-31 --strategy advanced
+
+# Parallel Mass Backtest
+cargo run --bin benchmark -- --symbol AAPL,TSLA,NVDA,MSFT --start 2024-01-01 --end 2024-03-31 --parallel
 
 # Optimize parameters
 cargo run --bin optimize -- --symbol TSLA --grid-config grid.toml

@@ -14,6 +14,7 @@ use std::sync::Mutex;
 use tokio::sync::mpsc;
 use tracing::info;
 
+#[derive(Debug, Clone)]
 pub struct BacktestResult {
     pub trades: Vec<Order>,
     pub initial_equity: Decimal,
