@@ -153,6 +153,10 @@ impl GridSearchOptimizer {
                                     smc_ob_lookback: 20,
                                     smc_min_fvg_size_pct: 0.005,
                                     risk_appetite_score: None,
+                                    breakout_lookback: 10,
+                                    breakout_threshold_pct: 0.002,
+                                    breakout_volume_mult: 1.1,
+                                    max_loss_per_trade_pct: -0.05,
                                 });
                             }
                         }
@@ -395,6 +399,10 @@ mod tests {
                 smc_ob_lookback: 20,
                 smc_min_fvg_size_pct: 0.005,
                 risk_appetite_score: None,
+                breakout_lookback: 10,
+                breakout_threshold_pct: 0.002,
+                breakout_volume_mult: 1.1,
+                max_loss_per_trade_pct: -0.05,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

@@ -49,6 +49,8 @@ Rustrade supports a diverse suite of strategies, dynamically interchangeable:
 - **Risk Appetite Score (1-10)**: A single "Master Knob" that auto-tunes 12+ underlying technical parameters.
   - **Score 1 (Safe)**: Tight stops (1.5x ATR), small size (0.5%), strict trend requirements.
   - **Score 10 (Extreme)**: Loose stops (8x ATR), "All-In" sizing (20%+), aggressive entry.
+- **Signal Sensitivity Scaling**: Conservative profiles (1-3) automatically receive more sensitive entry thresholds (50-70% of normal), ensuring they generate trades even in low-volatility markets.
+- **Hard Stop Protection**: Per-trade loss limit (`max_loss_per_trade_pct`, default -5%) forces position exit to prevent extreme drawdowns.
 
 ### Validation Pipeline
 Every trade proposal passes through a Chain of Responsibility validation:

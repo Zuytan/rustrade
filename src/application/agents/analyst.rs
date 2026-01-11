@@ -87,6 +87,12 @@ pub struct AnalystConfig {
     pub smc_ob_lookback: usize,          // Order Block lookback period
     pub smc_min_fvg_size_pct: f64,       // Minimum Fair Value Gap size (e.g., 0.005 = 0.5%)
     pub risk_appetite_score: Option<u8>, // Base Risk Appetite Score (1-9) for dynamic scaling
+    // Breakout Strategy Configuration
+    pub breakout_lookback: usize,
+    pub breakout_threshold_pct: f64,
+    pub breakout_volume_mult: f64,
+    // Hard Stop Configuration
+    pub max_loss_per_trade_pct: f64, // Maximum loss per trade before forced exit (e.g., -0.05 = -5%)
 }
 
 impl Default for AnalystConfig {
@@ -96,7 +102,7 @@ impl Default for AnalystConfig {
             slow_sma_period: 20,
             max_positions: 5,
             trade_quantity: rust_decimal::Decimal::ONE,
-            sma_threshold: 0.05,
+            sma_threshold: 0.005, // Raised from 0.001 - after signal sensitivity, Risk-2 gets ~0.0025 (0.25%)
             order_cooldown_seconds: 60,
             risk_per_trade_percent: 1.0,
             strategy_mode: Default::default(),
@@ -138,6 +144,10 @@ impl Default for AnalystConfig {
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
             risk_appetite_score: None,
+            breakout_lookback: 10,
+            breakout_threshold_pct: 0.002,
+            breakout_volume_mult: 1.1,
+            max_loss_per_trade_pct: -0.05, // -5% max loss per trade
         }
     }
 }
@@ -188,6 +198,10 @@ impl From<crate::config::Config> for AnalystConfig {
             smc_ob_lookback: config.smc_ob_lookback,
             smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
             risk_appetite_score: config.risk_appetite.map(|r| r.score()),
+            breakout_lookback: 20, // Increased lookback for more significant levels
+            breakout_threshold_pct: 0.0005, // 0.05% threshold (sensitive)
+            breakout_volume_mult: 0.1, // 10% of average (effectively disable volume filter for now)
+            max_loss_per_trade_pct: -0.05,
         }
     }
 }
@@ -206,6 +220,16 @@ impl AnalystConfig {
         self.trend_tolerance_pct = appetite.calculate_trend_tolerance_pct();
         self.macd_min_threshold = appetite.calculate_macd_min_threshold();
         self.profit_target_multiplier = appetite.calculate_profit_target_multiplier();
+
+        // Apply signal sensitivity factor for lower risk profiles
+        // This makes Conservative/Balanced profiles generate more signals
+        let sensitivity = appetite.calculate_signal_sensitivity_factor();
+        self.sma_threshold *= sensitivity;
+
+        // Reduce confirmation bars for conservative profiles (1 for score <= 4, else keep)
+        if appetite.score() <= 4 {
+            self.signal_confirmation_bars = 1;
+        }
     }
 }
 

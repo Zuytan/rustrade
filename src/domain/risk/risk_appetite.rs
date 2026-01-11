@@ -78,7 +78,8 @@ impl RiskAppetite {
     /// and 75 (follow momentum) for score 9
     /// Uses continuous linear interpolation for smooth progression
     pub fn calculate_rsi_threshold(&self) -> f64 {
-        Self::interpolate(self.score, 1, 9, 25.0, 85.0)
+        // Conservative still gets a reasonable ceiling (55) vs Aggressive (85)
+        Self::interpolate(self.score, 1, 9, 55.0, 85.0)
     }
 
     /// Calculates the maximum position size as percentage of portfolio
@@ -94,18 +95,18 @@ impl RiskAppetite {
     /// Aggressive traders accept lower margins for more opportunities
     pub fn calculate_min_profit_ratio(&self) -> f64 {
         // Inverse relationship: higher risk appetite = lower profit requirement
-        // Score 1 (conservative): 4.0 (extremely strict)
-        // Score 9 (aggressive): 0.2 (extremely permissive)
-        Self::interpolate(self.score, 1, 9, 4.0, 0.2)
+        // Score 1 (conservative): 2.0 (strict but achievable)
+        // Score 9 (aggressive): 0.5 (permissive)
+        Self::interpolate(self.score, 1, 9, 2.0, 0.5)
     }
 
     /// Determine if MACD histogram must be rising for buy signals
-    /// Conservative traders require rising momentum
-    /// Aggressive traders accept positive momentum even if not rising
+    /// Only extreme conservative traders (score 1-2) require rising momentum
+    /// Others accept positive momentum even if not rising
     pub fn requires_macd_rising(&self) -> bool {
-        // Score <= 4: require rising (very conservative)
-        // Score >= 5: just positive is OK (balanced to aggressive)
-        self.score <= 4
+        // Score <= 2: require rising (very conservative)
+        // Score >= 3: just positive is OK
+        self.score <= 2
     }
 
     /// Calculate trend filter tolerance percentage
@@ -133,6 +134,19 @@ impl RiskAppetite {
         // Score 1: 1.5x ATR
         // Score 9: 10.0x ATR
         Self::interpolate(self.score, 1, 9, 1.5, 10.0)
+    }
+
+    /// Calculate signal sensitivity factor for entry signal thresholds
+    /// Conservative traders need MORE SENSITIVE signals (lower thresholds) to generate trades
+    /// Aggressive traders can use standard thresholds
+    ///
+    /// Returns a multiplier applied to signal thresholds:
+    /// - Score 1-3 (Conservative): 0.5 to 0.7 (50-70% of normal threshold = more sensitive)
+    /// - Score 4-6 (Balanced): 0.7 to 0.9 (70-90% of normal threshold)
+    /// - Score 7-9 (Aggressive): 0.9 to 1.0 (near-normal thresholds)
+    pub fn calculate_signal_sensitivity_factor(&self) -> f64 {
+        // Inverse relationship: lower risk = lower thresholds = more signals
+        Self::interpolate(self.score, 1, 9, 0.5, 1.0)
     }
 
     /// Linear interpolation helper
@@ -286,10 +300,10 @@ mod tests {
         );
 
         let rsi_threshold = risk.calculate_rsi_threshold();
-        // 25.0 + 0.125 * (85.0 - 25.0) = 25.0 + 0.125 * 60.0 = 25.0 + 7.5 = 32.5
+        // 55.0 + 0.125 * (85.0 - 55.0) = 55.0 + 0.125 * 30.0 = 55.0 + 3.75 = 58.75
         assert!(
-            (30.0..=40.0).contains(&rsi_threshold),
-            "Score 2 RSI threshold should be low, got {}",
+            (55.0..=65.0).contains(&rsi_threshold),
+            "Score 2 RSI threshold should be moderate-low, got {}",
             rsi_threshold
         );
 
@@ -315,13 +329,16 @@ mod tests {
         // 1.5 + 0.5 * (8.0 - 1.5) = 1.5 + 3.25 = 4.75
         assert!((trailing_stop - 4.75).abs() < 1e-4);
 
+        // RSI: 55 + 0.5 * (85 - 55) = 55 + 15 = 70
         let rsi_threshold = risk.calculate_rsi_threshold();
-        // 25.0 + 0.5 * (85.0 - 25.0) = 25.0 + 30.0 = 55.0
-        assert!((rsi_threshold - 55.0).abs() < 1e-4);
+        assert!((rsi_threshold - 70.0).abs() < 1e-4);
 
         let max_position = risk.calculate_max_position_size_pct();
         // 0.05 + 0.5 * (1.00 - 0.05) = 0.05 + 0.475 = 0.525
         assert!((max_position - 0.525).abs() < 1e-4);
+
+        // Score 5 should NOT require MACD rising (only 1-2 do)
+        assert!(!risk.requires_macd_rising());
     }
 
     #[test]

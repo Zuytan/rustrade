@@ -39,7 +39,19 @@ impl StrategySelector {
     }
 
     /// Core logic for mapping regime to strategy mode
+    ///
+    /// Enhanced with hysteresis: requires high confidence (>= 0.6) to switch strategies,
+    /// preventing whipsaw from rapid regime changes.
     fn select_mode_for_regime(regime: &MarketRegime, current_mode: StrategyMode) -> StrategyMode {
+        // Hysteresis: Only switch if confidence is high enough
+        // This prevents rapid switching (whipsawing) between strategies
+        const MIN_CONFIDENCE_TO_SWITCH: f64 = 0.6;
+
+        if regime.confidence < MIN_CONFIDENCE_TO_SWITCH && current_mode != StrategyMode::Standard {
+            // Low confidence in new regime - stick with current strategy
+            return current_mode;
+        }
+
         match regime.regime_type {
             MarketRegimeType::TrendingUp | MarketRegimeType::TrendingDown => {
                 // Strong trends → Trend following
@@ -58,9 +70,15 @@ impl StrategySelector {
                 }
             }
             MarketRegimeType::Ranging => {
-                // Sideways/consolidation → VWAP (institutional trading style)
-                // Price oscillates around VWAP, perfect for mean-reversion
-                StrategyMode::VWAP
+                // Sideways/consolidation → Mean Reversion strategies
+                // Use MeanReversion if volatility is low, VWAP otherwise
+                if regime.volatility_score < 1.5 {
+                    // Low volatility ranging - classic mean reversion
+                    StrategyMode::MeanReversion
+                } else {
+                    // Higher volatility ranging - use VWAP for tighter control
+                    StrategyMode::VWAP
+                }
             }
             MarketRegimeType::Volatile => {
                 // High volatility → Momentum divergence detection

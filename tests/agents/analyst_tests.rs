@@ -144,6 +144,10 @@ async fn test_golden_cross() {
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: 0.005,
         risk_appetite_score: None,
+        breakout_lookback: 10,
+        breakout_threshold_pct: 0.002,
+        breakout_volume_mult: 1.1,
+        max_loss_per_trade_pct: -0.05,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -257,6 +261,10 @@ async fn test_prevent_short_selling() {
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: 0.005,
         risk_appetite_score: None,
+        breakout_lookback: 10,
+        breakout_threshold_pct: 0.002,
+        breakout_volume_mult: 1.1,
+        max_loss_per_trade_pct: -0.05,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -387,6 +395,10 @@ async fn test_sell_signal_with_position() {
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: 0.005,
         risk_appetite_score: None,
+        breakout_lookback: 10,
+        breakout_threshold_pct: 0.002,
+        breakout_volume_mult: 1.1,
+        max_loss_per_trade_pct: -0.05,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -510,6 +522,10 @@ async fn test_dynamic_quantity_scaling() {
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: 0.005,
         risk_appetite_score: None,
+        breakout_lookback: 10,
+        breakout_threshold_pct: 0.002,
+        breakout_volume_mult: 1.1,
+        max_loss_per_trade_pct: -0.05,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -639,6 +655,10 @@ async fn test_multi_symbol_isolation() {
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: 0.005,
         risk_appetite_score: None,
+        breakout_lookback: 10,
+        breakout_threshold_pct: 0.002,
+        breakout_volume_mult: 1.1,
+        max_loss_per_trade_pct: -0.05,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -783,6 +803,10 @@ async fn test_advanced_strategy_trend_filter() {
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: 0.005,
         risk_appetite_score: None,
+        breakout_lookback: 10,
+        breakout_threshold_pct: 0.002,
+        breakout_volume_mult: 1.1,
+        max_loss_per_trade_pct: -0.05,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -925,6 +949,10 @@ async fn test_risk_based_quantity_calculation() {
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: 0.005,
         risk_appetite_score: None,
+        breakout_lookback: 10,
+        breakout_threshold_pct: 0.002,
+        breakout_volume_mult: 1.1,
+        max_loss_per_trade_pct: -0.05,
     };
 
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(

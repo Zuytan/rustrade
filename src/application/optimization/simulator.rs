@@ -1,7 +1,4 @@
 use crate::application::agents::analyst::{Analyst, AnalystConfig, AnalystDependencies};
-use crate::application::strategies::{
-    AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, TradingStrategy,
-};
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::trading::types::MarketEvent;
 use crate::domain::trading::types::{Candle, Order};
@@ -145,21 +142,11 @@ impl Simulator {
 
         let sim_config = self.config.clone();
 
-        // Use Advanced strategy for simulations
-        let strategy: Arc<dyn TradingStrategy> = Arc::new(AdvancedTripleFilterStrategy::new(
-            AdvancedTripleFilterConfig {
-                fast_period: sim_config.fast_sma_period,
-                slow_period: sim_config.slow_sma_period,
-                sma_threshold: sim_config.sma_threshold,
-                trend_sma_period: sim_config.trend_sma_period,
-                rsi_threshold: sim_config.rsi_threshold,
-                signal_confirmation_bars: sim_config.signal_confirmation_bars,
-                macd_requires_rising: sim_config.macd_requires_rising,
-                trend_tolerance_pct: sim_config.trend_tolerance_pct,
-                macd_min_threshold: sim_config.macd_min_threshold,
-                adx_threshold: sim_config.adx_threshold,
-            },
-        ));
+        // Use StrategyFactory to create the correct strategy for simulations
+        let strategy = crate::application::strategies::StrategyFactory::create(
+            sim_config.strategy_mode,
+            &sim_config,
+        );
 
         let (_analyst_cmd_tx, analyst_cmd_rx) = mpsc::channel(1);
 
@@ -261,8 +248,34 @@ impl Simulator {
         });
 
         let mut executed_trades = Vec::new();
+        let max_drawdown_pct = Decimal::new(-50, 0); // -50% max loss
 
         while let Some(prop) = proposal_rx.recv().await {
+            // Circuit Breaker: Check equity before executing
+            if let Ok(portfolio) = self.execution_service.get_portfolio().await {
+                let current_equity = portfolio.cash
+                    + portfolio
+                        .positions
+                        .values()
+                        .filter(|p| p.symbol == prop.symbol)
+                        .map(|p| p.quantity * prop.price)
+                        .sum::<Decimal>();
+
+                let drawdown_pct = if !initial_equity.is_zero() {
+                    (current_equity - initial_equity) / initial_equity * Decimal::from(100)
+                } else {
+                    Decimal::ZERO
+                };
+
+                if drawdown_pct < max_drawdown_pct {
+                    info!(
+                        "Simulator: CIRCUIT BREAKER TRIGGERED! Drawdown {:.2}% < {:.2}%. Halting trading.",
+                        drawdown_pct, max_drawdown_pct
+                    );
+                    break;
+                }
+            }
+
             let costs = self
                 .config
                 .fee_model
@@ -309,11 +322,21 @@ impl Simulator {
             }
         }
 
-        let total_return_pct = if !initial_equity.is_zero() {
+        let mut total_return_pct = if !initial_equity.is_zero() {
             (final_equity - initial_equity) / initial_equity * Decimal::from(100)
         } else {
             Decimal::ZERO
         };
+
+        // Floor: Can't lose more than 100% of capital (prevents stock split artifacts)
+        let min_return = Decimal::new(-100, 0);
+        if total_return_pct < min_return {
+            info!(
+                "Simulator: Return {:.2}% capped to -100% (stock split or data issue)",
+                total_return_pct
+            );
+            total_return_pct = min_return;
+        }
 
         // Buy & Hold Return: (LastPrice - StartPrice) / StartPrice
         let buy_and_hold_return_pct = if !start_price.is_zero() {

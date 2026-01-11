@@ -342,6 +342,10 @@ impl Application {
             smc_ob_lookback: self.config.smc_ob_lookback,
             smc_min_fvg_size_pct: self.config.smc_min_fvg_size_pct,
             risk_appetite_score: self.config.risk_appetite.map(|r| r.score()),
+            breakout_lookback: 10,
+            breakout_threshold_pct: 0.002,
+            breakout_volume_mult: 1.1,
+            max_loss_per_trade_pct: -0.05,
         };
 
         let strategy: Arc<dyn TradingStrategy> = match self.config.strategy_mode {

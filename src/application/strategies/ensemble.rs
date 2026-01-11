@@ -162,7 +162,7 @@ mod tests {
             price_f64: price,
             fast_sma,
             slow_sma,
-            trend_sma: fast_sma, // Simplify for tests
+            trend_sma: 99.0, // Below price to allow buy signals
             rsi,
             macd_value: 0.5,
             macd_signal: 0.3,
@@ -230,14 +230,14 @@ mod tests {
         let ensemble = EnsembleStrategy::unanimous(strategies);
 
         // Conditions for both: Golden cross AND price < BB lower with RSI < 30
-        // DualSMA: fast > slow * 1.001 -> buy
+        // DualSMA: fast > slow * 1.001 AND price > trend_sma -> buy
         // MeanReversion: price < bb_lower AND rsi < 30 -> buy
         let ctx = create_context(
             105.0, // fast_sma > slow_sma
             100.0, // slow_sma
             25.0,  // RSI < 30 (oversold)
-            100.0, // bb_lower
-            98.0,  // price < bb_lower
+            101.0, // bb_lower (set above price to trigger mean reversion)
+            100.0, // price > trend_sma (99) for DualSMA, < bb_lower for MeanReversion
             false,
         );
 

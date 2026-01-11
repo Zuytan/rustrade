@@ -26,33 +26,31 @@ impl TradingStrategy for DualSMAStrategy {
         let fast = ctx.fast_sma;
         let slow = ctx.slow_sma;
 
-        // Golden Cross: Fast SMA crosses above Slow SMA
-        if fast > slow * (1.0 + self.threshold) {
-            tracing::debug!(
-                "DualSMA [{}]: Golden Cross detected (fast={:.2}, slow={:.2}, threshold={:.4})",
-                ctx.symbol,
-                fast,
-                slow,
-                self.threshold
-            );
+        // Buy: Golden cross above trend (enhanced for reliability)
+        // Requires BOTH crossover AND price above trend like TrendRiding
+        if fast > slow * (1.0 + self.threshold) && ctx.price_f64 > ctx.trend_sma {
             return Some(Signal::buy(format!(
-                "Golden Cross (Fast={:.2} > Slow={:.2})",
-                fast, slow
+                "Golden Cross + Trend (Fast={:.2} > Slow={:.2}, Price={:.2} > Trend={:.2})",
+                fast, slow, ctx.price_f64, ctx.trend_sma
             )));
         }
 
-        // Death Cross: Fast SMA crosses below Slow SMA
-        if fast < slow * (1.0 - self.threshold) && ctx.has_position {
-            tracing::debug!(
-                "DualSMA [{}]: Death Cross detected (fast={:.2}, slow={:.2}, has_pos=true)",
-                ctx.symbol,
-                fast,
-                slow
-            );
-            return Some(Signal::sell(format!(
-                "Death Cross (Fast={:.2} < Slow={:.2})",
-                fast, slow
-            )));
+        // Sell: Death cross or trend reversal (exit on either condition)
+        if ctx.has_position {
+            let death_cross = fast < slow * (1.0 - self.threshold);
+            let trend_break = ctx.price_f64 < ctx.trend_sma;
+
+            if death_cross || trend_break {
+                let reason = if death_cross {
+                    "Death Cross"
+                } else {
+                    "Trend Break"
+                };
+                return Some(Signal::sell(format!(
+                    "{} (Fast={:.2}, Slow={:.2}, Price={:.2}, Trend={:.2})",
+                    reason, fast, slow, ctx.price_f64, ctx.trend_sma
+                )));
+            }
         }
 
         None
@@ -76,7 +74,7 @@ mod tests {
             price_f64: 100.0,
             fast_sma,
             slow_sma,
-            trend_sma: 100.0,
+            trend_sma: 99.0, // Below price to allow buy signals
             rsi: 50.0,
             macd_value: 0.0,
             macd_signal: 0.0,

@@ -72,59 +72,35 @@ impl BreakoutStrategy {
 impl Default for BreakoutStrategy {
     fn default() -> Self {
         Self {
-            lookback_period: 20,
-            breakout_threshold_pct: 0.005, // 0.5% above high
-            volume_multiplier: 1.3,        // 30% above average volume
+            lookback_period: 10,           // Reduced from 20 for faster detection
+            breakout_threshold_pct: 0.002, // 0.2% above high (reduced from 0.5%)
+            volume_multiplier: 1.1,        // 10% above average (reduced from 30%)
         }
     }
 }
 
 impl TradingStrategy for BreakoutStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
-        let (highest_high, lowest_low, avg_volume) = self.calculate_range(ctx)?;
-        let current_volume = self.current_volume(ctx);
+        if let Some((high, low, avg_vol)) = self.calculate_range(ctx) {
+            let current_vol = ctx.candles.back()?.volume;
+            let current_price = ctx.price_f64;
 
-        // Volume confirmation (optional but increases confidence)
-        let volume_confirmed = current_volume > avg_volume * self.volume_multiplier;
-        let confidence_boost = if volume_confirmed { 0.15 } else { 0.0 };
+            let vol_ok = current_vol >= avg_vol * self.volume_multiplier;
 
-        // Bullish breakout: Price breaks above recent high
-        let bullish_threshold = highest_high * (1.0 + self.breakout_threshold_pct);
-        if !ctx.has_position && ctx.price_f64 > bullish_threshold {
-            let confidence = 0.70 + confidence_boost;
-            let volume_note = if volume_confirmed {
-                format!(", Volume {:.0} > Avg {:.0}", current_volume, avg_volume)
-            } else {
-                String::new()
-            };
+            // Breakout Long: Price breaks above recent high
+            if current_price > high * (1.0 + self.breakout_threshold_pct) && vol_ok {
+                return Some(Signal::buy(format!(
+                    "Bullish Breakout (Price={:.2} > High={:.2}, Vol={:.0} > Avg={:.0})",
+                    current_price, high, current_vol, avg_vol
+                )));
+            }
 
-            return Some(
-                Signal::buy(format!(
-                    "Breakout: Price {:.2} > High {:.2} (+{:.2}%){}",
-                    ctx.price_f64,
-                    highest_high,
-                    ((ctx.price_f64 / highest_high) - 1.0) * 100.0,
-                    volume_note
-                ))
-                .with_confidence(confidence),
-            );
-        }
-
-        // Bearish breakout: Price breaks below recent low (exit signal if holding)
-        if ctx.has_position {
-            let bearish_threshold = lowest_low * (1.0 - self.breakout_threshold_pct);
-            if ctx.price_f64 < bearish_threshold {
-                let confidence = 0.75 + confidence_boost;
-
-                return Some(
-                    Signal::sell(format!(
-                        "Breakout: Price {:.2} < Low {:.2} (-{:.2}%) - Exit on breakdown",
-                        ctx.price_f64,
-                        lowest_low,
-                        (1.0 - (ctx.price_f64 / lowest_low)) * 100.0
-                    ))
-                    .with_confidence(confidence),
-                );
+            // Breakout Short: Price breaks below recent low
+            if current_price < low * (1.0 - self.breakout_threshold_pct) && vol_ok {
+                return Some(Signal::sell(format!(
+                    "Bearish Breakout (Price={:.2} < Low={:.2}, Vol={:.0} > Avg={:.0})",
+                    current_price, low, current_vol, avg_vol
+                )));
             }
         }
 
@@ -188,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_bullish_breakout() {
-        let strategy = BreakoutStrategy::new(5, 0.02, 1.3); // Use 2% threshold
+        let strategy = BreakoutStrategy::new(5, 0.02, 0.9); // Use 0.9x volume (below avg)
 
         let mut candles = VecDeque::new();
         // Create a consolidation range with highest high = 105
@@ -211,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_bearish_breakdown() {
-        let strategy = BreakoutStrategy::new(5, 0.02, 1.3); // Use 2% threshold
+        let strategy = BreakoutStrategy::new(5, 0.02, 0.9); // Use 0.9x volume (below avg)
 
         let mut candles = VecDeque::new();
         // Create a range with lowest low = 95

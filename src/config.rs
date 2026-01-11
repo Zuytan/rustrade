@@ -245,7 +245,7 @@ impl Config {
         let strategy_mode = StrategyMode::from_str(&strategy_mode_str)?;
 
         let trend_sma_period = env::var("TREND_SMA_PERIOD")
-            .unwrap_or_else(|_| "50".to_string()) // Changed from 2000 to 50
+            .unwrap_or_else(|_| "200".to_string())
             .parse::<usize>()
             .context("Failed to parse TREND_SMA_PERIOD")?;
 

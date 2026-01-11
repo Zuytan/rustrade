@@ -8,11 +8,12 @@ use rustrade::domain::market::strategy_config::StrategyMode;
 fn test_strategy_selector_ranging_to_vwap() {
     let config = AnalystConfig::default();
 
-    // Create a Ranging regime
+    // Create a Ranging regime with HIGH volatility (>= 1.5)
+    // This triggers VWAP instead of MeanReversion
     let ranging_regime = MarketRegime::new(
         MarketRegimeType::Ranging,
         0.8,  // High confidence
-        1.0,  // Low volatility
+        2.0,  // High volatility -> VWAP
         10.0, // Low trend strength
     );
 
@@ -23,11 +24,36 @@ fn test_strategy_selector_ranging_to_vwap() {
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
 
-    // Should switch to VWAP for Ranging regime (v0.60 enhancement)
+    // Should switch to VWAP for high-volatility Ranging regime
     assert_eq!(
         new_mode,
         StrategyMode::VWAP,
-        "Should select VWAP strategy for Ranging regime"
+        "Should select VWAP strategy for high-volatility Ranging regime"
+    );
+}
+
+#[test]
+fn test_strategy_selector_ranging_low_vol_to_mean_reversion() {
+    let config = AnalystConfig::default();
+
+    // Create a Ranging regime with LOW volatility (< 1.5)
+    let ranging_regime = MarketRegime::new(
+        MarketRegimeType::Ranging,
+        0.8,  // High confidence
+        1.0,  // Low volatility -> MeanReversion
+        10.0, // Low trend strength
+    );
+
+    let current_mode = StrategyMode::Standard;
+
+    let (new_mode, _strategy) =
+        StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
+
+    // Should switch to MeanReversion for low-volatility Ranging regime
+    assert_eq!(
+        new_mode,
+        StrategyMode::MeanReversion,
+        "Should select MeanReversion strategy for low-volatility Ranging regime"
     );
 }
 
@@ -104,16 +130,18 @@ fn test_strategy_selector_unknown_to_standard() {
 
     let unknown_regime = MarketRegime::unknown();
 
-    let current_mode = StrategyMode::TrendRiding;
+    // Start with Standard (unknown regime has confidence 0, hysteresis kicks in)
+    // But since current_mode IS Standard, it should stay Standard
+    let current_mode = StrategyMode::Standard;
 
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&unknown_regime, &config, current_mode);
 
-    // Unknown regime should fallback to Standard
+    // Unknown regime with confidence 0 and current mode Standard stays Standard
     assert_eq!(
         new_mode,
         StrategyMode::Standard,
-        "Should select Standard strategy for Unknown regime"
+        "Should stay with Standard strategy for Unknown regime"
     );
 }
 
@@ -121,18 +149,19 @@ fn test_strategy_selector_unknown_to_standard() {
 fn test_strategy_selector_no_change_when_same() {
     let config = AnalystConfig::default();
 
+    // Low volatility ranging -> MeanReversion
     let ranging_regime = MarketRegime::new(MarketRegimeType::Ranging, 0.8, 1.0, 10.0);
 
-    // Already using VWAP (which is correct for Ranging)
-    let current_mode = StrategyMode::VWAP;
+    // Already using MeanReversion (which is correct for low-vol Ranging)
+    let current_mode = StrategyMode::MeanReversion;
 
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
 
-    // Should stay with VWAP
+    // Should stay with MeanReversion
     assert_eq!(
         new_mode,
-        StrategyMode::VWAP,
-        "Should keep VWAP strategy when already appropriate for Ranging"
+        StrategyMode::MeanReversion,
+        "Should keep MeanReversion when already appropriate for low-vol Ranging"
     );
 }

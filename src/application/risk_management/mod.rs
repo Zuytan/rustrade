@@ -1,6 +1,7 @@
 // Risk management and position control modules
 pub mod circuit_breaker_service; // New
 pub mod commands;
+pub mod hard_stop_manager; // New - per-trade loss limits
 pub mod liquidation_service;
 pub mod order_reconciler;
 pub mod order_throttler;
