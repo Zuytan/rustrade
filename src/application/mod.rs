@@ -1,5 +1,6 @@
 // Agent modules - core decision-making agents
 pub mod agents;
+pub mod bootstrap;
 
 // Market data processing
 pub mod market_data;

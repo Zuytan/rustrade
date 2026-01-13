@@ -1,5 +1,5 @@
 // Re-export i18n types for convenience
-pub use super::i18n::{HelpTopicData, I18nService, LanguageInfo};
+pub use super::service::{HelpTopicData, I18nService, LanguageInfo};
 
 /// Help content categories (used as keys in translation files)
 pub const CATEGORY_ABBREVIATIONS: &str = "abbreviations";

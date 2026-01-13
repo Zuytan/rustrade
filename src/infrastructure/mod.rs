@@ -2,6 +2,7 @@ pub mod alpaca;
 pub mod binance;
 pub mod core;
 pub mod factory;
+pub mod i18n;
 pub mod mock;
 pub mod news;
 pub mod oanda;

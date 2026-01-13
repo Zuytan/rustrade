@@ -7,7 +7,7 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderSide;
 use crate::domain::trading::types::TradeProposal;
-use crate::domain::ui::I18nService;
+use crate::infrastructure::i18n::I18nService;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 

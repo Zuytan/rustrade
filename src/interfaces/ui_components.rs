@@ -4,7 +4,7 @@ use crate::application::client::SystemClient;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::domain::risk::risk_appetite::{RiskAppetite, RiskProfile};
 use crate::domain::risk::risk_config::RiskConfig;
-use crate::domain::ui::I18nService;
+use crate::infrastructure::i18n::I18nService;
 use eframe::egui;
 use tracing::error;
 

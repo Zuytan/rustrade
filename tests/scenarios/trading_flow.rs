@@ -177,20 +177,99 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     let null_strategy_repo =
         std::sync::Arc::new(rustrade::infrastructure::mock::NullStrategyRepository);
 
+    // --- Persistence Setup (In-Memory for Test) ---
+    // We need a real PersistenceHandle for the Application struct, even if we override fields.
+    // Use in-memory SQLite for speed and isolation.
+    let db =
+        rustrade::infrastructure::persistence::database::Database::new("sqlite::memory:").await?;
+
+    // Create concrete repositories needed for PersistenceHandle
+    let candle_repo = std::sync::Arc::new(
+        rustrade::infrastructure::persistence::repositories::SqliteCandleRepository::new(
+            db.pool.clone(),
+        ),
+    );
+    let order_repo = std::sync::Arc::new(
+        rustrade::infrastructure::persistence::repositories::SqliteOrderRepository::new(
+            db.pool.clone(),
+        ),
+    );
+    let strategy_repo = std::sync::Arc::new(
+        rustrade::infrastructure::persistence::repositories::SqliteStrategyRepository::new(
+            db.pool.clone(),
+        ),
+    );
+    let risk_state_repo = std::sync::Arc::new(
+        rustrade::infrastructure::persistence::repositories::SqliteRiskStateRepository::new(
+            db.clone(),
+        ),
+    );
+    let opt_history_repo = std::sync::Arc::new(
+        rustrade::infrastructure::persistence::repositories::SqliteOptimizationHistoryRepository::new(db.pool.clone())
+    );
+    let snapshot_repo = std::sync::Arc::new(
+        rustrade::infrastructure::persistence::repositories::SqlitePerformanceSnapshotRepository::new(db.pool.clone())
+    );
+    let trigger_repo = std::sync::Arc::new(
+        rustrade::infrastructure::persistence::repositories::SqliteReoptimizationTriggerRepository::new(db.pool.clone())
+    );
+
+    let persistence = rustrade::application::bootstrap::persistence::PersistenceHandle {
+        db,
+        candle_repository: candle_repo.clone(), // Use real repo for handle, but app might use null if we override?
+        // Actually, the test was passing None or Null before.
+        // If we want minimal changes, we just satisfy the struct.
+        order_repository: order_repo.clone(),
+        strategy_repository: strategy_repo.clone(),
+        risk_state_repository: risk_state_repo.clone(),
+        opt_history_repo,
+        snapshot_repo,
+        trigger_repo,
+    };
+
+    // --- Services Setup ---
+    let spread_cache =
+        std::sync::Arc::new(rustrade::application::market_data::spread_cache::SpreadCache::new());
+
+    // We construct the ServicesHandle with our Mocks
+    let services = rustrade::application::bootstrap::services::ServicesHandle {
+        market_service: mock_market.clone(),
+        execution_service: mock_execution.clone(),
+        spread_cache: spread_cache.clone(),
+        adaptive_optimization_service: None,
+        performance_monitor: None,
+    };
+
     let app = Application {
         config,
         market_service: mock_market.clone(),
         execution_service: mock_execution.clone(),
         portfolio: portfolio.clone(),
-        order_repository: null_trade_repo,
+        order_repository: null_trade_repo, // We keep using null/mocks for what the test explicitly mocked?
+        // Actually, using the real in-memory repo matches the new PersistenceHandle better,
+        // but if the test relies on specific mock behavior (like null repo doing nothing), we should keep it.
+        // However, `app.start()` uses `app.persistence.order_repository` internally to init agents!
+        // `app.order_repository` is just a reference kept on App struct.
+        // If `app.start()` uses `persistence`, then `persistence.order_repository` IS the one that will be used by agents.
+        // The test overrides `app.order_repository` but that might be ignored by `AgentsBootstrap` which looks at `persistence`.
+
+        // CRITICAL FIX: The `Application::start` constructs agents using `self.persistence`.
+        // So injecting `NullTradeRepository` into `app.order_repository` field is USELESS if agents use `persistence`.
+        // The test probably wants `MockExecutionService` to be used.
+        // `AgentsBootstrap` uses `services.execution_service`. We populated that with `mock_execution`. Good.
+        // `AgentsBootstrap` uses `persistence.order_repository` for `Executor`?
+        // Let's check `bootstrap/agents.rs`.
+        // `let mut executor = Executor::new(..., Some(persistence.order_repository.clone()))`.
+        // So `Executor` will use the Real Sqlite Repo (In-Memory).
+        // This is fine! It's actually better than Null.
         candle_repository: None,
         strategy_repository: null_strategy_repo,
         adaptive_optimization_service: None,
         performance_monitor: None,
-        spread_cache: std::sync::Arc::new(
-            rustrade::application::market_data::spread_cache::SpreadCache::new(),
-        ),
-        risk_state_repository: null_risk_state,
+        spread_cache: spread_cache.clone(),
+        risk_state_repository: null_risk_state, // Again, this field is likely ignored by start() which uses persistence
+        persistence,
+        services,
     };
 
     // 4. Run Application (BACKGROUND)

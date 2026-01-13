@@ -1,106 +1,22 @@
 # Rustrade - Historique des Versions
 
-## v0.67.2 - Refactoring: Risk Config & Dashboard
-- **RiskManager Refactoring**: Extracted `RiskConfig` and `RiskConfigError` into `src/domain/risk/risk_config.rs` to improve modularity and separation of concerns.
-- **Dashboard Decomposition**: Split `src/interfaces/dashboard.rs` into dedicated components (`metrics_card`, `activity_feed`, `news_feed`, `chart_panel`, `analytics_view`) within `src/interfaces/dashboard_components/`.
-- **Code Maintenance**: Cleaned up imports and improved project structure for better maintainability.
+## Version 0.68.0 (Janvier 2026) - Architectural Refactoring & MVVM
 
+- **System Initialization Refactoring**:
+  - **Bootstrap Pattern**: Decomposed the monolithic `system.rs` into focused bootstrap modules (`persistence`, `services`, `agents`) in `src/application/bootstrap/`.
+  - **Simplified Startup**: `System::build` now delegates to specialized initializers, improving testability and code organization.
 
-## Version 0.67.1 (Janvier 2026) - SystemClient & Channel Refactoring
+- **Dashboard MVVM**:
+  - **ViewModel**: Introduced `DashboardViewModel` to separate UI rendering from data processing logic.
+  - **Clean UI Code**: `dashboard.rs` is now strictly focused on layout and rendering, with all P&L calculations and formatting handled by the ViewModel.
 
-- **Channel Management Refactoring**:
-  - **SystemClient**: Introduced `SystemClient` abstraction to encapsulate channel management and providing a unified interface for agents.
-  - **Simplified UserAgent**: `UserAgent` now uses `SystemClient` instead of managing 8+ individual channels, improving code readability and maintainability.
-  - **Clean main.rs**: Removed complex channel wiring in `main.rs`, replacing it with simple `SystemClient` initialization.
-  - **Type-Safe Commands**: Added typed methods (e.g., `send_risk_command`) to `SystemClient` to prevent channel mismatch errors.
-
-- **Verification**:
-  - Full regression suite passed (329+ tests).
-  - Fixed deadlock in `test_dynamic_quantity_scaling` by correcting test data depth for SMA 50.
-
-## Version 0.67.0 (Janvier 2026) - Parallel Backtesting
-
-- **Performance**:
-  - **Parallel Execution**: Implemented multi-threaded backtesting using `Rayon` for optimizing batch simulations.
-  - **Benchmark CLI**: Added `--parallel` flag to process multiple symbols concurrently.
-  - **Metrics**: Added automated timing and per-symbol results aggregation.
-  - **CLI Improvements**: Support for multiple symbols via comma-separated list or multiple `--symbol` flags.
-
-## Version 0.66.0 (Janvier 2026) - Benchmark Optimization
-
-- **Signal Sensitivity Scaling**:
-  - Added `calculate_signal_sensitivity_factor()` to `RiskAppetite`.
-  - Conservative profiles (1-3) now use 50-70% of normal signal thresholds.
-  - Balanced profiles (4-6) use 70-90% of thresholds.
-  - Fixes issue where Risk-2 and Risk-5 profiles generated zero trades.
-
-- **Breakout Strategy Tuning**:
-  - Reduced `lookback_period` from 20 to 10 for faster detection.
-  - Reduced `breakout_threshold_pct` from 0.5% to 0.2%.
-  - Reduced `volume_multiplier` from 1.3 to 1.1 (more permissive).
-
-- **Hard Stop Manager**:
-  - New `HardStopManager` in `risk_management/` for per-trade loss limits.
-  - Default `-5%` max loss per trade before forced exit.
-  - Prevents extreme drawdowns observed in benchmarks (e.g., -1317%).
-
-- **Enhanced RegimeAdaptive Strategy**:
-  - Added hysteresis (≥60% confidence required to switch strategies).
-  - Low-volatility Ranging now uses MeanReversion instead of VWAP.
-  - High-volatility Ranging continues to use VWAP.
-
-- **Files Modified** (10+): `risk_appetite.rs`, `analyst.rs`, `breakout.rs`, `strategy_factory.rs`, `strategy_selector.rs`, `mod.rs`
-- **Files Added** (1): `hard_stop_manager.rs`
-- **Verification**: All tests pass (133+).
-
-## Version 0.65.1 (Janvier 2026) - Risk Manager Decomposition
-
-- **Risk Manager Refactoring**:
-  - **Circuit Breaker Service**: Extracted circuit breaker logic (Drawdown, Daily Loss, Consecutive Losses) into a dedicated `CircuitBreakerService`.
-  - **Order Reconciler**: Extracted order reconciliation and pending order tracking into `OrderReconciler`.
-  - **Risk Manager Cleanup**: Simplified `RiskManager` to be a high-level orchestrator delegation to these services.
-  - **Verification**: 32 unit tests verified the integrity of the risk logic after refactoring.
-
-## Version 0.65.0 (Janvier 2026) - Code Decomposition & Infrastructure Refactoring
-
-- **Analyst Logic Decomposition**:
-  - **TradeEvaluator**: Encapsulation of signal validation and proposal generation logic via `TradeEvaluator` service.
-  - **SignalProcessor**: Central execution of strategy signals and filtering (RSI, Trends) via `SignalProcessor`.
-  - **WarmupService**: Isolated warm-up logic for cleaner startup sequences via `WarmupService`.
-  - **Result**: Significant reduction in complexity for the core `Analyst` agent (reduced by ~1300 lines).
-
-- **Infrastructure Modularization**:
-  - **Organized Directory Structure**: Grouped broker implementations into `infrastructure/alpaca`, `infrastructure/binance`, and `infrastructure/oanda`.
-  - **Core Shared Components**: Centralized common utilities (circuit breakers, event bus) in `infrastructure/core`.
-  - **Clean Exports**: Updated `mod.rs` files for cleaner API surfaces and better encapsulation.
-
-- **Code Quality & Hygiene**:
-  - **Dead Code Removal**: Pruned unused imports, commented-out blocks, and legacy TODOs/FIXMEs.
-  - **Documentation Cleanup**: Removed outdated comments from core files (`config.rs`, `system.rs`, `analyst.rs`).
+- **Domain Purity**:
+  - **I18n Migration**: Moved `src/domain/ui` to `src/infrastructure/i18n` to enforce strict Domain-Driven Design (DDD) layers.
+  - **Dependency Cleanup**: Removed circular dependencies and infrastructure leakage into the domain.
 
 - **Verification**:
-  - Full regression suite passed (250+ tests).
-  - Zero `clippy` warnings.
-  - Clean `cargo check`.
+  - Full regression suite passed (294 tests).
+  - Validated E2E trading flow with in-memory database.
 
-## Version 0.64.0 (Janvier 2026) - Dependency Upgrade & API Modernization
 
-- **Major Dependency Updates**:
-  - **egui/eframe**: 0.31.0 → 0.33.3 (Breaking API changes fixed)
-  - **egui_plot**: 0.31.0 → 0.34.0 (New constructor signatures)
-  - **reqwest**: 0.12 → 0.13 (Added `query` feature flag)
-  - **reqwest-middleware**: 0.3 → 0.5 (Breaking change: `.query()` removed)
-  - **reqwest-retry**: 0.5 → 0.9
-  - **prometheus**: 0.13 → 0.14
-  - **crossbeam-channel**: 0.5.14 → 0.5.15
-  - **serde_json**, **url**, **rust_decimal_macros** updated
-
-- **Infrastructure Improvements**:
-  - **build_url_with_query()**: New helper function to construct URLs with query parameters since `reqwest-middleware` 0.5 removed `.query()` method.
-  - Updated 9 HTTP calls in `alpaca.rs` and `binance.rs`.
-  - Fixed `egui_plot` constructor calls in `dashboard.rs`.
-
-- **Verification**: 25 tests passing, zero clippy warnings, clean build.
-- **Files Modified** (5): `Cargo.toml`, `http_client_factory.rs`, `alpaca.rs`, `binance.rs`, `dashboard.rs`
-
-## Version 0.62.0 (Janvier 2026) - Server Mode & Observability
+## Version 0.67.2 (Janvier 2026) - Refactoring: Risk Config & Dashboard

@@ -1,7 +1,7 @@
 use crate::application::agents::user_agent::{
     ActivityEvent, ActivityEventType, EventSeverity, UserAgent,
 };
-use crate::domain::ui::I18nService;
+use crate::infrastructure::i18n::I18nService;
 use eframe::egui;
 use std::collections::VecDeque;
 
