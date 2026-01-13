@@ -62,8 +62,6 @@ impl BreakoutStrategy {
 
         Some((highest_high, lowest_low, avg_volume))
     }
-
-
 }
 
 impl Default for BreakoutStrategy {

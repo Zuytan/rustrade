@@ -1,14 +1,14 @@
-use rayon::prelude::*;
-use crate::application::optimization::simulator::{Simulator, BacktestResult};
 use crate::application::agents::analyst::AnalystConfig;
+use crate::application::optimization::simulator::{BacktestResult, Simulator};
 use crate::domain::ports::MarketDataService;
-use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::fee_model::ConstantFeeModel;
+use crate::domain::trading::portfolio::Portfolio;
 use crate::infrastructure::mock::MockExecutionService;
-use std::sync::Arc;
-use chrono::{DateTime, Utc};
 use anyhow::Result;
+use chrono::{DateTime, Utc};
+use rayon::prelude::*;
 use rust_decimal::Decimal;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Result of a single backtest run in a batch
@@ -58,10 +58,7 @@ impl ParallelBenchmarkRunner {
     ///
     /// * `market_service` - Market data service for fetching historical data
     /// * `config` - Analyst configuration to use for all backtests
-    pub fn new(
-        market_service: Arc<dyn MarketDataService>,
-        config: AnalystConfig,
-    ) -> Self {
+    pub fn new(market_service: Arc<dyn MarketDataService>, config: AnalystConfig) -> Self {
         Self {
             market_service,
             config,
@@ -93,19 +90,20 @@ impl ParallelBenchmarkRunner {
     ) -> Vec<BatchBacktestResult> {
         // Get a handle to the current Tokio runtime
         let handle = tokio::runtime::Handle::current();
-        
+
         // Use Rayon's parallel iterator to process symbols concurrently
-        symbols.into_par_iter()
+        symbols
+            .into_par_iter()
             .map(|symbol| {
                 let market_service = self.market_service.clone();
                 let config = self.config.clone();
                 let symbol_clone = symbol.clone(); // Clone before moving into async
-                
+
                 // Block on the async task from within the Rayon thread pool
                 let result = handle.block_on(async move {
                     Self::run_single(&market_service, &config, &symbol_clone, start, end).await
                 });
-                
+
                 BatchBacktestResult {
                     symbol: symbol.clone(),
                     result: result.map_err(|e| e.to_string()),
@@ -129,7 +127,7 @@ impl ParallelBenchmarkRunner {
         let mut portfolio = Portfolio::new();
         portfolio.cash = Decimal::new(100_000, 0); // $100k starting capital
         let portfolio_lock = Arc::new(RwLock::new(portfolio));
-        
+
         // Get transaction costs from environment or use defaults
         let slippage_pct = std::env::var("SLIPPAGE_PCT")
             .ok()
@@ -139,24 +137,18 @@ impl ParallelBenchmarkRunner {
             .ok()
             .and_then(|s| s.parse::<f64>().ok())
             .unwrap_or(0.001);
-        
+
         let slippage = Decimal::try_from(slippage_pct).unwrap_or(Decimal::ZERO);
         let commission = Decimal::try_from(commission_per_share).unwrap_or(Decimal::ZERO);
         let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
-        
+
         // Create isolated execution service
-        let execution_service = Arc::new(MockExecutionService::with_costs(
-            portfolio_lock,
-            fee_model,
-        ));
-        
+        let execution_service =
+            Arc::new(MockExecutionService::with_costs(portfolio_lock, fee_model));
+
         // Run the simulation
-        let simulator = Simulator::new(
-            market_service.clone(),
-            execution_service,
-            config.clone(),
-        );
-        
+        let simulator = Simulator::new(market_service.clone(), execution_service, config.clone());
+
         simulator.run(symbol, start, end).await
     }
 }
@@ -167,8 +159,8 @@ mod tests {
     use crate::domain::trading::types::{Candle, MarketEvent};
     use async_trait::async_trait;
     use rust_decimal_macros::dec;
-    use tokio::sync::mpsc::Receiver;
     use std::collections::HashMap;
+    use tokio::sync::mpsc::Receiver;
 
     /// Mock market data service for testing
     struct MockMarketDataService {
@@ -207,11 +199,14 @@ mod tests {
     async fn test_parallel_benchmark_runner_creation() {
         let market_service = Arc::new(MockMarketDataService { candles: vec![] });
         let config = AnalystConfig::default();
-        
+
         let runner = ParallelBenchmarkRunner::new(market_service, config);
-        
+
         // Just verify it compiles and constructs
-        let prices = runner.market_service.get_prices(vec!["TEST".to_string()]).await;
+        let prices = runner
+            .market_service
+            .get_prices(vec!["TEST".to_string()])
+            .await;
         assert!(prices.is_ok());
     }
 
@@ -221,7 +216,7 @@ mod tests {
             symbol: "TEST".to_string(),
             result: Err("Test error".to_string()),
         };
-        
+
         assert_eq!(result.symbol, "TEST");
         assert!(result.result.is_err());
     }

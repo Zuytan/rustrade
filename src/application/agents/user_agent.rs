@@ -1,6 +1,5 @@
-use crate::application::agents::analyst::AnalystCommand; // Added
 use crate::application::agents::sentinel::SentinelCommand;
-use crate::application::risk_management::commands::RiskCommand; // Added
+use crate::application::client::{SystemClient, SystemEvent};
 use crate::domain::listener::NewsEvent;
 use crate::domain::market::strategy_config::StrategyMode;
 use crate::domain::sentiment::Sentiment;
@@ -10,13 +9,13 @@ use crate::domain::trading::types::OrderSide;
 use crate::domain::trading::types::TradeProposal;
 use crate::domain::ui::I18nService;
 use chrono::{DateTime, Utc};
-use crossbeam_channel::Receiver;
 use rust_decimal::Decimal;
+
 use rust_decimal::prelude::ToPrimitive;
 use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::RwLock;
 use tracing::debug;
 
 /// Activity event type for the activity feed
@@ -59,14 +58,7 @@ impl ActivityEvent {
 }
 
 pub struct UserAgent {
-    pub log_rx: Receiver<String>,
-    pub candle_rx: broadcast::Receiver<Candle>,
-    pub sentiment_rx: broadcast::Receiver<Sentiment>,
-    pub news_rx: broadcast::Receiver<NewsEvent>,
-    pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
-    pub risk_cmd_tx: mpsc::Sender<RiskCommand>, // Added
-    pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>, // Added
-    pub proposal_tx: mpsc::Sender<TradeProposal>,
+    pub client: SystemClient,
     pub portfolio: Arc<RwLock<Portfolio>>,
 
     // UI State
@@ -142,17 +134,6 @@ pub struct StrategyInfo {
     pub current_price: Decimal,
 }
 
-pub struct UserAgentChannels {
-    pub log_rx: Receiver<String>,
-    pub candle_rx: broadcast::Receiver<Candle>,
-    pub sentiment_rx: broadcast::Receiver<Sentiment>,
-    pub news_rx: broadcast::Receiver<NewsEvent>,
-    pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
-    pub risk_cmd_tx: mpsc::Sender<RiskCommand>,
-    pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>,
-    pub proposal_tx: mpsc::Sender<TradeProposal>,
-}
-
 pub struct UserAgentConfig {
     pub strategy_mode: StrategyMode,
     pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
@@ -160,19 +141,12 @@ pub struct UserAgentConfig {
 
 impl UserAgent {
     pub fn new(
-        channels: UserAgentChannels,
+        client: SystemClient,
         portfolio: Arc<RwLock<Portfolio>>,
         config: UserAgentConfig,
     ) -> Self {
         Self {
-            log_rx: channels.log_rx,
-            candle_rx: channels.candle_rx,
-            sentiment_rx: channels.sentiment_rx,
-            news_rx: channels.news_rx,
-            sentinel_cmd_tx: channels.sentinel_cmd_tx,
-            risk_cmd_tx: channels.risk_cmd_tx,
-            analyst_cmd_tx: channels.analyst_cmd_tx,
-            proposal_tx: channels.proposal_tx,
+            client,
             portfolio,
             chat_history: Vec::new(),
             input_text: String::new(),
@@ -213,7 +187,7 @@ impl UserAgent {
         let parts: Vec<&str> = input.split_whitespace().collect();
         match parts.as_slice() {
             ["stop"] | ["halt"] | ["panic"] => {
-                let _ = self.sentinel_cmd_tx.try_send(SentinelCommand::Shutdown);
+                let _ = self.client.send_sentinel_command(SentinelCommand::Shutdown);
                 Some(self.i18n.t("cmd_shutdown_sent").to_string())
             }
             ["status"] => {
@@ -248,7 +222,7 @@ impl UserAgent {
                 timestamp: chrono::Utc::now().timestamp_millis(), // i64
             };
 
-            match self.proposal_tx.try_send(proposal) {
+            match self.client.submit_proposal(proposal) {
                 Ok(_) => Some(
                     self.i18n.tf(
                         "cmd_proposal_sent",
@@ -273,111 +247,100 @@ impl UserAgent {
         }
     }
 
-    /// Update internal state from incoming logs
+    /// Update internal state from incoming events
     pub fn update(&mut self) {
-        // 1. Logs
-        // Drain all pending logs
-        while let Ok(msg) = self.log_rx.try_recv() {
-            // Parse logs for activity events
-            self.parse_log_for_activity(&msg);
+        // Poll all events from the client
+        while let Some(event) = self.client.poll_next() {
+            match event {
+                SystemEvent::Log(msg) => {
+                    // Parse logs for activity events
+                    self.parse_log_for_activity(&msg);
 
-            // Extract signal information from SignalGenerator logs
-            // Format: "SignalGenerator [StrategyName]: SYMBOL - REASON"
-            if msg.contains("SignalGenerator")
-                && msg.contains(": ")
-                && let Some(signal_part) = msg.split("SignalGenerator").nth(1)
-            {
-                // Extract symbol and reason
-                if let Some(content) = signal_part.split(" - ").nth(1) {
-                    // Find the symbol (between]: and -)
-                    if let Some(symbol_section) = signal_part.split("]: ").nth(1)
-                        && let Some(symbol) = symbol_section.split(" - ").next()
+                    // Extract signal information from SignalGenerator logs
+                    if msg.contains("SignalGenerator")
+                        && msg.contains(": ")
+                        && let Some(signal_part) = msg.split("SignalGenerator").nth(1)
                     {
-                        // Update strategy info with the signal reason
-                        if let Some(info) = self.strategy_info.get_mut(symbol) {
-                            info.last_signal = Some(content.trim().to_string());
+                        // Extract symbol and reason
+                        if let Some(content) = signal_part.split(" - ").nth(1) {
+                            // Find the symbol (between]: and -)
+                            if let Some(symbol_section) = signal_part.split("]: ").nth(1)
+                                && let Some(symbol) = symbol_section.split(" - ").next()
+                            {
+                                // Update strategy info with the signal reason
+                                if let Some(info) = self.strategy_info.get_mut(symbol) {
+                                    info.last_signal = Some(content.trim().to_string());
+                                }
+                            }
                         }
+                    }
+
+                    // Add to chat history
+                    self.chat_history
+                        .push((self.i18n.t("sender_system").to_string(), msg));
+                }
+                SystemEvent::Sentiment(sentiment) => {
+                    debug!(
+                        "UserAgent: Received new sentiment: {} ({})",
+                        sentiment.value, sentiment.classification
+                    );
+                    self.market_sentiment = Some(sentiment);
+                }
+                SystemEvent::News(news) => {
+                    debug!(
+                        "UserAgent: Received news event: {} - {}",
+                        news.source, news.title
+                    );
+                    self.news_events.push_front(news);
+                    // Keep only last 10 news events
+                    while self.news_events.len() > 10 {
+                        self.news_events.pop_back();
+                    }
+                }
+                SystemEvent::Candle(candle) => {
+                    debug!(
+                        "UserAgent: Received candle for {} at price {}",
+                        candle.symbol, candle.close
+                    );
+                    let entry = self.market_data.entry(candle.symbol.clone()).or_default();
+                    entry.push(candle.clone());
+                    // Keep last 100 candles
+                    if entry.len() > 100 {
+                        entry.remove(0);
+                    }
+
+                    // Calculate SMAs and trend for this symbol
+                    let (fast_sma_value, slow_sma_value, trend) =
+                        self.calculate_trend(&candle.symbol);
+
+                    // Initialize or update strategy info
+                    if let Some(info) = self.strategy_info.get_mut(&candle.symbol) {
+                        // Update existing entry
+                        info.fast_sma = fast_sma_value;
+                        info.slow_sma = slow_sma_value;
+                        info.trend = trend;
+                        info.current_price = candle.close;
+                    } else {
+                        // Create new entry
+                        self.strategy_info.insert(
+                            candle.symbol.clone(),
+                            StrategyInfo {
+                                mode: self.strategy_mode.to_string(),
+                                fast_sma: fast_sma_value,
+                                slow_sma: slow_sma_value,
+                                last_signal: None,
+                                trend,
+                                current_price: candle.close,
+                            },
+                        );
                     }
                 }
             }
-
-            // Simple heuristic to extract "Sender" from log line if possible,
-            // otherwise default to "System"
-            // Log format assumed: "TIMESTAMP LEVEL TARGET: MESSAGE"
-            // We'll just display the raw message for now, or parse it lightly.
-            self.chat_history
-                .push((self.i18n.t("sender_system").to_string(), msg));
         }
 
-        // Keep history manageable
+        // Keep history manageable (outside the loop to do it once per update tick)
         if self.chat_history.len() > 1000 {
             self.chat_history.drain(0..100);
-        }
-
-        // 1.5 Sentiment Updates
-        if let Ok(sentiment) = self.sentiment_rx.try_recv() {
-            debug!(
-                "UserAgent: Received new sentiment: {} ({})",
-                sentiment.value, sentiment.classification
-            );
-            self.market_sentiment = Some(sentiment);
-        }
-
-        // 1.6 News Events
-        while let Ok(news) = self.news_rx.try_recv() {
-            debug!(
-                "UserAgent: Received news event: {} - {}",
-                news.source, news.title
-            );
-            self.news_events.push_front(news);
-            // Keep only last 10 news events
-            while self.news_events.len() > 10 {
-                self.news_events.pop_back();
-            }
-        }
-
-        // 2. Candles
-        while let Ok(candle) = self.candle_rx.try_recv() {
-            debug!(
-                "UserAgent: Received candle for {} at price {}",
-                candle.symbol, candle.close
-            );
-            let entry = self.market_data.entry(candle.symbol.clone()).or_default();
-            entry.push(candle.clone());
-            // Keep last 100 candles
-            if entry.len() > 100 {
-                entry.remove(0);
-            }
-            debug!(
-                "UserAgent: Market data now has {} candles for {}",
-                entry.len(),
-                entry.last().map(|c| c.symbol.as_str()).unwrap_or("UNKNOWN")
-            );
-
-            // Calculate SMAs and trend for this symbol
-            let (fast_sma_value, slow_sma_value, trend) = self.calculate_trend(&candle.symbol);
-
-            // Initialize or update strategy info
-            if let Some(info) = self.strategy_info.get_mut(&candle.symbol) {
-                // Update existing entry
-                info.fast_sma = fast_sma_value;
-                info.slow_sma = slow_sma_value;
-                info.trend = trend;
-                info.current_price = candle.close;
-            } else {
-                // Create new entry
-                self.strategy_info.insert(
-                    candle.symbol.clone(),
-                    StrategyInfo {
-                        mode: self.strategy_mode.to_string(),
-                        fast_sma: fast_sma_value,
-                        slow_sma: slow_sma_value,
-                        last_signal: None,
-                        trend,
-                        current_price: candle.close,
-                    },
-                );
-            }
         }
     }
 

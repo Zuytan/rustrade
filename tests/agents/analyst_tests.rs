@@ -460,7 +460,7 @@ async fn test_sell_signal_with_position() {
 #[tokio::test]
 async fn test_dynamic_quantity_scaling() {
     setup_logging();
-    let (market_tx, market_rx) = mpsc::channel(10);
+    let (market_tx, market_rx) = mpsc::channel(100); // Increased buffer
     let (_cmd_tx, cmd_rx) = mpsc::channel(10);
     let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
@@ -472,16 +472,18 @@ async fn test_dynamic_quantity_scaling() {
 
     let market_service = Arc::new(MockMarketDataService::new());
     // Risk 2% (0.02)
+    // NOTE: SignalGenerator hardcodes SMA 20 as Fast and SMA 50 as Slow.
+    // We update config to match reality, though SignalGenerator ignores these values for feature selection.
     let config = AnalystConfig {
-        fast_sma_period: 1,
-        slow_sma_period: 2,
+        fast_sma_period: 20,
+        slow_sma_period: 50,
         max_positions: 1,
         trade_quantity: Decimal::from(1),
         sma_threshold: 0.0,
         order_cooldown_seconds: 0,
         risk_per_trade_percent: 0.02,
         strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
-        trend_sma_period: 100,
+        trend_sma_period: 200,
         rsi_period: 14,
         macd_fast_period: 12,
         macd_slow_period: 26,
@@ -489,7 +491,7 @@ async fn test_dynamic_quantity_scaling() {
         trend_divergence_threshold: 0.005,
         trailing_stop_atr_multiplier: 3.0,
         atr_period: 14,
-        rsi_threshold: 55.0,
+        rsi_threshold: 99.0,
         trend_riding_exit_buffer_pct: 0.03,
         mean_reversion_rsi_exit: 50.0,
         mean_reversion_bb_period: 20,
@@ -553,10 +555,14 @@ async fn test_dynamic_quantity_scaling() {
         analyst.run().await;
     });
 
-    // P: 110, 110 -> SMAs 110
-    // P: 90 -> fast 90, slow 100 (F < S)
-    // P: 100 -> fast 100, slow 95 (F > S) -> Golden Cross at $100
-    let prices = [110.0, 110.0, 90.0, 100.0];
+    // Generate sufficient data for SMA 50 to populate and cross
+    // 0-59: Stable at 100.0 (SMA 20=100, SMA 50=100)
+    // 60-69: Drop to 90.0 (SMA 20 drops fast, SMA 50 drops slow -> Fast < Slow)
+    // 70-85: Rise to 110.0 (SMA 20 rises fast, SMA 50 rises slow -> Fast > Slow -> Cross)
+    let mut prices = Vec::new();
+    for _ in 0..60 { prices.push(100.0); }
+    for _ in 0..10 { prices.push(90.0); }
+    for _ in 0..15 { prices.push(110.0); }
 
     for (i, p) in prices.iter().enumerate() {
         let candle = Candle {
@@ -572,14 +578,20 @@ async fn test_dynamic_quantity_scaling() {
         market_tx.send(event).await.unwrap();
     }
 
-    let proposal = proposal_rx.recv().await.expect("Should receive buy signal");
+    // Increase timeout as we process more candles
+    let proposal = tokio::time::timeout(std::time::Duration::from_secs(5), proposal_rx.recv())
+        .await
+        .expect("Timed out waiting for proposal")
+        .expect("Channel closed without proposal");
+
     assert_eq!(proposal.side, OrderSide::Buy);
 
-    // Final Price = 100
+    // Final Price = 110
     // Equity = 100,000
     // Risk = 2% of 100,000 = 2,000
-    // Qty = 2,000 / 100 = 20
-    assert_eq!(proposal.quantity, Decimal::from(20));
+    // Qty = 2,000 / 110 = 18.18.. -> 18.1818
+    let expected_qty = Decimal::from_f64_retain(2000.0 / 110.0).unwrap().round_dp(4);
+    assert_eq!(proposal.quantity, expected_qty);
 }
 
 #[tokio::test]

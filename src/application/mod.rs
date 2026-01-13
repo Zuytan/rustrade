@@ -19,4 +19,5 @@ pub mod strategies;
 pub mod trading;
 
 // System orchestrator
+pub mod client;
 pub mod system;

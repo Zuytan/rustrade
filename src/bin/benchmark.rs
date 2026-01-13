@@ -259,15 +259,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parallel Mode: Process all symbols concurrently
     if parallel_mode && targets.len() > 1 && batch_days.is_none() {
-        use rustrade::application::optimization::parallel_benchmark::ParallelBenchmarkRunner;
         use rustrade::application::optimization::benchmark_metrics::BenchmarkTimer;
+        use rustrade::application::optimization::parallel_benchmark::ParallelBenchmarkRunner;
 
         println!("\n{}", "=".repeat(95));
         println!("🚀 PARALLEL BENCHMARK MODE - {} symbols", targets.len());
         println!("{}", "=".repeat(95));
 
-        let _timer = BenchmarkTimer::new(&format!("Parallel Benchmark ({} symbols)", targets.len()));
-        
+        let _timer =
+            BenchmarkTimer::new(&format!("Parallel Benchmark ({} symbols)", targets.len()));
+
         let runner = ParallelBenchmarkRunner::new(market_service.clone(), config.clone());
         let batch_results = runner.run_parallel(targets.clone(), start, final_end).await;
 
@@ -303,7 +304,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Note: Timer will automatically log completion time on drop
-        
     } else {
         // Sequential Mode: Process symbols one by one
         for target_symbol in targets {

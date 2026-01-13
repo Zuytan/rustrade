@@ -1,11 +1,11 @@
 use crate::application::agents::analyst::AnalystCommand;
 use crate::application::agents::analyst::AnalystConfig;
+use crate::application::client::SystemClient;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::application::risk_management::risk_manager::RiskConfig;
 use crate::domain::risk::risk_appetite::{RiskAppetite, RiskProfile};
 use crate::domain::ui::I18nService;
 use eframe::egui;
-use tokio::sync::mpsc::Sender;
 use tracing::error;
 
 /// Settings tab enumeration
@@ -253,8 +253,7 @@ pub fn render_settings_view(
     ui: &mut egui::Ui,
     panel: &mut SettingsPanel,
     i18n: &mut I18nService,
-    risk_tx: &Sender<RiskCommand>,
-    analyst_tx: &Sender<AnalystCommand>,
+    client: &SystemClient,
 ) {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
@@ -635,9 +634,9 @@ pub fn render_settings_view(
                         };
 
                         // Use the correct enum variant: UpdateConfig(Box<RiskConfig>)
-                        // Use try_send because we are in a synchronous UI context
-                        if let Err(e) =
-                            risk_tx.try_send(RiskCommand::UpdateConfig(Box::new(risk_config)))
+                        // Use try_send via client wrapper
+                        if let Err(e) = client
+                            .send_risk_command(RiskCommand::UpdateConfig(Box::new(risk_config)))
                         {
                             error!("Failed to send update config command: {}", e);
                         }
@@ -656,9 +655,9 @@ pub fn render_settings_view(
                             ..AnalystConfig::default()
                         };
 
-                        if let Err(e) =
-                            analyst_tx.try_send(AnalystCommand::UpdateConfig(Box::new(analyst_cfg)))
-                        {
+                        if let Err(e) = client.send_analyst_command(AnalystCommand::UpdateConfig(
+                            Box::new(analyst_cfg),
+                        )) {
                             error!("Failed to send analyst config update: {}", e);
                         }
                     }

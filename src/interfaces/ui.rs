@@ -124,8 +124,7 @@ impl eframe::App for UserAgent {
                         ui,
                         &mut self.settings_panel,
                         &mut self.i18n,
-                        &self.risk_cmd_tx,
-                        &self.analyst_cmd_tx,
+                        &self.client,
                     );
                 }
             });

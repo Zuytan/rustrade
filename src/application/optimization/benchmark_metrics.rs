@@ -121,11 +121,11 @@ impl BenchmarkStats {
             "Avg Time/Symbol:      {:.2}s",
             self.avg_time_per_symbol_seconds
         );
-        
+
         if let Some(speedup) = self.speedup_vs_sequential {
             println!("Speedup vs Sequential: {:.2}x 🚀", speedup);
         }
-        
+
         println!("{}", "=".repeat(80));
     }
 }
@@ -140,7 +140,7 @@ mod tests {
     fn test_benchmark_timer_elapsed() {
         let timer = BenchmarkTimer::new("test");
         thread::sleep(Duration::from_millis(100));
-        
+
         let elapsed = timer.elapsed_seconds();
         assert!(elapsed >= 0.1, "Timer should measure at least 100ms");
         assert!(elapsed < 0.2, "Timer should not measure more than 200ms");
@@ -150,7 +150,7 @@ mod tests {
     fn test_benchmark_timer_millis() {
         let timer = BenchmarkTimer::new("test");
         thread::sleep(Duration::from_millis(50));
-        
+
         let elapsed_ms = timer.elapsed_millis();
         assert!(elapsed_ms >= 50, "Timer should measure at least 50ms");
     }
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn test_benchmark_stats_creation() {
         let stats = BenchmarkStats::new(10, 8, 2, 120.0, Some(360.0));
-        
+
         assert_eq!(stats.total_symbols, 10);
         assert_eq!(stats.successful, 8);
         assert_eq!(stats.failed, 2);
@@ -170,14 +170,14 @@ mod tests {
     #[test]
     fn test_benchmark_stats_no_speedup() {
         let stats = BenchmarkStats::new(5, 5, 0, 60.0, None);
-        
+
         assert_eq!(stats.speedup_vs_sequential, None);
     }
 
     #[test]
     fn test_benchmark_stats_zero_symbols() {
         let stats = BenchmarkStats::new(0, 0, 0, 0.0, None);
-        
+
         assert_eq!(stats.avg_time_per_symbol_seconds, 0.0);
     }
 }

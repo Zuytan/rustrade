@@ -1,4 +1,6 @@
-use rustrade::application::agents::user_agent::{UserAgent, UserAgentChannels, UserAgentConfig};
+use rustrade::application::agents::user_agent::{UserAgent, UserAgentConfig};
+use rustrade::application::client::SystemClient;
+
 use rustrade::application::system::Application;
 use rustrade::config::Config;
 
@@ -123,24 +125,19 @@ fn main() -> anyhow::Result<()> {
     info!("System Connected. Launching UI.");
 
     // 5. Initialize User Agent
+    let client = SystemClient::new(system_handle, log_rx);
 
-    let channels = UserAgentChannels {
-        log_rx,
-        candle_rx: system_handle.candle_rx,
-        sentiment_rx: system_handle.sentiment_rx,
-        news_rx: system_handle.news_rx,
-        sentinel_cmd_tx: system_handle.sentinel_cmd_tx,
-        risk_cmd_tx: system_handle.risk_cmd_tx,
-        analyst_cmd_tx: system_handle.analyst_cmd_tx,
-        proposal_tx: system_handle.proposal_tx,
-    };
+    // Re-acquire handles needed for configuration
+    let strategy_mode = client.strategy_mode();
+    let risk_appetite = client.risk_appetite();
+    let portfolio = client.portfolio();
 
     let config = UserAgentConfig {
-        strategy_mode: system_handle.strategy_mode,
-        risk_appetite: system_handle.risk_appetite,
+        strategy_mode,
+        risk_appetite,
     };
 
-    let agent = UserAgent::new(channels, system_handle.portfolio, config);
+    let agent = UserAgent::new(client, portfolio, config);
 
     // 6. Run UI (Blocks Main Thread)
     let native_options = eframe::NativeOptions {
