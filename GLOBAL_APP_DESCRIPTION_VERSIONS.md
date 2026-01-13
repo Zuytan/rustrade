@@ -1,6 +1,18 @@
 # Rustrade - Historique des Versions
 
 
+## Version 0.67.1 (Janvier 2026) - SystemClient & Channel Refactoring
+
+- **Channel Management Refactoring**:
+  - **SystemClient**: Introduced `SystemClient` abstraction to encapsulate channel management and providing a unified interface for agents.
+  - **Simplified UserAgent**: `UserAgent` now uses `SystemClient` instead of managing 8+ individual channels, improving code readability and maintainability.
+  - **Clean main.rs**: Removed complex channel wiring in `main.rs`, replacing it with simple `SystemClient` initialization.
+  - **Type-Safe Commands**: Added typed methods (e.g., `send_risk_command`) to `SystemClient` to prevent channel mismatch errors.
+
+- **Verification**:
+  - Full regression suite passed (329+ tests).
+  - Fixed deadlock in `test_dynamic_quantity_scaling` by correcting test data depth for SMA 50.
+
 ## Version 0.67.0 (Janvier 2026) - Parallel Backtesting
 
 - **Performance**:

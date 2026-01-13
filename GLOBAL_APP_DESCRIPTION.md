@@ -8,7 +8,7 @@ The system prioritizes capital preservation through a "Paranoid" Risk Management
 ## 2. Core Architecture
 
 ### Agent System
-The application operates as a mesh of autonomous agents communicating via high-performance channels:
+The application operates as a mesh of autonomous agents communicating via high-performance channels, managed by a unified **`SystemClient`** facade:
 - **Sentinel Agent**: Ingests real-time market data (WebSockets/REST) and normalizes it.
 - **Analyst Agent**: The "Brain". Maintains symbol state, computes technical indicators, and generates trade proposals based on active strategies.
 - **Risk Manager**: The "Gatekeeper". Validates every proposal against a strict set of risk rules and portfolio limits.
