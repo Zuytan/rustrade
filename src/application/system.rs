@@ -462,7 +462,7 @@ impl Application {
             Mode::Binance => Some(Arc::new(BinanceSectorProvider)),
         };
 
-        let risk_config = crate::application::risk_management::risk_manager::RiskConfig {
+        let risk_config = crate::domain::risk::risk_config::RiskConfig {
             max_position_size_pct: self.config.max_position_size_pct,
             max_daily_loss_pct: self.config.max_daily_loss_pct,
             max_drawdown_pct: self.config.max_drawdown_pct,

@@ -560,9 +560,15 @@ async fn test_dynamic_quantity_scaling() {
     // 60-69: Drop to 90.0 (SMA 20 drops fast, SMA 50 drops slow -> Fast < Slow)
     // 70-85: Rise to 110.0 (SMA 20 rises fast, SMA 50 rises slow -> Fast > Slow -> Cross)
     let mut prices = Vec::new();
-    for _ in 0..60 { prices.push(100.0); }
-    for _ in 0..10 { prices.push(90.0); }
-    for _ in 0..15 { prices.push(110.0); }
+    for _ in 0..60 {
+        prices.push(100.0);
+    }
+    for _ in 0..10 {
+        prices.push(90.0);
+    }
+    for _ in 0..15 {
+        prices.push(110.0);
+    }
 
     for (i, p) in prices.iter().enumerate() {
         let candle = Candle {
@@ -590,7 +596,9 @@ async fn test_dynamic_quantity_scaling() {
     // Equity = 100,000
     // Risk = 2% of 100,000 = 2,000
     // Qty = 2,000 / 110 = 18.18.. -> 18.1818
-    let expected_qty = Decimal::from_f64_retain(2000.0 / 110.0).unwrap().round_dp(4);
+    let expected_qty = Decimal::from_f64_retain(2000.0 / 110.0)
+        .unwrap()
+        .round_dp(4);
     assert_eq!(proposal.quantity, expected_qty);
 }
 

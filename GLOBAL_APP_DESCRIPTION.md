@@ -64,7 +64,7 @@ Every trade proposal passes through a Chain of Responsibility validation:
 ## 5. User Interface & Experience
 
 ### Agentic Desktop UI
-Built with `egui` (Native) for low-latency performance:
+Built with `egui` (Native) for low-latency performance, featuring a modular component architecture:
 - **Dashboard**: Real-time visualization of Portfolio Value, Win Rate (Donut), P&L History (Chart), and Active Positions.
 - **Activity Feed**: Live log of system events, trades, and rejected proposals.
 - **News Feed**: Real-time stream of analyzed news with sentiment badges.

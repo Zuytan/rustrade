@@ -1,5 +1,10 @@
 # Rustrade - Historique des Versions
 
+## v0.67.2 - Refactoring: Risk Config & Dashboard
+- **RiskManager Refactoring**: Extracted `RiskConfig` and `RiskConfigError` into `src/domain/risk/risk_config.rs` to improve modularity and separation of concerns.
+- **Dashboard Decomposition**: Split `src/interfaces/dashboard.rs` into dedicated components (`metrics_card`, `activity_feed`, `news_feed`, `chart_panel`, `analytics_view`) within `src/interfaces/dashboard_components/`.
+- **Code Maintenance**: Cleaned up imports and improved project structure for better maintainability.
+
 
 ## Version 0.67.1 (Janvier 2026) - SystemClient & Channel Refactoring
 

@@ -24,7 +24,7 @@ pub enum RiskCommand {
     UpdateSentiment(Sentiment),
 
     /// Update risk configuration dynamically
-    UpdateConfig(Box<crate::application::risk_management::risk_manager::RiskConfig>),
+    UpdateConfig(Box<crate::domain::risk::risk_config::RiskConfig>),
 
     /// Manually trigger circuit breaker (Testing/Panic)
     CircuitBreakerTrigger,

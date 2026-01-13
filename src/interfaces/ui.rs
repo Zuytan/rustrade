@@ -1,6 +1,9 @@
 use crate::application::agents::user_agent::UserAgent;
+use crate::interfaces::dashboard_components::{
+    activity_feed::render_logs_panel, analytics_view::render_analytics_view,
+    chart_panel::render_chart_panel,
+};
 use eframe::egui;
-
 impl eframe::App for UserAgent {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // --- 0. Enhanced Theme Configuration ---
@@ -105,7 +108,7 @@ impl eframe::App for UserAgent {
                     crate::interfaces::dashboard::render_dashboard(ui, self);
                 }
                 crate::interfaces::ui_components::DashboardView::Charts => {
-                    crate::interfaces::dashboard::render_chart_panel(self, ui);
+                    render_chart_panel(self, ui);
                 }
                 crate::interfaces::ui_components::DashboardView::Portfolio => {
                     ui.centered_and_justified(|ui| {
@@ -117,7 +120,7 @@ impl eframe::App for UserAgent {
                     });
                 }
                 crate::interfaces::ui_components::DashboardView::Analytics => {
-                    crate::interfaces::dashboard::render_analytics_view(ui, self);
+                    render_analytics_view(ui, self);
                 }
                 crate::interfaces::ui_components::DashboardView::Settings => {
                     crate::interfaces::ui_components::render_settings_view(
@@ -130,7 +133,7 @@ impl eframe::App for UserAgent {
             });
 
         // Logs Panel (using extracted helper)
-        crate::interfaces::dashboard::render_logs_panel(self, ctx);
+        render_logs_panel(self, ctx);
     }
 }
 
