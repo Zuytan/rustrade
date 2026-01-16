@@ -559,16 +559,10 @@ async fn test_dynamic_quantity_scaling() {
     // 0-59: Stable at 100.0 (SMA 20=100, SMA 50=100)
     // 60-69: Drop to 90.0 (SMA 20 drops fast, SMA 50 drops slow -> Fast < Slow)
     // 70-85: Rise to 110.0 (SMA 20 rises fast, SMA 50 rises slow -> Fast > Slow -> Cross)
-    let mut prices = Vec::new();
-    for _ in 0..60 {
-        prices.push(100.0);
-    }
-    for _ in 0..10 {
-        prices.push(90.0);
-    }
-    for _ in 0..15 {
-        prices.push(110.0);
-    }
+    let mut prices = vec![100.0; 60];
+    prices.extend(vec![90.0; 10]);
+    prices.extend(vec![110.0; 15]);
+
 
     for (i, p) in prices.iter().enumerate() {
         let candle = Candle {

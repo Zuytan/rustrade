@@ -77,7 +77,16 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 
 ### Connectivity
 - **Broker Agnostic**: Seamlessly switches between Alpaca (Stocks/Crypto), Binance (Crypto), and Mock (Paper Trading).
+- **Modular Services**: Each broker infrastructure is organized into focused modules:
+  - **Binance**: `common.rs`, `market_data.rs`, `execution.rs`, `sector_provider.rs`, `websocket.rs`
+  - **Alpaca**: Similar modular structure for consistency
 - **Cost Modeling**: Unified `FeeModel` handles commission and slippage calculations for accurate simulation.
+
+### UI Architecture
+- **Component-Based**: UI is organized into reusable components:
+  - `dashboard_components/` - Portfolio, charts, positions display
+  - `settings_components/` - Risk settings, strategy parameters, language selection
+- **MVVM Pattern**: ViewModels separate UI rendering from business logic for better testability.
 
 ### Data Optimization
 - **Smart Caching**: `CandleRepository` caches historical data locally (SQLite). Services use an incremental load strategy to minimize API calls and vastly speed up startup (Warmup).
