@@ -1,5 +1,12 @@
 # Rustrade - Historique des Versions
 
+## Version 0.74.2 - Fix: Dashboard Settings Visibility (January 2026)
+
+### Bug Fixes
+- **Dashboard Metrics**: Fixed issue where the Dashboard displayed default risk scores instead of the persisted ones
+  - Updated `DashboardViewModel` to read directly from `SettingsPanel` state
+  - Aligned `UserAgent` internal state with persisted settings on startup
+
 ## Version 0.74.1 - Fix: Settings Sync on Startup (January 2026)
 
 ### Bug Fixes

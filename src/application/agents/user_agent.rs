@@ -168,6 +168,8 @@ impl UserAgent {
             info!("Successfully synced persisted settings to Analyst and RiskManager");
         }
 
+        let initial_risk_score = settings_panel.risk_score;
+
         Self {
             client,
             portfolio,
@@ -188,7 +190,7 @@ impl UserAgent {
             settings_panel,
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
             latency_ms: 12, // Default initial value
-            risk_score: config.risk_appetite.map(|r| r.score()).unwrap_or(5), // Use real risk score or default to 5 (balanced)
+            risk_score: initial_risk_score, // Use the score from the loaded settings
             market_sentiment: None,
             monte_carlo_result: None,
             correlation_matrix: std::collections::HashMap::new(),

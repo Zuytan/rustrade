@@ -98,14 +98,15 @@ impl DashboardViewModel {
     }
 
     pub fn get_risk_metrics(agent: &UserAgent) -> RiskMetrics {
-        let (label_key, color) = match agent.risk_score {
+        let risk_score = agent.settings_panel.risk_score;
+        let (label_key, color) = match risk_score {
             1..=3 => ("risk_low", egui::Color32::from_rgb(0, 230, 118)),
             4..=7 => ("risk_medium", egui::Color32::from_rgb(255, 212, 59)),
             _ => ("risk_high", egui::Color32::from_rgb(255, 23, 68)),
         };
 
         RiskMetrics {
-            score: agent.risk_score,
+            score: risk_score,
             label_key,
             color,
         }
