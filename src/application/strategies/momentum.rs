@@ -102,35 +102,25 @@ impl MomentumDivergenceStrategy {
         // Check for bullish divergence: lower low in price, higher low in RSI
         let price_lower_low = second_low < first_low * (1.0 - self.min_divergence_pct);
 
-        if !ctx.has_position && price_lower_low && current_rsi < 40.0 {
-            if let Some(past_rsi) = get_rsi_at(first_low_idx) {
-                let rsi_higher_low = current_rsi > past_rsi; // RSI making Higher Low
-
-                if rsi_higher_low {
-                    return Some(DivergenceType::Bullish {
-                        price_low1: first_low,
-                        price_low2: second_low,
-                        rsi_now: current_rsi,
-                    });
-                }
-            }
+        if !ctx.has_position && price_lower_low && current_rsi < 40.0 &&
+           let Some(past_rsi) = get_rsi_at(first_low_idx) && current_rsi > past_rsi {
+            return Some(DivergenceType::Bullish {
+                price_low1: first_low,
+                price_low2: second_low,
+                rsi_now: current_rsi,
+            });
         }
 
         // Check for bearish divergence: higher high in price, lower high in RSI
         let price_higher_high = second_high > first_high * (1.0 + self.min_divergence_pct);
 
-        if ctx.has_position && price_higher_high && current_rsi > 60.0 {
-            if let Some(past_rsi) = get_rsi_at(first_high_idx) {
-                let rsi_lower_high = current_rsi < past_rsi; // RSI making Lower High
-
-                if rsi_lower_high {
-                    return Some(DivergenceType::Bearish {
-                        price_high1: first_high,
-                        price_high2: second_high,
-                        rsi_now: current_rsi,
-                    });
-                }
-            }
+        if ctx.has_position && price_higher_high && current_rsi > 60.0 &&
+           let Some(past_rsi) = get_rsi_at(first_high_idx) && current_rsi < past_rsi {
+            return Some(DivergenceType::Bearish {
+                price_high1: first_high,
+                price_high2: second_high,
+                rsi_now: current_rsi,
+            });
         }
 
         None

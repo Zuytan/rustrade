@@ -36,9 +36,10 @@ src/
 1. `cargo fmt` - Format all code
 2. `cargo clippy --all-targets -- -D warnings` - Zero warnings
 3. `cargo test` - All tests must pass
-4. Update `GLOBAL_APP_DESCRIPTION.md` if features changed
-5. Update `GLOBAL_APP_DESCRIPTION_VERSIONS.md` with changelog
-6. Increment version in `Cargo.toml` (SemVer)
+4. `cargo check` - Verify compilation (including features)
+5. Update `GLOBAL_APP_DESCRIPTION.md` if features changed
+6. Update `GLOBAL_APP_DESCRIPTION_VERSIONS.md` with changelog
+7. Increment version in `Cargo.toml` (SemVer)
 
 ## Skills
 

@@ -70,8 +70,8 @@ impl SMCStrategy {
 
                     // Check subsequent candles
                     if i + 3 < candles.len() {
-                        for j in (i + 3)..candles.len() {
-                            let low = candles[j].low.to_f64().unwrap_or(0.0);
+                        for candle in candles.iter().skip(i + 3) {
+                            let low = candle.low.to_f64().unwrap_or(0.0);
                             if low < fvg_bottom {
                                 invalidated = true; // Price closed the gap completely and went lower
                                 break;
@@ -105,8 +105,8 @@ impl SMCStrategy {
                     let mut mitigated = false;
 
                     if i + 3 < candles.len() {
-                        for j in (i + 3)..candles.len() {
-                            let high = candles[j].high.to_f64().unwrap_or(0.0);
+                        for candle in candles.iter().skip(i + 3) {
+                            let high = candle.high.to_f64().unwrap_or(0.0);
                             if high > fvg_top {
                                 invalidated = true; // Price went above top of bearish gap
                                 break;

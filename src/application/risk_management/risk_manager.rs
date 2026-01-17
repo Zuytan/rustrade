@@ -12,8 +12,6 @@ use crate::application::risk_management::state::risk_state_manager::RiskStateMan
 use crate::domain::ports::SectorProvider;
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
 use crate::domain::repositories::RiskStateRepository;
-#[cfg(test)]
-use crate::domain::risk::filters::correlation_filter::CorrelationFilterConfig;
 use crate::domain::risk::filters::{
     RiskValidator, ValidationContext, ValidationResult,
     buying_power_validator::{BuyingPowerConfig, BuyingPowerValidator},
