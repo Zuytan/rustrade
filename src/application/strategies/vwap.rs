@@ -178,6 +178,11 @@ mod tests {
             timeframe_features: None,
             candles,
             rsi_history: VecDeque::new(),
+            // OFI fields (defaults for tests)
+            ofi_value: 0.0,
+            cumulative_delta: 0.0,
+            volume_profile: None,
+            ofi_history: VecDeque::new(),
         }
     }
 

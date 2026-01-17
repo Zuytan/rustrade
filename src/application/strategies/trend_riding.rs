@@ -69,6 +69,7 @@ mod tests {
     use super::*;
     use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
+    use std::collections::VecDeque;
 
     fn create_test_context(
         fast_sma: f64,
@@ -99,6 +100,11 @@ mod tests {
             timeframe_features: None,
             candles: std::collections::VecDeque::new(),
             rsi_history: std::collections::VecDeque::new(),
+            // OFI fields (defaults for tests)
+            ofi_value: 0.0,
+            cumulative_delta: 0.0,
+            volume_profile: None,
+            ofi_history: VecDeque::new(),
         }
     }
 

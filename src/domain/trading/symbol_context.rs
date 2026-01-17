@@ -42,6 +42,11 @@ pub struct SymbolContext {
     pub timeframe_features: HashMap<crate::domain::market::timeframe::Timeframe, FeatureSet>,
     pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     pub rsi_history: VecDeque<f64>,
+    // Order Flow Imbalance (OFI) state
+    pub ofi_value: f64,
+    pub cumulative_delta: crate::domain::market::order_flow::CumulativeDelta,
+    pub volume_profile: Option<crate::domain::market::order_flow::VolumeProfile>,
+    pub ofi_history: VecDeque<f64>,
 }
 
 impl SymbolContext {
@@ -82,6 +87,14 @@ impl SymbolContext {
             timeframe_features: HashMap::new(),
             enabled_timeframes,
             rsi_history: VecDeque::with_capacity(100),
+            // Initialize OFI state
+            ofi_value: 0.0,
+            cumulative_delta: crate::domain::market::order_flow::CumulativeDelta {
+                value: 0.0,
+                history: VecDeque::with_capacity(20),
+            },
+            volume_profile: None,
+            ofi_history: VecDeque::with_capacity(20),
         }
     }
 
@@ -108,6 +121,30 @@ impl SymbolContext {
                 self.rsi_history.pop_front();
             }
             self.rsi_history.push_back(rsi);
+        }
+
+        // Calculate Order Flow Imbalance (OFI)
+        let ofi = crate::domain::market::order_flow::calculate_ofi(&self.candle_history);
+        self.ofi_value = ofi.value;
+
+        // Update Cumulative Delta
+        crate::domain::market::order_flow::update_cumulative_delta(
+            &mut self.cumulative_delta,
+            ofi.value,
+        );
+
+        // Update OFI history
+        if self.ofi_history.len() >= 20 {
+            self.ofi_history.pop_front();
+        }
+        self.ofi_history.push_back(ofi.value);
+
+        // Build Volume Profile (every 10 candles to reduce overhead)
+        if self.candle_history.len() % 10 == 0 && self.candle_history.len() >= 20 {
+            self.volume_profile = Some(crate::domain::market::order_flow::build_volume_profile(
+                &self.candle_history,
+                100, // lookback
+            ));
         }
     }
 }

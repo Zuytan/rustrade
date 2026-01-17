@@ -1,3 +1,4 @@
+use crate::domain::market::order_flow::VolumeProfile;
 use crate::domain::market::timeframe::Timeframe;
 use crate::domain::trading::types::{Candle, OrderSide};
 use rust_decimal::Decimal;
@@ -51,6 +52,17 @@ pub struct AnalysisContext {
 
     // Historical Indicators (for Momentum/Divergence)
     pub rsi_history: VecDeque<f64>,
+
+    // Order Flow Imbalance (OFI) - Microstructure Analysis
+    /// Current Order Flow Imbalance value (-1.0 to +1.0)
+    /// Positive values indicate buying pressure, negative indicate selling pressure
+    pub ofi_value: f64,
+    /// Cumulative Delta - running sum of order flow imbalances
+    pub cumulative_delta: f64,
+    /// Volume Profile - distribution of volume by price level
+    pub volume_profile: Option<VolumeProfile>,
+    /// Historical OFI values for divergence detection (last 20 values)
+    pub ofi_history: VecDeque<f64>,
 
     // Multi-timeframe data (optional for backward compatibility)
     pub timeframe_features: Option<HashMap<Timeframe, TimeframeFeatures>>,

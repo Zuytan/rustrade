@@ -187,8 +187,10 @@ impl TradingStrategy for MomentumDivergenceStrategy {
 mod tests {
     use super::*;
     use crate::domain::trading::types::Candle;
+    use crate::domain::trading::types::OrderSide;
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal_macros::dec;
     use std::collections::VecDeque;
 
     fn mock_candle(high: f64, low: f64, close: f64) -> Candle {
@@ -210,7 +212,6 @@ mod tests {
         rsi_history: VecDeque<f64>,
         has_position: bool,
     ) -> AnalysisContext {
-        use rust_decimal_macros::dec;
         AnalysisContext {
             symbol: "TEST".to_string(),
             current_price: dec!(100.0),
@@ -227,12 +228,17 @@ mod tests {
             bb_lower: 0.0,
             bb_middle: 0.0,
             bb_upper: 0.0,
-            adx: 25.0,
+            adx: 0.0,
             has_position,
             timestamp: 0,
-            timeframe_features: None,
             candles,
             rsi_history,
+            // OFI fields (defaults for tests)
+            ofi_value: 0.0,
+            cumulative_delta: 0.0,
+            volume_profile: None,
+            ofi_history: VecDeque::new(),
+            timeframe_features: None,
         }
     }
 

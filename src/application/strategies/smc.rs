@@ -234,15 +234,39 @@ impl TradingStrategy for SMCStrategy {
                         mss == Some(OrderSide::Buy) || ctx.price_f64 > ctx.trend_sma;
 
                     if structure_bullish {
+                        // OFI Validation: Require positive OFI for bullish signals
+                        // This confirms institutional buying pressure
+                        if ctx.ofi_value < 0.2 {
+                            tracing::debug!(
+                                "SMC [{}]: Bullish FVG blocked - Weak OFI ({:.2} < 0.2)",
+                                ctx.symbol,
+                                ctx.ofi_value
+                            );
+                            return None;
+                        }
+
+                        // Cumulative Delta Confirmation (optional, increases confidence)
+                        let delta_confirms = ctx.cumulative_delta > 0.0;
+                        let confidence = if delta_confirms && ob.is_some() {
+                            0.95 // OFI + Delta + OB = highest confidence
+                        } else if delta_confirms || ob.is_some() {
+                            0.90 // OFI + (Delta OR OB)
+                        } else {
+                            0.85 // OFI only
+                        };
+
                         let reason = if let Some(ob_level) = ob {
                             format!(
-                                "SMC: Bullish FVG detected with OB at {:.2}. Structure is bullish.",
-                                ob_level
+                                "SMC: Bullish FVG + OB at {:.2} (OFI={:.2}, Delta={:.2})",
+                                ob_level, ctx.ofi_value, ctx.cumulative_delta
                             )
                         } else {
-                            "SMC: Bullish FVG detected. Structure is bullish.".to_string()
+                            format!(
+                                "SMC: Bullish FVG (OFI={:.2}, Delta={:.2})",
+                                ctx.ofi_value, ctx.cumulative_delta
+                            )
                         };
-                        return Some(Signal::buy(reason).with_confidence(0.85));
+                        return Some(Signal::buy(reason).with_confidence(confidence));
                     }
                 }
                 OrderSide::Sell => {
@@ -250,15 +274,39 @@ impl TradingStrategy for SMCStrategy {
                         mss == Some(OrderSide::Sell) || ctx.price_f64 < ctx.trend_sma;
 
                     if structure_bearish {
+                        // OFI Validation: Require negative OFI for bearish signals
+                        // This confirms institutional selling pressure
+                        if ctx.ofi_value > -0.2 {
+                            tracing::debug!(
+                                "SMC [{}]: Bearish FVG blocked - Weak OFI ({:.2} > -0.2)",
+                                ctx.symbol,
+                                ctx.ofi_value
+                            );
+                            return None;
+                        }
+
+                        // Cumulative Delta Confirmation
+                        let delta_confirms = ctx.cumulative_delta < 0.0;
+                        let confidence = if delta_confirms && ob.is_some() {
+                            0.95 // OFI + Delta + OB = highest confidence
+                        } else if delta_confirms || ob.is_some() {
+                            0.90 // OFI + (Delta OR OB)
+                        } else {
+                            0.85 // OFI only
+                        };
+
                         let reason = if let Some(ob_level) = ob {
                             format!(
-                                "SMC: Bearish FVG detected with OB at {:.2}. Structure is bearish.",
-                                ob_level
+                                "SMC: Bearish FVG + OB at {:.2} (OFI={:.2}, Delta={:.2})",
+                                ob_level, ctx.ofi_value, ctx.cumulative_delta
                             )
                         } else {
-                            "SMC: Bearish FVG detected. Structure is bearish.".to_string()
+                            format!(
+                                "SMC: Bearish FVG (OFI={:.2}, Delta={:.2})",
+                                ctx.ofi_value, ctx.cumulative_delta
+                            )
                         };
-                        return Some(Signal::sell(reason).with_confidence(0.85));
+                        return Some(Signal::sell(reason).with_confidence(confidence));
                     }
                 }
             }

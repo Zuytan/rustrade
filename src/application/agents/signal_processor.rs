@@ -41,6 +41,11 @@ impl SignalProcessor {
             context.last_macd_histogram,
             &context.candle_history,
             &context.rsi_history,
+            // Pass OFI values from context
+            context.ofi_value,
+            context.cumulative_delta.value,
+            context.volume_profile.clone(),
+            &context.ofi_history,
         )
     }
 

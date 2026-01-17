@@ -24,7 +24,7 @@ impl SignalGenerator {
 
     #[allow(clippy::too_many_arguments)]
     pub fn generate_signal(
-        &mut self,
+        &self,
         symbol: &str,
         price: Decimal,
         timestamp: i64,
@@ -35,6 +35,11 @@ impl SignalGenerator {
         previous_macd_histogram: Option<f64>, // Previous MACD histogram for rising/falling detection
         candle_history: &VecDeque<crate::domain::trading::types::Candle>,
         rsi_history: &VecDeque<f64>,
+        // OFI parameters
+        ofi_value: f64,
+        cumulative_delta: f64,
+        volume_profile: Option<crate::domain::market::order_flow::VolumeProfile>,
+        ofi_history: &VecDeque<f64>,
     ) -> Option<OrderSide> {
         let price_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&price).unwrap_or(0.0);
 
@@ -60,6 +65,11 @@ impl SignalGenerator {
             timestamp,
             candles: candle_history.clone(),
             rsi_history: rsi_history.clone(),
+            // OFI fields from parameters
+            ofi_value,
+            cumulative_delta,
+            volume_profile,
+            ofi_history: ofi_history.clone(),
             timeframe_features: None, // Will be populated by Analyst when multi-timeframe is enabled
         };
 

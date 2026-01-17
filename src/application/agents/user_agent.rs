@@ -189,7 +189,7 @@ impl UserAgent {
             i18n,
             settings_panel,
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
-            latency_ms: 12, // Default initial value
+            latency_ms: 12,                 // Default initial value
             risk_score: initial_risk_score, // Use the score from the loaded settings
             market_sentiment: None,
             monte_carlo_result: None,
