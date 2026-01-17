@@ -106,6 +106,7 @@ For a new feature:
 | New quality rule | `critical-review/SKILL.md` |
 | New validation step | `testing/SKILL.md` |
 | New UI component | `ui-design/SKILL.md` |
+| New system feature | `spec-management/SKILL.md` (Update `specs/`) |
 
 ## Documentation conventions
 

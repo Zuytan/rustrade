@@ -8,6 +8,15 @@ Rustrade is a high-performance algorithmic trading bot written in Rust.
 
 **Agents**: Sentinel (data), Analyst (brain), RiskManager (gatekeeper), Executor (orders), Listener (news), User (UI).
 
+## Agent Protocol (MANDATORY)
+
+To ensure consistency, every Agent **MUST** start a task by:
+1. **Acknowledging** the active context (Agentic Mode).
+2. **Citing** the Workflow and Skills being applied.
+
+**Example Response Start:**
+> "I will proceed using the `/implement` workflow and the `rust-trading` skill."
+
 ## Communication Guidelines
 
 - **Language**: Always communicate in the language of the development environment
@@ -56,6 +65,7 @@ This project uses modular skills in `.agent/skills/`.
 | `benchmarking` | Strategy validation, performance metrics, backtesting |
 | `trading-best-practices` | Before new strategies, quarterly reviews, staying current |
 | `ui-design` | Creating/modifying UI components, layouts, styling |
+| `spec-management` | Impact analysis, architecture constraints, updating specs |
 
 ## Workflows
 
