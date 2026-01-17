@@ -65,19 +65,19 @@ impl PositionManager {
     pub fn check_trailing_stop(
         &mut self,
         symbol: &str,
-        price: f64,
-        atr: f64,
-        multiplier: f64,
+        price: rust_decimal::Decimal,
+        atr: rust_decimal::Decimal,
+        multiplier: rust_decimal::Decimal,
     ) -> Option<OrderSide> {
         if self.pending_order == Some(OrderSide::Sell) {
             return None;
         }
 
-        if atr > 0.0
+        if atr > rust_decimal::Decimal::ZERO
             && let Some(trigger) = self.trailing_stop.on_price_update(price, atr, multiplier)
         {
             info!(
-                "PositionManager: Trailing stop HIT for {} at {:.2} (Stop: {:.2}, Entry: {:.2})",
+                "PositionManager: Trailing stop HIT for {} at {} (Stop: {}, Entry: {})",
                 symbol, trigger.exit, trigger.stop, trigger.entry
             );
             return Some(OrderSide::Sell);

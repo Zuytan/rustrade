@@ -318,7 +318,9 @@ mod tests {
         // Activate trailing stop
         context.position_manager.trailing_stop =
             crate::application::risk_management::trailing_stops::StopState::on_buy(
-                50000.0, 100.0, 2.0,
+                rust_decimal::Decimal::from(50000),
+                rust_decimal::Decimal::from(100),
+                rust_decimal::Decimal::from(2),
             );
 
         let signal = Some(OrderSide::Sell);
@@ -337,7 +339,9 @@ mod tests {
         // Activate trailing stop
         context.position_manager.trailing_stop =
             crate::application::risk_management::trailing_stops::StopState::on_buy(
-                50000.0, 100.0, 2.0,
+                rust_decimal::Decimal::from(50000),
+                rust_decimal::Decimal::from(100),
+                rust_decimal::Decimal::from(2),
             );
 
         let signal = Some(OrderSide::Sell);

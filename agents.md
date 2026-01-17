@@ -53,6 +53,7 @@ This project uses modular skills in `.agent/skills/`.
 | `implementation` | TDD workflow for new features |
 | `critical-review` | After implementation, self-critique of work quality |
 | `benchmarking` | Strategy validation, performance metrics, backtesting |
+| `trading-best-practices` | Before new strategies, quarterly reviews, staying current |
 
 ## Workflows
 

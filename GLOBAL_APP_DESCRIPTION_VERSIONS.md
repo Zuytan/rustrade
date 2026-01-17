@@ -1,5 +1,48 @@
 # Rustrade - Historique des Versions
 
+## Version 0.71.0 - Type Safety: Decimal Precision (January 2026)
+
+### Financial Precision Improvements
+- **Trailing Stops Decimal Conversion**: Converted `trailing_stops.rs` from `f64` to `Decimal`
+  - Eliminated all floating-point precision issues in stop loss calculations
+  - Updated `StopState` enum and `TriggerEvent` struct to use `Decimal`
+  - Safe conversion using `from_f64_retain()` with fallbacks for ATR values
+  - Updated 6 call sites across `analyst.rs`, `signal_processor.rs`, and `position_manager.rs`
+  - All 8 trailing stop tests now use `Decimal` literals
+
+### Code Quality
+- Removed unused `price_f64` variable in `analyst.rs`
+- Maintained 0 clippy warnings
+- All 313 tests passing (292 lib + 13 risk + 8 trailing stops)
+
+### Technical Impact
+- **Precision**: No more f64 → Decimal → f64 round-trip conversions
+- **Safety**: Stop prices maintain full decimal precision
+- **Consistency**: All financial calculations now use `Decimal` throughout
+
+
+## Version 0.70.0 - Code Quality & Maintainability (January 2026)
+
+### Code Refactoring
+- **RiskManager Decomposition**: Extracted 963 lines of embedded tests to `tests/risk/risk_manager_tests.rs`
+  - Reduced `risk_manager.rs` from 1,740 to 777 lines (-55%)
+  - Improved file maintainability and readability
+  - All 11 integration tests preserved and passing
+- **Production Safety**: Removed 2 `.unwrap()` calls from `chart_panel.rs`
+  - Line 19: Safe tab selection with `map_or` fallback
+  - Line 108: Safe timestamp conversion with `unwrap_or_else(|| Utc::now())`
+  - Eliminates potential panic risks in UI rendering
+
+### Quality Metrics
+- ✅ 305 tests passing (292 lib + 13 risk integration tests)
+- ✅ 0 clippy warnings (maintained clean state)
+- ✅ All code formatted with `cargo fmt`
+
+### Technical Debt Addressed
+- **P1 Priority**: God class anti-pattern in RiskManager partially resolved
+- **P2 Priority**: Production unwrap() calls eliminated
+
+
 ## Version 0.69.0 (Janvier 2026) - Code Organization Refactoring
 
 - **Binance Infrastructure Decomposition**:

@@ -16,8 +16,10 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
         });
     } else {
         // Ensure we have a selected tab
-        if agent.selected_chart_tab.is_none()
-            || !symbols.contains(agent.selected_chart_tab.as_ref().unwrap())
+        if agent
+            .selected_chart_tab
+            .as_ref()
+            .is_none_or(|tab| !symbols.contains(tab))
         {
             agent.selected_chart_tab = Some(symbols[0].clone());
         }
@@ -107,7 +109,10 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                     .show_grid([true, true])
                     .legend(Legend::default())
                     .x_axis_formatter(|mark, _range| {
-                        let dt = Utc.timestamp_opt(mark.value as i64, 0).unwrap();
+                        let dt = Utc
+                            .timestamp_opt(mark.value as i64, 0)
+                            .single()
+                            .unwrap_or_else(Utc::now);
                         dt.format("%H:%M:%S").to_string()
                     })
                     .show(ui, |plot_ui| {

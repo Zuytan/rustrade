@@ -15,17 +15,24 @@
 //!
 //! ```rust,no_run
 //! use rustrade::application::risk_management::trailing_stops::StopState;
+//! use rust_decimal::Decimal;
 //!
-//! let mut stop = StopState::on_buy(100.0, 2.0, 3.0); // price=100, ATR=2, multiplier=3
+//! let mut stop = StopState::on_buy(
+//!     Decimal::from(100),
+//!     Decimal::from(2),
+//!     Decimal::from(3)
+//! ); // price=100, ATR=2, multiplier=3
 //!
 //! // Price rises to 110
-//! let trigger = stop.on_price_update(110.0, 2.0, 3.0);
+//! let trigger = stop.on_price_update(Decimal::from(110), Decimal::from(2), Decimal::from(3));
 //! assert!(trigger.is_none()); // Stop raised, not triggered
 //!
 //! // Price drops below stop
-//! let trigger = stop.on_price_update(103.0, 2.0, 3.0);
+//! let trigger = stop.on_price_update(Decimal::from(103), Decimal::from(2), Decimal::from(3));
 //! assert!(trigger.is_some()); // Stop triggered at 104
 //! ```
+
+use rust_decimal::Decimal;
 
 /// State machine for trailing stop loss management
 #[derive(Debug, Clone, PartialEq)]
@@ -34,30 +41,30 @@ pub enum StopState {
     NoPosition,
     /// Active trailing stop with position
     ActiveStop {
-        entry_price: f64,
-        peak_price: f64,
-        stop_price: f64,
-        atr: f64,
+        entry_price: Decimal,
+        peak_price: Decimal,
+        stop_price: Decimal,
+        atr: Decimal,
     },
     /// Stop was triggered
     Triggered {
-        entry_price: f64,
-        exit_price: f64,
-        stop_price: f64,
+        entry_price: Decimal,
+        exit_price: Decimal,
+        stop_price: Decimal,
     },
 }
 
 /// Event emitted when a trailing stop is triggered
 #[derive(Debug, Clone)]
 pub struct TriggerEvent {
-    pub entry: f64,
-    pub exit: f64,
-    pub stop: f64,
+    pub entry: Decimal,
+    pub exit: Decimal,
+    pub stop: Decimal,
 }
 
 impl StopState {
     /// Create a new active stop when buying
-    pub fn on_buy(price: f64, atr: f64, multiplier: f64) -> Self {
+    pub fn on_buy(price: Decimal, atr: Decimal, multiplier: Decimal) -> Self {
         let stop_price = price - (atr * multiplier);
         StopState::ActiveStop {
             entry_price: price,
@@ -71,9 +78,9 @@ impl StopState {
     /// Returns Some(TriggerEvent) if stop is hit
     pub fn on_price_update(
         &mut self,
-        price: f64,
-        atr: f64,
-        multiplier: f64,
+        price: Decimal,
+        atr: Decimal,
+        multiplier: Decimal,
     ) -> Option<TriggerEvent> {
         match self {
             StopState::ActiveStop {
@@ -121,7 +128,7 @@ impl StopState {
     }
 
     /// Get current stop price if active
-    pub fn get_stop_price(&self) -> Option<f64> {
+    pub fn get_stop_price(&self) -> Option<Decimal> {
         match self {
             StopState::ActiveStop { stop_price, .. } => Some(*stop_price),
             _ => None,
@@ -129,7 +136,7 @@ impl StopState {
     }
 
     /// Get peak price if active
-    pub fn get_peak_price(&self) -> Option<f64> {
+    pub fn get_peak_price(&self) -> Option<Decimal> {
         match self {
             StopState::ActiveStop { peak_price, .. } => Some(*peak_price),
             _ => None,
@@ -143,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_on_buy_creates_active_stop() {
-        let stop = StopState::on_buy(100.0, 2.0, 3.0);
+        let stop = StopState::on_buy(Decimal::from(100), Decimal::from(2), Decimal::from(3));
 
         match stop {
             StopState::ActiveStop {
@@ -152,10 +159,10 @@ mod tests {
                 stop_price,
                 atr,
             } => {
-                assert_eq!(entry_price, 100.0);
-                assert_eq!(peak_price, 100.0);
-                assert_eq!(stop_price, 94.0); // 100 - (2 * 3)
-                assert_eq!(atr, 2.0);
+                assert_eq!(entry_price, Decimal::from(100));
+                assert_eq!(peak_price, Decimal::from(100));
+                assert_eq!(stop_price, Decimal::from(94)); // 100 - (2 * 3)
+                assert_eq!(atr, Decimal::from(2));
             }
             _ => panic!("Should be ActiveStop"),
         }
@@ -163,8 +170,8 @@ mod tests {
 
     #[test]
     fn test_price_update_raises_stop() {
-        let mut stop = StopState::on_buy(100.0, 2.0, 3.0);
-        let trigger = stop.on_price_update(110.0, 2.0, 3.0);
+        let mut stop = StopState::on_buy(Decimal::from(100), Decimal::from(2), Decimal::from(3));
+        let trigger = stop.on_price_update(Decimal::from(110), Decimal::from(2), Decimal::from(3));
 
         assert!(trigger.is_none());
         match stop {
@@ -173,8 +180,8 @@ mod tests {
                 stop_price,
                 ..
             } => {
-                assert_eq!(peak_price, 110.0);
-                assert_eq!(stop_price, 104.0); // 110 - (2 * 3)
+                assert_eq!(peak_price, Decimal::from(110));
+                assert_eq!(stop_price, Decimal::from(104)); // 110 - (2 * 3)
             }
             _ => panic!("Should still be ActiveStop"),
         }
@@ -182,11 +189,11 @@ mod tests {
 
     #[test]
     fn test_price_update_no_change_when_below_peak() {
-        let mut stop = StopState::on_buy(100.0, 2.0, 3.0);
-        stop.on_price_update(110.0, 2.0, 3.0); // Raise to 110
+        let mut stop = StopState::on_buy(Decimal::from(100), Decimal::from(2), Decimal::from(3));
+        stop.on_price_update(Decimal::from(110), Decimal::from(2), Decimal::from(3)); // Raise to 110
 
         // Price drops but not below stop
-        let trigger = stop.on_price_update(107.0, 2.0, 3.0);
+        let trigger = stop.on_price_update(Decimal::from(107), Decimal::from(2), Decimal::from(3));
         assert!(trigger.is_none());
 
         match stop {
@@ -195,8 +202,8 @@ mod tests {
                 stop_price,
                 ..
             } => {
-                assert_eq!(peak_price, 110.0); // Peak unchanged
-                assert_eq!(stop_price, 104.0); // Stop unchanged
+                assert_eq!(peak_price, Decimal::from(110)); // Peak unchanged
+                assert_eq!(stop_price, Decimal::from(104)); // Stop unchanged
             }
             _ => panic!("Should still be ActiveStop"),
         }
@@ -204,23 +211,23 @@ mod tests {
 
     #[test]
     fn test_stop_triggered() {
-        let mut stop = StopState::on_buy(100.0, 2.0, 3.0);
-        stop.on_price_update(110.0, 2.0, 3.0); // Raise to 110, stop at 104
+        let mut stop = StopState::on_buy(Decimal::from(100), Decimal::from(2), Decimal::from(3));
+        stop.on_price_update(Decimal::from(110), Decimal::from(2), Decimal::from(3)); // Raise to 110, stop at 104
 
-        let trigger = stop.on_price_update(103.0, 2.0, 3.0); // Below stop (104)
+        let trigger = stop.on_price_update(Decimal::from(103), Decimal::from(2), Decimal::from(3)); // Below stop (104)
         assert!(trigger.is_some());
 
         let event = trigger.unwrap();
-        assert_eq!(event.entry, 100.0);
-        assert_eq!(event.exit, 103.0);
-        assert_eq!(event.stop, 104.0);
+        assert_eq!(event.entry, Decimal::from(100));
+        assert_eq!(event.exit, Decimal::from(103));
+        assert_eq!(event.stop, Decimal::from(104));
 
         assert!(matches!(stop, StopState::Triggered { .. }));
     }
 
     #[test]
     fn test_on_sell_resets() {
-        let mut stop = StopState::on_buy(100.0, 2.0, 3.0);
+        let mut stop = StopState::on_buy(Decimal::from(100), Decimal::from(2), Decimal::from(3));
         stop.on_sell();
         assert!(matches!(stop, StopState::NoPosition));
     }
@@ -230,7 +237,7 @@ mod tests {
         let mut stop = StopState::NoPosition;
         assert!(!stop.is_active());
 
-        stop = StopState::on_buy(100.0, 2.0, 3.0);
+        stop = StopState::on_buy(Decimal::from(100), Decimal::from(2), Decimal::from(3));
         assert!(stop.is_active());
 
         stop.on_sell();
@@ -242,14 +249,14 @@ mod tests {
         let mut stop = StopState::NoPosition;
         assert_eq!(stop.get_stop_price(), None);
 
-        stop = StopState::on_buy(100.0, 2.0, 3.0);
-        assert_eq!(stop.get_stop_price(), Some(94.0));
+        stop = StopState::on_buy(Decimal::from(100), Decimal::from(2), Decimal::from(3));
+        assert_eq!(stop.get_stop_price(), Some(Decimal::from(94)));
     }
 
     #[test]
     fn test_no_update_when_no_position() {
         let mut stop = StopState::NoPosition;
-        let trigger = stop.on_price_update(100.0, 2.0, 3.0);
+        let trigger = stop.on_price_update(Decimal::from(100), Decimal::from(2), Decimal::from(3));
         assert!(trigger.is_none());
         assert!(matches!(stop, StopState::NoPosition));
     }

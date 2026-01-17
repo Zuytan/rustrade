@@ -563,7 +563,6 @@ async fn test_dynamic_quantity_scaling() {
     prices.extend(vec![90.0; 10]);
     prices.extend(vec![110.0; 15]);
 
-
     for (i, p) in prices.iter().enumerate() {
         let candle = Candle {
             symbol: "AAPL".to_string(),

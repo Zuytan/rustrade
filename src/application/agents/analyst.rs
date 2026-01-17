@@ -631,14 +631,17 @@ impl Analyst {
             && let Some(portfolio) = portfolio_data
             && let Some(pos) = portfolio.positions.get(&symbol)
         {
-            let entry_price = pos.average_price.to_f64().unwrap_or(price_f64);
-            let atr = context.last_features.atr.unwrap_or(1.0);
+            let entry_price = pos.average_price;
+            let atr = rust_decimal::Decimal::from_f64_retain(context.last_features.atr.unwrap_or(1.0))
+                .unwrap_or(rust_decimal::Decimal::ONE);
+            let multiplier = rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
+                .unwrap_or(rust_decimal::Decimal::from(3));
 
             context.position_manager.trailing_stop =
                 crate::application::risk_management::trailing_stops::StopState::on_buy(
                     entry_price,
                     atr,
-                    context.config.trailing_stop_atr_multiplier,
+                    multiplier,
                 );
 
             if let Some(stop_price) = context.position_manager.trailing_stop.get_stop_price() {
@@ -650,11 +653,16 @@ impl Analyst {
         }
 
         // 4. Check Trailing Stop (Priority Exit) via PositionManager
+        let atr_decimal = rust_decimal::Decimal::from_f64_retain(context.last_features.atr.unwrap_or(0.0))
+            .unwrap_or(rust_decimal::Decimal::ZERO);
+        let multiplier_decimal = rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
+            .unwrap_or(rust_decimal::Decimal::from(3));
+
         let mut signal = context.position_manager.check_trailing_stop(
             &symbol,
-            price_f64,
-            context.last_features.atr.unwrap_or(0.0),
-            context.config.trailing_stop_atr_multiplier,
+            price,
+            atr_decimal,
+            multiplier_decimal,
         );
         let trailing_stop_triggered = signal.is_some();
 
@@ -743,10 +751,15 @@ impl Analyst {
                             && let Some(atr) = context.last_features.atr
                             && atr > 0.0
                         {
+                            let atr_decimal = rust_decimal::Decimal::from_f64_retain(atr)
+                                .unwrap_or(rust_decimal::Decimal::ONE);
+                            let multiplier_decimal = rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
+                                .unwrap_or(rust_decimal::Decimal::from(3));
+                            
                             context.position_manager.trailing_stop = StopState::on_buy(
-                                price_f64,
-                                atr,
-                                context.config.trailing_stop_atr_multiplier,
+                                price,
+                                atr_decimal,
+                                multiplier_decimal,
                             );
                         }
                     }
@@ -911,17 +924,24 @@ impl Analyst {
 
                         // Manually update StopState
                         if let crate::application::risk_management::trailing_stops::StopState::ActiveStop { stop_price, .. } = &mut context.position_manager.trailing_stop {
-                                     let new_stop = price_f64 - (atr * tight_multiplier.max(0.5)); // Ensure valid mult
-                                     if new_stop > *stop_price {
-                                         *stop_price = new_stop;
-                                         info!("Analyst: News TIGHTENED Trailing Stop for {} to {:.2} (Locking Gains)", signal.symbol, new_stop);
-                                     }
-                                 } else {
-                                     // Create new tight stop
-                                     context.position_manager.trailing_stop =
-                                        crate::application::risk_management::trailing_stops::StopState::on_buy(price_f64, atr, tight_multiplier.max(0.5));
-                                     info!("Analyst: News CREATED Tight Trailing Stop for {}", signal.symbol);
-                                 }
+                                      let new_stop_f64 = price_f64 - (atr * tight_multiplier.max(0.5));
+                                      let new_stop = rust_decimal::Decimal::from_f64_retain(new_stop_f64)
+                                          .unwrap_or(*stop_price);
+                                      if new_stop > *stop_price {
+                                          *stop_price = new_stop;
+                                          info!("Analyst: News TIGHTENED Trailing Stop for {} to {} (Locking Gains)", signal.symbol, new_stop);
+                                      }
+                                  } else {
+                                      // Create new tight stop
+                                      let atr_decimal = rust_decimal::Decimal::from_f64_retain(atr)
+                                          .unwrap_or(rust_decimal::Decimal::ONE);
+                                      let tight_mult_decimal = rust_decimal::Decimal::from_f64_retain(tight_multiplier.max(0.5))
+                                          .unwrap_or(rust_decimal::Decimal::ONE);
+                                      
+                                      context.position_manager.trailing_stop =
+                                         crate::application::risk_management::trailing_stops::StopState::on_buy(price, atr_decimal, tight_mult_decimal);
+                                      info!("Analyst: News CREATED Tight Trailing Stop for {}", signal.symbol);
+                                  }
                     } else {
                         // SCENARIO 2: Losing or Flat Position -> Panic Sell / Damage Control
                         info!(
