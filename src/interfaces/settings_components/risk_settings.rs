@@ -60,6 +60,24 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
                     ); // Larger
                 });
 
+                ui.add_space(20.0);
+
+                // Show selected strategy
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Strategy:")
+                            .size(18.0)
+                            .color(DesignSystem::TEXT_PRIMARY),
+                    );
+                    let strategy_name = format!("{:?}", panel.selected_strategy);
+                    ui.label(
+                        egui::RichText::new(strategy_name)
+                            .strong()
+                            .size(18.0)
+                            .color(DesignSystem::ACCENT_PRIMARY),
+                    );
+                });
+
                 ui.add_space(30.0); // More space
 
                 // Make derived stats prominent

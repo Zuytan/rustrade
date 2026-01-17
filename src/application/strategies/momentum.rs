@@ -187,7 +187,6 @@ impl TradingStrategy for MomentumDivergenceStrategy {
 mod tests {
     use super::*;
     use crate::domain::trading::types::Candle;
-    use crate::domain::trading::types::OrderSide;
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
     use rust_decimal_macros::dec;

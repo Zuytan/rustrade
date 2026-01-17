@@ -34,7 +34,8 @@ fn test_serialization_roundtrip() {
             consecutive_loss_limit: "4".to_string(),
         },
         analyst: AnalystSettings {
-            fast_sma_period: "8".to_string(),
+            strategy_mode: "RegimeAdaptive".to_string(),
+            fast_sma_period: "10".to_string(),
             slow_sma_period: "21".to_string(),
             rsi_period: "14".to_string(),
             rsi_threshold: "75.0".to_string(),

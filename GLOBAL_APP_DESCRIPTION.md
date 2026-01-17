@@ -70,8 +70,8 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 - **Activity Feed**: Live log of system events, trades, and rejected proposals.
 - **News Feed**: Real-time stream of analyzed news with sentiment badges.
 - **Configuration Panel**:
-  - **Simple Mode**: Slider for Risk Score.
-  - **Advanced Mode**: Granular control over SMA periods, RSI thresholds, etc.
+  - **Simple Mode**: Risk Score slider with **automatic strategy selection** (Risk 1-3→Standard, 4-6→RegimeAdaptive, 7-10→SMC).
+  - **Advanced Mode**: Granular control over SMA periods, RSI thresholds, manual strategy override.
 - **Internationalization (I18n)**: Full support for English and French, with dynamic language switching.
 
 ## 6. Infrastructure & Data

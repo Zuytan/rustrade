@@ -14,6 +14,7 @@ pub struct RiskSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AnalystSettings {
+    pub strategy_mode: String, // Strategy selected based on risk
     pub fast_sma_period: String,
     pub slow_sma_period: String,
     pub rsi_period: String,

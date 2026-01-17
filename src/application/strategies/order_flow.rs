@@ -1,7 +1,6 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::market::order_flow::detect_stacked_imbalances;
 
-
 /// Order Flow Imbalance (OFI) Strategy
 ///
 /// Trades based on institutional order flow patterns:
@@ -125,6 +124,7 @@ impl TradingStrategy for OrderFlowStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::trading::types::OrderSide;
     use crate::domain::market::order_flow::VolumeProfile;
     use rust_decimal_macros::dec;
     use std::collections::{HashMap, VecDeque};

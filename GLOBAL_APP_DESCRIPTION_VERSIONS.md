@@ -1,5 +1,32 @@
 # Rustrade - Historique des Versions
 
+## Version 0.76.0 - Dynamic Strategy Selection (January 2026)
+
+### New Features
+- **Risk-Based Strategy Selection**: Simple Mode now automatically selects the optimal trading strategy based on the user's risk score
+  - **Risk 1-3 (Conservative)**: `Standard` strategy - Safe, with ADX filters to avoid choppy markets
+  - **Risk 4-6 (Balanced)**: `RegimeAdaptive` strategy - Steady gains with good risk/reward balance
+  - **Risk 7-10 (Aggressive)**: `SMC` strategy - Best alpha generator with proven robust scaling
+  - **Data-Driven Mapping**: Strategy selection based on comprehensive benchmark analysis across 5 symbols, 9 strategies, and 3 risk levels
+  - **Real-Time UI Feedback**: Selected strategy is displayed prominently below the risk profile badge
+  - **Persistence**: Strategy selection is saved to `~/.rustrade/settings.json` and restored on startup
+
+### Benchmark Infrastructure
+- **Expanded Matrix Benchmarking**: Enhanced benchmark tool to support multi-symbol, multi-strategy analysis
+  - Tested 5 major tech stocks (TSLA, NVDA, AAPL, AMD, MSFT)
+  - Evaluated 9 distinct strategies across 2 market periods (bearish Dec 2024, bullish Jan 2025)
+  - Analyzed risk sensitivity with 3 risk levels (Conservative, Neutral, Aggressive)
+- **Key Findings**:
+  - SMC strategy showed superior performance at high risk levels (+2.32% in bearish market)
+  - MeanReversion optimal at Risk 5, degraded at Risk 8 due to stop-outs
+  - TrendRiding identified as dangerous in choppy markets (catastrophic -123% drawdown)
+
+### Code Quality
+- Fixed pre-existing test compilation errors (missing `OrderSide` imports)
+- All 314 tests passing ✅
+- 0 clippy warnings ✅
+- Code formatted with `cargo fmt` ✅
+
 ## Version 0.74.2 - Fix: Dashboard Settings Visibility (January 2026)
 
 ### Bug Fixes

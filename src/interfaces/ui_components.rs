@@ -64,6 +64,7 @@ pub struct SettingsPanel {
     pub active_tab: SettingsTab,
     pub config_mode: ConfigMode, // NEW
     pub risk_score: u8,          // NEW: 1-10
+    pub selected_strategy: crate::domain::market::strategy_config::StrategyMode, // Auto-selected based on risk
 
     // --- Risk Management ---
     pub max_position_size_pct: String,
@@ -102,6 +103,7 @@ impl SettingsPanel {
             active_tab: SettingsTab::TradingEngine,
             config_mode: ConfigMode::Simple, // Default to simple for novices
             risk_score: 5,                   // Default balanced score
+            selected_strategy: crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive, // Default for risk 5
 
             // Risk Defaults
             max_position_size_pct: "0.10".to_string(),
@@ -150,6 +152,23 @@ impl SettingsPanel {
         };
         self.risk_score = settings.risk_score;
 
+        // Strategy Mode
+        use crate::domain::market::strategy_config::StrategyMode;
+        self.selected_strategy = match settings.analyst.strategy_mode.as_str() {
+            "SMC" => StrategyMode::SMC,
+            "RegimeAdaptive" => StrategyMode::RegimeAdaptive,
+            "Standard" => StrategyMode::Standard,
+            "Momentum" => StrategyMode::Momentum,
+            "MeanReversion" => StrategyMode::MeanReversion,
+            "Breakout" => StrategyMode::Breakout,
+            "TrendRiding" => StrategyMode::TrendRiding,
+            "Advanced" => StrategyMode::Advanced,
+            "Dynamic" => StrategyMode::Dynamic,
+            "VWAP" => StrategyMode::VWAP,
+            "Ensemble" => StrategyMode::Ensemble,
+            _ => Self::select_strategy_for_risk(settings.risk_score), // Fallback to risk-based
+        };
+
         // Risk Settings
         self.max_position_size_pct = settings.risk.max_position_size_pct.clone();
         self.max_daily_loss_pct = settings.risk.max_daily_loss_pct.clone();
@@ -168,8 +187,21 @@ impl SettingsPanel {
         self.profit_target_multiplier = settings.analyst.profit_target_multiplier.clone();
     }
 
+    /// Maps risk score to optimal strategy based on benchmark results
+    fn select_strategy_for_risk(score: u8) -> crate::domain::market::strategy_config::StrategyMode {
+        use crate::domain::market::strategy_config::StrategyMode;
+        match score {
+            1..=3 => StrategyMode::Standard, // Conservative: Safe, avoids chop
+            4..=6 => StrategyMode::RegimeAdaptive, // Balanced: Steady gains
+            7..=10 => StrategyMode::SMC,     // Aggressive: Best alpha generator
+            _ => StrategyMode::Standard,     // Fallback
+        }
+    }
+
     /// Updates all text fields based on the selected risk score (Logic mirroring RiskAppetite domain)
     pub fn update_from_score(&mut self, score: u8) {
+        // Update strategy selection based on risk
+        self.selected_strategy = Self::select_strategy_for_risk(score);
         if let Ok(risk) = RiskAppetite::new(score) {
             // -- Risk --
             self.max_position_size_pct = format!("{:.2}", risk.calculate_max_position_size_pct());
@@ -224,6 +256,7 @@ impl SettingsPanel {
     /// Converts current UI state to AnalystConfig
     pub fn to_analyst_config(&self) -> AnalystConfig {
         AnalystConfig {
+            strategy_mode: self.selected_strategy, // Include selected strategy
             fast_sma_period: self.fast_sma_period.parse().unwrap_or(10),
             slow_sma_period: self.slow_sma_period.parse().unwrap_or(20),
             sma_threshold: self.sma_threshold.parse().unwrap_or(0.001),
@@ -535,6 +568,7 @@ fn render_save_button(
                 consecutive_loss_limit: panel.consecutive_loss_limit.clone(),
             },
             analyst: AnalystSettings {
+                strategy_mode: format!("{:?}", panel.selected_strategy),
                 fast_sma_period: panel.fast_sma_period.clone(),
                 slow_sma_period: panel.slow_sma_period.clone(),
                 rsi_period: panel.rsi_period.clone(),
