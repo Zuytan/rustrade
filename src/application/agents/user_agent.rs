@@ -1,5 +1,7 @@
+use crate::application::agents::analyst::AnalystCommand;
 use crate::application::agents::sentinel::SentinelCommand;
 use crate::application::client::{SystemClient, SystemEvent};
+use crate::application::risk_management::commands::RiskCommand;
 use crate::domain::listener::NewsEvent;
 use crate::domain::market::strategy_config::StrategyMode;
 use crate::domain::sentiment::Sentiment;
@@ -16,7 +18,7 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::debug;
+use tracing::{debug, error, info};
 
 /// Activity event type for the activity feed
 #[derive(Clone, Debug)]
@@ -145,6 +147,27 @@ impl UserAgent {
         portfolio: Arc<RwLock<Portfolio>>,
         config: UserAgentConfig,
     ) -> Self {
+        // Initialize I18n and SettingsPanel first
+        let i18n = I18nService::new();
+        let settings_panel = crate::interfaces::ui_components::SettingsPanel::new();
+
+        // --- Sync Persisted Settings to Agents ---
+        // Since SettingsPanel loads from disk on ::new(), we send those values
+        // to the backend agents (RiskManager, Analyst) to ensure they are insync on startup.
+        let risk_config = settings_panel.to_risk_config();
+        if let Err(e) = client.send_risk_command(RiskCommand::UpdateConfig(Box::new(risk_config))) {
+            error!("Failed to sync risk settings on startup: {}", e);
+        }
+
+        let analyst_config = settings_panel.to_analyst_config();
+        if let Err(e) =
+            client.send_analyst_command(AnalystCommand::UpdateConfig(Box::new(analyst_config)))
+        {
+            error!("Failed to sync analyst settings on startup: {}", e);
+        } else {
+            info!("Successfully synced persisted settings to Analyst and RiskManager");
+        }
+
         Self {
             client,
             portfolio,
@@ -161,8 +184,8 @@ impl UserAgent {
             logs_collapsed: true, // Collapsed by default
             total_trades: 0,
             winning_trades: 0,
-            i18n: I18nService::new(), // Initialize i18n service
-            settings_panel: crate::interfaces::ui_components::SettingsPanel::new(),
+            i18n,
+            settings_panel,
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
             latency_ms: 12, // Default initial value
             risk_score: config.risk_appetite.map(|r| r.score()).unwrap_or(5), // Use real risk score or default to 5 (balanced)

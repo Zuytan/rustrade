@@ -209,6 +209,33 @@ impl SettingsPanel {
             self.slow_sma_period = format!("{}", slow.round() as usize);
         }
     }
+
+    /// Converts current UI state to RiskConfig
+    pub fn to_risk_config(&self) -> RiskConfig {
+        RiskConfig {
+            max_position_size_pct: self.max_position_size_pct.parse().unwrap_or(0.10),
+            max_daily_loss_pct: self.max_daily_loss_pct.parse().unwrap_or(0.02),
+            max_drawdown_pct: self.max_drawdown_pct.parse().unwrap_or(0.05),
+            consecutive_loss_limit: self.consecutive_loss_limit.parse().unwrap_or(3),
+            ..RiskConfig::default()
+        }
+    }
+
+    /// Converts current UI state to AnalystConfig
+    pub fn to_analyst_config(&self) -> AnalystConfig {
+        AnalystConfig {
+            fast_sma_period: self.fast_sma_period.parse().unwrap_or(10),
+            slow_sma_period: self.slow_sma_period.parse().unwrap_or(20),
+            sma_threshold: self.sma_threshold.parse().unwrap_or(0.001),
+            rsi_period: self.rsi_period.parse().unwrap_or(14),
+            rsi_threshold: self.rsi_threshold.parse().unwrap_or(70.0),
+            macd_min_threshold: self.macd_min_threshold.parse().unwrap_or(0.0),
+            adx_threshold: self.adx_threshold.parse().unwrap_or(25.0),
+            min_profit_ratio: self.min_profit_ratio.parse().unwrap_or(1.5),
+            profit_target_multiplier: self.profit_target_multiplier.parse().unwrap_or(2.0),
+            ..AnalystConfig::default()
+        }
+    }
 }
 
 pub fn render_sidebar(
@@ -494,24 +521,6 @@ fn render_save_button(
         .button(egui::RichText::new(i18n.t("settings_save_button")).size(18.0))
         .clicked()
     {
-        // Parse values
-        let max_pos = panel.max_position_size_pct.parse::<f64>().unwrap_or(0.10);
-        let max_loss = panel.max_daily_loss_pct.parse::<f64>().unwrap_or(0.02);
-        let max_dd = panel.max_drawdown_pct.parse::<f64>().unwrap_or(0.05);
-        let cons_loss = panel.consecutive_loss_limit.parse::<usize>().unwrap_or(3);
-
-        let fast_sma = panel.fast_sma_period.parse::<usize>().unwrap_or(10);
-        let slow_sma = panel.slow_sma_period.parse::<usize>().unwrap_or(20);
-        let sma_thresh = panel.sma_threshold.parse::<f64>().unwrap_or(0.001);
-
-        let rsi_p = panel.rsi_period.parse::<usize>().unwrap_or(14);
-        let rsi_t = panel.rsi_threshold.parse::<f64>().unwrap_or(30.0);
-        let macd_min = panel.macd_min_threshold.parse::<f64>().unwrap_or(0.0001);
-
-        let adx_t = panel.adx_threshold.parse::<f64>().unwrap_or(25.0);
-        let min_rr = panel.min_profit_ratio.parse::<f64>().unwrap_or(1.5);
-        let prof_mult = panel.profit_target_multiplier.parse::<f64>().unwrap_or(2.0);
-
         // --- Save Settings to Disk ---
         let persisted_settings = PersistedSettings {
             config_mode: match panel.config_mode {
@@ -546,33 +555,15 @@ fn render_save_button(
             error!("Failed to initialize settings persistence for saving");
         }
 
-        // Create and send Risk Config
-        let risk_config = RiskConfig {
-            max_position_size_pct: max_pos,
-            max_daily_loss_pct: max_loss,
-            max_drawdown_pct: max_dd,
-            consecutive_loss_limit: cons_loss,
-            ..RiskConfig::default()
-        };
-
+        // --- Send Updates to System ---
+        // Risk Config
+        let risk_config = panel.to_risk_config();
         if let Err(e) = client.send_risk_command(RiskCommand::UpdateConfig(Box::new(risk_config))) {
             error!("Failed to send update config command: {}", e);
         }
 
-        // Create and send Analyst Config
-        let analyst_cfg = AnalystConfig {
-            fast_sma_period: fast_sma,
-            slow_sma_period: slow_sma,
-            sma_threshold: sma_thresh,
-            rsi_period: rsi_p,
-            rsi_threshold: rsi_t,
-            macd_min_threshold: macd_min,
-            adx_threshold: adx_t,
-            min_profit_ratio: min_rr,
-            profit_target_multiplier: prof_mult,
-            ..AnalystConfig::default()
-        };
-
+        // Analyst Config
+        let analyst_cfg = panel.to_analyst_config();
         if let Err(e) =
             client.send_analyst_command(AnalystCommand::UpdateConfig(Box::new(analyst_cfg)))
         {

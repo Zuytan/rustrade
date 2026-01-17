@@ -1,5 +1,12 @@
 # Rustrade - Historique des Versions
 
+## Version 0.74.1 - Fix: Settings Sync on Startup (January 2026)
+
+### Bug Fixes
+- **Initialization Sync**: Fixed issue where `Analyst` and `RiskManager` ignored persisted settings on startup
+  - Implemented automatic sync in `UserAgent` initialization
+  - Settings are now immediately active without requiring a manual "Save" action
+
 ## Version 0.74.0 - Settings Persistence (January 2026)
 
 ### New Features
