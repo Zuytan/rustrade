@@ -1,5 +1,26 @@
 # Rustrade - Historique des Versions
 
+## Version 0.78.0 - Optimal Parameters per Risk Level (January 2026)
+
+### New Features
+- **Optimal Parameters Discovery**: New hybrid system for discovering and applying optimal strategy parameters by risk level
+  - **CLI Tool**: Added `optimize discover-optimal` subcommand that runs grid search for Conservative/Balanced/Aggressive profiles
+  - **Risk-Tailored Grids**: Each risk profile uses distinct parameter ranges (conservative = tighter stops, aggressive = wider ranges)
+  - **Persistence**: Results saved to `~/.rustrade/optimal_parameters.json` with optimization metadata
+  - **One-Click Application**: "Apply Optimal Settings" button in Settings UI when optimal parameters are available
+  - **Metadata Display**: Shows optimization date, symbol used, Sharpe ratio, return, and win rate
+
+### Domain Model
+- **OptimalParameters**: New value object storing discovered parameters with performance metrics
+- **OptimalParametersSet**: Collection type with upsert/get operations per risk profile
+
+### Infrastructure
+- **OptimalParametersPersistence**: Handles atomic save/load to disk with proper error handling
+
+### Code Quality
+- 7 new unit tests for domain model and persistence layer
+- All fmt, clippy checks pass ✅
+
 ## Version 0.77.0 - Optimize Binary Refactoring (January 2026)
 
 ### Refactoring

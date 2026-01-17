@@ -10,6 +10,7 @@ pub mod observability;
 pub mod persistence;
 pub mod sentiment;
 
+pub mod optimal_parameters_persistence;
 pub mod settings_persistence;
 
 pub use core::event_bus::EventBus;

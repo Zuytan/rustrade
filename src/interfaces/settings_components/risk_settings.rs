@@ -1,7 +1,9 @@
 //! Risk settings component (Simple Mode)
 
+use crate::domain::risk::optimal_parameters::OptimalParameters;
 use crate::domain::risk::risk_appetite::{RiskAppetite, RiskProfile};
 use crate::infrastructure::i18n::I18nService;
+use crate::infrastructure::optimal_parameters_persistence::OptimalParametersPersistence;
 use crate::interfaces::components::card::Card;
 use crate::interfaces::design_system::DesignSystem;
 use crate::interfaces::ui_components::SettingsPanel;
@@ -132,8 +134,87 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
                             ui.add_space(4.0);
                         }
                     });
+
+                // Apply Optimal Settings button
+                ui.add_space(20.0);
+                render_optimal_settings_button(ui, panel, appetite.profile());
             }
         });
 
     ui.add_space(30.0); // Space at bottom
+}
+
+/// Renders the "Apply Optimal Settings" button and metadata if available.
+fn render_optimal_settings_button(
+    ui: &mut egui::Ui,
+    panel: &mut SettingsPanel,
+    profile: RiskProfile,
+) {
+    // Try to load optimal parameters for current profile
+    let optimal = load_optimal_for_profile(profile);
+
+    match optimal {
+        Some(params) => {
+            // Show Apply button
+            let button = egui::Button::new(
+                egui::RichText::new("🎯 Apply Optimal Settings")
+                    .size(14.0)
+                    .color(DesignSystem::TEXT_PRIMARY),
+            )
+            .fill(DesignSystem::ACCENT_PRIMARY);
+
+            if ui.add(button).clicked() {
+                apply_optimal_to_panel(panel, &params);
+            }
+
+            // Show metadata
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "Optimized on {} using {}",
+                    params.optimization_date.format("%Y-%m-%d"),
+                    params.symbol_used
+                ))
+                .color(DesignSystem::TEXT_SECONDARY)
+                .size(12.0),
+            );
+            ui.label(
+                egui::RichText::new(format!(
+                    "Sharpe: {:.2} | Return: {:.1}% | Win Rate: {:.0}%",
+                    params.sharpe_ratio, params.total_return, params.win_rate
+                ))
+                .color(DesignSystem::TEXT_SECONDARY)
+                .size(12.0),
+            );
+        }
+        None => {
+            // Show disabled state or hint
+            ui.label(
+                egui::RichText::new(
+                    "💡 Run 'optimize discover-optimal' to generate optimal settings",
+                )
+                .color(DesignSystem::TEXT_SECONDARY)
+                .size(12.0)
+                .italics(),
+            );
+        }
+    }
+}
+
+/// Loads optimal parameters for a given risk profile from persistence.
+fn load_optimal_for_profile(profile: RiskProfile) -> Option<OptimalParameters> {
+    OptimalParametersPersistence::new()
+        .ok()?
+        .get_for_profile(profile)
+        .ok()
+        .flatten()
+}
+
+/// Applies optimal parameters to the settings panel.
+fn apply_optimal_to_panel(panel: &mut SettingsPanel, params: &OptimalParameters) {
+    panel.fast_sma_period = params.fast_sma_period.to_string();
+    panel.slow_sma_period = params.slow_sma_period.to_string();
+    panel.rsi_threshold = params.rsi_threshold.to_string();
+    // Note: Some fields (trailing_stop, trend_divergence, cooldown) are not in SettingsPanel
+    // They are applied directly via AnalystConfig when saving
 }

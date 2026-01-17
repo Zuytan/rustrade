@@ -9,6 +9,9 @@ use rustrade::application::optimization::engine::OptimizeEngine;
 use rustrade::application::optimization::optimizer::ParameterGrid;
 use rustrade::application::optimization::reporting::OptimizeReporter;
 use rustrade::config::StrategyMode;
+use rustrade::domain::risk::optimal_parameters::OptimalParameters;
+use rustrade::domain::risk::risk_appetite::RiskProfile;
+use rustrade::infrastructure::optimal_parameters_persistence::OptimalParametersPersistence;
 use std::str::FromStr;
 use tracing::info;
 
@@ -72,6 +75,24 @@ enum Commands {
         /// Number of top results per symbol
         #[arg(short, long, default_value = "5")]
         top_n: usize,
+    },
+    /// Discover and save optimal parameters for all risk levels
+    DiscoverOptimal {
+        /// Symbol to use for optimization
+        #[arg(short, long, default_value = "AAPL")]
+        symbol: String,
+
+        /// Start date (YYYY-MM-DD)
+        #[arg(long, default_value = "2020-01-01")]
+        start: String,
+
+        /// End date (YYYY-MM-DD)
+        #[arg(long, default_value = "2023-12-31")]
+        end: String,
+
+        /// Strategy mode
+        #[arg(long, default_value = "advanced")]
+        strategy: String,
     },
 }
 
@@ -184,6 +205,79 @@ async fn main() -> Result<()> {
 
             println!("\n✅ Batch optimization complete!\n");
         }
+        Commands::DiscoverOptimal {
+            symbol,
+            start,
+            end,
+            strategy,
+        } => {
+            let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::Advanced);
+            let (start_dt, end_dt) = parse_date_range(&start, &end)?;
+            let persistence = OptimalParametersPersistence::new()?;
+
+            println!("{}", "=".repeat(80));
+            println!("🎯 DISCOVER OPTIMAL PARAMETERS FOR ALL RISK LEVELS");
+            println!("Symbol: {}", symbol);
+            println!("Period: {} to {}", start, end);
+            println!("Strategy: {:?}", strategy_mode);
+            println!("{}\n", "=".repeat(80));
+
+            let profiles = [
+                RiskProfile::Conservative,
+                RiskProfile::Balanced,
+                RiskProfile::Aggressive,
+            ];
+
+            for profile in profiles {
+                let profile_name = format!("{:?}", profile);
+                println!("\n🔍 Optimizing for {} profile...", profile_name);
+
+                let grid = get_grid_for_profile(profile);
+                let combo_count = calculate_grid_combinations(&grid);
+                println!("   Testing {} parameter combinations", combo_count);
+
+                let results = engine
+                    .run_grid_search(&symbol, start_dt, end_dt, strategy_mode, grid)
+                    .await?;
+
+                if let Some(best) = engine.rank_results(results, 1).into_iter().next() {
+                    let optimal = OptimalParameters::new(
+                        profile,
+                        best.params.fast_sma_period,
+                        best.params.slow_sma_period,
+                        best.params.rsi_threshold,
+                        best.params.trailing_stop_atr_multiplier,
+                        best.params.trend_divergence_threshold,
+                        best.params.order_cooldown_seconds,
+                        symbol.clone(),
+                        best.sharpe_ratio,
+                        best.total_return,
+                        best.max_drawdown,
+                        best.win_rate,
+                        best.total_trades,
+                    );
+
+                    println!(
+                        "   ✅ {}: fast={}, slow={}, rsi={:.0}, atr_mult={:.1}",
+                        profile_name,
+                        optimal.fast_sma_period,
+                        optimal.slow_sma_period,
+                        optimal.rsi_threshold,
+                        optimal.trailing_stop_atr_multiplier
+                    );
+                    println!(
+                        "      Sharpe={:.2}, Return={:.1}%, Drawdown={:.1}%",
+                        optimal.sharpe_ratio, optimal.total_return, optimal.max_drawdown
+                    );
+
+                    persistence.upsert(optimal)?;
+                } else {
+                    println!("   ⚠️ No valid results for {} profile", profile_name);
+                }
+            }
+
+            println!("\n✅ Optimal parameters saved to ~/.rustrade/optimal_parameters.json\n");
+        }
     }
 
     Ok(())
@@ -222,4 +316,55 @@ fn load_grid_from_toml(path: &str) -> Result<ParameterGrid> {
     let grid: ParameterGrid =
         toml::from_str(&content).context(format!("Failed to parse grid config TOML: {}", path))?;
     Ok(grid)
+}
+
+/// Returns a parameter grid tailored for a specific risk profile.
+///
+/// - Conservative: Tighter ranges, lower risk parameters
+/// - Balanced: Middle-ground ranges
+/// - Aggressive: Wider ranges, higher risk parameters
+fn get_grid_for_profile(profile: RiskProfile) -> ParameterGrid {
+    match profile {
+        RiskProfile::Conservative => ParameterGrid {
+            fast_sma: vec![10, 15, 20],
+            slow_sma: vec![50, 60, 80],
+            rsi_threshold: vec![55.0, 60.0, 65.0],
+            trend_divergence_threshold: vec![0.002, 0.003, 0.005],
+            trailing_stop_atr_multiplier: vec![1.5, 2.0, 2.5],
+            order_cooldown_seconds: vec![300, 600, 900],
+        },
+        RiskProfile::Balanced => ParameterGrid {
+            fast_sma: vec![15, 20, 25],
+            slow_sma: vec![50, 60, 100],
+            rsi_threshold: vec![60.0, 65.0, 70.0],
+            trend_divergence_threshold: vec![0.003, 0.005, 0.008],
+            trailing_stop_atr_multiplier: vec![2.5, 3.0, 4.0],
+            order_cooldown_seconds: vec![0, 300, 600],
+        },
+        RiskProfile::Aggressive => ParameterGrid {
+            fast_sma: vec![20, 25, 30],
+            slow_sma: vec![60, 80, 100],
+            rsi_threshold: vec![65.0, 70.0, 75.0],
+            trend_divergence_threshold: vec![0.005, 0.008, 0.01],
+            trailing_stop_atr_multiplier: vec![3.5, 4.5, 6.0],
+            order_cooldown_seconds: vec![0, 60, 180],
+        },
+    }
+}
+
+/// Calculates the number of parameter combinations in a grid.
+fn calculate_grid_combinations(grid: &ParameterGrid) -> usize {
+    let mut count = 0;
+    for fast in &grid.fast_sma {
+        for slow in &grid.slow_sma {
+            if fast >= slow {
+                continue;
+            }
+            count += grid.rsi_threshold.len()
+                * grid.trend_divergence_threshold.len()
+                * grid.trailing_stop_atr_multiplier.len()
+                * grid.order_cooldown_seconds.len();
+        }
+    }
+    count
 }
