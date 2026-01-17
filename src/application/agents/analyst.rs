@@ -86,6 +86,7 @@ pub struct AnalystConfig {
     // SMC Strategy Configuration
     pub smc_ob_lookback: usize,          // Order Block lookback period
     pub smc_min_fvg_size_pct: f64,       // Minimum Fair Value Gap size (e.g., 0.005 = 0.5%)
+    pub smc_volume_multiplier: f64, // Volume multiplier for OB confirmation (e.g. 1.5x average)
     pub risk_appetite_score: Option<u8>, // Base Risk Appetite Score (1-9) for dynamic scaling
     // Breakout Strategy Configuration
     pub breakout_lookback: usize,
@@ -143,6 +144,7 @@ impl Default for AnalystConfig {
             adx_threshold: 25.0,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: 0.005,
+            smc_volume_multiplier: 1.5,
             risk_appetite_score: None,
             breakout_lookback: 10,
             breakout_threshold_pct: 0.002,
@@ -197,6 +199,7 @@ impl From<crate::config::Config> for AnalystConfig {
             adx_threshold: config.adx_threshold,
             smc_ob_lookback: config.smc_ob_lookback,
             smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
+            smc_volume_multiplier: 1.5, // Default, not yet in base Config
             risk_appetite_score: config.risk_appetite.map(|r| r.score()),
             breakout_lookback: 20, // Increased lookback for more significant levels
             breakout_threshold_pct: 0.0005, // 0.05% threshold (sensitive)
@@ -517,7 +520,7 @@ impl Analyst {
         let symbol = candle.symbol.clone();
         let price = candle.close;
         let timestamp = candle.timestamp * 1000;
-        let price_f64 = price.to_f64().unwrap_or(0.0);
+
 
         // 1. Get/Init Context (Consolidated with ensure_symbol_initialized)
         let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
@@ -632,10 +635,12 @@ impl Analyst {
             && let Some(pos) = portfolio.positions.get(&symbol)
         {
             let entry_price = pos.average_price;
-            let atr = rust_decimal::Decimal::from_f64_retain(context.last_features.atr.unwrap_or(1.0))
-                .unwrap_or(rust_decimal::Decimal::ONE);
-            let multiplier = rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
-                .unwrap_or(rust_decimal::Decimal::from(3));
+            let atr =
+                rust_decimal::Decimal::from_f64_retain(context.last_features.atr.unwrap_or(1.0))
+                    .unwrap_or(rust_decimal::Decimal::ONE);
+            let multiplier =
+                rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
+                    .unwrap_or(rust_decimal::Decimal::from(3));
 
             context.position_manager.trailing_stop =
                 crate::application::risk_management::trailing_stops::StopState::on_buy(
@@ -653,10 +658,12 @@ impl Analyst {
         }
 
         // 4. Check Trailing Stop (Priority Exit) via PositionManager
-        let atr_decimal = rust_decimal::Decimal::from_f64_retain(context.last_features.atr.unwrap_or(0.0))
-            .unwrap_or(rust_decimal::Decimal::ZERO);
-        let multiplier_decimal = rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
-            .unwrap_or(rust_decimal::Decimal::from(3));
+        let atr_decimal =
+            rust_decimal::Decimal::from_f64_retain(context.last_features.atr.unwrap_or(0.0))
+                .unwrap_or(rust_decimal::Decimal::ZERO);
+        let multiplier_decimal =
+            rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
+                .unwrap_or(rust_decimal::Decimal::from(3));
 
         let mut signal = context.position_manager.check_trailing_stop(
             &symbol,
@@ -753,14 +760,13 @@ impl Analyst {
                         {
                             let atr_decimal = rust_decimal::Decimal::from_f64_retain(atr)
                                 .unwrap_or(rust_decimal::Decimal::ONE);
-                            let multiplier_decimal = rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
-                                .unwrap_or(rust_decimal::Decimal::from(3));
-                            
-                            context.position_manager.trailing_stop = StopState::on_buy(
-                                price,
-                                atr_decimal,
-                                multiplier_decimal,
-                            );
+                            let multiplier_decimal = rust_decimal::Decimal::from_f64_retain(
+                                context.config.trailing_stop_atr_multiplier,
+                            )
+                            .unwrap_or(rust_decimal::Decimal::from(3));
+
+                            context.position_manager.trailing_stop =
+                                StopState::on_buy(price, atr_decimal, multiplier_decimal);
                         }
                     }
                     Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
@@ -937,7 +943,7 @@ impl Analyst {
                                           .unwrap_or(rust_decimal::Decimal::ONE);
                                       let tight_mult_decimal = rust_decimal::Decimal::from_f64_retain(tight_multiplier.max(0.5))
                                           .unwrap_or(rust_decimal::Decimal::ONE);
-                                      
+
                                       context.position_manager.trailing_stop =
                                          crate::application::risk_management::trailing_stops::StopState::on_buy(price, atr_decimal, tight_mult_decimal);
                                       info!("Analyst: News CREATED Tight Trailing Stop for {}", signal.symbol);

@@ -66,6 +66,7 @@ mod tests {
     use super::*;
     use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
+    use std::collections::VecDeque;
 
     fn create_test_context(fast_sma: f64, slow_sma: f64, has_position: bool) -> AnalysisContext {
         AnalysisContext {
@@ -88,7 +89,8 @@ mod tests {
             has_position,
             timestamp: 0,
             timeframe_features: None,
-            candles: std::collections::VecDeque::new(),
+            candles: VecDeque::new(),
+            rsi_history: VecDeque::new(),
         }
     }
 

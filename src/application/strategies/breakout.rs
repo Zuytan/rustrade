@@ -154,6 +154,7 @@ mod tests {
             timestamp: 0,
             timeframe_features: None,
             candles,
+            rsi_history: VecDeque::new(),
         }
     }
 

@@ -89,3 +89,20 @@
 
 
 ## Version 0.67.2 (Janvier 2026) - Refactoring: Risk Config & Dashboard
+
+## Version 0.72.0 - Momentum & SMC Strategy Enhancements (January 2026)
+
+### Strategy Improvements
+- **Momentum Divergence Refactor**:
+  - Implemented actual **Historical RSI Tracking** (last 100 bars) in `AnalysisContext` and `SymbolContext`.
+  - Replaced estimation heuristics with precise divergence detection (Higher Low / Lower High).
+  - Updated `MomentumStrategy` to utilize this history for significantly improved signal accuracy.
+- **Enhanced SMC (Smart Money Concepts)**:
+  - **Volume Confirmation**: Order Blocks (OB) now require impulsive volume > `1.5x` average (configurable via `smc_volume_multiplier`).
+  - **FVG Mitigation**: Fair Value Gaps are now checked for invalidation/mitigation before signaling, reducing false positives.
+  - Updated `StrategyFactory` and `AnalystConfig` to support these new parameters.
+
+### Technical Updates
+- **Testing**: Updated all strategy unit tests to support the new `AnalysisContext` structure with historical data.
+- **Configuration**: Added `smc_volume_multiplier` to `AnalystConfig`.
+- **Code Quality**: Maintained 0 clippy warnings and formatted code base.

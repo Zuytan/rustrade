@@ -49,6 +49,9 @@ pub struct AnalysisContext {
     // Candle history (for SMC patterns)
     pub candles: VecDeque<Candle>,
 
+    // Historical Indicators (for Momentum/Divergence)
+    pub rsi_history: VecDeque<f64>,
+
     // Multi-timeframe data (optional for backward compatibility)
     pub timeframe_features: Option<HashMap<Timeframe, TimeframeFeatures>>,
 }

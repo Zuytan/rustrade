@@ -13,48 +13,116 @@ use std::collections::VecDeque;
 pub struct SMCStrategy {
     pub ob_lookback: usize,
     pub min_fvg_size_pct: f64,
+    pub volume_multiplier: f64,
 }
 
 impl SMCStrategy {
-    pub fn new(ob_lookback: usize, min_fvg_size_pct: f64) -> Self {
+    pub fn new(ob_lookback: usize, min_fvg_size_pct: f64, volume_multiplier: f64) -> Self {
         Self {
             ob_lookback,
             min_fvg_size_pct,
+            volume_multiplier,
         }
     }
 
     /// Detect Fair Value Gaps (FVG)
     /// A bullish FVG is a gap between the High of Candle 1 and the Low of Candle 3,
     /// where Candle 2 is a large impulsive candle.
+    ///
+    /// Enhanced (v0.72): Checks if the FVG has been mitigated (filled) by subsequent price action.
     fn detect_fvg(&self, candles: &VecDeque<Candle>) -> Option<(OrderSide, f64)> {
-        if candles.len() < 3 {
+        if candles.len() < 5 {
+            // Need tracking capability
             return None;
         }
 
-        let c1 = &candles[candles.len() - 3];
-        let c3 = &candles[candles.len() - 1];
+        // Look for FVG in the recent history (not just immediate last 3 candles)
+        // We scan the last 10 candles for an UNMITIGATED FVG
+        let scan_depth = 10.min(candles.len() - 3);
+        let start_idx = candles.len() - scan_depth;
 
-        let high1 = c1.high.to_f64().unwrap_or(0.0);
-        let low3 = c3.low.to_f64().unwrap_or(0.0);
+        for i in (start_idx..candles.len() - 2).rev() {
+            // Start from most recent
+            let c1 = &candles[i];
+            let c3 = &candles[i + 2];
 
-        // Bullish FVG: High of C1 < Low of C3 (Gap exists)
-        if low3 > high1 {
-            let gap = low3 - high1;
-            let gap_pct = gap / high1;
-            if gap_pct > self.min_fvg_size_pct {
-                return Some((OrderSide::Buy, gap));
+            let high1 = c1.high.to_f64().unwrap_or(0.0);
+            let low1 = c1.low.to_f64().unwrap_or(0.0);
+            let high3 = c3.high.to_f64().unwrap_or(0.0);
+            let low3 = c3.low.to_f64().unwrap_or(0.0);
+
+            // Bullish FVG: High of C1 < Low of C3 (Gap exists)
+            if low3 > high1 {
+                let gap = low3 - high1;
+                let gap_pct = gap / high1;
+
+                if gap_pct > self.min_fvg_size_pct {
+                    // Check Mitigation: Has any candle AFTER the FVG (from i+3 onwards) dipped below low3?
+                    // Actually, mitigation means price comes back to fill the gap.
+                    // For a bullish FVG (gap up), we want to enter when price comes BACK DOWN into the gap.
+                    // But if price goes BELOW high1 (the bottom of the gap), it's invalidated.
+
+                    let fvg_top = low3;
+                    let fvg_bottom = high1;
+
+                    let mut invalidated = false;
+                    let mut mitigated = false; // Is price currently IN the gap?
+
+                    // Check subsequent candles
+                    if i + 3 < candles.len() {
+                        for j in (i + 3)..candles.len() {
+                            let low = candles[j].low.to_f64().unwrap_or(0.0);
+                            if low < fvg_bottom {
+                                invalidated = true; // Price closed the gap completely and went lower
+                                break;
+                            }
+                            if low < fvg_top {
+                                mitigated = true; // Price is tapping into the gap - ENTRY SIGNAL
+                            }
+                        }
+                    } else {
+                        // FVG just formed (no subsequent candles yet)
+                        // We can consider this a fresh FVG waiting for tap
+                        mitigated = true; // Treat fresh FVG as actionable
+                    }
+
+                    if !invalidated && mitigated {
+                        return Some((OrderSide::Buy, gap));
+                    }
+                }
             }
-        }
 
-        let low1 = c1.low.to_f64().unwrap_or(0.0);
-        let high3 = c3.high.to_f64().unwrap_or(0.0);
+            // Bearish FVG: Low of C1 > High of C3
+            if low1 > high3 {
+                let gap = low1 - high3;
+                let gap_pct = gap / high3;
 
-        // Bearish FVG: Low of C1 > High of C3
-        if low1 > high3 {
-            let gap = low1 - high3;
-            let gap_pct = gap / high3;
-            if gap_pct > self.min_fvg_size_pct {
-                return Some((OrderSide::Sell, gap));
+                if gap_pct > self.min_fvg_size_pct {
+                    let fvg_top = low1;
+                    let fvg_bottom = high3;
+
+                    let mut invalidated = false;
+                    let mut mitigated = false;
+
+                    if i + 3 < candles.len() {
+                        for j in (i + 3)..candles.len() {
+                            let high = candles[j].high.to_f64().unwrap_or(0.0);
+                            if high > fvg_top {
+                                invalidated = true; // Price went above top of bearish gap
+                                break;
+                            }
+                            if high > fvg_bottom {
+                                mitigated = true; // Price tapping into gap
+                            }
+                        }
+                    } else {
+                        mitigated = true;
+                    }
+
+                    if !invalidated && mitigated {
+                        return Some((OrderSide::Sell, gap));
+                    }
+                }
             }
         }
 
@@ -63,20 +131,36 @@ impl SMCStrategy {
 
     /// Detect Order Blocks (OB)
     /// A bullish OB is the last bearish candle before a strong impulsive bullish move.
+    ///
+    /// Enhanced (v0.72): Requires Volume Confirmation. The impulsive move must have volume > average.
     fn find_last_ob(&self, candles: &VecDeque<Candle>, side: OrderSide) -> Option<f64> {
-        // Simplified OB detection: look for opposite candle before a move
-        if candles.len() < 5 {
+        // Lookback logic: look for opposite candle before a move
+        if candles.len() < self.ob_lookback {
             return None;
         }
+
+        // Calculate Average Volume for context
+        let total_vol: f64 = candles
+            .iter()
+            .take(candles.len() - 1)
+            .map(|c| c.volume)
+            .sum();
+        let avg_vol = total_vol / (candles.len() as f64 - 1.0);
+        let vol_threshold = avg_vol * self.volume_multiplier;
 
         match side {
             OrderSide::Buy => {
                 // Find last bearish candle followed by bullish candles
                 for i in (1..candles.len() - 1).rev() {
                     let curr = &candles[i];
-                    let next = &candles[i + 1];
+                    let next = &candles[i + 1]; // Impulsive candle
+
+                    // Check structure: Bearish -> Bullish
                     if curr.close < curr.open && next.close > next.open {
-                        return Some(curr.low.to_f64().unwrap_or(0.0));
+                        // Volume Check: Next candle (impulsive) should have high volume
+                        if next.volume > vol_threshold {
+                            return Some(curr.low.to_f64().unwrap_or(0.0));
+                        }
                     }
                 }
             }
@@ -85,7 +169,10 @@ impl SMCStrategy {
                     let curr = &candles[i];
                     let next = &candles[i + 1];
                     if curr.close > curr.open && next.close < next.open {
-                        return Some(curr.high.to_f64().unwrap_or(0.0));
+                        // Volume Check
+                        if next.volume > vol_threshold {
+                            return Some(curr.high.to_f64().unwrap_or(0.0));
+                        }
                     }
                 }
             }
@@ -192,31 +279,40 @@ mod tests {
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
 
-    fn mock_candle(open: f64, high: f64, low: f64, close: f64) -> Candle {
+    fn mock_candle(open: f64, high: f64, low: f64, close: f64, volume: f64) -> Candle {
         Candle {
             symbol: "TEST".to_string(),
             open: Decimal::from_f64(open).unwrap(),
             high: Decimal::from_f64(high).unwrap(),
             low: Decimal::from_f64(low).unwrap(),
             close: Decimal::from_f64(close).unwrap(),
-            volume: 1000.0,
+            volume,
             timestamp: 0,
         }
     }
 
     #[test]
     fn test_bullish_fvg_detection() {
-        let strategy = SMCStrategy::new(20, 0.001);
+        let strategy = SMCStrategy::new(20, 0.001, 1.5);
         let mut candles = VecDeque::new();
 
-        // C1: Small candle
-        candles.push_back(mock_candle(100.0, 102.0, 99.0, 101.0));
-        // C2: Big impulsive candle (should be bigger but FVG is between C1 high and C3 low)
-        candles.push_back(mock_candle(101.0, 110.0, 101.0, 109.0));
-        // C3: Follow through
-        candles.push_back(mock_candle(109.0, 112.0, 105.0, 111.0));
+        // Padding candles to satisfy length check (need 5)
+        for _ in 0..10 {
+            candles.push_back(mock_candle(100.0, 101.0, 99.0, 100.0, 1000.0));
+        }
 
-        // High of C1 is 102.0, Low of C3 is 105.0. Gap of 3.0.
+        // C1: Small candle
+        candles.push_back(mock_candle(100.0, 102.0, 99.0, 101.0, 1000.0));
+        // C2: Big impulsive candle
+        candles.push_back(mock_candle(101.0, 110.0, 101.0, 109.0, 2000.0));
+        // C3: Follow through
+        candles.push_back(mock_candle(109.0, 112.0, 105.0, 111.0, 1000.0));
+
+        // C4: Mitigation candle (dips into gap but valid)
+        // Gap is between 102.0 (High1) and 105.0 (Low3)
+        // C4 Low = 103.0 (Inside gap) -> Mitigated!
+        candles.push_back(mock_candle(111.0, 112.0, 103.0, 111.0, 1000.0));
+
         let fvg = strategy.detect_fvg(&candles);
         assert!(fvg.is_some());
         let (side, gap) = fvg.unwrap();
@@ -226,17 +322,26 @@ mod tests {
 
     #[test]
     fn test_bearish_fvg_detection() {
-        let strategy = SMCStrategy::new(20, 0.001);
+        let strategy = SMCStrategy::new(20, 0.001, 1.5);
         let mut candles = VecDeque::new();
 
-        // C1: Small candle
-        candles.push_back(mock_candle(100.0, 101.0, 98.0, 99.0));
-        // C2: Big impulsive candle
-        candles.push_back(mock_candle(99.0, 99.0, 90.0, 91.0));
-        // C3: Follow through
-        candles.push_back(mock_candle(91.0, 95.0, 89.0, 90.0));
+        // Padding
+        for _ in 0..10 {
+            candles.push_back(mock_candle(100.0, 101.0, 99.0, 100.0, 1000.0));
+        }
 
-        // Low of C1 is 98.0, High of C3 is 95.0. Gap of 3.0.
+        // C1: Small candle
+        candles.push_back(mock_candle(100.0, 101.0, 98.0, 99.0, 1000.0));
+        // C2: Big impulsive candle
+        candles.push_back(mock_candle(99.0, 99.0, 90.0, 91.0, 2000.0));
+        // C3: Follow through
+        candles.push_back(mock_candle(91.0, 95.0, 89.0, 90.0, 1000.0));
+
+        // C4: Mitigation
+        // Gap is between 98.0 (Low1) and 95.0 (High3)
+        // C4 High = 96.0 (Inside gap) -> Mitigated!
+        candles.push_back(mock_candle(90.0, 96.0, 88.0, 89.0, 1000.0));
+
         let fvg = strategy.detect_fvg(&candles);
         assert!(fvg.is_some());
         let (side, gap) = fvg.unwrap();
@@ -246,34 +351,87 @@ mod tests {
 
     #[test]
     fn test_ob_detection() {
-        let strategy = SMCStrategy::new(20, 0.001);
+        let strategy = SMCStrategy::new(20, 0.001, 1.2); // 1.2x volume multiplier
         let mut candles = VecDeque::new();
 
-        // Add 5 candles
-        candles.push_back(mock_candle(100.0, 101.0, 99.0, 100.5));
-        candles.push_back(mock_candle(100.5, 102.0, 100.0, 101.5));
-        candles.push_back(mock_candle(101.5, 103.0, 101.0, 102.0));
-        // Bearish candle (Potential OB)
-        candles.push_back(mock_candle(102.0, 102.5, 100.0, 100.5));
-        // Followed by Bullish candle
-        candles.push_back(mock_candle(101.0, 105.0, 101.0, 104.0));
+        // Padding to satisfy OB Lookback (20)
+        for _ in 0..20 {
+            candles.push_back(mock_candle(100.0, 101.0, 99.0, 100.5, 1000.0));
+        }
+
+        // Add 5 candles setup
+        candles.push_back(mock_candle(100.0, 101.0, 99.0, 100.5, 1000.0));
+        candles.push_back(mock_candle(100.5, 102.0, 100.0, 101.5, 1000.0));
+        candles.push_back(mock_candle(101.5, 103.0, 101.0, 102.0, 1000.0));
+        // Bearish candle (Potential OB) - Average volume so far ~1000
+        candles.push_back(mock_candle(102.0, 102.5, 100.0, 100.5, 1000.0));
+        // Followed by Bullish candle with HIGH VOLUME
+        candles.push_back(mock_candle(101.0, 105.0, 101.0, 104.0, 1500.0)); // 1.5x avg
 
         let ob = strategy.find_last_ob(&candles, OrderSide::Buy);
-        assert!(ob.is_some());
+        assert!(
+            ob.is_some(),
+            "Should detect OB because volume is high enough"
+        );
         assert_eq!(ob.unwrap(), 100.0);
     }
 
     #[test]
+    fn test_ob_detection_fails_low_volume() {
+        let strategy = SMCStrategy::new(20, 0.001, 1.5); // 1.5x volume multiplier
+        let mut candles = VecDeque::new();
+
+        // Add context candles
+        for _ in 0..10 {
+            candles.push_back(mock_candle(100.0, 101.0, 99.0, 100.5, 1000.0));
+        }
+
+        // Bearish candle (Potential OB)
+        candles.push_back(mock_candle(102.0, 102.5, 100.0, 100.5, 1000.0));
+        // Followed by Bullish candle with LOW VOLUME
+        candles.push_back(mock_candle(101.0, 105.0, 101.0, 104.0, 1100.0)); // Only 1.1x avg, need 1.5x
+
+        let ob = strategy.find_last_ob(&candles, OrderSide::Buy);
+        assert!(
+            ob.is_none(),
+            "Should NOT detect OB due to insufficient volume"
+        );
+    }
+
+    #[test]
+    fn test_fvg_invalidation() {
+        let strategy = SMCStrategy::new(20, 0.001, 1.0);
+        let mut candles = VecDeque::new();
+
+        // Padding
+        for _ in 0..10 {
+            candles.push_back(mock_candle(100.0, 100.0, 100.0, 100.0, 1000.0));
+        }
+
+        // FVG Setup
+        candles.push_back(mock_candle(100.0, 102.0, 99.0, 101.0, 1000.0)); // High 102
+        candles.push_back(mock_candle(101.0, 110.0, 101.0, 109.0, 1000.0));
+        candles.push_back(mock_candle(109.0, 112.0, 105.0, 111.0, 1000.0)); // Low 105
+        // Gap: 102-105
+
+        // Invalidation: Price drops BELOW 102
+        candles.push_back(mock_candle(111.0, 112.0, 101.0, 102.0, 1000.0)); // Low 101 < 102
+
+        let fvg = strategy.detect_fvg(&candles);
+        assert!(fvg.is_none(), "FVG should be invalidated");
+    }
+
+    #[test]
     fn test_mss_detection() {
-        let strategy = SMCStrategy::new(20, 0.001);
+        let strategy = SMCStrategy::new(20, 0.001, 1.0);
         let mut candles = VecDeque::new();
 
         // Add 9 candles with high around 110
         for _i in 0..9 {
-            candles.push_back(mock_candle(100.0, 110.0, 90.0, 105.0));
+            candles.push_back(mock_candle(100.0, 110.0, 90.0, 105.0, 1000.0));
         }
         // 10th candle breaks high
-        candles.push_back(mock_candle(110.0, 115.0, 110.0, 114.0));
+        candles.push_back(mock_candle(110.0, 115.0, 110.0, 114.0, 1000.0));
 
         let mss = strategy.detect_mss(&candles);
         assert_eq!(mss, Some(OrderSide::Buy));

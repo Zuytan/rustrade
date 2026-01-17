@@ -257,6 +257,7 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
         adx_threshold: config.adx_threshold,
         smc_ob_lookback: config.smc_ob_lookback,
         smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
+        smc_volume_multiplier: 1.5,
         risk_appetite_score: config.risk_appetite.map(|r| r.score()),
         breakout_lookback: 10,
         breakout_threshold_pct: 0.002,
@@ -328,6 +329,7 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
         crate::domain::market::strategy_config::StrategyMode::SMC => Arc::new(SMCStrategy::new(
             analyst_config.smc_ob_lookback,
             analyst_config.smc_min_fvg_size_pct,
+            analyst_config.smc_volume_multiplier,
         )),
         crate::domain::market::strategy_config::StrategyMode::VWAP => {
             Arc::new(VWAPStrategy::default())

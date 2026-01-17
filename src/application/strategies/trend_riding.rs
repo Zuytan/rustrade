@@ -98,6 +98,7 @@ mod tests {
             timestamp: 0,
             timeframe_features: None,
             candles: std::collections::VecDeque::new(),
+            rsi_history: std::collections::VecDeque::new(),
         }
     }
 

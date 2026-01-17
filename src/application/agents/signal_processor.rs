@@ -40,6 +40,7 @@ impl SignalProcessor {
             has_position,
             context.last_macd_histogram,
             &context.candle_history,
+            &context.rsi_history,
         )
     }
 

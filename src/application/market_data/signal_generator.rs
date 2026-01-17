@@ -34,6 +34,7 @@ impl SignalGenerator {
         has_position: bool,
         previous_macd_histogram: Option<f64>, // Previous MACD histogram for rising/falling detection
         candle_history: &VecDeque<crate::domain::trading::types::Candle>,
+        rsi_history: &VecDeque<f64>,
     ) -> Option<OrderSide> {
         let price_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&price).unwrap_or(0.0);
 
@@ -58,6 +59,7 @@ impl SignalGenerator {
             has_position,
             timestamp,
             candles: candle_history.clone(),
+            rsi_history: rsi_history.clone(),
             timeframe_features: None, // Will be populated by Analyst when multi-timeframe is enabled
         };
 

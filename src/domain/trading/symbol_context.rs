@@ -41,6 +41,7 @@ pub struct SymbolContext {
         crate::application::market_data::timeframe_aggregator::TimeframeAggregator,
     pub timeframe_features: HashMap<crate::domain::market::timeframe::Timeframe, FeatureSet>,
     pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
+    pub rsi_history: VecDeque<f64>,
 }
 
 impl SymbolContext {
@@ -80,6 +81,7 @@ impl SymbolContext {
                 crate::application::market_data::timeframe_aggregator::TimeframeAggregator::new(),
             timeframe_features: HashMap::new(),
             enabled_timeframes,
+            rsi_history: VecDeque::with_capacity(100),
         }
     }
 
@@ -99,6 +101,14 @@ impl SymbolContext {
         // Store previous MACD histogram before updating features
         self.last_macd_histogram = self.last_features.macd_hist;
         self.last_features = self.feature_service.update(candle);
+
+        // Update RSI history
+        if let Some(rsi) = self.last_features.rsi {
+            if self.rsi_history.len() >= 100 {
+                self.rsi_history.pop_front();
+            }
+            self.rsi_history.push_back(rsi);
+        }
     }
 }
 

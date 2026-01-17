@@ -65,6 +65,7 @@ impl StrategyFactory {
             StrategyMode::SMC => Arc::new(SMCStrategy::new(
                 config.smc_ob_lookback,
                 config.smc_min_fvg_size_pct,
+                config.smc_volume_multiplier,
             )),
             StrategyMode::VWAP => Arc::new(VWAPStrategy::default()),
             StrategyMode::Breakout => Arc::new(BreakoutStrategy::new(

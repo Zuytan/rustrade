@@ -23,10 +23,17 @@ impl MomentumDivergenceStrategy {
     /// Find local extremes (highs and lows) in price and RSI
     /// Returns: (price_low1, price_low2, rsi_at_low1, rsi_at_low2) for bullish
     /// or (price_high1, price_high2, rsi_at_high1, rsi_at_high2) for bearish
+    /// Find local extremes (highs and lows) in price and RSI
+    /// Returns: (price_low1, price_low2, rsi_at_low1, rsi_at_low2) for bullish
+    /// or (price_high1, price_high2, rsi_at_high1, rsi_at_high2) for bearish
     fn find_divergence(&self, ctx: &AnalysisContext) -> Option<DivergenceType> {
         if ctx.candles.len() < self.divergence_lookback {
             return None;
         }
+
+        // Align RSI history with candles
+        // RSI history might be shorter if RSI wasn't available for early candles
+        let rsi_offset = ctx.candles.len().saturating_sub(ctx.rsi_history.len());
 
         let start_idx = ctx.candles.len().saturating_sub(self.divergence_lookback);
 
@@ -34,14 +41,18 @@ impl MomentumDivergenceStrategy {
         let mid_point = start_idx + (ctx.candles.len() - start_idx) / 2;
 
         let mut first_low = f64::MAX;
+        let mut first_low_idx = 0;
         let mut second_low = f64::MAX;
+
         let mut first_high = f64::MIN;
+        let mut first_high_idx = 0;
         let mut second_high = f64::MIN;
 
         // Analyze first half for initial extreme
-        for candle in ctx
+        for (i, candle) in ctx
             .candles
             .iter()
+            .enumerate()
             .skip(start_idx)
             .take(mid_point - start_idx)
         {
@@ -50,13 +61,15 @@ impl MomentumDivergenceStrategy {
 
             if low < first_low {
                 first_low = low;
+                first_low_idx = i;
             }
             if high > first_high {
                 first_high = high;
+                first_high_idx = i;
             }
         }
 
-        // Analyze second half for second extreme
+        // Analyze second half for second extreme (current extreme)
         for candle in ctx.candles.iter().skip(mid_point) {
             let low = candle.low.to_f64().unwrap_or(f64::MAX);
             let high = candle.high.to_f64().unwrap_or(f64::MIN);
@@ -72,39 +85,52 @@ impl MomentumDivergenceStrategy {
         // Current RSI represents the "end" state
         let current_rsi = ctx.rsi;
 
-        // Estimate "past" RSI based on trend (simplified - in production would track RSI history)
-        // For now, use a heuristic based on price movement
-        let price_change_pct = (ctx.price_f64 - first_low) / first_low;
-        let estimated_past_rsi = if price_change_pct < 0.0 {
-            // Price went down, past RSI was likely higher
-            current_rsi + (price_change_pct.abs() * 50.0).min(30.0)
-        } else {
-            // Price went up, past RSI was likely lower
-            current_rsi - (price_change_pct * 50.0).min(30.0)
+        // Get past RSI at the extreme point
+        // Check if we have RSI data for that index
+        // Index in rsi_history = candle_index - rsi_offset
+        // If candle_index < rsi_offset, we don't have RSI for that candle
+
+        // Helper to safely get RSI
+        let get_rsi_at = |idx: usize| -> Option<f64> {
+            if idx >= rsi_offset {
+                ctx.rsi_history.get(idx - rsi_offset).copied()
+            } else {
+                None
+            }
         };
 
         // Check for bullish divergence: lower low in price, higher low in RSI
         let price_lower_low = second_low < first_low * (1.0 - self.min_divergence_pct);
-        let rsi_higher_low = current_rsi > estimated_past_rsi;
 
-        if !ctx.has_position && price_lower_low && rsi_higher_low && current_rsi < 40.0 {
-            return Some(DivergenceType::Bullish {
-                price_low1: first_low,
-                price_low2: second_low,
-                rsi_now: current_rsi,
-            });
+        if !ctx.has_position && price_lower_low && current_rsi < 40.0 {
+            if let Some(past_rsi) = get_rsi_at(first_low_idx) {
+                let rsi_higher_low = current_rsi > past_rsi; // RSI making Higher Low
+
+                if rsi_higher_low {
+                    return Some(DivergenceType::Bullish {
+                        price_low1: first_low,
+                        price_low2: second_low,
+                        rsi_now: current_rsi,
+                    });
+                }
+            }
         }
 
         // Check for bearish divergence: higher high in price, lower high in RSI
         let price_higher_high = second_high > first_high * (1.0 + self.min_divergence_pct);
-        let rsi_lower_high = current_rsi < estimated_past_rsi;
 
-        if ctx.has_position && price_higher_high && rsi_lower_high && current_rsi > 60.0 {
-            return Some(DivergenceType::Bearish {
-                price_high1: first_high,
-                price_high2: second_high,
-                rsi_now: current_rsi,
-            });
+        if ctx.has_position && price_higher_high && current_rsi > 60.0 {
+            if let Some(past_rsi) = get_rsi_at(first_high_idx) {
+                let rsi_lower_high = current_rsi < past_rsi; // RSI making Lower High
+
+                if rsi_lower_high {
+                    return Some(DivergenceType::Bearish {
+                        price_high1: first_high,
+                        price_high2: second_high,
+                        rsi_now: current_rsi,
+                    });
+                }
+            }
         }
 
         None
@@ -183,6 +209,7 @@ mod tests {
         price: f64,
         rsi: f64,
         candles: VecDeque<Candle>,
+        rsi_history: VecDeque<f64>,
         has_position: bool,
     ) -> AnalysisContext {
         use rust_decimal_macros::dec;
@@ -207,6 +234,7 @@ mod tests {
             timestamp: 0,
             timeframe_features: None,
             candles,
+            rsi_history,
         }
     }
 
@@ -224,7 +252,16 @@ mod tests {
             ));
         }
 
-        let ctx = create_context(80.0, 25.0, candles, false);
+        // Create RSI history showing Bullish Divergence
+        // Price made Lower Low (105 -> 90), but RSI needs to make Higher Low (e.g. 20 -> 30)
+        let mut rsi_history = VecDeque::new();
+        for i in 0..15 {
+            // RSI starting low and rising slightly despite price drop
+            // This is a crude simulation but sufficient for the test which looks at specific points
+            rsi_history.push_back(20.0 + i as f64);
+        }
+
+        let ctx = create_context(80.0, 25.0, candles, rsi_history, false);
         // The strategy should analyze without panicking
         let _ = strategy.analyze(&ctx);
     }
@@ -243,7 +280,14 @@ mod tests {
             ));
         }
 
-        let ctx = create_context(120.0, 75.0, candles, true);
+        // Create RSI history showing Bearish Divergence
+        // Price made Higher High (100 -> 115), but RSI needs to make Lower High (e.g. 80 -> 70)
+        let mut rsi_history = VecDeque::new();
+        for i in 0..15 {
+            rsi_history.push_back(80.0 - i as f64);
+        }
+
+        let ctx = create_context(120.0, 75.0, candles, rsi_history, true);
         // The strategy should analyze without panicking
         let _ = strategy.analyze(&ctx);
     }
@@ -258,7 +302,7 @@ mod tests {
             candles.push_back(mock_candle(105.0, 95.0, 100.0));
         }
 
-        let ctx = create_context(100.0, 50.0, candles, false);
+        let ctx = create_context(100.0, 50.0, candles, VecDeque::new(), false);
 
         let signal = strategy.analyze(&ctx);
         assert!(
@@ -282,7 +326,11 @@ mod tests {
         }
 
         // RSI neutral, price trending
-        let ctx = create_context(108.0, 55.0, candles, false);
+        let mut rsi_history = VecDeque::new();
+        for _ in 0..10 {
+            rsi_history.push_back(55.0);
+        }
+        let ctx = create_context(108.0, 55.0, candles, rsi_history, false);
 
         let signal = strategy.analyze(&ctx);
         // Should not trigger as no divergence (price up, momentum also up)
