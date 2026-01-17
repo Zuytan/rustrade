@@ -116,6 +116,7 @@ async fn test_backtest_strategy_on_historical_data() {
         breakout_threshold_pct: 0.002,
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
+        smc_volume_multiplier: 1.5,
     };
 
     let simulator = Simulator::new(market_service, execution_service, config);

@@ -1,5 +1,27 @@
 # Rustrade - Historique des Versions
 
+## Version 0.73.0 - Settings UI Modernization (January 2026)
+
+### UI/UX Improvements
+- **Settings Interface Rework**:
+  - Implemented **Master-Detail Layout** with styled sidebar navigation
+  - Renamed "System Config" to "Trading Engine" for clarity
+  - Added persistent "Save" button in Trading Engine header
+  - **Visual Enhancements**:
+    - Risk Settings: Color-coded Risk Profile badges (🟢 Conservative / 🟡 Balanced / 🔴 Aggressive)
+    - Strategy Settings: Custom-styled input fields with DesignSystem borders
+  - **Layout Fixes**:
+    - Resolved visibility issues with complex Frame nesting
+    - Fixed `Card` component `min_width` constraint causing ScrollArea problems
+    - Used `allocate_ui` for explicit height allocation to fill window
+    - Applied `auto_shrink([false, false])` to ScrollArea for proper space utilization
+  - Settings now properly fill window height with scroll only when content exceeds available space
+
+### Code Quality
+- Fixed clippy warnings: removed unused imports in `risk_manager.rs`, added `Default` impl for `Card`
+- All 305 tests passing ✅
+- 0 clippy warnings ✅
+
 ## Version 0.71.0 - Type Safety: Decimal Precision (January 2026)
 
 ### Financial Precision Improvements

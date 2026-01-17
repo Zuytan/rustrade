@@ -1,4 +1,5 @@
 use crate::application::agents::user_agent::UserAgent;
+use crate::interfaces::design_system::DesignSystem;
 use chrono::{TimeZone, Utc};
 use eframe::egui;
 use egui_plot::{BoxElem, BoxSpread, Legend, Plot};
@@ -35,7 +36,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                     )
                     .strong()
                     .size(16.0)
-                    .color(egui::Color32::WHITE),
+                    .color(DesignSystem::TEXT_PRIMARY),
                 );
             }
         });
@@ -52,16 +53,16 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                 // Info Panel
                 if let Some(strat_info) = agent.strategy_info.get(selected_symbol) {
                     egui::Frame::NONE
-                        .fill(egui::Color32::from_rgb(22, 27, 34))
+                        .fill(DesignSystem::BG_CARD)
                         .inner_margin(egui::Margin::symmetric(10, 8))
                         .corner_radius(6)
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 61)))
+                        .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.label(
                                     egui::RichText::new(agent.i18n.t("strategy_label"))
                                         .strong()
-                                        .color(egui::Color32::from_gray(160)),
+                                        .color(DesignSystem::TEXT_SECONDARY),
                                 );
 
                                 let strategy_display =
@@ -83,7 +84,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
 
                                 ui.label(
                                     egui::RichText::new(&strategy_display)
-                                        .color(egui::Color32::from_rgb(88, 166, 255)),
+                                        .color(DesignSystem::ACCENT_PRIMARY),
                                 );
                                 ui.separator();
                                 ui.label(
@@ -129,9 +130,9 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                             let high = c.high.to_f64().unwrap_or(0.0);
                             let low = c.low.to_f64().unwrap_or(0.0);
                             let color = if close >= open {
-                                egui::Color32::GREEN
+                                DesignSystem::SUCCESS
                             } else {
-                                egui::Color32::RED
+                                DesignSystem::DANGER
                             };
                             let min_oc = open.min(close);
                             let max_oc = open.max(close);
@@ -166,13 +167,13 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                         if !fast_sma_points.is_empty() {
                             plot_ui.line(
                                 egui_plot::Line::new(agent.i18n.t("sma_20_label"), fast_sma_points)
-                                    .color(egui::Color32::from_rgb(100, 200, 255)),
+                                    .color(DesignSystem::ACCENT_SECONDARY),
                             );
                         }
                         if !slow_sma_points.is_empty() {
                             plot_ui.line(
                                 egui_plot::Line::new(agent.i18n.t("sma_50_label"), slow_sma_points)
-                                    .color(egui::Color32::from_rgb(255, 165, 0)),
+                                    .color(DesignSystem::WARNING),
                             );
                         }
                     });

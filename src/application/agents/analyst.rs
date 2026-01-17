@@ -521,7 +521,6 @@ impl Analyst {
         let price = candle.close;
         let timestamp = candle.timestamp * 1000;
 
-
         // 1. Get/Init Context (Consolidated with ensure_symbol_initialized)
         let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
             .unwrap_or_default()

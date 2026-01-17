@@ -1,5 +1,6 @@
 use crate::application::agents::user_agent::UserAgent;
 use crate::interfaces::dashboard_components::metrics_card::render_mini_metric;
+use crate::interfaces::design_system::DesignSystem;
 use eframe::egui;
 use rust_decimal::prelude::ToPrimitive;
 
@@ -13,7 +14,7 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
             egui::RichText::new(format!("🔬 {}", agent.i18n.t("analytics_title")))
                 .size(24.0)
                 .strong()
-                .color(egui::Color32::WHITE),
+                .color(DesignSystem::TEXT_PRIMARY),
         );
         ui.add_space(8.0);
         ui.separator();
@@ -44,19 +45,19 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                                 }
                             });
                         });
-                        ui.label(egui::RichText::new(agent.i18n.t("monte_carlo_description")).size(11.0).color(egui::Color32::from_gray(140)));
+                        ui.label(egui::RichText::new(agent.i18n.t("monte_carlo_description")).size(11.0).color(DesignSystem::TEXT_SECONDARY));
                         ui.add_space(15.0);
 
                         if let Some(res) = &agent.monte_carlo_result {
                             ui.columns(4, |cols| {
-                                render_mini_metric(&mut cols[0], agent.i18n.t("prob_profit").to_string(), &format!("{:.1}%", res.probability_of_profit * 100.0), egui::Color32::from_rgb(0, 230, 118));
-                                render_mini_metric(&mut cols[1], agent.i18n.t("expected_dd").to_string(), &format!("{:.1}%", res.max_drawdown_mean * 100.0), egui::Color32::from_rgb(255, 23, 68));
-                                render_mini_metric(&mut cols[2], agent.i18n.t("final_equity").to_string(), &format!("${:.0}", res.final_equity_median.to_f64().unwrap_or(0.0)), egui::Color32::WHITE);
-                                render_mini_metric(&mut cols[3], "95% Range".to_string(), &format!("${:.0} - ${:.0}", res.percentile_5.to_f64().unwrap_or(0.0), res.percentile_95.to_f64().unwrap_or(0.0)), egui::Color32::from_gray(160));
+                                render_mini_metric(&mut cols[0], agent.i18n.t("prob_profit").to_string(), &format!("{:.1}%", res.probability_of_profit * 100.0), DesignSystem::SUCCESS);
+                                render_mini_metric(&mut cols[1], agent.i18n.t("expected_dd").to_string(), &format!("{:.1}%", res.max_drawdown_mean * 100.0), DesignSystem::DANGER);
+                                render_mini_metric(&mut cols[2], agent.i18n.t("final_equity").to_string(), &format!("${:.0}", res.final_equity_median.to_f64().unwrap_or(0.0)), DesignSystem::TEXT_PRIMARY);
+                                render_mini_metric(&mut cols[3], "95% Range".to_string(), &format!("${:.0} - ${:.0}", res.percentile_5.to_f64().unwrap_or(0.0), res.percentile_95.to_f64().unwrap_or(0.0)), DesignSystem::TEXT_SECONDARY);
                             });
                         } else {
                             ui.centered_and_justified(|ui| {
-                                ui.label(egui::RichText::new("No simulation data. Click 'Run' to project equity paths.").italics().color(egui::Color32::from_gray(100)));
+                                ui.label(egui::RichText::new("No simulation data. Click 'Run' to project equity paths.").italics().color(DesignSystem::TEXT_MUTED));
                             });
                         }
                     });
@@ -68,7 +69,7 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                 ui.group(|ui| {
                     ui.vertical(|ui| {
                         ui.label(egui::RichText::new(agent.i18n.t("correlation_title")).size(18.0).strong());
-                        ui.label(egui::RichText::new(agent.i18n.t("correlation_description")).size(11.0).color(egui::Color32::from_gray(140)));
+                        ui.label(egui::RichText::new(agent.i18n.t("correlation_description")).size(11.0).color(DesignSystem::TEXT_SECONDARY));
                         ui.add_space(15.0);
 
                         render_correlation_heatmap(ui, agent);
@@ -86,7 +87,7 @@ fn render_correlation_heatmap(ui: &mut egui::Ui, agent: &UserAgent) {
         ui.label(
             egui::RichText::new("Waiting for market data symbols...")
                 .italics()
-                .color(egui::Color32::from_gray(100)),
+                .color(DesignSystem::TEXT_MUTED),
         );
         return;
     }

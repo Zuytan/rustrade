@@ -8,8 +8,6 @@ use crate::application::risk_management::portfolio_valuation_service::PortfolioV
 use crate::application::risk_management::session_manager::SessionManager;
 use crate::application::risk_management::state::pending_orders_tracker::PendingOrdersTracker;
 use crate::application::risk_management::state::risk_state_manager::RiskStateManager;
-#[cfg(test)]
-use crate::domain::ports::SectorProvider;
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
 use crate::domain::repositories::RiskStateRepository;
 use crate::domain::risk::filters::{
@@ -25,8 +23,6 @@ use crate::domain::risk::filters::{
 use crate::domain::risk::state::RiskState;
 use crate::domain::risk::volatility_manager::VolatilityManager; // Added
 use crate::domain::sentiment::Sentiment;
-#[cfg(test)]
-use crate::domain::sentiment::SentimentClassification;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, OrderSide, TradeProposal};
 use chrono::Utc;

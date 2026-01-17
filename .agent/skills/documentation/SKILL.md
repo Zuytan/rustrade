@@ -105,6 +105,7 @@ For a new feature:
 | New doc convention | `documentation/SKILL.md` or `templates/` |
 | New quality rule | `critical-review/SKILL.md` |
 | New validation step | `testing/SKILL.md` |
+| New UI component | `ui-design/SKILL.md` |
 
 ## Documentation conventions
 

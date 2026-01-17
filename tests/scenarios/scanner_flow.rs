@@ -91,6 +91,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         breakout_threshold_pct: 0.002,
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
+        smc_volume_multiplier: 1.5,
     };
 
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));
