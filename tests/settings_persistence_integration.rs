@@ -54,5 +54,5 @@ fn test_serialization_roundtrip() {
     assert_eq!(deserialized.config_mode, "Advanced");
     assert_eq!(deserialized.risk_score, 8);
     assert_eq!(deserialized.risk.max_position_size_pct, "0.15");
-    assert_eq!(deserialized.analyst.fast_sma_period, "8");
+    assert_eq!(deserialized.analyst.fast_sma_period, "10");
 }

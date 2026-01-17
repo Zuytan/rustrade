@@ -1,5 +1,24 @@
 # Rustrade - Historique des Versions
 
+## Version 0.77.0 - Optimize Binary Refactoring (January 2026)
+
+### Refactoring
+- **Modern CLI Pattern**: Refactored `optimize` binary following the same pattern as `benchmark`
+  - Migrated from manual argument parsing to `clap` with `Parser` and `Subcommand`
+  - Added subcommands: `run` (single symbol) and `batch` (multiple symbols)
+  - Reduced main binary from 303 lines to ~205 lines (-32%)
+- **Code Organization**: Extracted logic into reusable modules
+  - `OptimizeEngine` in `src/application/optimization/engine.rs` - encapsulates service setup and optimization execution
+  - `OptimizeReporter` in `src/application/optimization/reporting.rs` - handles console output and JSON export
+- **Safety Improvements**: Removed all `.unwrap()` calls in production code
+  - Replaced with proper error handling using `anyhow::Context`
+  - All date parsing now returns descriptive errors
+
+### Code Quality
+- All fmt, clippy checks pass ✅
+- Binary help displays correctly with `run` and `batch` subcommands
+- Optimizer unit tests passing (2/2)
+
 ## Version 0.76.0 - Dynamic Strategy Selection (January 2026)
 
 ### New Features

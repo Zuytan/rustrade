@@ -1,302 +1,225 @@
+//! Grid Search Parameter Optimizer Binary
+//!
+//! A CLI tool for running parameter grid search optimization on trading strategies.
+
 use anyhow::{Context, Result};
-use chrono::{TimeZone, Utc};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive; // Added
-use rustrade::application::optimization::optimizer::{GridSearchOptimizer, ParameterGrid};
+use chrono::{NaiveDate, TimeZone, Utc};
+use clap::{Parser, Subcommand};
+use rustrade::application::optimization::engine::OptimizeEngine;
+use rustrade::application::optimization::optimizer::ParameterGrid;
+use rustrade::application::optimization::reporting::OptimizeReporter;
 use rustrade::config::StrategyMode;
-use rustrade::domain::trading::fee_model::ConstantFeeModel; // Added
-use rustrade::domain::trading::portfolio::Portfolio;
-use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
-use rustrade::infrastructure::mock::MockExecutionService;
-use std::env;
 use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::info;
+
+#[derive(Parser)]
+#[command(author, version, about = "Grid Search Parameter Optimizer", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Run grid search optimization for a single symbol
+    Run {
+        /// Symbol to optimize
+        #[arg(short, long, default_value = "TSLA")]
+        symbol: String,
+
+        /// Start date (YYYY-MM-DD)
+        #[arg(long, default_value = "2020-01-01")]
+        start: String,
+
+        /// End date (YYYY-MM-DD)
+        #[arg(long, default_value = "2023-12-31")]
+        end: String,
+
+        /// Strategy mode (standard, advanced, dynamic, trendriding, meanreversion)
+        #[arg(long, default_value = "advanced")]
+        strategy: String,
+
+        /// TOML file with parameter grid configuration
+        #[arg(long)]
+        grid_config: Option<String>,
+
+        /// Output JSON file for results
+        #[arg(short, long, default_value = "optimization_results.json")]
+        output: String,
+
+        /// Number of top results to display
+        #[arg(short, long, default_value = "10")]
+        top_n: usize,
+    },
+    /// Run batch optimization for multiple symbols
+    Batch {
+        /// Comma-separated list of symbols
+        #[arg(short, long, default_value = "TSLA,NVDA,AAPL")]
+        symbols: String,
+
+        /// Start date (YYYY-MM-DD)
+        #[arg(long, default_value = "2020-01-01")]
+        start: String,
+
+        /// End date (YYYY-MM-DD)
+        #[arg(long, default_value = "2023-12-31")]
+        end: String,
+
+        /// Strategy mode
+        #[arg(long, default_value = "advanced")]
+        strategy: String,
+
+        /// Number of top results per symbol
+        #[arg(short, long, default_value = "5")]
+        top_n: usize,
+    },
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 1. Setup Logging
+    // Setup logging
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_max_level(tracing::Level::INFO)
         .finish();
     tracing::subscriber::set_global_default(subscriber).ok();
 
-    // 2. Load Env
-    dotenv::dotenv().ok();
+    let cli = Cli::parse();
+    let engine = OptimizeEngine::new()?;
+    let reporter = OptimizeReporter::default();
 
-    // 3. Parse Args
-    let args: Vec<String> = env::args().collect();
-    let mut symbol = "TSLA".to_string();
-    let mut start_date_str = "2020-01-01".to_string();
-    let mut end_date_str = "2023-12-31".to_string();
-    let mut strategy_mode_str = "advanced".to_string();
-    let mut grid_config_file: Option<String> = None;
-    let mut output_file = "optimization_results.json".to_string();
-    let mut top_n = 10;
+    match cli.command {
+        Commands::Run {
+            symbol,
+            start,
+            end,
+            strategy,
+            grid_config,
+            output,
+            top_n,
+        } => {
+            let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::Advanced);
 
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--symbol" => {
-                if i + 1 < args.len() {
-                    symbol = args[i + 1].clone();
-                    i += 1;
-                }
+            reporter.print_header(
+                &symbol,
+                &start,
+                &end,
+                &format!("{:?}", strategy_mode),
+                &output,
+            );
+
+            // Load parameter grid
+            let parameter_grid = if let Some(config_file) = grid_config {
+                info!("Loading parameter grid from: {}", config_file);
+                load_grid_from_toml(&config_file)?
+            } else {
+                info!("Using default parameter grid");
+                ParameterGrid::default()
+            };
+
+            reporter.print_grid_info(&parameter_grid);
+            println!("{}\n", "=".repeat(80));
+
+            // Parse dates
+            let (start_dt, end_dt) = parse_date_range(&start, &end)?;
+
+            // Run optimization
+            println!("🚀 Starting optimization...\n");
+            let results = engine
+                .run_grid_search(&symbol, start_dt, end_dt, strategy_mode, parameter_grid)
+                .await?;
+
+            // Display and export results
+            let top_results = engine.rank_results(results.clone(), top_n);
+            reporter.print_results_table(&top_results, top_n);
+
+            if let Some(best) = top_results.first() {
+                reporter.print_best_config(best);
             }
-            "--start" => {
-                if i + 1 < args.len() {
-                    start_date_str = args[i + 1].clone();
-                    i += 1;
-                }
-            }
-            "--end" => {
-                if i + 1 < args.len() {
-                    end_date_str = args[i + 1].clone();
-                    i += 1;
-                }
-            }
-            "--strategy" => {
-                if i + 1 < args.len() {
-                    strategy_mode_str = args[i + 1].clone();
-                    i += 1;
-                }
-            }
-            "--grid-config" => {
-                if i + 1 < args.len() {
-                    grid_config_file = Some(args[i + 1].clone());
-                    i += 1;
-                }
-            }
-            "--output" => {
-                if i + 1 < args.len() {
-                    output_file = args[i + 1].clone();
-                    i += 1;
-                }
-            }
-            "--top-n" => {
-                if i + 1 < args.len() {
-                    top_n = args[i + 1].parse().unwrap_or(10);
-                    i += 1;
-                }
-            }
-            "--help" => {
-                print_help();
-                return Ok(());
-            }
-            _ => {}
+
+            reporter.export_json(&results, &output)?;
+            println!("✅ Optimization complete!\n");
         }
-        i += 1;
+        Commands::Batch {
+            symbols,
+            start,
+            end,
+            strategy,
+            top_n,
+        } => {
+            let symbol_list: Vec<String> =
+                symbols.split(',').map(|s| s.trim().to_string()).collect();
+            let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::Advanced);
+            let parameter_grid = ParameterGrid::default();
+
+            println!("{}", "=".repeat(80));
+            println!("🔍 BATCH GRID SEARCH OPTIMIZER");
+            println!("Symbols: {:?}", symbol_list);
+            println!("Period: {} to {}", start, end);
+            println!("Strategy: {:?}", strategy_mode);
+            println!("{}\n", "=".repeat(80));
+
+            let (start_dt, end_dt) = parse_date_range(&start, &end)?;
+
+            let batch_results = engine
+                .run_batch(symbol_list, start_dt, end_dt, strategy_mode, parameter_grid)
+                .await;
+
+            for (symbol, result) in batch_results {
+                match result {
+                    Ok(results) => {
+                        let top_results = engine.rank_results(results.clone(), top_n);
+                        println!("\n📈 {} - Top {} Results:", symbol, top_n);
+                        reporter.print_results_table(&top_results, top_n);
+
+                        let filename = format!("{}_optimization.json", symbol.to_lowercase());
+                        if let Err(e) = reporter.export_json(&results, &filename) {
+                            eprintln!("Warning: Failed to export {}: {}", filename, e);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Error optimizing {}: {}", symbol, e);
+                    }
+                }
+            }
+
+            println!("\n✅ Batch optimization complete!\n");
+        }
     }
-
-    let strategy_mode =
-        StrategyMode::from_str(&strategy_mode_str).unwrap_or(StrategyMode::Advanced);
-
-    println!("{}", "=".repeat(80));
-    println!("🔍 GRID SEARCH PARAMETER OPTIMIZER");
-    println!("{}", "=".repeat(80));
-    println!("Symbol:       {}", symbol);
-    println!("Period:       {} to {}", start_date_str, end_date_str);
-    println!("Strategy:     {:?}", strategy_mode);
-    println!("Output:       {}", output_file);
-    println!("{}", "=".repeat(80));
-
-    // 4. Load parameter grid
-    let parameter_grid = if let Some(config_file) = grid_config_file {
-        info!("Loading parameter grid from: {}", config_file);
-        load_grid_from_toml(&config_file)?
-    } else {
-        info!("Using default parameter grid");
-        ParameterGrid::default()
-    };
-
-    println!("\n📊 Parameter Grid:");
-    println!("  Fast SMA:       {:?}", parameter_grid.fast_sma);
-    println!("  Slow SMA:       {:?}", parameter_grid.slow_sma);
-    println!("  RSI Threshold:  {:?}", parameter_grid.rsi_threshold);
-    println!(
-        "  Trend Div:      {:?}",
-        parameter_grid.trend_divergence_threshold
-    );
-    println!(
-        "  ATR Mult:       {:?}",
-        parameter_grid.trailing_stop_atr_multiplier
-    );
-    println!(
-        "  Cooldown (s):   {:?}",
-        parameter_grid.order_cooldown_seconds
-    );
-
-    // Calculate total combinations
-    let total_combos = parameter_grid.fast_sma.len()
-        * parameter_grid.slow_sma.len()
-        * parameter_grid.rsi_threshold.len()
-        * parameter_grid.trend_divergence_threshold.len()
-        * parameter_grid.trailing_stop_atr_multiplier.len()
-        * parameter_grid.order_cooldown_seconds.len();
-
-    println!("\n🔢 Total combinations to test: {}", total_combos);
-    println!("{}\n", "=".repeat(80));
-
-    // 5. Setup Dates
-    let start_date_parsed = chrono::NaiveDate::parse_from_str(&start_date_str, "%Y-%m-%d")?;
-    let start = Utc.from_utc_datetime(&start_date_parsed.and_hms_opt(14, 30, 0).unwrap());
-    let end_date_parsed = chrono::NaiveDate::parse_from_str(&end_date_str, "%Y-%m-%d")?;
-    let end = Utc.from_utc_datetime(&end_date_parsed.and_hms_opt(21, 0, 0).unwrap());
-
-    // 6. Initialize Services
-    let api_key = env::var("ALPACA_API_KEY").expect("ALPACA_API_KEY must be set");
-    let api_secret = env::var("ALPACA_SECRET_KEY").expect("ALPACA_SECRET_KEY must be set");
-    let ws_url =
-        env::var("ALPACA_WS_URL").unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
-    let data_url = env::var("ALPACA_DATA_URL").unwrap_or("https://data.alpaca.markets".to_string());
-    let asset_class_str = env::var("ASSET_CLASS").unwrap_or_else(|_| "stock".to_string());
-    let asset_class = rustrade::config::AssetClass::from_str(&asset_class_str)
-        .unwrap_or(rustrade::config::AssetClass::Stock);
-
-    let market_service = Arc::new(
-        AlpacaMarketDataService::builder()
-            .api_key(api_key)
-            .api_secret(api_secret)
-            .ws_url(ws_url)
-            .data_base_url(data_url)
-            .min_volume_threshold(10000.0)
-            .asset_class(asset_class)
-            .candle_repository(None) // No caching needed for optimization
-            .build(),
-    );
-
-    // Execution service factory - creates fresh portfolio for each run
-    let execution_service_factory: Arc<
-        dyn Fn() -> Arc<dyn rustrade::domain::ports::ExecutionService> + Send + Sync,
-    > = Arc::new(move || {
-        let mut portfolio = Portfolio::new();
-        portfolio.cash = Decimal::new(100000, 0);
-        let portfolio_lock = Arc::new(RwLock::new(portfolio));
-
-        let slippage_pct = env::var("SLIPPAGE_PCT")
-            .unwrap_or_else(|_| "0.001".to_string())
-            .parse::<f64>()
-            .unwrap_or(0.001);
-        let commission_per_share = env::var("COMMISSION_PER_SHARE")
-            .unwrap_or_else(|_| "0.001".to_string())
-            .parse::<f64>()
-            .unwrap_or(0.001);
-
-        let slippage = Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO);
-        let commission = Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO);
-        let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
-
-        Arc::new(MockExecutionService::with_costs(portfolio_lock, fee_model))
-    });
-
-    // 6.5. Load Config to get min_profit_ratio (scales with Risk Appetite)
-    let app_config = rustrade::config::Config::from_env()?;
-
-    // 7. Create optimizer
-    let optimizer = GridSearchOptimizer::new(
-        market_service,
-        execution_service_factory,
-        parameter_grid,
-        strategy_mode,
-        app_config.min_profit_ratio, // Uses Risk Appetite value if configured
-    );
-
-    // 8. Run optimization
-    println!("🚀 Starting optimization...\n");
-    let results = optimizer.run_optimization(&symbol, start, end).await?;
-
-    // 9. Display top results
-    println!("\n{}", "=".repeat(80));
-    println!("✅ OPTIMIZATION COMPLETE - Top {} Results", top_n);
-    println!("{}", "=".repeat(80));
-
-    let top_results = optimizer.rank_results(results.clone(), top_n);
-
-    println!(
-        "{:<4} | {:<6} | {:<6} | {:>8} | {:>8} | {:>8} | {:>7} | {:>7} | {:>8}",
-        "#", "Fast", "Slow", "Sharpe", "Return%", "WinRate", "Trades", "MaxDD%", "Score"
-    );
-    println!("{}", "-".repeat(80));
-
-    for (i, result) in top_results.iter().enumerate() {
-        println!(
-            "{:<4} | {:<6} | {:<6} | {:>8.2} | {:>8.2} | {:>8.1} | {:>7} | {:>7.2} | {:>8.4}",
-            i + 1,
-            result.params.fast_sma_period,
-            result.params.slow_sma_period,
-            result.sharpe_ratio,
-            result.total_return,
-            result.win_rate,
-            result.total_trades,
-            result.max_drawdown,
-            result.objective_score
-        );
-    }
-
-    println!("{}\n", "=".repeat(80));
-
-    // 10. Show best configuration details
-    if let Some(best) = top_results.first() {
-        println!("🏆 BEST CONFIGURATION:");
-        println!("  Fast SMA:         {}", best.params.fast_sma_period);
-        println!("  Slow SMA:         {}", best.params.slow_sma_period);
-        println!("  RSI Threshold:    {:.1}", best.params.rsi_threshold);
-        println!(
-            "  Trend Div:        {:.4}",
-            best.params.trend_divergence_threshold
-        );
-        println!(
-            "  ATR Multiplier:   {:.1}",
-            best.params.trailing_stop_atr_multiplier
-        );
-        println!("  Cooldown (s):     {}", best.params.order_cooldown_seconds);
-        println!("\n  Sharpe Ratio:     {:.2}", best.sharpe_ratio);
-        println!("  Total Return:     {:.2}%", best.total_return);
-        println!("  Win Rate:         {:.1}%", best.win_rate);
-        println!("  Max Drawdown:     {:.2}%", best.max_drawdown);
-        println!("  Alpha:            {:.4}%", best.alpha * 100.0);
-        println!("  Beta:             {:.2}", best.beta);
-        println!("{}\n", "=".repeat(80));
-    }
-
-    // 11. Export to JSON
-    let json_output = serde_json::to_string_pretty(&results)?;
-    std::fs::write(&output_file, json_output)
-        .context(format!("Failed to write results to {}", output_file))?;
-
-    println!("💾 Results saved to: {}", output_file);
-    println!("✅ Optimization complete!\n");
 
     Ok(())
 }
 
-fn load_grid_from_toml(path: &str) -> Result<ParameterGrid> {
-    let content = std::fs::read_to_string(path)?;
-    let grid: ParameterGrid = toml::from_str(&content)?;
-    Ok(grid)
+/// Parses start and end date strings into DateTime<Utc>.
+fn parse_date_range(
+    start: &str,
+    end: &str,
+) -> Result<(chrono::DateTime<Utc>, chrono::DateTime<Utc>)> {
+    let start_date = NaiveDate::parse_from_str(start, "%Y-%m-%d")
+        .context(format!("Invalid start date format: {}", start))?;
+    let end_date = NaiveDate::parse_from_str(end, "%Y-%m-%d")
+        .context(format!("Invalid end date format: {}", end))?;
+
+    let start_dt = Utc
+        .from_local_datetime(
+            &start_date
+                .and_hms_opt(14, 30, 0)
+                .context("Invalid start time")?,
+        )
+        .single()
+        .context("Failed to create start datetime")?;
+    let end_dt = Utc
+        .from_local_datetime(&end_date.and_hms_opt(21, 0, 0).context("Invalid end time")?)
+        .single()
+        .context("Failed to create end datetime")?;
+
+    Ok((start_dt, end_dt))
 }
 
-fn print_help() {
-    println!("Grid Search Parameter Optimizer");
-    println!("\nUSAGE:");
-    println!("  cargo run --bin optimize -- [OPTIONS]");
-    println!("\nOPTIONS:");
-    println!("  --symbol <SYMBOL>           Symbol to optimize (default: TSLA)");
-    println!("  --start <YYYY-MM-DD>        Start date (default: 2020-01-01)");
-    println!("  --end <YYYY-MM-DD>          End date (default: 2023-12-31)");
-    println!(
-        "  --strategy <MODE>           Strategy mode: standard, advanced, dynamic, trendriding, meanreversion"
-    );
-    println!("  --grid-config <FILE>        TOML file with parameter grid (optional)");
-    println!("  --output <FILE>             Output JSON file (default: optimization_results.json)");
-    println!("  --top-n <N>                 Show top N results (default: 10)");
-    println!("  --help                      Show this help message");
-    println!("\nEXAMPLE:");
-    println!("  cargo run --bin optimize -- \\");
-    println!("    --symbol NVDA \\");
-    println!("    --start 2020-01-01 \\");
-    println!("    --end 2023-12-31 \\");
-    println!("    --grid-config grid.toml \\");
-    println!("    --output nvda_optimization.json");
+/// Loads a parameter grid from a TOML file.
+fn load_grid_from_toml(path: &str) -> Result<ParameterGrid> {
+    let content = std::fs::read_to_string(path)
+        .context(format!("Failed to read grid config file: {}", path))?;
+    let grid: ParameterGrid =
+        toml::from_str(&content).context(format!("Failed to parse grid config TOML: {}", path))?;
+    Ok(grid)
 }

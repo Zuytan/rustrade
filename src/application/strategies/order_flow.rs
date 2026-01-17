@@ -124,8 +124,8 @@ impl TradingStrategy for OrderFlowStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::trading::types::OrderSide;
     use crate::domain::market::order_flow::VolumeProfile;
+    use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
     use std::collections::{HashMap, VecDeque};
 
