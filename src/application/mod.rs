@@ -9,6 +9,7 @@ pub mod market_data;
 pub mod monitoring;
 
 // Strategy optimization and backtesting
+pub mod benchmarking;
 pub mod optimization;
 
 // Risk management and position control

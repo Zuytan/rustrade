@@ -140,7 +140,7 @@ impl SymbolContext {
         self.ofi_history.push_back(ofi.value);
 
         // Build Volume Profile (every 10 candles to reduce overhead)
-        if self.candle_history.len() % 10 == 0 && self.candle_history.len() >= 20 {
+        if self.candle_history.len().is_multiple_of(10) && self.candle_history.len() >= 20 {
             self.volume_profile = Some(crate::domain::market::order_flow::build_volume_profile(
                 &self.candle_history,
                 100, // lookback

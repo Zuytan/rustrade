@@ -70,4 +70,5 @@ rayon = "1.10"
 
 # Observability (push-based, no HTTP server)
 prometheus = "0.14"
+clap = { version = "4.5.54", features = ["derive"] }
 
