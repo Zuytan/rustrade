@@ -10,5 +10,7 @@ pub mod observability;
 pub mod persistence;
 pub mod sentiment;
 
+pub mod settings_persistence;
+
 pub use core::event_bus::EventBus;
 pub use persistence::in_memory::{InMemoryPortfolioRepository, InMemoryTradeRepository};

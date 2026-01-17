@@ -5,10 +5,13 @@ use crate::application::risk_management::commands::RiskCommand;
 use crate::domain::risk::risk_appetite::RiskAppetite;
 use crate::domain::risk::risk_config::RiskConfig;
 use crate::infrastructure::i18n::I18nService;
+use crate::infrastructure::settings_persistence::{
+    AnalystSettings, PersistedSettings, RiskSettings, SettingsPersistence,
+};
 use crate::interfaces::design_system::DesignSystem;
 use crate::interfaces::settings_components;
 use eframe::egui;
-use tracing::error;
+use tracing::{error, info};
 
 /// Settings tab enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,7 +124,48 @@ impl SettingsPanel {
         };
         // Initialize strings based on default risk score
         panel.update_from_score(5);
+
+        // Try to load persisted settings
+        match SettingsPersistence::new() {
+            Ok(persistence) => match persistence.load() {
+                Ok(Some(settings)) => {
+                    info!("Applying persisted settings");
+                    panel.apply_persisted_settings(&settings);
+                }
+                Ok(None) => info!("No persisted settings found, using defaults"),
+                Err(e) => error!("Failed to load settings: {}", e),
+            },
+            Err(e) => error!("Failed to initialize settings persistence: {}", e),
+        }
+
         panel
+    }
+
+    /// Applies persisted settings to the panel
+    pub fn apply_persisted_settings(&mut self, settings: &PersistedSettings) {
+        // Mode & Score
+        self.config_mode = match settings.config_mode.as_str() {
+            "Advanced" => ConfigMode::Advanced,
+            _ => ConfigMode::Simple,
+        };
+        self.risk_score = settings.risk_score;
+
+        // Risk Settings
+        self.max_position_size_pct = settings.risk.max_position_size_pct.clone();
+        self.max_daily_loss_pct = settings.risk.max_daily_loss_pct.clone();
+        self.max_drawdown_pct = settings.risk.max_drawdown_pct.clone();
+        self.consecutive_loss_limit = settings.risk.consecutive_loss_limit.clone();
+
+        // Analyst Settings
+        self.fast_sma_period = settings.analyst.fast_sma_period.clone();
+        self.slow_sma_period = settings.analyst.slow_sma_period.clone();
+        self.rsi_period = settings.analyst.rsi_period.clone();
+        self.rsi_threshold = settings.analyst.rsi_threshold.clone();
+        self.macd_min_threshold = settings.analyst.macd_min_threshold.clone();
+        self.adx_threshold = settings.analyst.adx_threshold.clone();
+        self.min_profit_ratio = settings.analyst.min_profit_ratio.clone();
+        self.sma_threshold = settings.analyst.sma_threshold.clone();
+        self.profit_target_multiplier = settings.analyst.profit_target_multiplier.clone();
     }
 
     /// Updates all text fields based on the selected risk score (Logic mirroring RiskAppetite domain)
@@ -467,6 +511,40 @@ fn render_save_button(
         let adx_t = panel.adx_threshold.parse::<f64>().unwrap_or(25.0);
         let min_rr = panel.min_profit_ratio.parse::<f64>().unwrap_or(1.5);
         let prof_mult = panel.profit_target_multiplier.parse::<f64>().unwrap_or(2.0);
+
+        // --- Save Settings to Disk ---
+        let persisted_settings = PersistedSettings {
+            config_mode: match panel.config_mode {
+                ConfigMode::Simple => "Simple".to_string(),
+                ConfigMode::Advanced => "Advanced".to_string(),
+            },
+            risk_score: panel.risk_score,
+            risk: RiskSettings {
+                max_position_size_pct: panel.max_position_size_pct.clone(),
+                max_daily_loss_pct: panel.max_daily_loss_pct.clone(),
+                max_drawdown_pct: panel.max_drawdown_pct.clone(),
+                consecutive_loss_limit: panel.consecutive_loss_limit.clone(),
+            },
+            analyst: AnalystSettings {
+                fast_sma_period: panel.fast_sma_period.clone(),
+                slow_sma_period: panel.slow_sma_period.clone(),
+                rsi_period: panel.rsi_period.clone(),
+                rsi_threshold: panel.rsi_threshold.clone(),
+                macd_min_threshold: panel.macd_min_threshold.clone(),
+                adx_threshold: panel.adx_threshold.clone(),
+                min_profit_ratio: panel.min_profit_ratio.clone(),
+                sma_threshold: panel.sma_threshold.clone(),
+                profit_target_multiplier: panel.profit_target_multiplier.clone(),
+            },
+        };
+
+        if let Ok(persistence) = SettingsPersistence::new() {
+            if let Err(e) = persistence.save(&persisted_settings) {
+                error!("Failed to save settings: {}", e);
+            }
+        } else {
+            error!("Failed to initialize settings persistence for saving");
+        }
 
         // Create and send Risk Config
         let risk_config = RiskConfig {

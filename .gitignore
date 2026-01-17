@@ -19,6 +19,7 @@ results.json
 benchmark_results/
 optimization*.json
 check_output.txt
+.rustrade/   # Local settings directory
 
 # --- OS & TOOLS ---
 .DS_Store

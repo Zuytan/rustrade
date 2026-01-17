@@ -1,5 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.74.0 - Settings Persistence (January 2026)
+
+### New Features
+- **Settings Persistence**: User configuration is now saved to disk (`~/.rustrade/settings.json`) and automatically loaded on startup
+  - **Auto-Save**: Settings are persisted immediately when clicking "Save"
+  - **Real-Time Update**: Configuration changes are applied instantly to the running trading engine
+  - **Infrastructure**: Robust JSON serialization with fallback to defaults if file is missing
+
+### Security & Maintainability
+- **Git Exclusion**: Added `.rustrade/` to `.gitignore` to prevent committing local settings
+- **Integration Tests**: Added `settings_persistence_integration.rs` to verify save/load flows
+- **Code Quality**: Maintained 0 clippy warnings and passing test suite
+
 ## Version 0.73.0 - Settings UI Modernization (January 2026)
 
 ### UI/UX Improvements
