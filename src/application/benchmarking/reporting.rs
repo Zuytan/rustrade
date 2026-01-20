@@ -156,13 +156,21 @@ impl BenchmarkReporter {
 
         let best = results
             .iter()
-            .max_by(|a, b| a.return_pct.partial_cmp(&b.return_pct).unwrap())
-            .unwrap();
+            .max_by(|a, b| {
+                a.return_pct
+                    .partial_cmp(&b.return_pct)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .expect("results verified non-empty at line 132");
 
         let worst = results
             .iter()
-            .min_by(|a, b| a.return_pct.partial_cmp(&b.return_pct).unwrap())
-            .unwrap();
+            .min_by(|a, b| {
+                a.return_pct
+                    .partial_cmp(&b.return_pct)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .expect("results verified non-empty at line 132");
 
         BenchmarkSummary {
             total_scenarios: total,

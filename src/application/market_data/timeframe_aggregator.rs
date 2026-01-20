@@ -60,12 +60,18 @@ impl TimeframeAggregator {
                     // Check if candle is complete
                     if active.is_complete() {
                         // Move completed candle to output
-                        let completed = self.active_candles.remove(&key).unwrap();
+                        let completed = self
+                            .active_candles
+                            .remove(&key)
+                            .expect("active_candle verified to exist by get_mut check");
                         completed_candles.push(completed);
                     }
                 } else {
                     // New period started - complete the old one and start a new one
-                    let completed = self.active_candles.remove(&key).unwrap();
+                    let completed = self
+                        .active_candles
+                        .remove(&key)
+                        .expect("active_candle verified to exist by get_mut check");
                     completed_candles.push(completed);
 
                     // Start new candle for new period

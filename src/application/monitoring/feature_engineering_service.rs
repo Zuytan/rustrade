@@ -1,4 +1,4 @@
-use crate::application::agents::analyst::AnalystConfig;
+use crate::application::agents::analyst_config::AnalystConfig;
 use crate::domain::ports::FeatureEngineeringService;
 use crate::domain::trading::types::{Candle, FeatureSet};
 use rust_decimal::prelude::ToPrimitive;
@@ -45,9 +45,15 @@ impl ManualAdx {
             return 0.0;
         }
 
-        let prev_high = self.prev_high.unwrap();
-        let prev_low = self.prev_low.unwrap();
-        let prev_close = self.prev_close.unwrap();
+        let prev_high = self
+            .prev_high
+            .expect("prev_high is Some when prev_close is Some");
+        let prev_low = self
+            .prev_low
+            .expect("prev_low is Some when prev_close is Some");
+        let prev_close = self
+            .prev_close
+            .expect("prev_close verified Some at line 41");
 
         // Calculate True Range
         let tr1 = high - low;
@@ -141,20 +147,28 @@ pub struct TechnicalFeatureEngineeringService {
 impl TechnicalFeatureEngineeringService {
     pub fn new(config: &AnalystConfig) -> Self {
         Self {
-            rsi: RelativeStrengthIndex::new(config.rsi_period).unwrap(),
+            rsi: RelativeStrengthIndex::new(config.rsi_period)
+                .expect("rsi_period from AnalystConfig must be > 0"),
             macd: MovingAverageConvergenceDivergence::new(
                 config.macd_fast,
                 config.macd_slow,
                 config.macd_signal,
             )
-            .unwrap(),
-            sma_20: SimpleMovingAverage::new(config.fast_sma_period).unwrap(),
-            sma_50: SimpleMovingAverage::new(config.slow_sma_period).unwrap(),
-            sma_200: SimpleMovingAverage::new(config.trend_sma_period).unwrap(),
-            bb: BollingerBands::new(config.bb_period, config.bb_std_dev).unwrap(),
-            atr: AverageTrueRange::new(config.atr_period).unwrap(),
-            ema_fast: ExponentialMovingAverage::new(config.ema_fast_period).unwrap(),
-            ema_slow: ExponentialMovingAverage::new(config.ema_slow_period).unwrap(),
+            .expect("MACD periods from AnalystConfig must be valid"),
+            sma_20: SimpleMovingAverage::new(config.fast_sma_period)
+                .expect("fast_sma_period from AnalystConfig must be > 0"),
+            sma_50: SimpleMovingAverage::new(config.slow_sma_period)
+                .expect("slow_sma_period from AnalystConfig must be > 0"),
+            sma_200: SimpleMovingAverage::new(config.trend_sma_period)
+                .expect("trend_sma_period from AnalystConfig must be > 0"),
+            bb: BollingerBands::new(config.bb_period, config.bb_std_dev)
+                .expect("bb_period from AnalystConfig must be > 0"),
+            atr: AverageTrueRange::new(config.atr_period)
+                .expect("atr_period from AnalystConfig must be > 0"),
+            ema_fast: ExponentialMovingAverage::new(config.ema_fast_period)
+                .expect("ema_fast_period from AnalystConfig must be > 0"),
+            ema_slow: ExponentialMovingAverage::new(config.ema_slow_period)
+                .expect("ema_slow_period from AnalystConfig must be > 0"),
             adx: ManualAdx::new(config.adx_period),
         }
     }

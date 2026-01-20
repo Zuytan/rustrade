@@ -1,4 +1,4 @@
-use crate::application::agents::analyst::AnalystConfig;
+use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::optimization::simulator::Simulator;
 use crate::config::StrategyMode;
 use crate::domain::ports::{ExecutionService, MarketDataService};
@@ -128,8 +128,10 @@ impl GridSearchOptimizer {
                                     mean_reversion_rsi_exit: 50.0,
                                     mean_reversion_bb_period: 20,
                                     fee_model: Arc::new(ConstantFeeModel::new(
-                                        Decimal::from_f64(0.005).unwrap(),
-                                        Decimal::from_f64(0.001).unwrap(),
+                                        Decimal::from_f64(0.005)
+                                            .expect("0.005 is a valid f64 for Decimal"),
+                                        Decimal::from_f64(0.001)
+                                            .expect("0.001 is a valid f64 for Decimal"),
                                     )),
                                     max_position_size_pct: 0.1,
                                     bb_period: 20,

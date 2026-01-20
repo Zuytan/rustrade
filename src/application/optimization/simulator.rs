@@ -454,7 +454,10 @@ impl CandleRepository for InMemoryCandleRepository {
     }
 
     async fn get_range(&self, _symbol: &str, start_ts: i64, end_ts: i64) -> Result<Vec<Candle>> {
-        let candles = self.candles.lock().unwrap();
+        let candles = self
+            .candles
+            .lock()
+            .expect("InMemoryCandleRepository mutex poisoned - concurrent panic");
         Ok(candles
             .iter()
             .filter(|c| c.timestamp >= start_ts && c.timestamp <= end_ts)
@@ -463,7 +466,10 @@ impl CandleRepository for InMemoryCandleRepository {
     }
 
     async fn get_latest_timestamp(&self, _symbol: &str) -> Result<Option<i64>> {
-        let candles = self.candles.lock().unwrap();
+        let candles = self
+            .candles
+            .lock()
+            .expect("InMemoryCandleRepository mutex poisoned - concurrent panic");
         Ok(candles.last().map(|c| c.timestamp))
     }
 

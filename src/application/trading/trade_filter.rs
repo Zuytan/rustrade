@@ -6,7 +6,7 @@ use crate::application::monitoring::cost_evaluator::CostEvaluator;
 use crate::application::risk_management::position_manager::PositionManager;
 use crate::domain::trading::types::{OrderSide, TradeProposal};
 
-use crate::application::agents::analyst::AnalystConfig;
+use crate::application::agents::analyst_config::AnalystConfig;
 
 pub struct TradeFilter {
     cost_evaluator: CostEvaluator,

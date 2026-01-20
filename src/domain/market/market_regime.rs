@@ -85,7 +85,12 @@ impl MarketRegimeDetector {
 
         // 1. Calculate Volatility (ATR / Price)
         let atr = self.calculate_atr(recent_candles, 14);
-        let current_price = recent_candles.last().unwrap().close.to_f64().unwrap_or(0.0);
+        let current_price = recent_candles
+            .last()
+            .expect("recent_candles slice guaranteed non-empty by window_size check")
+            .close
+            .to_f64()
+            .unwrap_or(0.0);
         let volatility_score = if current_price > 0.0 {
             (atr / current_price) * 100.0
         } else {
@@ -191,8 +196,18 @@ impl MarketRegimeDetector {
         if candles.len() < 2 {
             return false;
         }
-        let first = candles.first().unwrap().close.to_f64().unwrap_or(0.0);
-        let last = candles.last().unwrap().close.to_f64().unwrap_or(0.0);
+        let first = candles
+            .first()
+            .expect("candles verified len >= 2")
+            .close
+            .to_f64()
+            .unwrap_or(0.0);
+        let last = candles
+            .last()
+            .expect("candles verified len >= 2")
+            .close
+            .to_f64()
+            .unwrap_or(0.0);
         last > first
     }
 }

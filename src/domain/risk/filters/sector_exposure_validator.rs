@@ -51,7 +51,10 @@ impl SectorExposureValidator {
     async fn get_sector(&self, symbol: &str) -> String {
         // 1. Try cache first
         {
-            let cache = self.sector_cache.lock().unwrap();
+            let cache = self
+                .sector_cache
+                .lock()
+                .expect("sector_cache mutex poisoned");
             if let Some(sector) = cache.get(symbol) {
                 return sector.clone();
             }
@@ -65,7 +68,10 @@ impl SectorExposureValidator {
                 .unwrap_or_else(|_| "Unknown".to_string());
 
             // Update cache
-            let mut cache = self.sector_cache.lock().unwrap();
+            let mut cache = self
+                .sector_cache
+                .lock()
+                .expect("sector_cache mutex poisoned");
             cache.insert(symbol.to_string(), sector.clone());
             return sector;
         }

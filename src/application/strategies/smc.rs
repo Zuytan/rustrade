@@ -187,7 +187,12 @@ impl SMCStrategy {
             return None;
         }
 
-        let curr_close = candles.back().unwrap().close.to_f64().unwrap_or(0.0);
+        let curr_close = candles
+            .back()
+            .expect("candles verified non-empty by len() >= 10 check")
+            .close
+            .to_f64()
+            .unwrap_or(0.0);
 
         // Simplified MSS: check for break of recent 10-candle high/low
         let mut max_high = 0.0;

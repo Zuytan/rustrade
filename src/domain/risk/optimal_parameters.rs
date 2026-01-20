@@ -1,18 +1,52 @@
 //! Optimal parameters discovered through backtesting optimization.
 //!
 //! This module provides domain types for storing and retrieving optimized
-//! strategy parameters for each risk profile (Conservative/Balanced/Aggressive).
+//! strategy parameters for each risk profile (Conservative/Balanced/Aggressive)
+//! and asset type (Stock/Crypto).
 
 use super::risk_appetite::RiskProfile;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
+
+/// Asset type for differentiated optimization parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum AssetType {
+    #[default]
+    Stock,
+    Crypto,
+}
+
+impl fmt::Display for AssetType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AssetType::Stock => write!(f, "Stock"),
+            AssetType::Crypto => write!(f, "Crypto"),
+        }
+    }
+}
+
+impl FromStr for AssetType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "stock" | "stocks" => Ok(AssetType::Stock),
+            "crypto" | "cryptocurrency" => Ok(AssetType::Crypto),
+            _ => Err(format!("Unknown asset type: {}", s)),
+        }
+    }
+}
 
 /// Optimal strategy parameters discovered through backtesting.
 ///
 /// These parameters represent the best-performing configuration found
-/// by the grid search optimizer for a specific risk profile.
+/// by the grid search optimizer for a specific risk profile and asset type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimalParameters {
+    /// Asset type (Stock or Crypto)
+    pub asset_type: AssetType,
     /// Risk profile these parameters are optimized for
     pub risk_profile: RiskProfile,
 
@@ -51,6 +85,7 @@ impl OptimalParameters {
     /// Creates a new OptimalParameters instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        asset_type: AssetType,
         risk_profile: RiskProfile,
         fast_sma_period: usize,
         slow_sma_period: usize,
@@ -66,6 +101,7 @@ impl OptimalParameters {
         total_trades: usize,
     ) -> Self {
         Self {
+            asset_type,
             risk_profile,
             fast_sma_period,
             slow_sma_period,
@@ -84,7 +120,7 @@ impl OptimalParameters {
     }
 }
 
-/// Collection of optimal parameters for all risk profiles.
+/// Collection of optimal parameters for all risk profiles and asset types.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OptimalParametersSet {
     pub parameters: Vec<OptimalParameters>,
@@ -98,17 +134,29 @@ impl OptimalParametersSet {
         }
     }
 
-    /// Adds or updates parameters for a risk profile.
+    /// Adds or updates parameters for a risk profile and asset type combination.
     pub fn upsert(&mut self, params: OptimalParameters) {
-        // Remove existing entry for this profile if present
-        self.parameters
-            .retain(|p| p.risk_profile != params.risk_profile);
+        // Remove existing entry for this profile + asset type combination
+        self.parameters.retain(|p| {
+            !(p.risk_profile == params.risk_profile && p.asset_type == params.asset_type)
+        });
         self.parameters.push(params);
     }
 
-    /// Gets parameters for a specific risk profile.
+    /// Gets parameters for a specific risk profile (defaults to Stock).
     pub fn get(&self, profile: RiskProfile) -> Option<&OptimalParameters> {
-        self.parameters.iter().find(|p| p.risk_profile == profile)
+        self.get_by_type(AssetType::Stock, profile)
+    }
+
+    /// Gets parameters for a specific asset type and risk profile.
+    pub fn get_by_type(
+        &self,
+        asset_type: AssetType,
+        profile: RiskProfile,
+    ) -> Option<&OptimalParameters> {
+        self.parameters
+            .iter()
+            .find(|p| p.risk_profile == profile && p.asset_type == asset_type)
     }
 }
 
@@ -119,6 +167,7 @@ mod tests {
     #[test]
     fn test_optimal_parameters_creation() {
         let params = OptimalParameters::new(
+            AssetType::Stock,
             RiskProfile::Balanced,
             20,
             60,
@@ -134,6 +183,7 @@ mod tests {
             50,
         );
 
+        assert_eq!(params.asset_type, AssetType::Stock);
         assert_eq!(params.risk_profile, RiskProfile::Balanced);
         assert_eq!(params.fast_sma_period, 20);
         assert_eq!(params.slow_sma_period, 60);
@@ -146,6 +196,7 @@ mod tests {
         let mut set = OptimalParametersSet::new();
 
         let params1 = OptimalParameters::new(
+            AssetType::Stock,
             RiskProfile::Conservative,
             10,
             50,
@@ -162,6 +213,7 @@ mod tests {
         );
 
         let params2 = OptimalParameters::new(
+            AssetType::Stock,
             RiskProfile::Conservative,
             15,
             55,
@@ -180,7 +232,7 @@ mod tests {
         set.upsert(params1);
         assert_eq!(set.parameters.len(), 1);
 
-        // Upsert should replace existing
+        // Upsert should replace existing for same asset_type + profile
         set.upsert(params2);
         assert_eq!(set.parameters.len(), 1);
         assert_eq!(
@@ -193,7 +245,8 @@ mod tests {
     fn test_optimal_parameters_set_get() {
         let mut set = OptimalParametersSet::new();
 
-        let conservative = OptimalParameters::new(
+        let conservative_stock = OptimalParameters::new(
+            AssetType::Stock,
             RiskProfile::Conservative,
             10,
             50,
@@ -209,7 +262,8 @@ mod tests {
             30,
         );
 
-        let aggressive = OptimalParameters::new(
+        let aggressive_crypto = OptimalParameters::new(
+            AssetType::Crypto,
             RiskProfile::Aggressive,
             30,
             100,
@@ -217,7 +271,7 @@ mod tests {
             4.0,
             0.01,
             0,
-            "NVDA".to_string(),
+            "BTCUSD".to_string(),
             2.0,
             25.0,
             8.0,
@@ -225,11 +279,25 @@ mod tests {
             80,
         );
 
-        set.upsert(conservative);
-        set.upsert(aggressive);
+        set.upsert(conservative_stock);
+        set.upsert(aggressive_crypto);
 
+        // Default get uses Stock
         assert!(set.get(RiskProfile::Conservative).is_some());
-        assert!(set.get(RiskProfile::Aggressive).is_some());
-        assert!(set.get(RiskProfile::Balanced).is_none());
+        assert!(set.get(RiskProfile::Aggressive).is_none()); // Aggressive is Crypto
+
+        // Specific get_by_type
+        assert!(
+            set.get_by_type(AssetType::Stock, RiskProfile::Conservative)
+                .is_some()
+        );
+        assert!(
+            set.get_by_type(AssetType::Crypto, RiskProfile::Aggressive)
+                .is_some()
+        );
+        assert!(
+            set.get_by_type(AssetType::Stock, RiskProfile::Aggressive)
+                .is_none()
+        );
     }
 }

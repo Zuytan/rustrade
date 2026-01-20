@@ -1,4 +1,4 @@
-use crate::application::agents::analyst::AnalystConfig;
+use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::strategies::{
     AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, BreakoutStrategy, DualSMAStrategy,
     DynamicRegimeConfig, DynamicRegimeStrategy, EnsembleStrategy, MeanReversionStrategy,

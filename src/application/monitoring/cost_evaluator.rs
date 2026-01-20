@@ -274,8 +274,8 @@ impl Default for CostEvaluator {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         Self::new(
             Arc::new(ConstantFeeModel::new(
-                Decimal::from_f64(0.005).unwrap(),
-                Decimal::from_f64(0.001).unwrap(),
+                Decimal::from_f64(0.005).expect("0.005 is a valid f64 for Decimal"),
+                Decimal::from_f64(0.001).expect("0.001 is a valid f64 for Decimal"),
             )),
             5.0,
         )

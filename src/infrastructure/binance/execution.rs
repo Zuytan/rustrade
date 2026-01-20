@@ -227,7 +227,7 @@ impl ExecutionService for BinanceExecutionService {
         let today_start = chrono::Utc::now()
             .date_naive()
             .and_hms_opt(0, 0, 0)
-            .unwrap();
+            .expect("midnight is always a valid time");
         let _start_time = chrono::Utc
             .from_utc_datetime(&today_start)
             .timestamp_millis();

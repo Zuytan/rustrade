@@ -91,8 +91,14 @@ impl PerformanceMetrics {
         let mut period_days = 0.0;
 
         if !daily_closes.is_empty() {
-            let start_ts = daily_closes.first().unwrap().0;
-            let end_ts = daily_closes.last().unwrap().0;
+            let start_ts = daily_closes
+                .first()
+                .expect("daily_closes verified non-empty")
+                .0;
+            let end_ts = daily_closes
+                .last()
+                .expect("daily_closes verified non-empty")
+                .0;
             period_days = (end_ts - start_ts) as f64 / 86400.0;
         }
 

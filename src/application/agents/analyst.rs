@@ -3,21 +3,16 @@ use crate::application::market_data::spread_cache::SpreadCache;
 use crate::application::monitoring::cost_evaluator::CostEvaluator;
 use crate::application::optimization::win_rate_provider::{StaticWinRateProvider, WinRateProvider};
 
-use crate::application::risk_management::trailing_stops::StopState;
-
 use crate::application::strategies::TradingStrategy;
-use crate::application::strategies::strategy_selector::StrategySelector;
 
 use crate::application::agents::trade_evaluator::{EvaluationInput, TradeEvaluator};
 use crate::domain::market::market_regime::MarketRegime;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
-use crate::domain::trading::fee_model::FeeModel;
 use crate::domain::trading::types::Candle;
-use crate::domain::trading::types::OrderStatus; // Added
+use crate::domain::trading::types::OrderStatus;
 use crate::domain::trading::types::{MarketEvent, OrderSide, TradeProposal};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -26,225 +21,12 @@ use tracing::{debug, error, info, warn};
 
 use crate::domain::trading::symbol_context::SymbolContext;
 
+pub use crate::application::agents::analyst_config::AnalystConfig;
+
 #[derive(Debug)]
 pub enum AnalystCommand {
     UpdateConfig(Box<AnalystConfig>),
     ProcessNews(crate::domain::listener::NewsSignal),
-}
-
-fn default_fee_model() -> Arc<dyn FeeModel> {
-    Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-        Decimal::ZERO,
-        Decimal::ZERO,
-    ))
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AnalystConfig {
-    pub fast_sma_period: usize,
-    pub slow_sma_period: usize,
-    pub max_positions: usize,
-    pub trade_quantity: Decimal,
-    pub sma_threshold: f64,
-    pub order_cooldown_seconds: u64,
-    pub risk_per_trade_percent: f64,
-    pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
-    pub trend_sma_period: usize,
-    pub rsi_period: usize,
-    pub macd_fast_period: usize,
-    pub macd_slow_period: usize,
-    pub macd_signal_period: usize,
-    pub trend_divergence_threshold: f64,
-    pub trailing_stop_atr_multiplier: f64,
-    pub atr_period: usize,
-    pub rsi_threshold: f64,                // New Configurable Threshold
-    pub trend_riding_exit_buffer_pct: f64, // Trend Riding Strategy
-    pub mean_reversion_rsi_exit: f64,
-    pub mean_reversion_bb_period: usize,
-    #[serde(skip, default = "default_fee_model")] // FeeModel is trait object
-    pub fee_model: Arc<dyn FeeModel>,
-    pub max_position_size_pct: f64,
-    pub bb_period: usize,
-    pub bb_std_dev: f64,
-    pub macd_fast: usize,
-    pub macd_slow: usize,
-    pub macd_signal: usize,
-    pub ema_fast_period: usize,
-    pub ema_slow_period: usize,
-    pub take_profit_pct: f64,
-    pub min_hold_time_minutes: i64,      // Phase 2: minimum hold time
-    pub signal_confirmation_bars: usize, // Phase 2: signal confirmation
-    pub spread_bps: f64,                 // Cost-aware trading: spread in basis points
-    pub min_profit_ratio: f64,           // Cost-aware trading: minimum profit/cost ratio
-    pub profit_target_multiplier: f64,
-    // Risk-based adaptive filters
-    pub macd_requires_rising: bool, // Whether MACD must be rising for buy signals
-    pub trend_tolerance_pct: f64,   // Percentage tolerance for trend filter
-    pub macd_min_threshold: f64,    // Minimum MACD histogram threshold
-    pub adx_period: usize,
-    pub adx_threshold: f64,
-    // SMC Strategy Configuration
-    pub smc_ob_lookback: usize,          // Order Block lookback period
-    pub smc_min_fvg_size_pct: f64,       // Minimum Fair Value Gap size (e.g., 0.005 = 0.5%)
-    pub smc_volume_multiplier: f64, // Volume multiplier for OB confirmation (e.g. 1.5x average)
-    pub risk_appetite_score: Option<u8>, // Base Risk Appetite Score (1-9) for dynamic scaling
-    // Breakout Strategy Configuration
-    pub breakout_lookback: usize,
-    pub breakout_threshold_pct: f64,
-    pub breakout_volume_mult: f64,
-    // Hard Stop Configuration
-    pub max_loss_per_trade_pct: f64, // Maximum loss per trade before forced exit (e.g., -0.05 = -5%)
-}
-
-impl Default for AnalystConfig {
-    fn default() -> Self {
-        Self {
-            fast_sma_period: 10,
-            slow_sma_period: 20,
-            max_positions: 5,
-            trade_quantity: rust_decimal::Decimal::ONE,
-            sma_threshold: 0.005, // Raised from 0.001 - after signal sensitivity, Risk-2 gets ~0.0025 (0.25%)
-            order_cooldown_seconds: 60,
-            risk_per_trade_percent: 1.0,
-            strategy_mode: Default::default(),
-            trend_sma_period: 50,
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: 0.05,
-            trailing_stop_atr_multiplier: 2.0,
-            atr_period: 14,
-            rsi_threshold: 70.0,
-            trend_riding_exit_buffer_pct: 0.02,
-            mean_reversion_rsi_exit: 50.0,
-            mean_reversion_bb_period: 20,
-            fee_model: Arc::new(crate::domain::trading::fee_model::ConstantFeeModel::new(
-                rust_decimal::Decimal::ZERO,
-                rust_decimal::Decimal::ZERO,
-            )),
-            max_position_size_pct: 10.0,
-            bb_period: 20,
-            bb_std_dev: 2.0,
-            macd_fast: 12,
-            macd_slow: 26,
-            macd_signal: 9,
-            ema_fast_period: 10,
-            ema_slow_period: 20,
-            take_profit_pct: 0.1,
-            min_hold_time_minutes: 0,
-            signal_confirmation_bars: 1,
-            spread_bps: 0.0,
-            min_profit_ratio: 1.5,
-            profit_target_multiplier: 2.0,
-            macd_requires_rising: false,
-            trend_tolerance_pct: 0.02,
-            macd_min_threshold: 0.0,
-            adx_period: 14,
-            adx_threshold: 25.0,
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            smc_volume_multiplier: 1.5,
-            risk_appetite_score: None,
-            breakout_lookback: 10,
-            breakout_threshold_pct: 0.002,
-            breakout_volume_mult: 1.1,
-            max_loss_per_trade_pct: -0.05, // -5% max loss per trade
-        }
-    }
-}
-
-impl From<crate::config::Config> for AnalystConfig {
-    fn from(config: crate::config::Config) -> Self {
-        Self {
-            fast_sma_period: config.fast_sma_period,
-            slow_sma_period: config.slow_sma_period,
-            max_positions: config.max_positions,
-            trade_quantity: config.trade_quantity,
-            sma_threshold: config.sma_threshold,
-            order_cooldown_seconds: config.order_cooldown_seconds,
-            risk_per_trade_percent: config.risk_per_trade_percent,
-            strategy_mode: config.strategy_mode,
-            trend_sma_period: config.trend_sma_period,
-            rsi_period: config.rsi_period,
-            macd_fast_period: config.macd_fast_period,
-            macd_slow_period: config.macd_slow_period,
-            macd_signal_period: config.macd_signal_period,
-            trend_divergence_threshold: config.trend_divergence_threshold,
-            rsi_threshold: config.rsi_threshold,
-            trailing_stop_atr_multiplier: config.trailing_stop_atr_multiplier,
-            atr_period: config.atr_period,
-            trend_riding_exit_buffer_pct: config.trend_riding_exit_buffer_pct,
-            mean_reversion_rsi_exit: config.mean_reversion_rsi_exit,
-            mean_reversion_bb_period: config.mean_reversion_bb_period,
-            fee_model: config.create_fee_model(),
-            max_position_size_pct: config.max_position_size_pct,
-            bb_period: config.mean_reversion_bb_period,
-            bb_std_dev: 2.0,
-            macd_fast: config.macd_fast_period,
-            macd_slow: config.macd_slow_period,
-            macd_signal: config.macd_signal_period,
-            ema_fast_period: config.ema_fast_period,
-            ema_slow_period: config.ema_slow_period,
-            take_profit_pct: config.take_profit_pct,
-            min_hold_time_minutes: config.min_hold_time_minutes,
-            signal_confirmation_bars: config.signal_confirmation_bars,
-            spread_bps: config.spread_bps,
-            min_profit_ratio: config.min_profit_ratio,
-            profit_target_multiplier: config.profit_target_multiplier,
-            macd_requires_rising: config.macd_requires_rising,
-            trend_tolerance_pct: config.trend_tolerance_pct,
-            macd_min_threshold: config.macd_min_threshold,
-            adx_period: config.adx_period,
-            adx_threshold: config.adx_threshold,
-            smc_ob_lookback: config.smc_ob_lookback,
-            smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
-            smc_volume_multiplier: 1.5, // Default, not yet in base Config
-            risk_appetite_score: config.risk_appetite.map(|r| r.score()),
-            breakout_lookback: 20, // Increased lookback for more significant levels
-            breakout_threshold_pct: 0.0005, // 0.05% threshold (sensitive)
-            breakout_volume_mult: 0.1, // 10% of average (effectively disable volume filter for now)
-            max_loss_per_trade_pct: -0.05,
-        }
-    }
-}
-
-impl AnalystConfig {
-    pub fn apply_risk_appetite(
-        &mut self,
-        appetite: &crate::domain::risk::risk_appetite::RiskAppetite,
-    ) {
-        self.risk_per_trade_percent = appetite.calculate_risk_per_trade_percent();
-        self.trailing_stop_atr_multiplier = appetite.calculate_trailing_stop_multiplier();
-        self.rsi_threshold = appetite.calculate_rsi_threshold();
-        self.max_position_size_pct = appetite.calculate_max_position_size_pct();
-        self.min_profit_ratio = appetite.calculate_min_profit_ratio();
-        self.macd_requires_rising = appetite.requires_macd_rising();
-        self.trend_tolerance_pct = appetite.calculate_trend_tolerance_pct();
-        self.macd_min_threshold = appetite.calculate_macd_min_threshold();
-        self.profit_target_multiplier = appetite.calculate_profit_target_multiplier();
-
-        // Apply signal sensitivity factor for lower risk profiles
-        // This makes Conservative/Balanced profiles generate more signals
-        let sensitivity = appetite.calculate_signal_sensitivity_factor();
-        self.sma_threshold *= sensitivity;
-
-        // Reduce confirmation bars for conservative profiles (1 for score <= 4, else keep)
-        if appetite.score() <= 4 {
-            self.signal_confirmation_bars = 1;
-        }
-    }
-}
-
-impl From<&AnalystConfig> for crate::application::risk_management::sizing_engine::SizingConfig {
-    fn from(config: &AnalystConfig) -> Self {
-        Self {
-            risk_per_trade_percent: config.risk_per_trade_percent,
-            max_positions: config.max_positions,
-            max_position_size_pct: config.max_position_size_pct,
-            static_trade_quantity: config.trade_quantity,
-        }
-    }
 }
 
 pub struct AnalystDependencies {
@@ -446,74 +228,34 @@ impl Analyst {
     // ============================================================================
 
     /// Detect market regime for current symbol
+    ///
+    /// Delegates to [`regime_handler::detect_market_regime`]
     async fn detect_market_regime(
         repo: &Option<Arc<dyn CandleRepository>>,
         symbol: &str,
         candle_timestamp: i64,
         context: &SymbolContext,
     ) -> MarketRegime {
-        if let Some(repo) = repo {
-            let end_ts = candle_timestamp;
-            let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
-
-            if let Ok(candles) = repo.get_range(symbol, start_ts, end_ts).await {
-                return context
-                    .regime_detector
-                    .detect(&candles)
-                    .unwrap_or(MarketRegime::unknown());
-            }
-        }
-        MarketRegime::unknown()
+        super::regime_handler::detect_market_regime(repo, symbol, candle_timestamp, context).await
     }
 
+    /// Manages pending orders and handles timeouts.
+    ///
+    /// Delegates to [`position_lifecycle::manage_pending_orders`]
     async fn manage_pending_orders(
         execution_service: &std::sync::Arc<dyn ExecutionService>,
         context: &mut SymbolContext,
         symbol: &str,
         timestamp: i64,
     ) {
-        if context.position_manager.check_timeout(timestamp, 60000) {
-            // 60s timeout
-            info!(
-                "Analyst [{}]: Pending order TIMEOUT detected. Checking open orders to CANCEL...",
-                symbol
-            );
-
-            // 1. Fetch Open Orders
-            match execution_service.get_open_orders().await {
-                Ok(orders) => {
-                    // 2. Find orders for this symbol
-                    let symbol_orders: Vec<_> =
-                        orders.iter().filter(|o| o.symbol == symbol).collect();
-
-                    if symbol_orders.is_empty() {
-                        info!(
-                            "Analyst [{}]: No open orders found on exchange. Clearing local pending state.",
-                            symbol
-                        );
-                        context.position_manager.clear_pending();
-                    } else {
-                        // 3. Cancel them
-                        for order in symbol_orders {
-                            info!(
-                                "Analyst [{}]: Cancelling orphaned order {}...",
-                                symbol, order.id
-                            );
-                            if let Err(e) = execution_service.cancel_order(&order.id).await {
-                                error!(
-                                    "Analyst [{}]: Failed to cancel order {}: {}",
-                                    symbol, order.id, e
-                                );
-                            }
-                        }
-                        // Order status update will clear pending state
-                    }
-                }
-                Err(e) => {
-                    error!("Analyst [{}]: Failed to fetch open orders: {}", symbol, e);
-                }
-            }
-        }
+        super::position_lifecycle::manage_pending_orders(
+            execution_service,
+            context,
+            symbol,
+            timestamp,
+            60000, // 60s timeout
+        )
+        .await
     }
 
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
@@ -549,46 +291,15 @@ impl Analyst {
 
         // 1.5.5 Dynamic Risk Scaling
         // AUTOMATICALLY lower risk in Volatile or Bearish regimes
-        if let Some(base_score) = context.config.risk_appetite_score {
-            let modifier = match regime.regime_type {
-                crate::domain::market::market_regime::MarketRegimeType::Volatile => -3,
-                crate::domain::market::market_regime::MarketRegimeType::TrendingDown => -2,
-                _ => 0,
-            };
-
-            if modifier != 0 {
-                let new_score = (base_score as i8 + modifier).clamp(1, 9) as u8;
-                if let Ok(new_appetite) =
-                    crate::domain::risk::risk_appetite::RiskAppetite::new(new_score)
-                {
-                    context.config.apply_risk_appetite(&new_appetite);
-                    info!(
-                        "Analyst [{}]: Dynamic Risk Scaling active. Score {} -> {} ({:?})",
-                        symbol, base_score, new_score, regime.regime_type
-                    );
-                }
-            }
-        }
+        super::regime_handler::apply_dynamic_risk_scaling(context, &regime, &symbol);
 
         // 1.6 Adaptive Strategy Switching (Phase 3)
-        if context.config.strategy_mode
-            == crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive
-        {
-            let (new_mode, new_strategy) = StrategySelector::select_strategy(
-                &regime,
-                &context.config,
-                context.active_strategy_mode,
-            );
-
-            if new_mode != context.active_strategy_mode {
-                info!(
-                    "Analyst: Adaptive Switch for {} -> {:?} (Regime: {:?})",
-                    symbol, new_mode, regime.regime_type
-                );
-                context.strategy = new_strategy;
-                context.active_strategy_mode = new_mode;
-            }
-        }
+        super::regime_handler::apply_adaptive_strategy_switching(
+            context,
+            &regime,
+            &context.config.clone(),
+            &symbol,
+        );
 
         // 2. Update Indicators via Service
         context.update(&candle);
@@ -752,20 +463,9 @@ impl Analyst {
                         // Phase 2: Track entry time on buy signals
                         if side == OrderSide::Buy {
                             context.last_entry_time = Some(timestamp);
-                        }
-                        if side == OrderSide::Buy
-                            && let Some(atr) = context.last_features.atr
-                            && atr > 0.0
-                        {
-                            let atr_decimal = rust_decimal::Decimal::from_f64_retain(atr)
-                                .unwrap_or(rust_decimal::Decimal::ONE);
-                            let multiplier_decimal = rust_decimal::Decimal::from_f64_retain(
-                                context.config.trailing_stop_atr_multiplier,
-                            )
-                            .unwrap_or(rust_decimal::Decimal::from(3));
-
-                            context.position_manager.trailing_stop =
-                                StopState::on_buy(price, atr_decimal, multiplier_decimal);
+                            super::position_lifecycle::initialize_trailing_stop_on_buy(
+                                context, price,
+                            );
                         }
                     }
                     Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
@@ -840,7 +540,6 @@ impl Analyst {
             .back()
             .map(|c| c.close)
             .unwrap_or(Decimal::ZERO);
-        let price_f64 = price.to_f64().unwrap_or(0.0);
 
         if price == Decimal::ZERO {
             warn!(
@@ -850,57 +549,26 @@ impl Analyst {
             return;
         }
 
+        use super::news_handler::{
+            NewsAction, process_bearish_news, process_bullish_news, send_news_proposal,
+        };
+
         match signal.sentiment {
             crate::domain::listener::NewsSentiment::Bullish => {
-                // Feature Extraction for Intelligence
-                let sma_50 = context.last_features.sma_50.unwrap_or(0.0);
-                let rsi = context.last_features.rsi.unwrap_or(50.0);
+                let action = process_bullish_news(
+                    &self.config,
+                    &self.execution_service,
+                    &signal,
+                    context,
+                    price,
+                    timestamp.timestamp(),
+                )
+                .await;
 
-                info!(
-                    "Analyst: Analyzing BULLISH news for {}. Price: {}, SMA50: {}, RSI: {}",
-                    signal.symbol, price_f64, sma_50, rsi
-                );
-
-                // 1. Trend Filter: Avoid buying falling knives
-                if price_f64 < sma_50 {
-                    warn!(
-                        "Analyst: REJECTED Bullish News for {}. Price below SMA50 (Bearish Trend).",
-                        signal.symbol
-                    );
-                    return;
-                }
-
-                // 2. Overbought Filter: Avoid FOMO
-                if rsi > 75.0 {
-                    warn!(
-                        "Analyst: REJECTED Bullish News for {}. RSI {} indicates Overbought.",
-                        signal.symbol, rsi
-                    );
-                    return;
-                }
-
-                // 3. Construct Proposal
-                let reason = format!("News (Trend Correct & RSI OK): {}", signal.headline);
-                if let Some(mut proposal) =
-                    super::signal_processor::SignalProcessor::build_proposal(
-                        &self.config,
-                        &self.execution_service,
-                        signal.symbol.clone(),
-                        OrderSide::Buy,
-                        price,
-                        timestamp.timestamp() * 1000,
-                        reason,
-                    )
-                    .await
+                if let NewsAction::Buy(proposal) = action
+                    && let Err(e) = send_news_proposal(&self.proposal_tx, proposal).await
                 {
-                    proposal.order_type = crate::domain::trading::types::OrderType::Market;
-                    info!(
-                        "Analyst: Proposing BUY based on Validated News: {}",
-                        signal.headline
-                    );
-                    if let Err(e) = self.proposal_tx.send(proposal).await {
-                        error!("Failed to send news proposal: {}", e);
-                    }
+                    error!("{}", e);
                 }
             }
             crate::domain::listener::NewsSentiment::Bearish => {
@@ -911,66 +579,24 @@ impl Analyst {
                         .get(&signal.symbol)
                         .filter(|p| p.quantity > Decimal::ZERO)
                 {
-                    let avg_price = pos.average_price.to_f64().unwrap_or(price_f64);
-                    let pnl_pct = (price_f64 - avg_price) / avg_price;
-
-                    info!(
-                        "Analyst: Processing BEARISH news for {}. PnL: {:.2}%",
-                        signal.symbol,
-                        pnl_pct * 100.0
+                    let action = process_bearish_news(
+                        &signal,
+                        context,
+                        (pos.quantity, pos.average_price),
+                        price,
+                        timestamp.timestamp(),
                     );
 
-                    if pnl_pct > 0.05 {
-                        // SCENARIO 1: Profitable Position -> Tighten Stop to Protect Gains
-                        // Tighten to 0.5% below current price
-                        let atr = context.last_features.atr.unwrap_or(price_f64 * 0.01);
-                        // 0.5% gap approx
-                        let tight_multiplier = (price_f64 * 0.005) / atr;
-
-                        // Manually update StopState
-                        if let crate::application::risk_management::trailing_stops::StopState::ActiveStop { stop_price, .. } = &mut context.position_manager.trailing_stop {
-                                      let new_stop_f64 = price_f64 - (atr * tight_multiplier.max(0.5));
-                                      let new_stop = rust_decimal::Decimal::from_f64_retain(new_stop_f64)
-                                          .unwrap_or(*stop_price);
-                                      if new_stop > *stop_price {
-                                          *stop_price = new_stop;
-                                          info!("Analyst: News TIGHTENED Trailing Stop for {} to {} (Locking Gains)", signal.symbol, new_stop);
-                                      }
-                                  } else {
-                                      // Create new tight stop
-                                      let atr_decimal = rust_decimal::Decimal::from_f64_retain(atr)
-                                          .unwrap_or(rust_decimal::Decimal::ONE);
-                                      let tight_mult_decimal = rust_decimal::Decimal::from_f64_retain(tight_multiplier.max(0.5))
-                                          .unwrap_or(rust_decimal::Decimal::ONE);
-
-                                      context.position_manager.trailing_stop =
-                                         crate::application::risk_management::trailing_stops::StopState::on_buy(price, atr_decimal, tight_mult_decimal);
-                                      info!("Analyst: News CREATED Tight Trailing Stop for {}", signal.symbol);
-                                  }
-                    } else {
-                        // SCENARIO 2: Losing or Flat Position -> Panic Sell / Damage Control
-                        info!(
-                            "Analyst: News Triggering PANIC SELL for {} to limit potential loss.",
-                            signal.symbol
-                        );
-
-                        let proposal = TradeProposal {
-                            symbol: signal.symbol.clone(),
-                            side: OrderSide::Sell,
-                            price: Decimal::ZERO,
-                            quantity: pos.quantity, // Sell ALL
-                            order_type: crate::domain::trading::types::OrderType::Market,
-                            reason: format!(
-                                "News Panic Sell (PnL: {:.2}%): {}",
-                                pnl_pct * 100.0,
-                                signal.headline
-                            ),
-                            timestamp: timestamp.timestamp(),
-                        };
-
-                        if let Err(e) = self.proposal_tx.send(proposal).await {
-                            error!("Failed to send panic sell proposal: {}", e);
+                    match action {
+                        NewsAction::PanicSell(proposal) => {
+                            if let Err(e) = send_news_proposal(&self.proposal_tx, proposal).await {
+                                error!("{}", e);
+                            }
                         }
+                        NewsAction::TightenStop => {
+                            // Already handled inside process_bearish_news
+                        }
+                        _ => {}
                     }
                 }
             }

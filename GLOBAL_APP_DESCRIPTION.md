@@ -10,7 +10,7 @@ The system prioritizes capital preservation through a "Paranoid" Risk Management
 ### Agent System
 The application operates as a mesh of autonomous agents communicating via high-performance channels, managed by a unified **`SystemClient`** facade:
 - **Sentinel Agent**: Ingests real-time market data (WebSockets/REST) and normalizes it.
-- **Analyst Agent**: The "Brain". Maintains symbol state, computes technical indicators, and generates trade proposals based on active strategies.
+- **Analyst Agent**: The "Brain". Modular architecture (`RegimeHandler`, `PositionLifecycle`, `NewsHandler`) separating regime detection, position management, and news processing. Maintains symbol state and generates trade proposals.
 - **Risk Manager**: The "Gatekeeper". Validates every proposal against a strict set of risk rules and portfolio limits.
 - **Executor Agent**: Handles order placement, modification, and reconciliation with the broker.
 - **Listener Agent**: Monitors news feeds (RSS, Social) and uses NLP to trigger immediate reactions to market-moving events.

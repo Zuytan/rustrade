@@ -80,6 +80,7 @@ impl OptimalParametersPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::risk::optimal_parameters::AssetType;
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -88,7 +89,7 @@ mod tests {
     fn create_test_persistence() -> (OptimalParametersPersistence, std::path::PathBuf) {
         let unique_id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
         let temp_dir = std::env::temp_dir().join(format!(
-            "rustrade_test_{}_{}_{}",
+            "rustrade_test_{}_{}_{}_persist",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -123,6 +124,7 @@ mod tests {
         let (persistence, temp_dir) = create_test_persistence();
 
         let params = OptimalParameters::new(
+            AssetType::Stock,
             RiskProfile::Balanced,
             20,
             60,
@@ -157,6 +159,7 @@ mod tests {
         let (persistence, temp_dir) = create_test_persistence();
 
         let params = OptimalParameters::new(
+            AssetType::Stock,
             RiskProfile::Aggressive,
             30,
             100,
@@ -194,6 +197,7 @@ mod tests {
         let (persistence, temp_dir) = create_test_persistence();
 
         let params1 = OptimalParameters::new(
+            AssetType::Stock,
             RiskProfile::Conservative,
             10,
             50,
@@ -212,6 +216,7 @@ mod tests {
         persistence.upsert(params1).unwrap();
 
         let params2 = OptimalParameters::new(
+            AssetType::Stock,
             RiskProfile::Conservative,
             15,
             55,

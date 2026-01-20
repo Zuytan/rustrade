@@ -1,5 +1,20 @@
 # Rustrade - Historique des Versions
 
+## Version 0.79.0 - Analyst Architecture Refactoring (January 2026)
+
+### Architectural Improvements
+- **Analyst Module Decomposition**: Extensive refactoring of the monolithic `analyst.rs` (~980 lines → ~600 lines) into focused, testable modules:
+  - **`RegimeHandler`**: Dedicated module for Market Regime detection and Dynamic Risk Scaling logic.
+  - **`PositionLifecycle`**: Encapsulated management of pending orders, expirations, and trailing stops.
+  - **`NewsHandler`**: Separated news processing logic (Sentiment Analysis -> Trade Proposal).
+  - **`AnalystConfig`**: Extracted configuration struct and logic into its own module `analyst_config.rs`.
+- **Improved Maintainability**: Clear separation of concerns allows for easier testing and extension of specific analyst capabilities.
+
+### Code Quality
+- **Line Count Reduction**: `analyst.rs` reduced by ~40%.
+- **Test Coverage**: Added dedicated unit tests for all new modules (`regime_handler`, `position_lifecycle`, `news_handler`).
+- **Safety**: 100% of tests passing (330 tests). 0 clippy warnings.
+
 ## Version 0.78.0 - Optimal Parameters per Risk Level (January 2026)
 
 ### New Features

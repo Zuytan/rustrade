@@ -1,4 +1,4 @@
-use crate::application::agents::analyst::AnalystConfig;
+use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::optimization::parallel_benchmark::ParallelBenchmarkRunner;
 use crate::application::optimization::simulator::{BacktestResult, Simulator};
 use crate::config::{Config, StrategyMode};
@@ -70,7 +70,8 @@ impl BenchmarkEngine {
         app_config.strategy_mode = strategy;
 
         if let Some(score) = risk_score {
-            let risk_appetite = RiskAppetite::new(score).unwrap();
+            let risk_appetite =
+                RiskAppetite::new(score).expect("risk_score validated within 1-9 range");
             app_config.risk_appetite = Some(risk_appetite);
         }
 
@@ -126,8 +127,8 @@ impl BenchmarkEngine {
         let portfolio_lock = Arc::new(RwLock::new(portfolio));
 
         // Use standard benchmark costs
-        let slippage = Decimal::from_f64(0.001).unwrap();
-        let commission = Decimal::from_f64(0.001).unwrap();
+        let slippage = Decimal::from_f64(0.001).expect("0.001 is a valid f64 for Decimal");
+        let commission = Decimal::from_f64(0.001).expect("0.001 is a valid f64 for Decimal");
         let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
 
         let execution_service = Arc::new(MockExecutionService::with_costs(

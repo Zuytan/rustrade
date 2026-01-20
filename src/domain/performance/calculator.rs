@@ -24,7 +24,9 @@ pub fn calculate_metrics_from_orders(orders: &[Order]) -> (f64, f64) {
                 let exit_price = order.price.to_f64().unwrap_or(0.0);
 
                 while qty_to_close > Decimal::ZERO && !buys.is_empty() {
-                    let mut buy = buys.pop_front().unwrap(); // Safe
+                    let mut buy = buys
+                        .pop_front()
+                        .expect("buys.is_empty() checked in while condition");
 
                     let match_qty = buy.quantity.min(qty_to_close);
                     let entry_price = buy.price.to_f64().unwrap_or(0.0);

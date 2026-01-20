@@ -64,7 +64,7 @@ impl MonteCarloEngine {
             }
         }
 
-        final_equities.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        final_equities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let mean: f64 = final_equities.iter().sum::<f64>() / config.iterations as f64;
         let median = final_equities[config.iterations / 2];

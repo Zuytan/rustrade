@@ -147,7 +147,10 @@ impl WarmupService {
                         .regime_detector
                         .detect(&bars)
                         .unwrap_or(MarketRegime::unknown());
-                    let last_price_decimal = bars.last().unwrap().close;
+                    let last_price_decimal = bars
+                        .last()
+                        .expect("bars verified non-empty by is_empty() check")
+                        .close;
 
                     let expectancy = context
                         .expectancy_evaluator

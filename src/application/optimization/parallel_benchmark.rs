@@ -1,4 +1,4 @@
-use crate::application::agents::analyst::AnalystConfig;
+use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::optimization::simulator::{BacktestResult, Simulator};
 use crate::domain::ports::MarketDataService;
 use crate::domain::trading::fee_model::ConstantFeeModel;
@@ -27,7 +27,7 @@ pub struct BatchBacktestResult {
 ///
 /// ```no_run
 /// use rustrade::application::optimization::parallel_benchmark::ParallelBenchmarkRunner;
-/// use rustrade::application::agents::analyst::AnalystConfig;
+/// use rustrade::application::agents::analyst_config::AnalystConfig;
 /// use std::sync::Arc;
 /// use chrono::Utc;
 ///

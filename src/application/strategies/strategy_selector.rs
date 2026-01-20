@@ -1,4 +1,4 @@
-use crate::application::agents::analyst::AnalystConfig;
+use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::strategies::{StrategyFactory, TradingStrategy};
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
 use crate::domain::market::strategy_config::StrategyMode;

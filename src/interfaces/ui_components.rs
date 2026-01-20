@@ -1,5 +1,5 @@
 use crate::application::agents::analyst::AnalystCommand;
-use crate::application::agents::analyst::AnalystConfig;
+use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::client::SystemClient;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::domain::risk::risk_appetite::RiskAppetite;

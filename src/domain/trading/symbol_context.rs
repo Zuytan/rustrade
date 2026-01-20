@@ -24,7 +24,7 @@ pub struct SymbolContext {
     pub signal_generator: SignalGenerator,
     pub position_manager: PositionManager,
     pub strategy: Arc<dyn TradingStrategy>,
-    pub config: crate::application::agents::analyst::AnalystConfig,
+    pub config: crate::application::agents::analyst_config::AnalystConfig,
     pub last_features: FeatureSet,
     pub regime_detector: MarketRegimeDetector,
     pub expectancy_evaluator: Box<dyn ExpectancyEvaluator>,
@@ -58,7 +58,7 @@ impl SymbolContext {
     /// * `win_rate_provider` - Provider for historical win rate data
     /// * `enabled_timeframes` - List of timeframes to track for multi-timeframe analysis
     pub fn new(
-        config: crate::application::agents::analyst::AnalystConfig,
+        config: crate::application::agents::analyst_config::AnalystConfig,
         strategy: Arc<dyn TradingStrategy>,
         win_rate_provider: Arc<dyn WinRateProvider>,
         enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
@@ -157,8 +157,8 @@ mod tests {
     use crate::domain::market::strategy_config::StrategyMode;
     use rust_decimal::Decimal;
 
-    fn create_test_config() -> crate::application::agents::analyst::AnalystConfig {
-        crate::application::agents::analyst::AnalystConfig::default()
+    fn create_test_config() -> crate::application::agents::analyst_config::AnalystConfig {
+        crate::application::agents::analyst_config::AnalystConfig::default()
     }
 
     fn create_test_candle(symbol: &str, price: f64, timestamp: i64) -> Candle {

@@ -111,7 +111,9 @@ pub fn calculate_ofi(candles: &VecDeque<Candle>) -> OrderFlowImbalance {
         0.0
     };
 
-    let last_candle = candles.back().unwrap();
+    let last_candle = candles
+        .back()
+        .expect("candles verified non-empty at function start");
 
     OrderFlowImbalance {
         value: ofi_value.clamp(-1.0, 1.0),
