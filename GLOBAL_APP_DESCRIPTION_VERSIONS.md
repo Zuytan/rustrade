@@ -1,5 +1,15 @@
 # Rustrade - Historique des Versions
 
+## Version 0.79.1 - Critical Fixes & Strategy Perfection (January 2026)
+
+### Critical Bug Fixes
+- **Market Detection (ATR)**: Fixed a critical bug where the `Available True Range` indicator ignored intraday volatility (High/Low) and only used Close prices. This fix ensures risk management and stop-loss calculations accurately reflect true market conditions.
+- **Strategy Logic (SMC)**: Fixed a "price chasing" issue in the `SMC` Strategy. Previously, it would signal a buy immediately upon FVG formation (often at the peak). It now strictly requires price to retrace into the FVG zone before triggering a signal.
+
+### Verification
+- **Regression Testing**: Added `verify_market_detection.rs` and `verify_smc_logic.rs` to prevent regression of these specific issues.
+- **Benchmark**: Verified stability with multi-day benchmarks.
+
 ## Version 0.79.0 - Analyst Architecture Refactoring (January 2026)
 
 ### Architectural Improvements

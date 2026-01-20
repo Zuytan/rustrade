@@ -30,7 +30,7 @@ The application operates as a mesh of autonomous agents communicating via high-p
 Rustrade supports a diverse suite of strategies, dynamically interchangeable:
 - **Trend Following**: `TrendRiding` (EMA Crossovers), `AdvancedTripleFilter` (SMA + RSI + MACD + ADX).
 - **Mean Reversion**: `MeanReversion` (Bollinger Bands), `VWAP` (Volume Weighted Average Price).
-- **Market Structure**: `SMC` (Smart Money Concepts - Order Blocks, FVGs with OFI validation), `Breakout` (Volume/Range).
+- **Market Structure**: `SMC` (Smart Money Concepts - Order Blocks, FVGs with Strict Zone Mitigation logic), `Breakout` (Volume/Range).
 - **Order Flow**: `OrderFlow` (Institutional footprints via stacked imbalances, Cumulative Delta, HVN support/resistance).
 - **Momentum**: `MomentumDivergence` (RSI Divergences).
 - **Ensemble**: Voting system combining multiple strategies for high-conviction signals.

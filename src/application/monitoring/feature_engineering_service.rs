@@ -179,10 +179,36 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
         let price = candle.close.to_f64().unwrap_or(0.0);
         let high = candle.high.to_f64().unwrap_or(0.0);
         let low = candle.low.to_f64().unwrap_or(0.0);
+        let open = candle.open.to_f64().unwrap_or(0.0);
 
         let rsi_val = self.rsi.next(price);
         let macd_val = self.macd.next(price);
         let bb_val = self.bb.next(price);
+
+        // DATA ITEM for indicators needing OHLC (ATR)
+        let item = ta::DataItem::builder()
+            .high(high)
+            .low(low)
+            .close(price)
+            .open(open)
+            .volume(candle.volume)
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    "Failed to build DataItem: {:?}. Using close price as fallback. H:{}, L:{}",
+                    e,
+                    high,
+                    low
+                );
+                ta::DataItem::builder()
+                    .high(price)
+                    .low(price)
+                    .close(price)
+                    .open(price)
+                    .volume(0.0)
+                    .build()
+                    .unwrap()
+            });
 
         FeatureSet {
             rsi: Some(rsi_val),
@@ -195,7 +221,7 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             bb_upper: Some(bb_val.upper),
             bb_middle: Some(bb_val.average),
             bb_lower: Some(bb_val.lower),
-            atr: Some(self.atr.next(price)),
+            atr: Some(self.atr.next(&item)), // FIXED: Now using DataItem
             ema_fast: Some(self.ema_fast.next(price)),
             ema_slow: Some(self.ema_slow.next(price)),
             adx: Some(self.adx.next(high, low, price)),

@@ -32,17 +32,17 @@ impl SMCStrategy {
     /// Enhanced (v0.72): Checks if the FVG has been mitigated (filled) by subsequent price action.
     fn detect_fvg(&self, candles: &VecDeque<Candle>) -> Option<(OrderSide, f64)> {
         if candles.len() < 5 {
-            // Need tracking capability
             return None;
         }
 
-        // Look for FVG in the recent history (not just immediate last 3 candles)
-        // We scan the last 10 candles for an UNMITIGATED FVG
-        let scan_depth = 10.min(candles.len() - 3);
+        // Look for FVG in the recent history
+        let scan_depth = 20.min(candles.len() - 3);
         let start_idx = candles.len() - scan_depth;
 
+        // Iterate RECENT to OLD (finding the most relevant recent structure)
+        // actually, typically we want the *closest* active FVG.
+        // Recent ones are more significant.
         for i in (start_idx..candles.len() - 2).rev() {
-            // Start from most recent
             let c1 = &candles[i];
             let c3 = &candles[i + 2];
 
@@ -51,48 +51,46 @@ impl SMCStrategy {
             let high3 = c3.high.to_f64().unwrap_or(0.0);
             let low3 = c3.low.to_f64().unwrap_or(0.0);
 
-            // Bullish FVG: High of C1 < Low of C3 (Gap exists)
             if low3 > high1 {
                 let gap = low3 - high1;
                 let gap_pct = gap / high1;
 
                 if gap_pct > self.min_fvg_size_pct {
-                    // Check Mitigation: Has any candle AFTER the FVG (from i+3 onwards) dipped below low3?
-                    // Actually, mitigation means price comes back to fill the gap.
-                    // For a bullish FVG (gap up), we want to enter when price comes BACK DOWN into the gap.
-                    // But if price goes BELOW high1 (the bottom of the gap), it's invalidated.
-
-                    let fvg_top = low3;
                     let fvg_bottom = high1;
+                    let fvg_top = low3;
 
                     let mut invalidated = false;
-                    let mut mitigated = false; // Is price currently IN the gap?
+                    let mut in_zone = false;
 
-                    // Check subsequent candles
-                    if i + 3 < candles.len() {
-                        for candle in candles.iter().skip(i + 3) {
-                            let low = candle.low.to_f64().unwrap_or(0.0);
-                            if low < fvg_bottom {
-                                invalidated = true; // Price closed the gap completely and went lower
-                                break;
-                            }
-                            if low < fvg_top {
-                                mitigated = true; // Price is tapping into the gap - ENTRY SIGNAL
+                    // Check all subsequent candles for invalidation or entry
+                    // We start from i+3 (candle AFTER the FVG formation)
+                    for (idx, candle) in candles.iter().enumerate().skip(i + 3) {
+                        let low = candle.low.to_f64().unwrap_or(0.0);
+
+                        // Strict invalidation: if price closes gap completely
+                        if low < fvg_bottom {
+                            invalidated = true;
+                            break;
+                        }
+
+                        // Check if CURRENT candle (the last one) is in zone
+                        if idx == candles.len() - 1 {
+                            // Entry condition: Price dips into zone (Low < Top)
+                            if low <= fvg_top {
+                                in_zone = true;
                             }
                         }
-                    } else {
-                        // FVG just formed (no subsequent candles yet)
-                        // We can consider this a fresh FVG waiting for tap
-                        mitigated = true; // Treat fresh FVG as actionable
                     }
 
-                    if !invalidated && mitigated {
+                    // For fresh FVG (no subsequent candles yet), we are NOT in zone yet (impulse)
+
+                    if !invalidated && in_zone {
                         return Some((OrderSide::Buy, gap));
                     }
                 }
             }
 
-            // Bearish FVG: Low of C1 > High of C3
+            // Bearish FVG: Low1 > High3
             if low1 > high3 {
                 let gap = low1 - high3;
                 let gap_pct = gap / high3;
@@ -102,24 +100,25 @@ impl SMCStrategy {
                     let fvg_bottom = high3;
 
                     let mut invalidated = false;
-                    let mut mitigated = false;
+                    let mut in_zone = false;
 
-                    if i + 3 < candles.len() {
-                        for candle in candles.iter().skip(i + 3) {
-                            let high = candle.high.to_f64().unwrap_or(0.0);
-                            if high > fvg_top {
-                                invalidated = true; // Price went above top of bearish gap
-                                break;
-                            }
-                            if high > fvg_bottom {
-                                mitigated = true; // Price tapping into gap
+                    for (idx, candle) in candles.iter().enumerate().skip(i + 3) {
+                        let high = candle.high.to_f64().unwrap_or(0.0);
+
+                        if high > fvg_top {
+                            invalidated = true;
+                            break;
+                        }
+
+                        if idx == candles.len() - 1 {
+                            // Entry condition: Price rises into zone (High > Bottom)
+                            if high >= fvg_bottom {
+                                in_zone = true;
                             }
                         }
-                    } else {
-                        mitigated = true;
                     }
 
-                    if !invalidated && mitigated {
+                    if !invalidated && in_zone {
                         return Some((OrderSide::Sell, gap));
                     }
                 }
@@ -463,7 +462,8 @@ mod tests {
 
         // FVG Setup
         candles.push_back(mock_candle(100.0, 102.0, 99.0, 101.0, 1000.0)); // High 102
-        candles.push_back(mock_candle(101.0, 110.0, 101.0, 109.0, 1000.0));
+        // C2: Big impulsive candle (Low 100.0 to avoid accidental gap with padding)
+        candles.push_back(mock_candle(101.0, 110.0, 100.0, 109.0, 1000.0));
         candles.push_back(mock_candle(109.0, 112.0, 105.0, 111.0, 1000.0)); // Low 105
         // Gap: 102-105
 
