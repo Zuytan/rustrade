@@ -1,6 +1,7 @@
 // Agent modules - core decision-making agents
 pub mod analyst;
 pub mod analyst_config;
+pub mod candle_pipeline;
 pub mod executor;
 pub mod listener;
 pub mod news_handler;

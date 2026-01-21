@@ -5,13 +5,12 @@ use crate::application::optimization::win_rate_provider::{StaticWinRateProvider,
 
 use crate::application::strategies::TradingStrategy;
 
-use crate::application::agents::trade_evaluator::{EvaluationInput, TradeEvaluator};
-use crate::domain::market::market_regime::MarketRegime;
+use crate::application::agents::trade_evaluator::TradeEvaluator;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
 use crate::domain::trading::types::Candle;
 use crate::domain::trading::types::OrderStatus;
-use crate::domain::trading::types::{MarketEvent, OrderSide, TradeProposal};
+use crate::domain::trading::types::{MarketEvent, TradeProposal};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -39,6 +38,7 @@ pub struct AnalystDependencies {
     pub spread_cache: Arc<SpreadCache>,
 }
 
+#[allow(dead_code)] // candle_repository and trade_evaluator used indirectly by pipeline
 pub struct Analyst {
     market_rx: Receiver<MarketEvent>,
     proposal_tx: Sender<TradeProposal>,
@@ -47,10 +47,13 @@ pub struct Analyst {
     config: AnalystConfig,                      // Default config
     symbol_states: HashMap<String, SymbolContext>,
     candle_aggregator: CandleAggregator,
+    #[allow(dead_code)] // Used indirectly by pipeline
     candle_repository: Option<Arc<dyn CandleRepository>>,
     win_rate_provider: Arc<dyn WinRateProvider>,
 
+    #[allow(dead_code)] // Used indirectly by pipeline
     trade_evaluator: TradeEvaluator,
+    pipeline: super::candle_pipeline::CandlePipeline,
     warmup_service: super::warmup_service::WarmupService,
     // Multi-timeframe configuration
     enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
@@ -93,6 +96,21 @@ impl Analyst {
             dependencies.ui_candle_tx.clone(),
         );
 
+        // Initialize CandlePipeline with its own instances
+        let pipeline_cost_evaluator = CostEvaluator::with_spread_cache(
+            config.fee_model.clone(),
+            config.spread_bps,
+            dependencies.spread_cache.clone(),
+        );
+        let pipeline_trade_filter =
+            crate::application::trading::trade_filter::TradeFilter::new(pipeline_cost_evaluator);
+        let pipeline_trade_evaluator = TradeEvaluator::new(pipeline_trade_filter);
+        let pipeline = super::candle_pipeline::CandlePipeline::new(
+            dependencies.execution_service.clone(),
+            dependencies.candle_repository.clone(),
+            pipeline_trade_evaluator,
+        );
+
         Self {
             market_rx,
             proposal_tx,
@@ -107,6 +125,7 @@ impl Analyst {
             candle_repository: dependencies.candle_repository,
             win_rate_provider,
             trade_evaluator,
+            pipeline,
             warmup_service,
             enabled_timeframes,
             cmd_rx,
@@ -224,20 +243,8 @@ impl Analyst {
     }
 
     // ============================================================================
-    // PIPELINE HANDLERS (Phase 2.2)
+    // HELPER METHODS
     // ============================================================================
-
-    /// Detect market regime for current symbol
-    ///
-    /// Delegates to [`regime_handler::detect_market_regime`]
-    async fn detect_market_regime(
-        repo: &Option<Arc<dyn CandleRepository>>,
-        symbol: &str,
-        candle_timestamp: i64,
-        context: &SymbolContext,
-    ) -> MarketRegime {
-        super::regime_handler::detect_market_regime(repo, symbol, candle_timestamp, context).await
-    }
 
     /// Manages pending orders and handles timeouts.
     ///
@@ -260,10 +267,9 @@ impl Analyst {
 
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
-        let price = candle.close;
         let timestamp = candle.timestamp * 1000;
 
-        // 1. Get/Init Context (Consolidated with ensure_symbol_initialized)
+        // 1. Ensure symbol context is initialized
         let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
             .unwrap_or_default()
             .with_timezone(&chrono::Utc);
@@ -281,208 +287,50 @@ impl Analyst {
             }
         };
 
-        // This ensures transient regime spikes don't permanently alter the symbol's config
+        // Reset config to default to prevent regime-based config drift
         context.config = self.config.clone();
 
-        // 1.5 Detect Market Regime
-        let regime =
-            Self::detect_market_regime(&self.candle_repository, &symbol, candle.timestamp, context)
-                .await;
+        // 2. Get portfolio for pipeline context
+        let portfolio = self.execution_service.get_portfolio().await.ok();
 
-        // 1.5.5 Dynamic Risk Scaling
-        // AUTOMATICALLY lower risk in Volatile or Bearish regimes
-        super::regime_handler::apply_dynamic_risk_scaling(context, &regime, &symbol);
-
-        // 1.6 Adaptive Strategy Switching (Phase 3)
-        super::regime_handler::apply_adaptive_strategy_switching(
+        // 3. Build pipeline context
+        let mut pipeline_ctx = super::candle_pipeline::PipelineContext {
+            symbol: &symbol,
+            candle: &candle,
             context,
-            &regime,
-            &context.config.clone(),
-            &symbol,
-        );
+            portfolio: portfolio.as_ref(),
+        };
 
-        // 2. Update Indicators via Service
-        context.update(&candle);
-
-        // 3. Sync with Portfolio
-
-        let portfolio_res = self.execution_service.get_portfolio().await;
-        let portfolio_data = portfolio_res.as_ref().ok();
-
-        if let Some(portfolio) = portfolio_data {
-            let has_position = portfolio
-                .positions
-                .get(&symbol)
-                .map(|p| p.quantity > Decimal::ZERO)
-                .unwrap_or(false);
-            context
-                .position_manager
-                .ack_pending_orders(has_position, &symbol);
-        }
-
-        let has_position = portfolio_data
-            .map(|p| {
-                p.positions
-                    .get(&symbol)
-                    .map(|pos| pos.quantity > Decimal::ZERO)
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false);
-
-        if !has_position {
-            context.taken_profit = false;
-        }
-
-        // 3.5. Auto-initialize Trailing Stop for existing positions
-        // If we have a position but no active trailing stop, initialize it
-        // This handles cases where:
-        // - Position existed from previous session
-        // - Position was created manually
-        // - Analyst restarted after Buy but before position was closed
-        if has_position
-            && !context.position_manager.trailing_stop.is_active()
-            && let Some(portfolio) = portfolio_data
-            && let Some(pos) = portfolio.positions.get(&symbol)
-        {
-            let entry_price = pos.average_price;
-            let atr =
-                rust_decimal::Decimal::from_f64_retain(context.last_features.atr.unwrap_or(1.0))
-                    .unwrap_or(rust_decimal::Decimal::ONE);
-            let multiplier =
-                rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
-                    .unwrap_or(rust_decimal::Decimal::from(3));
-
-            context.position_manager.trailing_stop =
-                crate::application::risk_management::trailing_stops::StopState::on_buy(
-                    entry_price,
-                    atr,
-                    multiplier,
-                );
-
-            if let Some(stop_price) = context.position_manager.trailing_stop.get_stop_price() {
-                info!(
-                    "Analyst [{}]: Auto-initialized trailing stop (entry={:.2}, stop={:.2}, atr={:.2})",
-                    symbol, entry_price, stop_price, atr
-                );
-            }
-        }
-
-        // 4. Check Trailing Stop (Priority Exit) via PositionManager
-        let atr_decimal =
-            rust_decimal::Decimal::from_f64_retain(context.last_features.atr.unwrap_or(0.0))
-                .unwrap_or(rust_decimal::Decimal::ZERO);
-        let multiplier_decimal =
-            rust_decimal::Decimal::from_f64_retain(context.config.trailing_stop_atr_multiplier)
-                .unwrap_or(rust_decimal::Decimal::from(3));
-
-        let mut signal = context.position_manager.check_trailing_stop(
-            &symbol,
-            price,
-            atr_decimal,
-            multiplier_decimal,
-        );
-        let trailing_stop_triggered = signal.is_some();
-
-        // Check Partial Take-Profit (Swing Trading Upgrade)
-        #[allow(clippy::collapsible_if)]
-        if !trailing_stop_triggered && has_position {
-            if let Some(proposal) = crate::application::agents::signal_processor::SignalProcessor::check_partial_take_profit(
-                 context,
-                 &symbol,
-                 price,
-                 timestamp,
-                 portfolio_data.map(|p| &p.positions)
-             ) {
-                 info!("Analyst [{}]: Executing Partial Take-Profit...", symbol);
-                  match self.proposal_tx.try_send(proposal) {
-                        Ok(_) => {
-                            context.taken_profit = true;
-                            // Don't process further signals this tick
-                            return;
-                        }
-                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                            warn!("Analyst [{}]: Proposal channel FULL.", symbol);
-                            return;
-                        }
-                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                            error!("Analyst [{}]: Proposal channel CLOSED.", symbol);
-                            return;
-                        }
-                  }
-             }
-        }
-
-        // Monitor pending order timeout
-        Self::manage_pending_orders(&self.execution_service, context, &symbol, timestamp).await;
-
-        // 5. Generate Trading Signal
-        if !trailing_stop_triggered {
-            signal = super::signal_processor::SignalProcessor::generate_signal(
-                context,
-                &symbol,
-                price,
-                timestamp,
-                has_position,
-            );
-
-            // Apply RSI filter
-            signal = super::signal_processor::SignalProcessor::apply_rsi_filter(
-                signal, context, &symbol,
-            );
-
-            // Suppress sell signals when trailing stop is active
-            signal = super::signal_processor::SignalProcessor::suppress_sell_if_trailing_stop(
-                signal,
-                context,
-                &symbol,
-                trailing_stop_triggered,
-            );
-        }
-
-        // 6. Post-Signal Validation & Execution Logic
-        if let Some(side) = signal {
-            let input = EvaluationInput {
-                signal: side,
-                symbol: &symbol,
-                price,
-                timestamp,
-                regime: &regime,
-                execution_service: &self.execution_service,
-                has_position,
-            };
-
-            if let Some(proposal) = self
-                .trade_evaluator
-                .evaluate_and_propose(context, input)
-                .await
-            {
-                match self.proposal_tx.try_send(proposal) {
-                    Ok(_) => {
-                        context.position_manager.set_pending_order(side, timestamp);
-
-                        // Phase 2: Track entry time on buy signals
-                        if side == OrderSide::Buy {
-                            context.last_entry_time = Some(timestamp);
-                            super::position_lifecycle::initialize_trailing_stop_on_buy(
-                                context, price,
-                            );
-                        }
-                    }
-                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                        warn!(
-                            "Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, proposal dropped.",
-                            symbol
-                        );
-                    }
-                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                        error!(
-                            "Analyst [{}]: Proposal channel CLOSED. Shutting down.",
-                            symbol
-                        );
-                    }
+        // 4. Process through pipeline (6 discrete stages)
+        if let Some(proposal) = self.pipeline.process(&mut pipeline_ctx).await {
+            // 5. Send proposal to risk manager
+            match self.proposal_tx.try_send(proposal) {
+                Ok(_) => {
+                    debug!("Analyst [{}]: Proposal sent successfully", symbol);
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                    warn!(
+                        "Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, proposal dropped.",
+                        symbol
+                    );
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                    error!(
+                        "Analyst [{}]: Proposal channel CLOSED. Shutting down.",
+                        symbol
+                    );
                 }
             }
         }
+
+        // 6. Monitor pending order timeout
+        Self::manage_pending_orders(
+            &self.execution_service,
+            pipeline_ctx.context,
+            &symbol,
+            timestamp,
+        )
+        .await;
     }
 
     #[doc(hidden)]

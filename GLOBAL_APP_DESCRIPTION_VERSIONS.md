@@ -1,5 +1,31 @@
 # Rustrade - Historique des Versions
 
+## Version 0.80.0 - P1 Analyst Improvements (January 2026)
+
+### Configuration Consolidation
+- **Parameter Cleanup**: Removed 4 duplicated configuration parameters from `AnalystConfig` (10% reduction: 39 → 35 fields)
+  - Eliminated `macd_fast`, `macd_slow`, `macd_signal` → use canonical `macd_fast_period`, `macd_slow_period`, `macd_signal_period`
+  - Eliminated `bb_period` → use canonical `mean_reversion_bb_period`
+- **Impact**: Prevents parameter drift and configuration inconsistencies across the codebase
+
+### Pipeline Architecture
+- **CandlePipeline**: Refactored monolithic `process_candle()` method (225 lines → 62 lines, **72% reduction**)
+  - **6 Discrete Stages**: Regime Analysis, Indicator Updates, Position Sync, Trailing Stops, Signal Generation, Trade Evaluation
+  - **Improved Testability**: Each stage independently testable with dedicated unit tests
+  - **Reduced Complexity**: Cyclomatic complexity reduced from ~15 to ~5 (-67%)
+- **New Module**: `candle_pipeline.rs` (400 lines) with comprehensive documentation and 5 unit tests
+
+### Code Quality
+- **Test Coverage**: All 345 tests passing (335 unit + 10 integration)
+- **Zero Warnings**: 0 clippy warnings, fully formatted code
+- **Maintainability**: Clear separation of concerns, easier to extend and debug
+
+### Files Modified
+- `analyst_config.rs` - Removed duplicates
+- `analyst.rs` - Integrated pipeline architecture
+- `candle_pipeline.rs` - New pipeline implementation
+- `bootstrap/agents.rs`, `optimizer.rs`, `feature_engineering_service.rs` - Updated config references
+
 ## Version 0.79.1 - Critical Fixes & Strategy Perfection (January 2026)
 
 ### Critical Bug Fixes

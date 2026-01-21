@@ -150,9 +150,9 @@ impl TechnicalFeatureEngineeringService {
             rsi: RelativeStrengthIndex::new(config.rsi_period)
                 .expect("rsi_period from AnalystConfig must be > 0"),
             macd: MovingAverageConvergenceDivergence::new(
-                config.macd_fast,
-                config.macd_slow,
-                config.macd_signal,
+                config.macd_fast_period,
+                config.macd_slow_period,
+                config.macd_signal_period,
             )
             .expect("MACD periods from AnalystConfig must be valid"),
             sma_20: SimpleMovingAverage::new(config.fast_sma_period)
@@ -161,8 +161,8 @@ impl TechnicalFeatureEngineeringService {
                 .expect("slow_sma_period from AnalystConfig must be > 0"),
             sma_200: SimpleMovingAverage::new(config.trend_sma_period)
                 .expect("trend_sma_period from AnalystConfig must be > 0"),
-            bb: BollingerBands::new(config.bb_period, config.bb_std_dev)
-                .expect("bb_period from AnalystConfig must be > 0"),
+            bb: BollingerBands::new(config.mean_reversion_bb_period, config.bb_std_dev)
+                .expect("mean_reversion_bb_period from AnalystConfig must be > 0"),
             atr: AverageTrueRange::new(config.atr_period)
                 .expect("atr_period from AnalystConfig must be > 0"),
             ema_fast: ExponentialMovingAverage::new(config.ema_fast_period)
