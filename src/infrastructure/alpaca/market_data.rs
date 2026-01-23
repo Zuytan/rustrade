@@ -768,10 +768,8 @@ impl MarketDataService for AlpacaMarketDataService {
                                                         .unwrap_or(Decimal::ZERO),
                                                     close: Decimal::from_f64_retain(bar.close)
                                                         .unwrap_or(Decimal::ZERO),
-                                                    volume: Decimal::from_f64_retain(
-                                                        bar.volume,
-                                                    )
-                                                    .unwrap_or_default(),
+                                                    volume: Decimal::from_f64_retain(bar.volume)
+                                                        .unwrap_or_default(),
                                                     timestamp,
                                                 },
                                             );
@@ -833,8 +831,7 @@ impl MarketDataService for AlpacaMarketDataService {
                             high: Decimal::from_f64_retain(b.high).unwrap_or(Decimal::ZERO),
                             low: Decimal::from_f64_retain(b.low).unwrap_or(Decimal::ZERO),
                             close: Decimal::from_f64_retain(b.close).unwrap_or(Decimal::ZERO),
-                            volume: Decimal::from_f64_retain(b.volume)
-                                .unwrap_or(Decimal::ZERO),
+                            volume: Decimal::from_f64_retain(b.volume).unwrap_or(Decimal::ZERO),
                             timestamp,
                         }
                     })

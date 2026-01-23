@@ -4,20 +4,25 @@ use crate::domain::trading::types::{Candle, FeatureSet};
 use rust_decimal::prelude::ToPrimitive;
 use ta::Next;
 use ta::indicators::{
-    AverageTrueRange, BollingerBands, ExponentialMovingAverage, MovingAverageConvergenceDivergence,
-    RelativeStrengthIndex, SimpleMovingAverage,
+    AverageTrueRange, BollingerBands, ExponentialMovingAverage,
+    MovingAverageConvergenceDivergence, RelativeStrengthIndex, SimpleMovingAverage,
 };
 
+/// Manual ADX implementation using standard Wilder's smoothing
+/// 
+/// Fixed initialization: accumulates first N values as sum, then applies Wilder's smoothing
 pub struct ManualAdx {
     period: usize,
     prev_high: Option<f64>,
     prev_low: Option<f64>,
     prev_close: Option<f64>,
+    tr_sum: f64,
+    plus_dm_sum: f64,
+    minus_dm_sum: f64,
     tr_smooth: f64,
     plus_dm_smooth: f64,
     minus_dm_smooth: f64,
-    dx_smooth: f64,
-    initialized: bool,
+    adx_smooth: f64,
     count: usize,
 }
 
@@ -28,11 +33,13 @@ impl ManualAdx {
             prev_high: None,
             prev_low: None,
             prev_close: None,
+            tr_sum: 0.0,
+            plus_dm_sum: 0.0,
+            minus_dm_sum: 0.0,
             tr_smooth: 0.0,
             plus_dm_smooth: 0.0,
             minus_dm_smooth: 0.0,
-            dx_smooth: 0.0,
-            initialized: false,
+            adx_smooth: 0.0,
             count: 0,
         }
     }
@@ -45,51 +52,26 @@ impl ManualAdx {
             return 0.0;
         }
 
-        let prev_high = self
-            .prev_high
-            .expect("prev_high is Some when prev_close is Some");
-        let prev_low = self
-            .prev_low
-            .expect("prev_low is Some when prev_close is Some");
-        let prev_close = self
-            .prev_close
-            .expect("prev_close verified Some at line 41");
+        let prev_high = self.prev_high.unwrap_or(0.0);
+        let prev_low = self.prev_low.unwrap_or(0.0);
+        let prev_close = self.prev_close.unwrap_or(0.0);
 
-        // Calculate True Range
-        let tr1 = high - low;
-        let tr2 = (high - prev_close).abs();
-        let tr3 = (low - prev_close).abs();
-        let tr = tr1.max(tr2).max(tr3);
-
-        // Calculate Directional Movement
+        let tr = (high - low).max((high - prev_close).abs()).max((low - prev_close).abs());
         let up_move = high - prev_high;
         let down_move = prev_low - low;
+        let plus_dm = if up_move > down_move && up_move > 0.0 { up_move } else { 0.0 };
+        let minus_dm = if down_move > up_move && down_move > 0.0 { down_move } else { 0.0 };
 
-        let plus_dm = if up_move > down_move && up_move > 0.0 {
-            up_move
-        } else {
-            0.0
-        };
+        self.count += 1;
 
-        let minus_dm = if down_move > up_move && down_move > 0.0 {
-            down_move
-        } else {
-            0.0
-        };
-
-        // Smoothing (Wilder's Smoothing usually)
-        // For first 'period' values, usually sum. But simpler approach:
-        // smooth = (prev_smooth * (n-1) + current) / n
-        if !self.initialized {
-            self.count += 1;
-            self.tr_smooth += tr;
-            self.plus_dm_smooth += plus_dm;
-            self.minus_dm_smooth += minus_dm;
-
-            if self.count >= self.period {
-                self.initialized = true;
-                // Initial average
-                // But typically Wilder starts subsequent smoothing
+        if self.count <= self.period {
+            self.tr_sum += tr;
+            self.plus_dm_sum += plus_dm;
+            self.minus_dm_sum += minus_dm;
+            if self.count == self.period {
+                self.tr_smooth = self.tr_sum;
+                self.plus_dm_smooth = self.plus_dm_sum;
+                self.minus_dm_smooth = self.minus_dm_sum;
             }
         } else {
             let n = self.period as f64;
@@ -98,35 +80,24 @@ impl ManualAdx {
             self.minus_dm_smooth = self.minus_dm_smooth - (self.minus_dm_smooth / n) + minus_dm;
         }
 
-        // Calculate DI and DX
         let mut adx = 0.0;
-        if self.initialized && self.tr_smooth > 0.0 {
+        if self.count >= self.period && self.tr_smooth > 0.0 {
             let plus_di = 100.0 * self.plus_dm_smooth / self.tr_smooth;
             let minus_di = 100.0 * self.minus_dm_smooth / self.tr_smooth;
             let sum_di = plus_di + minus_di;
-
-            let dx = if sum_di > 0.0 {
-                100.0 * (plus_di - minus_di).abs() / sum_di
+            let dx = if sum_di > 0.0 { 100.0 * (plus_di - minus_di).abs() / sum_di } else { 0.0 };
+            
+            if self.count == self.period {
+                self.adx_smooth = dx;
             } else {
-                0.0
-            };
-
-            // Smooth DX to get ADX
-            // First ADX is average of DX over period?
-            // Simplified: use same smoothing
-            let n = self.period as f64;
-            if self.dx_smooth == 0.0 {
-                self.dx_smooth = dx; // Initialization hack
-            } else {
-                self.dx_smooth = ((self.dx_smooth * (n - 1.0)) + dx) / n;
+                self.adx_smooth = ((self.adx_smooth * (self.period as f64 - 1.0)) + dx) / self.period as f64;
             }
-            adx = self.dx_smooth;
+            adx = self.adx_smooth;
         }
 
         self.prev_high = Some(high);
         self.prev_low = Some(low);
         self.prev_close = Some(close);
-
         adx
     }
 }
@@ -221,11 +192,11 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             bb_upper: Some(bb_val.upper),
             bb_middle: Some(bb_val.average),
             bb_lower: Some(bb_val.lower),
-            atr: Some(self.atr.next(&item)), // FIXED: Now using DataItem
+            atr: Some(self.atr.next(&item)),
             ema_fast: Some(self.ema_fast.next(price)),
             ema_slow: Some(self.ema_slow.next(price)),
             adx: Some(self.adx.next(high, low, price)),
-            timeframe: Some(crate::domain::market::timeframe::Timeframe::OneMin), // Primary timeframe
+            timeframe: Some(crate::domain::market::timeframe::Timeframe::OneMin),
         }
     }
 }

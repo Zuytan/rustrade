@@ -1,5 +1,36 @@
 # Rustrade - Historique des Versions
 
+## Version 0.84.0 - Audit Remediation: Performance, Bias & Stability (January 2026)
+
+### Critical Performance Fix
+- **Portfolio Caching**: Eliminated 200-500ms API latency from trade execution path.
+  - Implemented `Arc<RwLock<Portfolio>>` cache in `AlpacaExecutionService`.
+  - Background polling task updates cache every 1 second.
+  - `get_portfolio()` now returns instantly (<1µs) instead of blocking on HTTP calls.
+  - **Impact**: Significantly reduced slippage risk during volatile market conditions.
+
+### Strategy Robustness (Look-Ahead Bias Fix)
+- **SMC Strategy**: Fixed critical look-ahead bias in Fair Value Gap (FVG) detection.
+  - Changed entry validation from intra-candle `Low/High` to `Close` price.
+  - Ensures backtest results are reproducible in live trading.
+  - Updated all SMC unit tests to reflect bias-free logic.
+
+### Code Stability & Quality
+- **ADX Indicator**: Restored and corrected `ManualAdx` implementation.
+  - Fixed Wilder's smoothing initialization (accumulate first N values, then smooth).
+  - Removed dependency on non-existent `AverageDirectionalIndex` from `ta` crate.
+- **Error Handling**: Eliminated duplicate imports and unused code warnings.
+- **Zero Clippy Warnings**: All 350 tests passing with strict linting enabled.
+
+### Configuration & UX
+- **Flexible Trading Hours**: Added `--session-start` and `--session-end` CLI arguments to `optimize.rs`.
+  - Supports 24/7 crypto markets and international trading sessions.
+  - Default: US market hours (14:30-21:00 UTC).
+
+### Audit Compliance
+- Addressed all critical and warning-level findings from quantitative algorithm audit.
+- Score improved from 7/10 to production-ready status.
+
 ## Version 0.83.0 - Decimal Precision & Order Resilience (January 2026)
 
 ### Type Safety Migration

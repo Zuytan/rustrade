@@ -1,7 +1,7 @@
 use super::trading_stream::AlpacaTradingStream;
 use crate::domain::ports::ExecutionService;
 use crate::domain::ports::OrderUpdate;
-use crate::domain::trading::types::{Order, OrderSide, normalize_crypto_symbol};
+use crate::domain::trading::types::{Order, OrderSide};
 use crate::infrastructure::core::http_client_factory::{HttpClientFactory, build_url_with_query};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -10,8 +10,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::broadcast;
-use tracing::info;
+use tokio::sync::{broadcast, RwLock};
+use tracing::{error, info};
 
 // ===== Execution Service (REST API) =====
 
@@ -21,7 +21,9 @@ pub struct AlpacaExecutionService {
     api_secret: String,
     base_url: String,
     trading_stream: Arc<AlpacaTradingStream>,
+    #[allow(dead_code)] // Used in background polling task
     circuit_breaker: Arc<crate::infrastructure::core::circuit_breaker::CircuitBreaker>,
+    portfolio_cache: Arc<RwLock<crate::domain::trading::portfolio::Portfolio>>,
 }
 
 impl AlpacaExecutionService {
@@ -42,6 +44,124 @@ impl AlpacaExecutionService {
             ),
         );
 
+        let portfolio_cache = Arc::new(RwLock::new(
+            crate::domain::trading::portfolio::Portfolio::new(),
+        ));
+
+        // Spawn background polling task
+        let cache_clone = portfolio_cache.clone();
+        let client_clone = client.clone();
+        let breaker_clone = circuit_breaker.clone();
+        let api_key_clone = api_key.clone();
+        let api_secret_clone = api_secret.clone();
+        let base_url_clone = base_url.clone();
+
+        tokio::spawn(async move {
+            info!("AlpacaExecutionService: Starting background portfolio poller");
+            loop {
+                let fetch_result = async {
+                    let account_url = format!("{}/v2/account", base_url_clone);
+                    let positions_url = format!("{}/v2/positions", base_url_clone);
+
+                    let account_resp_raw = client_clone
+                        .get(&account_url)
+                        .header("APCA-API-KEY-ID", &api_key_clone)
+                        .header("APCA-API-SECRET-KEY", &api_secret_clone)
+                        .send()
+                        .await
+                        .context("Failed to send account request")?;
+
+                    let account_text = account_resp_raw
+                        .text()
+                        .await
+                        .context("Failed to read account response text")?;
+                    let account_resp: AlpacaAccount =
+                        serde_json::from_str(&account_text).map_err(|e| {
+                            anyhow::anyhow!(
+                                "Failed to decode Alpaca Account: {}. Body: {}",
+                                e,
+                                account_text
+                            )
+                        })?;
+
+                    let positions_resp_raw = client_clone
+                        .get(&positions_url)
+                        .header("APCA-API-KEY-ID", &api_key_clone)
+                        .header("APCA-API-SECRET-KEY", &api_secret_clone)
+                        .send()
+                        .await
+                        .context("Failed to send positions request")?;
+
+                    let positions_text = positions_resp_raw
+                        .text()
+                        .await
+                        .context("Failed to read positions response text")?;
+                    let positions_resp: Vec<AlpacaPosition> = serde_json::from_str(&positions_text)
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "Failed to decode Alpaca Positions: {}. Body: {}",
+                                e,
+                                positions_text
+                            )
+                        })?;
+
+                    let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
+                    let cash = account_resp
+                        .cash
+                        .parse::<Decimal>()
+                        .unwrap_or(Decimal::ZERO);
+
+                    portfolio.cash = cash;
+                    portfolio.day_trades_count = account_resp.daytrade_count as u64;
+
+                    for alp_pos in positions_resp {
+                        let alp_symbol = alp_pos.symbol.clone();
+
+                        let normalized_symbol = if alp_pos.asset_class.as_deref() == Some("crypto")
+                        {
+                            crate::domain::trading::types::normalize_crypto_symbol(&alp_symbol)
+                                .map_err(|e| {
+                                    anyhow::anyhow!(
+                                        "Symbol normalization failed for {}: {}",
+                                        alp_symbol,
+                                        e
+                                    )
+                                })?
+                        } else {
+                            alp_symbol.clone()
+                        };
+
+                        let pos = crate::domain::trading::portfolio::Position {
+                            symbol: normalized_symbol.clone(),
+                            quantity: alp_pos.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO),
+                            average_price: alp_pos
+                                .avg_entry_price
+                                .parse::<Decimal>()
+                                .unwrap_or(Decimal::ZERO),
+                        };
+
+                        portfolio.positions.insert(normalized_symbol, pos);
+                    }
+
+                    Ok::<_, anyhow::Error>(portfolio)
+                };
+
+                // Execute via circuit breaker
+                match breaker_clone.call(fetch_result).await {
+                    Ok(portfolio) => {
+                        let mut guard = cache_clone.write().await;
+                        *guard = portfolio;
+                        // trace!("AlpacaExecutionService: Portfolio cache updated");
+                    }
+                    Err(e) => {
+                        error!("AlpacaExecutionService: Portfolio poll failed: {}", e);
+                    }
+                }
+
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
+
         Self {
             client,
             api_key,
@@ -49,6 +169,7 @@ impl AlpacaExecutionService {
             base_url,
             trading_stream,
             circuit_breaker,
+            portfolio_cache,
         }
     }
 }
@@ -193,98 +314,9 @@ impl ExecutionService for AlpacaExecutionService {
     }
 
     async fn get_portfolio(&self) -> Result<crate::domain::trading::portfolio::Portfolio> {
-        self.circuit_breaker
-            .call(async {
-                let account_url = format!("{}/v2/account", self.base_url);
-                let positions_url = format!("{}/v2/positions", self.base_url);
-
-                let account_resp_raw = self
-                    .client
-                    .get(&account_url)
-                    .header("APCA-API-KEY-ID", &self.api_key)
-                    .header("APCA-API-SECRET-KEY", &self.api_secret)
-                    .send()
-                    .await
-                    .context("Failed to send account request")?;
-
-                let account_text = account_resp_raw
-                    .text()
-                    .await
-                    .context("Failed to read account response text")?;
-                let account_resp: AlpacaAccount =
-                    serde_json::from_str(&account_text).map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to decode Alpaca Account: {}. Body: {}",
-                            e,
-                            account_text
-                        )
-                    })?;
-
-                let positions_resp_raw = self
-                    .client
-                    .get(&positions_url)
-                    .header("APCA-API-KEY-ID", &self.api_key)
-                    .header("APCA-API-SECRET-KEY", &self.api_secret)
-                    .send()
-                    .await
-                    .context("Failed to send positions request")?;
-
-                let positions_text = positions_resp_raw
-                    .text()
-                    .await
-                    .context("Failed to read positions response text")?;
-                let positions_resp: Vec<AlpacaPosition> = serde_json::from_str(&positions_text)
-                    .map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to decode Alpaca Positions: {}. Body: {}",
-                            e,
-                            positions_text
-                        )
-                    })?;
-
-                let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
-                let cash = account_resp
-                    .cash
-                    .parse::<Decimal>()
-                    .unwrap_or(Decimal::ZERO);
-
-                portfolio.cash = cash;
-                portfolio.day_trades_count = account_resp.daytrade_count as u64;
-
-                for alp_pos in positions_resp {
-                    let alp_symbol = alp_pos.symbol.clone();
-
-                    let normalized_symbol = if alp_pos.asset_class.as_deref() == Some("crypto") {
-                        normalize_crypto_symbol(&alp_symbol).map_err(|e| {
-                            anyhow::anyhow!("Symbol normalization failed for {}: {}", alp_symbol, e)
-                        })?
-                    } else {
-                        alp_symbol.clone()
-                    };
-
-                    let pos = crate::domain::trading::portfolio::Position {
-                        symbol: normalized_symbol.clone(),
-                        quantity: alp_pos.qty.parse::<Decimal>().unwrap_or(Decimal::ZERO),
-                        average_price: alp_pos
-                            .avg_entry_price
-                            .parse::<Decimal>()
-                            .unwrap_or(Decimal::ZERO),
-                    };
-
-                    portfolio.positions.insert(normalized_symbol, pos);
-                }
-
-                Ok(portfolio)
-            })
-            .await
-            .map_err(|e| match e {
-                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Open(msg) => {
-                    anyhow::anyhow!("Alpaca API circuit breaker open: {}", msg)
-                }
-                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Inner(inner) => {
-                    inner
-                }
-            })
+        // Return cached portfolio instantly
+        let cache = self.portfolio_cache.read().await;
+        Ok(cache.clone())
     }
 
     async fn get_open_orders(&self) -> Result<Vec<Order>> {

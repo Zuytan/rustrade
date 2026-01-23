@@ -53,6 +53,14 @@ enum Commands {
         /// Number of top results to display
         #[arg(short, long, default_value = "10")]
         top_n: usize,
+
+        /// Session start time (HH:MM:SS)
+        #[arg(long, default_value = "14:30:00")]
+        session_start: String,
+
+        /// Session end time (HH:MM:SS)
+        #[arg(long, default_value = "21:00:00")]
+        session_end: String,
     },
     /// Run batch optimization for multiple symbols
     Batch {
@@ -75,6 +83,14 @@ enum Commands {
         /// Number of top results per symbol
         #[arg(short, long, default_value = "5")]
         top_n: usize,
+
+        /// Session start time (HH:MM:SS)
+        #[arg(long, default_value = "14:30:00")]
+        session_start: String,
+
+        /// Session end time (HH:MM:SS)
+        #[arg(long, default_value = "21:00:00")]
+        session_end: String,
     },
     /// Discover and save optimal parameters for all risk levels
     /// Uses benchmark-proven strategies: Conservative→Standard, Balanced→RegimeAdaptive, Aggressive→SMC
@@ -110,6 +126,8 @@ async fn main() -> Result<()> {
             grid_config,
             output,
             top_n,
+            session_start,
+            session_end,
         } => {
             let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::Advanced);
 
@@ -134,7 +152,7 @@ async fn main() -> Result<()> {
             println!("{}\n", "=".repeat(80));
 
             // Parse dates
-            let (start_dt, end_dt) = parse_date_range(&start, &end)?;
+            let (start_dt, end_dt) = parse_date_range(&start, &end, &session_start, &session_end)?;
 
             // Run optimization
             println!("🚀 Starting optimization...\n");
@@ -159,6 +177,8 @@ async fn main() -> Result<()> {
             end,
             strategy,
             top_n,
+            session_start,
+            session_end,
         } => {
             let symbol_list: Vec<String> =
                 symbols.split(',').map(|s| s.trim().to_string()).collect();
@@ -172,7 +192,7 @@ async fn main() -> Result<()> {
             println!("Strategy: {:?}", strategy_mode);
             println!("{}\n", "=".repeat(80));
 
-            let (start_dt, end_dt) = parse_date_range(&start, &end)?;
+            let (start_dt, end_dt) = parse_date_range(&start, &end, &session_start, &session_end)?;
 
             let batch_results = engine
                 .run_batch(symbol_list, start_dt, end_dt, strategy_mode, parameter_grid)
@@ -263,7 +283,16 @@ async fn main() -> Result<()> {
                 // Collect results from all periods
                 let mut all_results = Vec::new();
                 for (start, end) in &periods {
-                    let (start_dt, end_dt) = parse_date_range(start, end)?;
+                    // Use default times for DiscoverOptimal (Stock: 14:30-21:00, Crypto: 00:00-23:59)
+                    // But here we rely on parse_date_range defaults if we passed only dates.
+                    // Actually, we need to pass times.
+                    // For now, let's just use the defaults associated with Stock for safety,
+                    // or hardcode based on asset_type.
+                    let (s_time, e_time) = match asset {
+                        AssetType::Stock => ("14:30:00", "21:00:00"),
+                        AssetType::Crypto => ("00:00:00", "23:59:59"),
+                    };
+                    let (start_dt, end_dt) = parse_date_range(start, end, s_time, e_time)?;
                     let results = engine
                         .run_grid_search(&symbol, start_dt, end_dt, strategy_mode, grid.clone())
                         .await?;
@@ -323,22 +352,25 @@ async fn main() -> Result<()> {
 fn parse_date_range(
     start: &str,
     end: &str,
+    start_time: &str,
+    end_time: &str,
 ) -> Result<(chrono::DateTime<Utc>, chrono::DateTime<Utc>)> {
     let start_date = NaiveDate::parse_from_str(start, "%Y-%m-%d")
         .context(format!("Invalid start date format: {}", start))?;
     let end_date = NaiveDate::parse_from_str(end, "%Y-%m-%d")
         .context(format!("Invalid end date format: {}", end))?;
 
+    let start_time_parsed = chrono::NaiveTime::parse_from_str(start_time, "%H:%M:%S")
+        .context(format!("Invalid start time format: {}", start_time))?;
+    let end_time_parsed = chrono::NaiveTime::parse_from_str(end_time, "%H:%M:%S")
+        .context(format!("Invalid end time format: {}", end_time))?;
+
     let start_dt = Utc
-        .from_local_datetime(
-            &start_date
-                .and_hms_opt(14, 30, 0)
-                .context("Invalid start time")?,
-        )
+        .from_local_datetime(&start_date.and_time(start_time_parsed))
         .single()
         .context("Failed to create start datetime")?;
     let end_dt = Utc
-        .from_local_datetime(&end_date.and_hms_opt(21, 0, 0).context("Invalid end time")?)
+        .from_local_datetime(&end_date.and_time(end_time_parsed))
         .single()
         .context("Failed to create end datetime")?;
 

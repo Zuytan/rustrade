@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
+
 use rustrade::application::agents::analyst_config::AnalystConfig;
 use rustrade::application::monitoring::feature_engineering_service::TechnicalFeatureEngineeringService;
 use rustrade::domain::ports::FeatureEngineeringService;

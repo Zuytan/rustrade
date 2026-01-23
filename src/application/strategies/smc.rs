@@ -76,8 +76,9 @@ impl SMCStrategy {
 
                         // Check if CURRENT candle (the last one) is in zone
                         if idx == candles.len() - 1 {
-                            // Entry condition: Price dips into zone (Low < Top)
-                            if low <= fvg_top {
+                            // Entry condition: Price CLOSED in zone (Close < Top)
+                            // Using Low would be look-ahead bias if we execute at Close
+                            if candle.close.to_f64().unwrap_or(0.0) <= fvg_top {
                                 in_zone = true;
                             }
                         }
@@ -112,8 +113,9 @@ impl SMCStrategy {
                         }
 
                         if idx == candles.len() - 1 {
-                            // Entry condition: Price rises into zone (High > Bottom)
-                            if high >= fvg_bottom {
+                            // Entry condition: Price CLOSED in zone (Close > Bottom)
+                            // Using High would be look-ahead bias if we execute at Close
+                            if candle.close.to_f64().unwrap_or(0.0) >= fvg_bottom {
                                 in_zone = true;
                             }
                         }
@@ -364,10 +366,10 @@ mod tests {
         // C3: Follow through
         candles.push_back(mock_candle(109.0, 112.0, 105.0, 111.0, 1000.0));
 
-        // C4: Mitigation candle (dips into gap but valid)
+        // C4: Mitigation candle - Close must be in gap for entry
         // Gap is between 102.0 (High1) and 105.0 (Low3)
-        // C4 Low = 103.0 (Inside gap) -> Mitigated!
-        candles.push_back(mock_candle(111.0, 112.0, 103.0, 111.0, 1000.0));
+        // C4 Close = 104.0 (Inside gap) -> Valid entry!
+        candles.push_back(mock_candle(111.0, 112.0, 103.0, 104.0, 1000.0));
 
         let fvg = strategy.detect_fvg(&candles);
         assert!(fvg.is_some());
@@ -393,10 +395,10 @@ mod tests {
         // C3: Follow through
         candles.push_back(mock_candle(91.0, 95.0, 89.0, 90.0, 1000.0));
 
-        // C4: Mitigation
+        // C4: Mitigation candle - Close must be in gap for entry
         // Gap is between 98.0 (Low1) and 95.0 (High3)
-        // C4 High = 96.0 (Inside gap) -> Mitigated!
-        candles.push_back(mock_candle(90.0, 96.0, 88.0, 89.0, 1000.0));
+        // C4 Close = 96.5 (Inside gap) -> Valid entry!
+        candles.push_back(mock_candle(90.0, 96.0, 88.0, 96.5, 1000.0));
 
         let fvg = strategy.detect_fvg(&candles);
         assert!(fvg.is_some());
