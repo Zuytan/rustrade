@@ -309,7 +309,16 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
                     .id_salt("market_list_scroll")
                     .max_height(available_height * 0.35)
                     .show(ui, |ui| {
-                        let mut symbols: Vec<_> = agent.market_data.keys().cloned().collect();
+                        let mut symbol_set: std::collections::HashSet<String> =
+                            agent.market_data.keys().cloned().collect();
+
+                        if let Ok(pf) = agent.portfolio.try_read() {
+                            for key in pf.positions.keys() {
+                                symbol_set.insert(key.clone());
+                            }
+                        }
+
+                        let mut symbols: Vec<_> = symbol_set.into_iter().collect();
                         symbols.sort();
 
                         if let Ok(pf) = agent.portfolio.try_read() {

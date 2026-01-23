@@ -59,6 +59,7 @@ pub struct Analyst {
     enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     cmd_rx: Receiver<AnalystCommand>,
     news_handler: crate::application::agents::news_handler::NewsHandler,
+    ui_candle_tx: Option<broadcast::Sender<Candle>>,
 }
 
 impl Analyst {
@@ -156,6 +157,7 @@ impl Analyst {
                     sizing_engine.clone(),
                 ),
             ),
+            ui_candle_tx: dependencies.ui_candle_tx,
         }
     }
 
@@ -296,6 +298,11 @@ impl Analyst {
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
         let timestamp = candle.timestamp * 1000;
+
+        // Broadcast to UI
+        if let Some(tx) = &self.ui_candle_tx {
+            let _ = tx.send(candle.clone());
+        }
 
         // 1. Ensure symbol context is initialized
         let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
