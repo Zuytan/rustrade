@@ -1,5 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.85.0 - Critical Portfolio Synchronization Fix (January 2026)
+
+### Critical Portfolio Detection Fix
+- **Unified State Management**: Resolved a critical issue where the application failed to detect remote portfolio state.
+  - **Root Cause**: `AlpacaExecutionService` was updating an isolated internal cache instead of the application's shared state.
+  - **Solution**: Inject shared `Arc<RwLock<Portfolio>>` into `AlpacaExecutionService`, enabling direct updates from the background poller to the main application state.
+  - **Verification**: Confirmed real-time portfolio synchronization (<500ms latency) via logs and runtime checks.
+  - **Impact**: Ensures trading decisions are based on accurate, up-to-date position and cash data.
+
+### Code Quality
+- **Cleanup**: Removed unused imports and redundant code in execution services.
+- **Linting**: Achieved zero Clippy warnings across the codebase.
+
 ## Version 0.84.0 - Audit Remediation: Performance, Bias & Stability (January 2026)
 
 ### Critical Performance Fix

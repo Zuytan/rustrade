@@ -10,7 +10,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tracing::{error, info};
 
 // ===== Execution Service (REST API) =====
@@ -23,11 +23,16 @@ pub struct AlpacaExecutionService {
     trading_stream: Arc<AlpacaTradingStream>,
     #[allow(dead_code)] // Used in background polling task
     circuit_breaker: Arc<crate::infrastructure::core::circuit_breaker::CircuitBreaker>,
-    portfolio_cache: Arc<RwLock<crate::domain::trading::portfolio::Portfolio>>,
+    portfolio: Arc<RwLock<crate::domain::trading::portfolio::Portfolio>>, // Renamed from portfolio_cache and now injected
 }
 
 impl AlpacaExecutionService {
-    pub fn new(api_key: String, api_secret: String, base_url: String) -> Self {
+    pub fn new(
+        api_key: String,
+        api_secret: String,
+        base_url: String,
+        portfolio: Arc<RwLock<crate::domain::trading::portfolio::Portfolio>>,
+    ) -> Self {
         let client = HttpClientFactory::create_client();
         let trading_stream = Arc::new(AlpacaTradingStream::new(
             api_key.clone(),
@@ -44,12 +49,8 @@ impl AlpacaExecutionService {
             ),
         );
 
-        let portfolio_cache = Arc::new(RwLock::new(
-            crate::domain::trading::portfolio::Portfolio::new(),
-        ));
-
         // Spawn background polling task
-        let cache_clone = portfolio_cache.clone();
+        let portfolio_clone = portfolio.clone();
         let client_clone = client.clone();
         let breaker_clone = circuit_breaker.clone();
         let api_key_clone = api_key.clone();
@@ -149,9 +150,13 @@ impl AlpacaExecutionService {
                 // Execute via circuit breaker
                 match breaker_clone.call(fetch_result).await {
                     Ok(portfolio) => {
-                        let mut guard = cache_clone.write().await;
-                        *guard = portfolio;
-                        // trace!("AlpacaExecutionService: Portfolio cache updated");
+                        let mut guard = portfolio_clone.write().await;
+                        *guard = portfolio.clone();
+                        // tracing::trace!(
+                        //     "AlpacaExecutionService: Portfolio cache updated - Cash: {}, Positions: {}",
+                        //     portfolio.cash,
+                        //     portfolio.positions.len()
+                        // );
                     }
                     Err(e) => {
                         error!("AlpacaExecutionService: Portfolio poll failed: {}", e);
@@ -169,7 +174,7 @@ impl AlpacaExecutionService {
             base_url,
             trading_stream,
             circuit_breaker,
-            portfolio_cache,
+            portfolio,
         }
     }
 }
@@ -315,8 +320,8 @@ impl ExecutionService for AlpacaExecutionService {
 
     async fn get_portfolio(&self) -> Result<crate::domain::trading::portfolio::Portfolio> {
         // Return cached portfolio instantly
-        let cache = self.portfolio_cache.read().await;
-        Ok(cache.clone())
+        let pf = self.portfolio.read().await;
+        Ok(pf.clone())
     }
 
     async fn get_open_orders(&self) -> Result<Vec<Order>> {

@@ -48,6 +48,7 @@ impl ServiceFactory {
                     config.alpaca_api_key.clone(),
                     config.alpaca_secret_key.clone(),
                     config.alpaca_base_url.clone(),
+                    portfolio.clone(),
                 );
 
                 (

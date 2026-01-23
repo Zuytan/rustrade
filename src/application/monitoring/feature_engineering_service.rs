@@ -4,12 +4,12 @@ use crate::domain::trading::types::{Candle, FeatureSet};
 use rust_decimal::prelude::ToPrimitive;
 use ta::Next;
 use ta::indicators::{
-    AverageTrueRange, BollingerBands, ExponentialMovingAverage,
-    MovingAverageConvergenceDivergence, RelativeStrengthIndex, SimpleMovingAverage,
+    AverageTrueRange, BollingerBands, ExponentialMovingAverage, MovingAverageConvergenceDivergence,
+    RelativeStrengthIndex, SimpleMovingAverage,
 };
 
 /// Manual ADX implementation using standard Wilder's smoothing
-/// 
+///
 /// Fixed initialization: accumulates first N values as sum, then applies Wilder's smoothing
 pub struct ManualAdx {
     period: usize,
@@ -56,11 +56,21 @@ impl ManualAdx {
         let prev_low = self.prev_low.unwrap_or(0.0);
         let prev_close = self.prev_close.unwrap_or(0.0);
 
-        let tr = (high - low).max((high - prev_close).abs()).max((low - prev_close).abs());
+        let tr = (high - low)
+            .max((high - prev_close).abs())
+            .max((low - prev_close).abs());
         let up_move = high - prev_high;
         let down_move = prev_low - low;
-        let plus_dm = if up_move > down_move && up_move > 0.0 { up_move } else { 0.0 };
-        let minus_dm = if down_move > up_move && down_move > 0.0 { down_move } else { 0.0 };
+        let plus_dm = if up_move > down_move && up_move > 0.0 {
+            up_move
+        } else {
+            0.0
+        };
+        let minus_dm = if down_move > up_move && down_move > 0.0 {
+            down_move
+        } else {
+            0.0
+        };
 
         self.count += 1;
 
@@ -85,12 +95,17 @@ impl ManualAdx {
             let plus_di = 100.0 * self.plus_dm_smooth / self.tr_smooth;
             let minus_di = 100.0 * self.minus_dm_smooth / self.tr_smooth;
             let sum_di = plus_di + minus_di;
-            let dx = if sum_di > 0.0 { 100.0 * (plus_di - minus_di).abs() / sum_di } else { 0.0 };
-            
+            let dx = if sum_di > 0.0 {
+                100.0 * (plus_di - minus_di).abs() / sum_di
+            } else {
+                0.0
+            };
+
             if self.count == self.period {
                 self.adx_smooth = dx;
             } else {
-                self.adx_smooth = ((self.adx_smooth * (self.period as f64 - 1.0)) + dx) / self.period as f64;
+                self.adx_smooth =
+                    ((self.adx_smooth * (self.period as f64 - 1.0)) + dx) / self.period as f64;
             }
             adx = self.adx_smooth;
         }
