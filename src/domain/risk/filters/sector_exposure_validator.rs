@@ -209,6 +209,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(10000),
+            None, // recent_candles
         );
 
         // Without provider, sector is "Unknown", so approves
@@ -243,6 +244,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(10000),
+            None, // recent_candles
         );
 
         // Exposure: $1000/$10000 = 10% (Limit 20%) -> Approve
@@ -281,6 +283,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(5000),
+            None, // recent_candles
         );
 
         let result = validator.validate(&ctx).await;
@@ -333,6 +336,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(10000),
+            None, // recent_candles
         );
 
         // Current Sector Exp: $2500 (MSFT)

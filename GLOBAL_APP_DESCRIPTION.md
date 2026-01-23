@@ -22,6 +22,27 @@ The application operates as a mesh of autonomous agents communicating via high-p
   - **Global**: Halts trading if Daily Loss or Drawdown limits are breached.
   - **Infrastructure**: Wraps API calls with retry policies and breakers to handle broker outages gracefully.
   - **Panic Mode**: "Blind Liquidation" logic ensures positions can be exited even if price feeds are down.
+
+### Circuit Breaker Thresholds
+
+The system enforces three safety limits configured via `CircuitBreakerConfig`:
+
+| Parameter | Default | Description | Configurable Via |
+|-----------|---------|-------------|------------------|
+| `max_daily_loss_pct` | **2%** | Maximum loss in a single trading session | Risk Score (auto-scaled) |
+| `max_drawdown_pct` | **5%** | Maximum decline from equity high water mark | Risk Score (auto-scaled) |
+| `consecutive_loss_limit` | **3 trades** | Halt after N consecutive losing trades | Fixed (code-level config) |
+
+**How it works**:
+- **Daily Loss**: Calculated as `(current_equity - session_start_equity) / session_start_equity`
+- **Drawdown**: Calculated as `(current_equity - equity_high_water_mark) / equity_high_water_mark`
+- **Consecutive Losses**: Counter incremented on trade close with negative P&L, reset on winning trade
+
+> [!CAUTION]
+> If any limit is breached, **all new trades are blocked** and emergency portfolio liquidation is triggered. Manual intervention required to reset (or automatic reset at session start for daily loss).
+
+**State Persistence**: Circuit breaker state is persisted to SQLite (`risk_state` table) to prevent bypass via application restart.
+
 - **Concurrency**: Deadlock-free design using timeouts on locks and message-passing patterns.
 
 ## 3. Trading Intelligence

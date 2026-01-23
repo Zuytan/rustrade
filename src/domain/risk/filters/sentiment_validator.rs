@@ -119,6 +119,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(100000),
+            None, // recent_candles
         )
     }
 

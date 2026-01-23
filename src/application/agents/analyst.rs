@@ -58,6 +58,7 @@ pub struct Analyst {
     // Multi-timeframe configuration
     enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     cmd_rx: Receiver<AnalystCommand>,
+    news_handler: crate::application::agents::news_handler::NewsHandler,
 }
 
 impl Analyst {
@@ -81,9 +82,21 @@ impl Analyst {
             dependencies.spread_cache.clone(),
         );
 
+        // Initialize SizingEngine & SignalProcessor
+        let sizing_engine = Arc::new(
+            crate::application::risk_management::sizing_engine::SizingEngine::new(
+                dependencies.spread_cache.clone(),
+            ),
+        );
+
         let trade_filter =
             crate::application::trading::trade_filter::TradeFilter::new(cost_evaluator.clone());
-        let trade_evaluator = TradeEvaluator::new(trade_filter);
+        let trade_evaluator = crate::application::agents::trade_evaluator::TradeEvaluator::new(
+            trade_filter,
+            crate::application::agents::signal_processor::SignalProcessor::new(
+                sizing_engine.clone(),
+            ), /* Clone for main analyst */
+        );
 
         // Extract enabled timeframes from config (will be passed from system.rs)
         // For now, default to primary timeframe only to maintain backward compatibility
@@ -104,7 +117,16 @@ impl Analyst {
         );
         let pipeline_trade_filter =
             crate::application::trading::trade_filter::TradeFilter::new(pipeline_cost_evaluator);
-        let pipeline_trade_evaluator = TradeEvaluator::new(pipeline_trade_filter);
+
+        let pipeline_signal_processor =
+            crate::application::agents::signal_processor::SignalProcessor::new(
+                sizing_engine.clone(),
+            );
+        let pipeline_trade_evaluator =
+            crate::application::agents::trade_evaluator::TradeEvaluator::new(
+                pipeline_trade_filter,
+                pipeline_signal_processor,
+            );
         let pipeline = super::candle_pipeline::CandlePipeline::new(
             dependencies.execution_service.clone(),
             dependencies.candle_repository.clone(),
@@ -129,6 +151,11 @@ impl Analyst {
             warmup_service,
             enabled_timeframes,
             cmd_rx,
+            news_handler: crate::application::agents::news_handler::NewsHandler::new(
+                crate::application::agents::signal_processor::SignalProcessor::new(
+                    sizing_engine.clone(),
+                ),
+            ),
         }
     }
 
@@ -397,21 +424,21 @@ impl Analyst {
             return;
         }
 
-        use super::news_handler::{
-            NewsAction, process_bearish_news, process_bullish_news, send_news_proposal,
-        };
+        use super::news_handler::{NewsAction, process_bearish_news, send_news_proposal};
 
         match signal.sentiment {
             crate::domain::listener::NewsSentiment::Bullish => {
-                let action = process_bullish_news(
-                    &self.config,
-                    &self.execution_service,
-                    &signal,
-                    context,
-                    price,
-                    timestamp.timestamp(),
-                )
-                .await;
+                let action = self
+                    .news_handler
+                    .process_bullish_news(
+                        &self.config,
+                        &self.execution_service,
+                        &signal,
+                        context,
+                        price,
+                        timestamp.timestamp(),
+                    )
+                    .await;
 
                 if let NewsAction::Buy(proposal) = action
                     && let Err(e) = send_news_proposal(&self.proposal_tx, proposal).await

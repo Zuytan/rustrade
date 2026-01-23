@@ -19,6 +19,7 @@ use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 /// - Cost-aware profitability analysis
 pub struct TradeEvaluator {
     trade_filter: TradeFilter,
+    signal_processor: SignalProcessor,
 }
 pub struct EvaluationInput<'a> {
     pub signal: OrderSide,
@@ -31,8 +32,11 @@ pub struct EvaluationInput<'a> {
 }
 
 impl TradeEvaluator {
-    pub fn new(trade_filter: TradeFilter) -> Self {
-        Self { trade_filter }
+    pub fn new(trade_filter: TradeFilter, signal_processor: SignalProcessor) -> Self {
+        Self {
+            trade_filter,
+            signal_processor,
+        }
     }
 
     /// Evaluate a signal and generate a valid trade proposal if it passes all checks.
@@ -99,16 +103,18 @@ impl TradeEvaluator {
         );
 
         // 3. Build Proposal via SignalProcessor
-        let mut proposal = match SignalProcessor::build_proposal(
-            &context.config,
-            input.execution_service,
-            input.symbol.to_string(),
-            input.signal,
-            input.price,
-            input.timestamp,
-            reason,
-        )
-        .await
+        let mut proposal = match self
+            .signal_processor
+            .build_proposal(
+                &context.config,
+                input.execution_service,
+                input.symbol.to_string(),
+                input.signal,
+                input.price,
+                input.timestamp,
+                reason,
+            )
+            .await
         {
             Some(p) => p,
             None => return None,

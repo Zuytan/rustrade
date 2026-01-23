@@ -6,17 +6,21 @@ use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tracing::debug;
 
+use crate::application::risk_management::sizing_engine::SizingEngine;
+
 /// Service responsible for generating and processing trading signals.
 ///
 /// This service handles:
 /// - Generating signals from trading strategies
 /// - Building trade proposals with quantity calculation
 /// - Applying signal filters (RSI, trailing stop)
-pub struct SignalProcessor;
+pub struct SignalProcessor {
+    sizing_engine: Arc<SizingEngine>,
+}
 
 impl SignalProcessor {
-    pub fn new() -> Self {
-        Self
+    pub fn new(sizing_engine: Arc<SizingEngine>) -> Self {
+        Self { sizing_engine }
     }
 
     /// Generate trading signal from strategy.
@@ -53,7 +57,9 @@ impl SignalProcessor {
     ///
     /// Calculates appropriate position size and creates a complete trade proposal
     /// ready to be sent to the risk manager.
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_proposal(
+        &self,
         config: &super::analyst::AnalystConfig,
         execution_service: &Arc<dyn ExecutionService>,
         symbol: String,
@@ -63,8 +69,9 @@ impl SignalProcessor {
         reason: String,
     ) -> Option<TradeProposal> {
         // Calculate quantity
-        let quantity =
-            Self::calculate_trade_quantity(config, execution_service, &symbol, price).await;
+        let quantity = self
+            .calculate_trade_quantity(config, execution_service, &symbol, price)
+            .await;
 
         if quantity <= Decimal::ZERO {
             debug!(
@@ -90,6 +97,7 @@ impl SignalProcessor {
     /// Uses the execution service to get current portfolio state and calculates
     /// appropriate position size based on configuration.
     async fn calculate_trade_quantity(
+        &self,
         config: &super::analyst::AnalystConfig,
         execution_service: &Arc<dyn ExecutionService>,
         symbol: &str,
@@ -116,7 +124,7 @@ impl SignalProcessor {
             static_trade_quantity: config.trade_quantity,
         };
 
-        crate::application::risk_management::sizing_engine::SizingEngine::calculate_quantity(
+        self.sizing_engine.calculate_quantity_with_slippage(
             &sizing_config,
             total_equity,
             price,
@@ -125,8 +133,6 @@ impl SignalProcessor {
     }
 
     /// Apply RSI filter to buy signals.
-    ///
-    /// Blocks buy signals when RSI is above the overbought threshold.
     pub fn apply_rsi_filter(
         signal: Option<OrderSide>,
         context: &SymbolContext,
@@ -228,11 +234,9 @@ impl SignalProcessor {
     }
 }
 
-impl Default for SignalProcessor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Default implementation removed as we need dependencies
+// use crate::application::market_data::spread_cache::SpreadCache;
+// impl Default for SignalProcessor { ... }
 
 #[cfg(test)]
 mod tests {
@@ -267,7 +271,12 @@ mod tests {
 
     #[test]
     fn test_signal_processor_creation() {
-        let processor = SignalProcessor::new();
+        let spread_cache =
+            Arc::new(crate::application::market_data::spread_cache::SpreadCache::new());
+        let sizing_engine = Arc::new(
+            crate::application::risk_management::sizing_engine::SizingEngine::new(spread_cache),
+        );
+        let processor = SignalProcessor::new(sizing_engine);
         // Should create successfully
         let _ = processor;
     }

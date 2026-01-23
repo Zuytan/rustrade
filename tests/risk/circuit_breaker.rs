@@ -5,6 +5,7 @@ use rustrade::domain::trading::portfolio::{Portfolio, Position};
 use rustrade::domain::trading::types::{OrderSide, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
+use rustrade::application::market_data::spread_cache::SpreadCache;
 use tokio::sync::{RwLock, mpsc};
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
@@ -69,6 +70,8 @@ async fn test_circuit_breaker_triggers_on_crash() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
     )
     .expect("Test config should be valid");
 

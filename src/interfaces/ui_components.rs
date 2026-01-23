@@ -199,9 +199,10 @@ impl SettingsPanel {
     }
 
     /// Updates all text fields based on the selected risk score (Logic mirroring RiskAppetite domain)
+    /// Note: This does NOT change the selected strategy - that's a user choice.
     pub fn update_from_score(&mut self, score: u8) {
-        // Update strategy selection based on risk
-        self.selected_strategy = Self::select_strategy_for_risk(score);
+        // Strategy selection is a USER choice - do NOT override it here
+        // The strategy is only auto-selected on initial panel creation if not loaded from settings
         if let Ok(risk) = RiskAppetite::new(score) {
             // -- Risk --
             self.max_position_size_pct = format!("{:.2}", risk.calculate_max_position_size_pct());

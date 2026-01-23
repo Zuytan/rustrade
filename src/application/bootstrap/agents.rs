@@ -169,6 +169,8 @@ impl AgentsBootstrap {
             services.performance_monitor.clone(),
             correlation_service,
             Some(persistence.risk_state_repository.clone()),
+            Some(persistence.candle_repository.clone()),
+            services.spread_cache.clone(),
         )?;
 
         // 5. Order Throttler & Executor

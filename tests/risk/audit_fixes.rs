@@ -7,6 +7,7 @@ use rustrade::domain::trading::portfolio::{Portfolio, Position};
 use rustrade::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
+use rustrade::application::market_data::spread_cache::SpreadCache;
 use tokio::sync::{RwLock, mpsc};
 
 #[tokio::test]
@@ -69,6 +70,8 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
     )
     .expect("Test config should be valid");
 
@@ -191,6 +194,8 @@ async fn test_pending_order_ttl_cleanup() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
     )
     .expect("Test config should be valid");
 

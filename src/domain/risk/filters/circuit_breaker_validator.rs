@@ -174,6 +174,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(1000000),
+            None, // recent_candles
         );
 
         let result = validator.validate(&ctx).await;
@@ -208,6 +209,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(1000000),
+            None, // recent_candles
         );
 
         let result = validator.validate(&ctx).await;
@@ -249,6 +251,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(1000000),
+            None, // recent_candles
         );
 
         let result = validator.validate(&ctx).await;
@@ -291,6 +294,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(1000000),
+            None, // recent_candles
         );
 
         let result = validator.validate(&ctx).await;
@@ -334,6 +338,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(1000000),
+            None, // recent_candles
         );
 
         let result = validator.validate(&ctx).await;
@@ -366,6 +371,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(1000000),
+            None, // recent_candles
         );
 
         let result = validator.validate(&ctx).await;
@@ -402,6 +408,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(1000000),
+            None, // recent_candles
         );
 
         let result = validator.validate(&ctx).await;

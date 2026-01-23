@@ -9,7 +9,7 @@ use crate::application::risk_management::session_manager::SessionManager;
 use crate::application::risk_management::state::pending_orders_tracker::PendingOrdersTracker;
 use crate::application::risk_management::state::risk_state_manager::RiskStateManager;
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
-use crate::domain::repositories::RiskStateRepository;
+use crate::domain::repositories::{CandleRepository, RiskStateRepository};
 use crate::domain::risk::filters::{
     RiskValidator, ValidationContext, ValidationResult,
     buying_power_validator::{BuyingPowerConfig, BuyingPowerValidator},
@@ -17,6 +17,7 @@ use crate::domain::risk::filters::{
     correlation_filter::CorrelationFilter,
     pdt_validator::{PdtConfig, PdtValidator},
     position_size_validator::{PositionSizeConfig, PositionSizeValidator},
+    price_anomaly_validator::{PriceAnomalyConfig, PriceAnomalyValidator},
     sector_exposure_validator::{SectorExposureConfig, SectorExposureValidator},
     sentiment_validator::{SentimentConfig, SentimentValidator},
 };
@@ -85,8 +86,12 @@ pub struct RiskManager {
     // pending_reservations moved to OrderReconciler
     current_sentiment: Option<Sentiment>,
     risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
+    candle_repository: Option<Arc<dyn CandleRepository>>,
+
+    // Services
+    #[allow(dead_code)] // Todo: Use in LiquidationService in next task
+    spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
 }
-// PendingOrder struct moved to order_reconciler.rs
 
 impl RiskManager {
     #[allow(clippy::too_many_arguments)]
@@ -103,13 +108,14 @@ impl RiskManager {
         performance_monitor: Option<Arc<PerformanceMonitoringService>>,
         correlation_service: Option<Arc<CorrelationService>>,
         risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
+        candle_repository: Option<Arc<dyn CandleRepository>>,
+        spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
     ) -> Result<Self, RiskConfigError> {
         // Validate configuration
         risk_config
             .validate()
             .map_err(RiskConfigError::ValidationError)?;
 
-        // --- Build Validation Pipeline ---
         // --- Build Validation Pipeline ---
         let validators: Vec<Box<dyn RiskValidator>> = vec![
             // 1. Top Priority: Circuit Breaker
@@ -118,28 +124,30 @@ impl RiskManager {
                 max_drawdown_pct: risk_config.max_drawdown_pct,
                 consecutive_loss_limit: risk_config.consecutive_loss_limit,
             })),
-            // 2. Regulatory: PDT
+            // 2. Price Anomaly Detection (Fat Finger Protection)
+            Box::new(PriceAnomalyValidator::new(PriceAnomalyConfig::default())),
+            // 3. Regulatory: PDT
             Box::new(PdtValidator::new(PdtConfig {
                 enabled: !non_pdt_mode && !risk_config.allow_pdt_risk,
                 asset_class,
                 ..Default::default()
             })),
-            // 3. Diversification: Sector Exposure
+            // 4. Diversification: Sector Exposure
             Box::new(SectorExposureValidator::new(SectorExposureConfig {
                 max_sector_exposure_pct: risk_config.max_sector_exposure_pct,
                 sector_provider: risk_config.sector_provider.clone(),
             })),
-            // 4. Diversification: Correlation
+            // 5. Diversification: Correlation
             Box::new(CorrelationFilter::new(
                 risk_config.correlation_config.clone(),
             )),
-            // 5. Risk Sizing: Position Size
+            // 6. Risk Sizing: Position Size
             Box::new(PositionSizeValidator::new(PositionSizeConfig {
                 max_position_size_pct: risk_config.max_position_size_pct,
             })),
-            // 6. Optimization: Sentiment
+            // 7. Optimization: Sentiment
             Box::new(SentimentValidator::new(SentimentConfig::default())),
-            // 7. Affordability: Buying Power (Available Cash)
+            // 8. Affordability: Buying Power (Available Cash)
             Box::new(BuyingPowerValidator::new(BuyingPowerConfig::default())),
         ];
 
@@ -212,6 +220,8 @@ impl RiskManager {
             // pending_reservations removed
             current_sentiment: None,
             risk_state_repository,
+            candle_repository,
+            spread_cache,
         })
     }
 
@@ -583,6 +593,23 @@ impl RiskManager {
             .order_reconciler
             .get_pending_exposure(&proposal.symbol, OrderSide::Buy);
 
+        let recent_candles = if let Some(repo) = &self.candle_repository {
+            // Fetch last 20 recent candles for price anomaly validation
+            // We use a safe lookback window (e.g. 5 min * 20 = 100 min)
+            let now_ts = Utc::now().timestamp();
+            // Assumed get_range handles sort order
+            repo.get_range(&proposal.symbol, now_ts - 7200, now_ts)
+                .await
+                .ok()
+        } else {
+            None
+        };
+        // NOTE: We pass a reference to the vector if it exists.
+        // Since `recent_candles` is owned here, we need to be careful with lifetimes.
+        // ValidationContext expects `Option<&'a [Candle]>`.
+
+        let candles_ref = recent_candles.as_deref();
+
         let ctx = ValidationContext::new(
             &proposal,
             &snapshot.portfolio,
@@ -594,6 +621,7 @@ impl RiskManager {
             volatility_multiplier,
             pending_exposure,
             snapshot.available_cash(),
+            candles_ref, // Pass recent candles from CandleRepository for PriceAnomalyValidator
         );
 
         // Execute Pipeline

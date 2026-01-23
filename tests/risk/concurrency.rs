@@ -7,6 +7,7 @@ use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService
 
 use rust_decimal::Decimal;
 use std::sync::Arc;
+use rustrade::application::market_data::spread_cache::SpreadCache;
 use tokio::sync::{RwLock, mpsc};
 
 /// Test: Concurrent proposals for the same symbol respect position size limits
@@ -60,6 +61,8 @@ async fn test_concurrent_proposals_respect_limits() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
     )
     .expect("Test config should be valid");
 
@@ -167,6 +170,8 @@ async fn test_backpressure_drops_excess_proposals() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
     )
     .expect("Test config should be valid");
 

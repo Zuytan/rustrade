@@ -298,7 +298,17 @@ mod tests {
         let fee_model = Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO));
         let cost_evaluator = CostEvaluator::new(fee_model, config.spread_bps);
         let trade_filter = TradeFilter::new(cost_evaluator);
-        let trade_evaluator = TradeEvaluator::new(trade_filter);
+
+        // Initialize SizingEngine & SignalProcessor for tests
+        let spread_cache =
+            std::sync::Arc::new(crate::application::market_data::spread_cache::SpreadCache::new());
+        let sizing_engine = std::sync::Arc::new(
+            crate::application::risk_management::sizing_engine::SizingEngine::new(spread_cache),
+        );
+        let signal_processor =
+            crate::application::agents::signal_processor::SignalProcessor::new(sizing_engine);
+
+        let trade_evaluator = TradeEvaluator::new(trade_filter, signal_processor);
 
         CandlePipeline::new(execution_service, None, trade_evaluator)
     }

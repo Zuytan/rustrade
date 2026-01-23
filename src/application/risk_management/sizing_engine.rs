@@ -1,6 +1,9 @@
 use rust_decimal::Decimal;
 
+use std::sync::Arc;
 use tracing::info;
+
+use crate::application::market_data::spread_cache::SpreadCache;
 
 #[derive(Debug, Clone)]
 pub struct SizingConfig {
@@ -10,9 +13,53 @@ pub struct SizingConfig {
     pub static_trade_quantity: Decimal,
 }
 
-pub struct SizingEngine;
+pub struct SizingEngine {
+    spread_cache: Arc<SpreadCache>,
+}
 
 impl SizingEngine {
+    pub fn new(spread_cache: Arc<SpreadCache>) -> Self {
+        Self { spread_cache }
+    }
+
+    /// Calculate quantity with slippage adjustment based on bid-ask spread
+    pub fn calculate_quantity_with_slippage(
+        &self,
+        config: &SizingConfig,
+        total_equity: Decimal,
+        price: Decimal,
+        symbol: &str,
+    ) -> Decimal {
+        let base_qty = Self::calculate_quantity(config, total_equity, price, symbol);
+
+        // Apply slippage adjustment
+        if let Some(spread_pct) = self.spread_cache.get_spread_pct(symbol) {
+            // Reduce size if spread is wide (>20 bps = 0.002 = 0.2%)
+            // If spread is 0.5% (0.005), multiplier = 0.002 / 0.005 = 0.4 (40% of size)
+            // Cap reduction to avoid tiny sizes? No, cap multiplier at 1.0.
+            let slippage_multiplier = if spread_pct > 0.002 {
+                let m = (0.002 / spread_pct).min(1.0);
+                info!(
+                    "SizingEngine: High spread detected for {} ({:.4}%), reducing size by factor {:.2}",
+                    symbol,
+                    spread_pct * 100.0,
+                    m
+                );
+                m
+            } else {
+                1.0 // No adjustment for tight spreads
+            };
+
+            if slippage_multiplier < 1.0 {
+                let adjusted_qty = base_qty
+                    * Decimal::from_f64_retain(slippage_multiplier).unwrap_or(Decimal::ONE);
+                return adjusted_qty.round_dp(4);
+            }
+        }
+
+        base_qty
+    }
+
     pub fn calculate_quantity(
         config: &SizingConfig,
         total_equity: Decimal,
@@ -89,5 +136,89 @@ impl SizingEngine {
         );
 
         quantity
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::market_data::spread_cache::SpreadCache;
+    use rust_decimal_macros::dec;
+    use std::sync::Arc;
+
+    fn create_test_config() -> SizingConfig {
+        SizingConfig {
+            risk_per_trade_percent: 0.01,
+            max_positions: 5,
+            max_position_size_pct: 0.20,
+            static_trade_quantity: dec!(1.0),
+        }
+    }
+
+    #[test]
+    fn test_calculate_quantity_normal_spread() {
+        let spread_cache = Arc::new(SpreadCache::new());
+        // Update cache with normal spread (5 bps = 0.05%)
+        // Bid: 100.00, Ask: 100.05
+        spread_cache.update("BTC/USD".to_string(), 100.00, 100.05);
+
+        let engine = SizingEngine::new(spread_cache);
+        let config = create_test_config();
+
+        // Equity: 100,000. Risk 1% = 1,000 target.
+        // Price 100. Quantity = 10.
+        let qty =
+            engine.calculate_quantity_with_slippage(&config, dec!(100000), dec!(100), "BTC/USD");
+
+        assert_eq!(qty, dec!(10));
+    }
+
+    #[test]
+    fn test_calculate_quantity_wide_spread_adjustment() {
+        let spread_cache = Arc::new(SpreadCache::new());
+        // Update cache with Wide spread (50 bps = 0.5%) > 0.2% threshold
+        // Use Bid 99.75, Ask 100.25 => Mid 100.00 => Spread 0.50 => 0.50/100 = 0.005 (0.5%)
+        spread_cache.update("BTC/USD".to_string(), 99.75, 100.25);
+
+        let engine = SizingEngine::new(spread_cache);
+        let config = create_test_config();
+
+        // Multiplier logic: 0.002 / 0.005 = 0.4
+        // Expected qty: 10 * 0.4 = 4.
+
+        let qty =
+            engine.calculate_quantity_with_slippage(&config, dec!(100000), dec!(100), "BTC/USD");
+
+        assert_eq!(qty, dec!(4));
+    }
+
+    #[test]
+    fn test_calculate_quantity_no_spread_data() {
+        let spread_cache = Arc::new(SpreadCache::new());
+        // No data in cache
+
+        let engine = SizingEngine::new(spread_cache);
+        let config = create_test_config();
+
+        let qty =
+            engine.calculate_quantity_with_slippage(&config, dec!(100000), dec!(100), "BTC/USD");
+
+        // Should be base quantity (10)
+        assert_eq!(qty, dec!(10));
+    }
+
+    #[test]
+    fn test_calculate_quantity_static_fallback() {
+        let spread_cache = Arc::new(SpreadCache::new());
+        let engine = SizingEngine::new(spread_cache);
+
+        let mut config = create_test_config();
+        config.risk_per_trade_percent = 0.0; // Disable risk sizing
+        config.static_trade_quantity = dec!(5);
+
+        let qty =
+            engine.calculate_quantity_with_slippage(&config, dec!(100000), dec!(100), "BTC/USD");
+
+        assert_eq!(qty, dec!(5));
     }
 }

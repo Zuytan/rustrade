@@ -4,6 +4,7 @@
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::commands::RiskCommand;
 use rustrade::application::risk_management::risk_manager::RiskManager;
+use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::config::AssetClass;
 use rustrade::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
 use rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig;
@@ -144,6 +145,8 @@ async fn test_circuit_breaker_on_market_crash() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
     )
     .expect("Test config should be valid");
 

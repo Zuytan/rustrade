@@ -139,6 +139,7 @@ mod tests {
             volatility_multiplier: None,
             symbol_pending_exposure: rust_decimal::Decimal::ZERO,
             available_cash: dec!(100000),
+            recent_candles: None, // Added for test
         }
     }
 

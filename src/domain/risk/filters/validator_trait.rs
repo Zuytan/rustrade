@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::domain::risk::state::RiskState;
 use crate::domain::sentiment::Sentiment;
 use crate::domain::trading::portfolio::Portfolio;
-use crate::domain::trading::types::TradeProposal;
+use crate::domain::trading::types::{Candle, TradeProposal};
 
 /// Result of a risk validation check
 #[derive(Debug, Clone, PartialEq)]
@@ -71,6 +71,9 @@ pub struct ValidationContext<'a> {
 
     /// Available cash for trading (Cash - Reservations)
     pub available_cash: Decimal,
+
+    /// Recent candles for the proposal's symbol (optional, for price anomaly detection)
+    pub recent_candles: Option<&'a [Candle]>,
 }
 
 impl<'a> ValidationContext<'a> {
@@ -87,6 +90,7 @@ impl<'a> ValidationContext<'a> {
         volatility_multiplier: Option<f64>,
         symbol_pending_exposure: Decimal,
         available_cash: Decimal,
+        recent_candles: Option<&'a [Candle]>,
     ) -> Self {
         Self {
             proposal,
@@ -99,6 +103,7 @@ impl<'a> ValidationContext<'a> {
             volatility_multiplier,
             symbol_pending_exposure,
             available_cash,
+            recent_candles,
         }
     }
 
@@ -218,6 +223,7 @@ mod tests {
             None,
             rust_decimal::Decimal::ZERO,
             dec!(100000), // available_cash
+            None,         // recent_candles
         );
 
         // Should return current market price, not proposal price
@@ -253,6 +259,7 @@ mod tests {
             None,
             rust_decimal::Decimal::ZERO,
             dec!(100000), // available_cash
+            None,         // recent_candles
         );
 
         assert_eq!(ctx.calculate_proposal_exposure(), dec!(100000));

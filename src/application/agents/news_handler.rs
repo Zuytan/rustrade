@@ -30,85 +30,84 @@ pub enum NewsAction {
     NoAction,
 }
 
-/// Processes a bullish news signal with technical filters.
-///
-/// Filters applied:
-/// 1. **Trend Filter**: Rejects if price below SMA50 (bearish trend)
-/// 2. **Overbought Filter**: Rejects if RSI > 75 (FOMO prevention)
-///
-/// # Arguments
-/// * `config` - Analyst configuration
-/// * `execution_service` - Service for building proposals
-/// * `signal` - The news signal to process
-/// * `context` - Symbol context with current indicators
-/// * `price` - Current market price
-/// * `timestamp` - Current timestamp
-///
-/// # Returns
-/// A `NewsAction` indicating what action was taken.
-pub async fn process_bullish_news(
-    config: &AnalystConfig,
-    execution_service: &Arc<dyn ExecutionService>,
-    signal: &NewsSignal,
-    context: &SymbolContext,
-    price: Decimal,
-    timestamp: i64,
-) -> NewsAction {
-    let price_f64 = price.to_f64().unwrap_or(0.0);
-    let sma_50 = context.last_features.sma_50.unwrap_or(0.0);
-    let rsi = context.last_features.rsi.unwrap_or(50.0);
+use crate::application::agents::signal_processor::SignalProcessor;
 
-    info!(
-        "NewsHandler: Analyzing BULLISH news for {}. Price: {}, SMA50: {}, RSI: {}",
-        signal.symbol, price_f64, sma_50, rsi
-    );
+pub struct NewsHandler {
+    signal_processor: SignalProcessor,
+}
 
-    // 1. Trend Filter: Avoid buying falling knives
-    if price_f64 < sma_50 {
-        let reason = format!(
-            "Price ({:.2}) below SMA50 ({:.2}) - Bearish Trend",
-            price_f64, sma_50
-        );
-        warn!(
-            "NewsHandler: REJECTED Bullish News for {}. {}",
-            signal.symbol, reason
-        );
-        return NewsAction::Rejected(reason);
+impl NewsHandler {
+    pub fn new(signal_processor: SignalProcessor) -> Self {
+        Self { signal_processor }
     }
 
-    // 2. Overbought Filter: Avoid FOMO
-    if rsi > 75.0 {
-        let reason = format!("RSI {:.1} indicates Overbought", rsi);
-        warn!(
-            "NewsHandler: REJECTED Bullish News for {}. {}",
-            signal.symbol, reason
-        );
-        return NewsAction::Rejected(reason);
-    }
+    /// Processes a bullish news signal with technical filters.
+    pub async fn process_bullish_news(
+        &self,
+        config: &AnalystConfig,
+        execution_service: &Arc<dyn ExecutionService>,
+        signal: &NewsSignal,
+        context: &SymbolContext,
+        price: Decimal,
+        timestamp: i64,
+    ) -> NewsAction {
+        let price_f64 = price.to_f64().unwrap_or(0.0);
+        let sma_50 = context.last_features.sma_50.unwrap_or(0.0);
+        let rsi = context.last_features.rsi.unwrap_or(50.0);
 
-    // 3. Construct Proposal
-    let reason = format!("News (Trend Correct & RSI OK): {}", signal.headline);
-    if let Some(mut proposal) =
-        crate::application::agents::signal_processor::SignalProcessor::build_proposal(
-            config,
-            execution_service,
-            signal.symbol.clone(),
-            OrderSide::Buy,
-            price,
-            timestamp * 1000,
-            reason,
-        )
-        .await
-    {
-        proposal.order_type = crate::domain::trading::types::OrderType::Market;
         info!(
-            "NewsHandler: Proposing BUY based on Validated News: {}",
-            signal.headline
+            "NewsHandler: Analyzing BULLISH news for {}. Price: {}, SMA50: {}, RSI: {}",
+            signal.symbol, price_f64, sma_50, rsi
         );
-        return NewsAction::Buy(proposal);
-    }
 
-    NewsAction::NoAction
+        // 1. Trend Filter: Avoid buying falling knives
+        if price_f64 < sma_50 {
+            let reason = format!(
+                "Price ({:.2}) below SMA50 ({:.2}) - Bearish Trend",
+                price_f64, sma_50
+            );
+            warn!(
+                "NewsHandler: REJECTED Bullish News for {}. {}",
+                signal.symbol, reason
+            );
+            return NewsAction::Rejected(reason);
+        }
+
+        // 2. Overbought Filter: Avoid FOMO
+        if rsi > 75.0 {
+            let reason = format!("RSI {:.1} indicates Overbought", rsi);
+            warn!(
+                "NewsHandler: REJECTED Bullish News for {}. {}",
+                signal.symbol, reason
+            );
+            return NewsAction::Rejected(reason);
+        }
+
+        // 3. Construct Proposal
+        let reason = format!("News (Trend Correct & RSI OK): {}", signal.headline);
+        if let Some(mut proposal) = self
+            .signal_processor
+            .build_proposal(
+                config,
+                execution_service,
+                signal.symbol.clone(),
+                OrderSide::Buy,
+                price,
+                timestamp * 1000,
+                reason,
+            )
+            .await
+        {
+            proposal.order_type = crate::domain::trading::types::OrderType::Market;
+            info!(
+                "NewsHandler: Proposing BUY based on Validated News: {}",
+                signal.headline
+            );
+            return NewsAction::Buy(proposal);
+        }
+
+        NewsAction::NoAction
+    }
 }
 
 /// Processes a bearish news signal for an existing position.

@@ -116,7 +116,8 @@ mod tests {
             None,
             None,
             Decimal::ZERO,
-            dec!(600), // Available Cash > 500
+            dec!(600), // Available Cash > 500,
+            None,      // recent_candles
         );
 
         assert!(validator.validate(&ctx).await.is_approved());
@@ -143,7 +144,8 @@ mod tests {
             None,
             None,
             Decimal::ZERO,
-            dec!(500), // Available Cash < 1000
+            dec!(500), // Available Cash < 1000,
+            None,      // recent_candles
         );
 
         let result = validator.validate(&ctx).await;
@@ -176,6 +178,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(0), // Zero Cash
+            None,    // recent_candles
         );
 
         assert!(validator.validate(&ctx).await.is_approved());

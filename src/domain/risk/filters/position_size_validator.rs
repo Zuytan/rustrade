@@ -169,6 +169,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(100000),
+            None, // recent_candles
         );
 
         // Exposure: 0.1 * $50k = $5k = 5% of equity (well under 25% limit)
@@ -198,6 +199,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(100000),
+            None, // recent_candles
         );
 
         // Exposure: 1.0 * $50k = $50k = 50% of equity (exceeds 10% limit)
@@ -227,6 +229,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(100000),
+            None, // recent_candles
         );
 
         // Sell orders should always be approved (they reduce exposure)
@@ -264,6 +267,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(100000),
+            None, // recent_candles
         );
 
         // Exposure: 0.25 * $50k = $12.5k = 12.5% of equity
@@ -309,6 +313,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(100000),
+            None, // recent_candles
         );
 
         // Exposure: 0.3 * $50k = $15k = 15% of equity
@@ -350,6 +355,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(100000),
+            None, // recent_candles
         );
 
         // Total position: 0.1 (existing) + 0.1 (new) = 0.2 BTC
@@ -391,6 +397,7 @@ mod tests {
             None,
             Decimal::ZERO,
             dec!(100000),
+            None, // recent_candles
         );
 
         // Total position: 0.1 (existing) + 0.15 (new) = 0.25 BTC
