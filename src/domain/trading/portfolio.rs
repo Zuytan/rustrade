@@ -11,6 +11,7 @@ pub struct Portfolio {
 
     pub max_equity: Decimal,
     pub day_trades_count: u64, // Added for PDT tracking
+    pub synchronized: bool,
 }
 
 #[allow(dead_code)]
@@ -32,6 +33,7 @@ impl Portfolio {
 
             max_equity: Decimal::ZERO,
             day_trades_count: 0,
+            synchronized: false,
         }
     }
 }

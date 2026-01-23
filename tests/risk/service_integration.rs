@@ -363,7 +363,8 @@ async fn test_session_manager_daily_reset() {
     let session_manager = SessionManager::new(Some(repo), market);
 
     // Test: Initialize session with old state
-    let portfolio = Portfolio::new();
+    let mut portfolio = Portfolio::new();
+    portfolio.cash = Decimal::from(10000);
     let mut current_prices = HashMap::new();
 
     let state = session_manager

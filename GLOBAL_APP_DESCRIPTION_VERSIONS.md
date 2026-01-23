@@ -1,5 +1,13 @@
 # Rustrade - Historique des Versions
 
+## Version 0.85.1 - Safe Portfolio Initialization & False Drawdown Fix (January 2026)
+
+### Critical Stability Fixes
+- **False Drawdown Elimination**: Fixed a race condition where the Risk Manager triggered a panic liquidation (-88% drawdown) at startup.
+  - Removed `initial_cash` ($100k) default configuration to enforce reliance on real broker data.
+  - Implemented `Portfolio.synchronized` flag; Risk Manager now waits for broker synchronization before starting.
+- **Stale State Protection**: Added a safety check in `SessionManager` to detect and reset stale risk states (e.g. from previous Mock sessions) if equity variance exceeds 50%.
+
 ## Version 0.85.0 - Critical Portfolio Synchronization Fix (January 2026)
 
 ### Critical Portfolio Detection Fix

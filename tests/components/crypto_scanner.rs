@@ -40,7 +40,8 @@ async fn test_crypto_scanner_integration() {
         None,
     ));
 
-    let execution_service = Arc::new(AlpacaExecutionService::new(api_key, secret_key, base_url));
+    let portfolio = Arc::new(tokio::sync::RwLock::new(rustrade::domain::trading::portfolio::Portfolio::new()));
+    let execution_service = Arc::new(AlpacaExecutionService::new(api_key, secret_key, base_url, portfolio.clone()));
 
     // Create command channel
     let (cmd_tx, mut cmd_rx) = mpsc::channel(10);

@@ -33,7 +33,6 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         alpaca_data_url: "".into(),
         alpaca_ws_url: "".into(),
         symbols: vec!["BTC/USD".to_string()],
-        initial_cash: Decimal::from(100_000),
         max_positions: 1,
         trade_quantity: Decimal::from(1),
         fast_sma_period: 2,
@@ -166,7 +165,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     let portfolio = std::sync::Arc::new(tokio::sync::RwLock::new(
         rustrade::domain::trading::portfolio::Portfolio::new(),
     ));
-    portfolio.write().await.cash = config.initial_cash;
+    portfolio.write().await.cash = Decimal::from(100_000);
 
     let mock_market = std::sync::Arc::new(MockMarketDataService::new_no_sim());
     let mock_execution = std::sync::Arc::new(MockExecutionService::new(portfolio.clone()));

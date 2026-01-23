@@ -209,6 +209,7 @@ impl ExecutionService for BinanceExecutionService {
                     }
                 }
 
+                portfolio.synchronized = true;
                 Ok(portfolio)
             })
             .await

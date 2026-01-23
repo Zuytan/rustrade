@@ -144,6 +144,7 @@ impl AlpacaExecutionService {
                         portfolio.positions.insert(normalized_symbol, pos);
                     }
 
+                    portfolio.synchronized = true;
                     Ok::<_, anyhow::Error>(portfolio)
                 };
 

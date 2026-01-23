@@ -89,26 +89,54 @@ impl SessionManager {
                         state
                     );
 
-                    // Restore HWM and Consecutive Losses always
-                    risk_state.equity_high_water_mark = state.equity_high_water_mark;
-                    risk_state.consecutive_losses = state.consecutive_losses;
+                    // Validate that the loaded state matches the current account reality
+                    // If the HWM is significantly different from current equity (e.g. > 50%),
+                    // we assume this is a different account/environment and RESET.
+                    // Example: Persisted HWM $100k, Current $12k -> Variance 88% -> RESET
+                    use rust_decimal::prelude::ToPrimitive;
+                    let hwm_f64 = state.equity_high_water_mark.to_f64().unwrap_or(0.0);
+                    let current_f64 = initial_equity.to_f64().unwrap_or(0.0);
 
-                    // Restore Daily/Session logic ONLY if it's the same day
-                    let today = Utc::now().date_naive();
-                    if state.reference_date == today {
-                        risk_state.session_start_equity = state.session_start_equity;
-                        risk_state.daily_start_equity = state.daily_start_equity;
-                        risk_state.reference_date = state.reference_date;
-                        info!(
-                            "SessionManager: Restored intraday equity baselines from persistence."
-                        );
+                    let variance = if hwm_f64 > 0.0 {
+                        (hwm_f64 - current_f64).abs() / hwm_f64
                     } else {
-                        info!(
-                            "SessionManager: Persistent state is from previous day ({} vs {}). Using fresh equity baselines.",
-                            state.reference_date, today
+                        0.0
+                    };
+
+                    if variance > 0.5 {
+                        warn!(
+                            "SessionManager: Detected significant equity discrepancy (Variance: {:.1}%). \
+                            Persisted HWM: {}, Current Equity: {}. \
+                            Assuming new account/environment and RESETTING risk state.",
+                            variance * 100.0,
+                            state.equity_high_water_mark,
+                            initial_equity
                         );
-                        // Save the new day state immediately
+                        // Reset happens automatically by NOT overwriting risk_state with loaded values
+                        // We just persist the fresh state
                         self.persist_state(&risk_state).await;
+                    } else {
+                        // Restore HWM and Consecutive Losses always
+                        risk_state.equity_high_water_mark = state.equity_high_water_mark;
+                        risk_state.consecutive_losses = state.consecutive_losses;
+
+                        // Restore Daily/Session logic ONLY if it's the same day
+                        let today = Utc::now().date_naive();
+                        if state.reference_date == today {
+                            risk_state.session_start_equity = state.session_start_equity;
+                            risk_state.daily_start_equity = state.daily_start_equity;
+                            risk_state.reference_date = state.reference_date;
+                            info!(
+                                "SessionManager: Restored intraday equity baselines from persistence."
+                            );
+                        } else {
+                            info!(
+                                "SessionManager: Persistent state is from previous day ({} vs {}). Using fresh equity baselines.",
+                                state.reference_date, today
+                            );
+                            // Save the new day state immediately
+                            self.persist_state(&risk_state).await;
+                        }
                     }
                 }
                 Ok(None) => {
@@ -292,7 +320,8 @@ mod tests {
 
         let manager = SessionManager::new(Some(repo), market);
 
-        let portfolio = Portfolio::new();
+        let mut portfolio = Portfolio::new();
+        portfolio.cash = Decimal::from(10000); // 10k vs 12k HWM => Variance ~16% (OK)
         let mut current_prices = HashMap::new();
 
         let state = manager
@@ -334,6 +363,49 @@ mod tests {
         assert_eq!(state.reference_date, Utc::now().date_naive());
         assert!(state.daily_drawdown_reset);
     }
+
+    #[tokio::test]
+    async fn test_initialize_session_resets_on_equity_mismatch() {
+            // Persisted state: HWM = 100,000 (Mock/Default)
+            let stale_state = RiskState {
+                id: "global".to_string(),
+                session_start_equity: Decimal::from(100000),
+                daily_start_equity: Decimal::from(100000),
+                equity_high_water_mark: Decimal::from(100000),
+                consecutive_losses: 0,
+                reference_date: Utc::now().date_naive(),
+                updated_at: Utc::now().timestamp(),
+                daily_drawdown_reset: false,
+            };
+
+            let repo = Arc::new(MockRiskStateRepo {
+                state: Arc::new(tokio::sync::RwLock::new(Some(stale_state))),
+            });
+
+            let market = Arc::new(MockMarketData {
+                prices: HashMap::new(),
+            });
+
+            let manager = SessionManager::new(Some(repo), market);
+
+            // Actual Portfolio: Cash = 10,000 (Real/Alpaca)
+            let mut portfolio = Portfolio::new();
+            portfolio.cash = Decimal::from(10000);
+            let mut current_prices = HashMap::new();
+
+            // Initialize session
+            let state = manager
+                .initialize_session(&portfolio, &mut current_prices)
+                .await
+                .unwrap();
+
+            // 1. Should RESET HWM to current equity (10,000) because 90% variance > 50% threshold
+            assert_eq!(state.equity_high_water_mark, Decimal::from(10000));
+            assert_eq!(state.session_start_equity, Decimal::from(10000));
+
+            // 2. Should NOT inherit the stale 100k state
+            assert_ne!(state.equity_high_water_mark, Decimal::from(100000));
+        }
 
     #[tokio::test]
     async fn test_no_reset_same_day() {

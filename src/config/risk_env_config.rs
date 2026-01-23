@@ -44,7 +44,6 @@ pub struct RiskEnvConfig {
     pub min_profit_ratio: f64,
 
     // Portfolio Management
-    pub initial_cash: Decimal,
     pub trade_quantity: Decimal,
     pub portfolio_staleness_ms: u64,
     pub portfolio_refresh_interval_ms: u64,
@@ -119,11 +118,6 @@ impl RiskEnvConfig {
             }
         }
 
-        // Initial cash
-        let initial_cash_f64 = Self::parse_f64("INITIAL_CASH", 100_000.0)?;
-        let initial_cash =
-            Decimal::from_f64(initial_cash_f64).unwrap_or_else(|| Decimal::from(100_000));
-
         let trade_quantity_f64 = Self::parse_f64("TRADE_QUANTITY", 1.0)?;
         let trade_quantity =
             Decimal::from_f64(trade_quantity_f64).unwrap_or_else(|| Decimal::from(1));
@@ -149,7 +143,6 @@ impl RiskEnvConfig {
             commission_per_share: Self::parse_f64("COMMISSION_PER_SHARE", 0.001)?,
             spread_bps: Self::parse_f64("SPREAD_BPS", 5.0).unwrap_or(5.0),
             min_profit_ratio,
-            initial_cash,
             trade_quantity,
             portfolio_staleness_ms: Self::parse_u64("PORTFOLIO_STALENESS_MS", 5000).unwrap_or(5000),
             portfolio_refresh_interval_ms: Self::parse_u64("PORTFOLIO_REFRESH_INTERVAL_MS", 2000)

@@ -57,7 +57,7 @@ impl ServicesBootstrap {
         };
 
         let adaptive_optimization_service = if config.adaptive_optimization_enabled {
-            let initial_cash = config.initial_cash;
+            let initial_cash = rust_decimal::Decimal::from(100_000); // Default for optimization simulation
             let execution_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync> =
                 Arc::new(move || {
                     let portfolio = Arc::new(RwLock::new({

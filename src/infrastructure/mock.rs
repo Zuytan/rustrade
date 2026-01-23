@@ -228,6 +228,17 @@ pub struct MockExecutionService {
 
 impl MockExecutionService {
     pub fn new(portfolio: Arc<RwLock<Portfolio>>) -> Self {
+        {
+            // Initializing sync immediately for Mock
+            // Use try_write to avoid panicking in async context (blocking_write is forbidden)
+            if let Ok(mut guard) = portfolio.try_write() {
+                guard.synchronized = true;
+            } else {
+                 // If we can't get the lock, we assume it might be locked by the test setup
+                 // or already synchronized. We log a warning but don't panic.
+                 tracing::warn!("MockExecutionService: Could not acquire lock to set synchronized=true. Assuming handled elsewhere.");
+            }
+        }
         Self {
             portfolio,
             orders: Arc::new(RwLock::new(Vec::new())),

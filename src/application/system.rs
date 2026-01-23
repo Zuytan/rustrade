@@ -67,8 +67,8 @@ impl Application {
         info!("Building Rustrade Application (Mode: {:?})...", config.mode);
 
         // 1. Initialize Shared State
-        let mut initial_portfolio = Portfolio::new();
-        initial_portfolio.cash = config.initial_cash;
+        let initial_portfolio = Portfolio::new();
+        // initial_portfolio.cash = config.initial_cash; // Removed dangerous default
         let portfolio = Arc::new(RwLock::new(initial_portfolio));
 
         // 2. Initialize Persistence

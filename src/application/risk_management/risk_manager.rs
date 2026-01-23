@@ -253,6 +253,43 @@ impl RiskManager {
     /// Initialize session tracking with starting equity
     /// Delegates to SessionManager for session lifecycle management
     pub async fn initialize_session(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Wait for Portfolio Synchronization (prevents false drawdown trigger)
+        info!("RiskManager: Waiting for portfolio synchronization...");
+        let mut attempts = 0;
+        loop {
+            let snapshot = self.portfolio_state_manager.refresh().await?;
+            if snapshot.portfolio.synchronized {
+                info!(
+                    "RiskManager: Portfolio synchronized. Proceeding with session initialization."
+                );
+                break;
+            }
+
+            attempts += 1;
+            if attempts % 20 == 0 {
+                warn!(
+                    "RiskManager: Still waiting for portfolio synchronization ({}/20s)...",
+                    attempts
+                );
+            }
+
+            if attempts > 60 {
+                // ~60 seconds timeout
+                crate::infrastructure::core::circuit_breaker::CircuitBreaker::new(
+                    "PortfolioSync",
+                    1,
+                    1,
+                    std::time::Duration::from_secs(1),
+                );
+                warn!(
+                    "RiskManager: Portfolio synchronization timed out. Proceeding with potentially stale data."
+                );
+                break;
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        }
+
         // Get portfolio snapshot
         let snapshot = self.portfolio_state_manager.refresh().await?;
 
