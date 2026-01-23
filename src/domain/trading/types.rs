@@ -60,6 +60,7 @@ pub enum MarketEvent {
     Quote {
         symbol: String,
         price: Decimal,
+        quantity: Decimal,
         timestamp: i64,
     },
     Candle(Candle),

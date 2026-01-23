@@ -198,7 +198,7 @@ impl BinanceWebSocketManager {
                 .and_then(Decimal::from_f64_retain)
                 .unwrap_or(Decimal::ZERO);
 
-            let _quantity = trade
+            let quantity = trade
                 .quantity
                 .parse::<f64>()
                 .ok()
@@ -208,6 +208,7 @@ impl BinanceWebSocketManager {
             let event = MarketEvent::Quote {
                 symbol: normalized_symbol,
                 price,
+                quantity,
                 timestamp: trade.trade_time,
             };
 

@@ -144,6 +144,8 @@ struct AlpacaTrade {
     symbol: String,
     #[serde(rename = "p")]
     price: f64,
+    #[serde(rename = "s")]
+    size: f64,
 }
 
 impl AlpacaWebSocketManager {
@@ -356,6 +358,7 @@ impl AlpacaWebSocketManager {
                                             let event = MarketEvent::Quote {
                                                 symbol: quote.symbol,
                                                 price: Decimal::from_f64_retain(mid_price).unwrap_or(Decimal::ZERO),
+                                                quantity: Decimal::ZERO, // Quotes don't represent executed volume
                                                 timestamp: Utc::now().timestamp_millis(),
                                             };
                                             let _ = deps.event_tx.send(event);
@@ -381,6 +384,7 @@ impl AlpacaWebSocketManager {
                                             let event = MarketEvent::Quote {
                                                 symbol: trade.symbol,
                                                 price: Decimal::from_f64_retain(trade.price).unwrap_or(Decimal::ZERO),
+                                                quantity: Decimal::from_f64_retain(trade.size).unwrap_or(Decimal::ZERO),
                                                 timestamp: Utc::now().timestamp_millis(),
                                             };
                                             let _ = deps.event_tx.send(event);

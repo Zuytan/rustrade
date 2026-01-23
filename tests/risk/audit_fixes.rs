@@ -1,4 +1,5 @@
 use rust_decimal_macros::dec;
+use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::risk_manager::{RiskConfig, RiskManager};
 use rustrade::config::AssetClass;
@@ -7,7 +8,6 @@ use rustrade::domain::trading::portfolio::{Portfolio, Position};
 use rustrade::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
-use rustrade::application::market_data::spread_cache::SpreadCache;
 use tokio::sync::{RwLock, mpsc};
 
 #[tokio::test]

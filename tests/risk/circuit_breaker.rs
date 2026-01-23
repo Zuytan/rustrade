@@ -1,11 +1,11 @@
 use rust_decimal_macros::dec;
+use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::risk_manager::{RiskConfig, RiskManager};
 use rustrade::domain::trading::portfolio::{Portfolio, Position};
 use rustrade::domain::trading::types::{OrderSide, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use std::sync::Arc;
-use rustrade::application::market_data::spread_cache::SpreadCache;
 use tokio::sync::{RwLock, mpsc};
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;

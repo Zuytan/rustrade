@@ -92,7 +92,8 @@ impl MockMarketDataService {
         self.publish(MarketEvent::Quote {
             symbol: symbol.to_string(),
             price,
-            timestamp: chrono::Utc::now().timestamp_millis(),
+            quantity: Decimal::ONE,
+            timestamp: chrono::Utc::now().timestamp(),
         })
         .await;
     }
@@ -155,7 +156,8 @@ impl MarketDataService for MockMarketDataService {
                         let event = MarketEvent::Quote {
                             symbol: symbol.clone(),
                             price: Decimal::from_f64(new_price).unwrap_or(Decimal::ZERO),
-                            timestamp: Utc::now().timestamp_millis(),
+                            quantity: Decimal::ONE,
+                            timestamp: Utc::now().timestamp(),
                         };
 
                         service_clone.publish(event).await;

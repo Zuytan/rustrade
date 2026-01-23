@@ -1,8 +1,8 @@
 use rust_decimal_macros::dec;
+use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::risk_manager::RiskConfig;
 use rustrade::application::risk_management::risk_manager::RiskManager;
-use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::config::AssetClass;
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::domain::trading::types::{OrderSide, OrderType, TradeProposal};

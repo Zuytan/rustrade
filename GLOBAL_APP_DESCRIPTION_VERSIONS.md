@@ -1,5 +1,17 @@
 # Rustrade - Historique des Versions
 
+## Version 0.82.0 - Critical Volume Data Fix (January 2026)
+
+### Data Ingestion Fix
+- **Volume Propagation**: Resolved a critical issue where trade volume was being discarded and replaced with tick counts.
+- **Domain Model**: Updated `MarketEvent::Quote` to include a `quantity: Decimal` field.
+- **Infrastructure**: Updated WebSocket handlers (Binance, Alpaca) to correctly parse and propagate trade size.
+- **Application**: Updated `CandleAggregator` to accumulate real trade volume.
+
+### Impact
+- **Strategy Accuracy**: Volume-based strategies (VWAP, Order Flow, SMC) now receive accurate data.
+- **Backwards Compatibility**: Breaking change for `MarketEvent::Quote` consumers resolved across all agents.
+
 ## Version 0.81.0 - Audit Recommendations Implementation (January 2026)
 
 ### Risk Management Enhancements

@@ -4,6 +4,7 @@ pub mod commands;
 pub mod hard_stop_manager; // New - per-trade loss limits
 pub mod liquidation_service;
 pub mod order_reconciler;
+pub mod order_retry_strategy;
 pub mod order_throttler;
 pub mod pipeline;
 pub mod portfolio_valuation_service;

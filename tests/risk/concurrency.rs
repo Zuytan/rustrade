@@ -6,8 +6,8 @@ use rustrade::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 
 use rust_decimal::Decimal;
-use std::sync::Arc;
 use rustrade::application::market_data::spread_cache::SpreadCache;
+use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
 /// Test: Concurrent proposals for the same symbol respect position size limits

@@ -38,7 +38,7 @@ impl CandleBuilder {
         }
     }
 
-    fn update(&mut self, price: Decimal, _timestamp: DateTime<Utc>) {
+    fn update(&mut self, price: Decimal, quantity: Decimal, _timestamp: DateTime<Utc>) {
         if price > self.high {
             self.high = price;
         }
@@ -46,7 +46,11 @@ impl CandleBuilder {
             self.low = price;
         }
         self.close = price;
-        self.volume += 1.0; // Count ticks as volume proxy for now
+        // Accumulate volume using the provided quantity converted to f64
+        // We use to_f64() which may lose precision for very large numbers or high precision decimals,
+        // but Candle.volume is f64 so this is consistent with the domain model.
+        use rust_decimal::prelude::ToPrimitive;
+        self.volume += quantity.to_f64().unwrap_or(0.0);
     }
 
     fn build(&self) -> Candle {
@@ -85,7 +89,13 @@ impl CandleAggregator {
     }
 
     /// Process a Quote event. Returns Some(Candle) if a candle is completed (i.e., we moved to a new minute).
-    pub fn on_quote(&mut self, symbol: &str, price: Decimal, timestamp_ms: i64) -> Option<Candle> {
+    pub fn on_quote(
+        &mut self,
+        symbol: &str,
+        price: Decimal,
+        quantity: Decimal,
+        timestamp_ms: i64,
+    ) -> Option<Candle> {
         let timestamp = match Utc.timestamp_millis_opt(timestamp_ms).single() {
             Some(t) => t,
             None => {
@@ -107,7 +117,7 @@ impl CandleAggregator {
         if let Some(builder) = self.builders.get_mut(symbol) {
             if builder.start_time == current_minute {
                 // Same minute, update existing candle
-                builder.update(price, timestamp);
+                builder.update(price, quantity, timestamp);
                 None
             } else {
                 // New minute! Finalize the old candle and start a new one
@@ -149,7 +159,15 @@ impl CandleAggregator {
             );
             self.builders.insert(
                 symbol.to_string(),
-                CandleBuilder::new(symbol.to_string(), price, timestamp),
+                // For the first tick, we create the builder with initial state.
+                // Note: The initial volume should ideally include this first tick's quantity.
+                // However, CandleBuilder::new initializes volume to 0.0.
+                // We should probably update it immediately.
+                {
+                    let mut builder = CandleBuilder::new(symbol.to_string(), price, timestamp);
+                    builder.update(price, quantity, timestamp);
+                    builder
+                },
             );
             None
         }
@@ -166,36 +184,36 @@ mod tests {
         let mut agg = CandleAggregator::new(None, Arc::new(SpreadCache::new()));
         let symbol = "BTC/USD";
 
-        // T0: 00:00:01 - First tick
+        // T0: 00:00:01 - First tick, vol 1.5
         let t1 = Utc
             .with_ymd_and_hms(2024, 1, 1, 0, 0, 1)
             .unwrap()
             .timestamp_millis();
-        let c1 = agg.on_quote(symbol, dec!(100), t1);
+        let c1 = agg.on_quote(symbol, dec!(100), dec!(1.5), t1);
         assert!(c1.is_none());
 
-        // T1: 00:00:30 - Update
+        // T1: 00:00:30 - Update, vol 2.5
         let t2 = Utc
             .with_ymd_and_hms(2024, 1, 1, 0, 0, 30)
             .unwrap()
             .timestamp_millis();
-        let c2 = agg.on_quote(symbol, dec!(105), t2);
+        let c2 = agg.on_quote(symbol, dec!(105), dec!(2.5), t2);
         assert!(c2.is_none()); // Still same minute
 
-        // T2: 00:00:59 - Low
+        // T2: 00:00:59 - Low, vol 1.0
         let t3 = Utc
             .with_ymd_and_hms(2024, 1, 1, 0, 0, 59)
             .unwrap()
             .timestamp_millis();
-        let c3 = agg.on_quote(symbol, dec!(95), t3);
+        let c3 = agg.on_quote(symbol, dec!(95), dec!(1.0), t3);
         assert!(c3.is_none());
 
-        // T3: 00:01:05 - NEW MINUTE -> Trigger close of previous
+        // T3: 00:01:05 - NEW MINUTE -> Trigger close of previous. Vol 0.5 (goes to next candle)
         let t4 = Utc
             .with_ymd_and_hms(2024, 1, 1, 0, 1, 5)
             .unwrap()
             .timestamp_millis();
-        let c4 = agg.on_quote(symbol, dec!(100), t4);
+        let c4 = agg.on_quote(symbol, dec!(100), dec!(0.5), t4);
 
         assert!(c4.is_some());
         let candle = c4.unwrap();
@@ -203,6 +221,7 @@ mod tests {
         assert_eq!(candle.high, dec!(105));
         assert_eq!(candle.low, dec!(95));
         assert_eq!(candle.close, dec!(95)); // Last tick of minute 0
+        assert_eq!(candle.volume, 5.0); // 1.5 + 2.5 + 1.0 = 5.0
         assert_eq!(
             candle.timestamp,
             Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0)

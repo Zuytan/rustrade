@@ -3,14 +3,15 @@
 //! Handles emergency portfolio liquidation during circuit breaker events.
 //! Extracted from RiskManager to follow Single Responsibility Principle.
 
+use crate::application::market_data::spread_cache::SpreadCache;
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
-use crate::domain::trading::types::{Order, OrderSide, OrderType};
+use crate::application::risk_management::order_retry_strategy::{OrderRetryStrategy, RetryConfig};
+use crate::domain::trading::types::{Order, OrderSide};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 /// Liquidation Service
 ///
@@ -22,6 +23,8 @@ use uuid::Uuid;
 pub struct LiquidationService {
     order_tx: Sender<Order>,
     portfolio_state_manager: Arc<PortfolioStateManager>,
+    order_retry_strategy: OrderRetryStrategy,
+    spread_cache: Arc<SpreadCache>,
 }
 
 impl LiquidationService {
@@ -29,10 +32,13 @@ impl LiquidationService {
     pub fn new(
         order_tx: Sender<Order>,
         portfolio_state_manager: Arc<PortfolioStateManager>,
+        spread_cache: Arc<SpreadCache>,
     ) -> Self {
         Self {
             order_tx,
             portfolio_state_manager,
+            order_retry_strategy: OrderRetryStrategy::new(RetryConfig::default()),
+            spread_cache,
         }
     }
 
@@ -57,30 +63,32 @@ impl LiquidationService {
 
         for (symbol, position) in &snapshot.portfolio.positions {
             if position.quantity > Decimal::ZERO {
+                // Get spread data for intelligent order placement
+                let spread_data = self.spread_cache.get_spread_data(symbol);
                 let current_price = current_prices.get(symbol).cloned().unwrap_or(Decimal::ZERO);
 
-                // CRITICAL SAFETY: Blind liquidation if price unavailable
-                if current_price <= Decimal::ZERO {
+                // Panic mode (Blind Liquidation) if no price or price is zero
+                let panic_mode = current_price <= Decimal::ZERO;
+
+                if panic_mode {
                     warn!(
                         "LiquidationService: No price for {} - EXECUTING BLIND MARKET ORDER (Panic Mode)",
                         symbol
                     );
                 }
 
-                // Use Market orders for emergency liquidation
-                let order = Order {
-                    id: Uuid::new_v4().to_string(),
-                    symbol: symbol.clone(),
-                    side: OrderSide::Sell,
-                    price: Decimal::ZERO, // Market order ignores price
-                    quantity: position.quantity,
-                    order_type: OrderType::Market,
-                    timestamp: chrono::Utc::now().timestamp_millis(),
-                };
+                // Create smart liquidation order (Try Limit first if possible)
+                let order = self.order_retry_strategy.create_liquidation_order(
+                    symbol,
+                    OrderSide::Sell,
+                    position.quantity,
+                    spread_data,
+                    panic_mode,
+                );
 
                 warn!(
-                    "LiquidationService: Placing EMERGENCY MARKET SELL for {} (Qty: {})",
-                    symbol, position.quantity
+                    "LiquidationService: Placing EMERGENCY {:?} SELL for {} (Qty: {}) @ {}",
+                    order.order_type, symbol, position.quantity, order.price
                 );
 
                 if let Err(e) = self.order_tx.send(order).await {

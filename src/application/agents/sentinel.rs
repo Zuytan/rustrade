@@ -155,6 +155,7 @@ mod tests {
     use anyhow::Result;
     use async_trait::async_trait;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec; // Added import
     use tokio::sync::mpsc;
 
     struct TestMarketDataService {
@@ -200,6 +201,7 @@ mod tests {
         let expected_event = MarketEvent::Quote {
             symbol: "ETH/USD".to_string(),
             price: Decimal::from(3000),
+            quantity: dec!(1.0),
             timestamp: 1234567890,
         };
 
@@ -220,6 +222,7 @@ mod tests {
                 symbol,
                 price,
                 timestamp,
+                ..
             } => {
                 assert_eq!(symbol, "ETH/USD");
                 assert_eq!(price, Decimal::from(3000));

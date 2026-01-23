@@ -196,9 +196,10 @@ impl Analyst {
                                 MarketEvent::Quote {
                                     symbol,
                                     price,
+                                    quantity,
                                     timestamp,
                                 } => {
-                                    if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, timestamp)
+                                    if let Some(candle) = self.candle_aggregator.on_quote(&symbol, price, quantity, timestamp)
                                     {
                                         self.process_candle(candle).await;
                                     }

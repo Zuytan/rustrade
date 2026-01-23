@@ -322,6 +322,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
             .publish(MarketEvent::Quote {
                 symbol: symbol.clone(),
                 price,
+                quantity: Decimal::from(100), // Significant volume
                 timestamp: timestamp.timestamp_millis(),
             })
             .await;
@@ -335,6 +336,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         .publish(MarketEvent::Quote {
             symbol: symbol.clone(),
             price: Decimal::from(111),
+            quantity: Decimal::from(100),
             timestamp: flush_timestamp.timestamp_millis(),
         })
         .await;

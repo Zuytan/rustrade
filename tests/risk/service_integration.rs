@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 use rust_decimal::Decimal;
+use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::liquidation_service::LiquidationService;
 use rustrade::application::risk_management::portfolio_valuation_service::PortfolioValuationService;
@@ -235,8 +236,10 @@ async fn test_liquidation_service_integration() {
 
     // Update portfolio manager with test portfolio
     let portfolio_manager = Arc::new(PortfolioStateManager::new(exec, 60000));
+    let spread_cache = Arc::new(SpreadCache::new()); // NEW
 
-    let liquidation_service = LiquidationService::new(order_tx, portfolio_manager.clone());
+    let liquidation_service =
+        LiquidationService::new(order_tx, portfolio_manager.clone(), spread_cache.clone());
 
     // Manually set portfolio state for testing
     // (In real scenario, this would be updated via refresh)
@@ -283,6 +286,7 @@ async fn test_service_composition_full_workflow() {
 
     let portfolio_manager = Arc::new(PortfolioStateManager::new(exec.clone(), 60000));
     let (order_tx, _order_rx) = mpsc::channel(10);
+    let spread_cache = Arc::new(SpreadCache::new()); // NEW
 
     // Initialize services
     let session_manager = SessionManager::new(Some(repo.clone()), market.clone());
@@ -298,7 +302,8 @@ async fn test_service_composition_full_workflow() {
         AssetClass::Stock,
     );
 
-    let liquidation_service = LiquidationService::new(order_tx, portfolio_manager.clone());
+    let liquidation_service =
+        LiquidationService::new(order_tx, portfolio_manager.clone(), spread_cache.clone());
 
     // Test workflow: Initialize -> Valuate -> (Conditional) Liquidate
 

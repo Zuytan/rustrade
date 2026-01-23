@@ -175,8 +175,11 @@ impl RiskManager {
             asset_class,
         );
 
-        let liquidation_service =
-            LiquidationService::new(order_tx.clone(), portfolio_state_manager.clone());
+        let liquidation_service = LiquidationService::new(
+            order_tx.clone(),
+            portfolio_state_manager.clone(),
+            spread_cache.clone(),
+        );
 
         Ok(Self {
             proposal_rx,
