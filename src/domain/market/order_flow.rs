@@ -1,4 +1,5 @@
 use crate::domain::trading::types::Candle;
+use rust_decimal::prelude::ToPrimitive;
 use std::collections::{HashMap, VecDeque};
 
 /// Order Flow Imbalance - measures net buy/sell pressure
@@ -87,9 +88,9 @@ pub fn calculate_ofi(candles: &VecDeque<Candle>) -> OrderFlowImbalance {
     let start_idx = candles.len().saturating_sub(lookback);
 
     for candle in candles.iter().skip(start_idx) {
-        let close = candle.close.to_string().parse::<f64>().unwrap_or(0.0);
-        let open = candle.open.to_string().parse::<f64>().unwrap_or(0.0);
-        let volume = candle.volume;
+        let close = candle.close.to_f64().unwrap_or(0.0);
+        let open = candle.open.to_f64().unwrap_or(0.0);
+        let volume = candle.volume.to_f64().unwrap_or(0.0);
 
         if close > open {
             // Bullish candle - aggressive buying
@@ -160,7 +161,7 @@ pub fn build_volume_profile(candles: &VecDeque<Candle>, lookback: usize) -> Volu
         let price_level = price.round() as i64; // Round to nearest integer
         let volume = candle.volume;
 
-        *levels.entry(price_level).or_insert(0.0) += volume;
+        *levels.entry(price_level).or_insert(0.0) += volume.to_f64().unwrap_or(0.0);
     }
 
     // Find point of control (highest volume level)
@@ -230,6 +231,7 @@ pub fn detect_stacked_imbalances(
 mod tests {
     use super::*;
     use rust_decimal::Decimal;
+    use rust_decimal::prelude::FromPrimitive;
 
     fn create_candle(open: f64, close: f64, volume: f64, timestamp: i64) -> Candle {
         Candle {
@@ -238,7 +240,7 @@ mod tests {
             high: Decimal::from_f64_retain(close.max(open)).unwrap(),
             low: Decimal::from_f64_retain(close.min(open)).unwrap(),
             close: Decimal::from_f64_retain(close).unwrap(),
-            volume,
+            volume: Decimal::from_f64(volume).unwrap(),
             timestamp,
         }
     }

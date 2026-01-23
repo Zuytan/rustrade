@@ -191,7 +191,7 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             .low(low)
             .close(price)
             .open(open)
-            .volume(candle.volume)
+            .volume(candle.volume.to_f64().unwrap_or(0.0))
             .build()
             .unwrap_or_else(|e| {
                 tracing::warn!(

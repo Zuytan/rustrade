@@ -177,11 +177,17 @@ impl AgentsBootstrap {
         let mut order_throttler =
             OrderThrottler::new(order_rx, throttled_order_tx, config.max_orders_per_minute);
 
+        let retry_config = crate::application::risk_management::order_retry_strategy::RetryConfig {
+            limit_timeout_ms: config.pending_order_ttl_ms.unwrap_or(5000) as u64,
+            enable_retry: true,
+        };
+
         let mut executor = Executor::new(
             services.execution_service.clone(),
             throttled_order_rx,
             portfolio.clone(),
             Some(persistence.order_repository.clone()),
+            retry_config,
         );
 
         // SPAWN TASKS

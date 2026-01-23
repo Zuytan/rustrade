@@ -1,7 +1,8 @@
 use crate::application::market_data::spread_cache::SpreadData;
 use crate::domain::trading::types::{Order, OrderSide, OrderType};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
+
+use rust_decimal_macros::dec;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy)]
@@ -49,19 +50,17 @@ impl OrderRetryStrategy {
 
         if let Some(spread) = spread_data {
             // Attempt Limit Order at Mid Price
-            let mid_price = (spread.bid + spread.ask) / 2.0;
+            let mid_price = (spread.bid + spread.ask) / dec!(2.0);
 
-            if let Some(price) = Decimal::from_f64(mid_price) {
-                return Order {
-                    id: Uuid::new_v4().to_string(),
-                    symbol: symbol.to_string(),
-                    side,
-                    price,
-                    quantity,
-                    order_type: OrderType::Limit,
-                    timestamp: chrono::Utc::now().timestamp_millis(),
-                };
-            }
+            return Order {
+                id: Uuid::new_v4().to_string(),
+                symbol: symbol.to_string(),
+                side,
+                price: mid_price,
+                quantity,
+                order_type: OrderType::Limit,
+                timestamp: chrono::Utc::now().timestamp_millis(),
+            };
         }
 
         // Fallback to Market

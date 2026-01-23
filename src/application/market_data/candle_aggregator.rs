@@ -14,7 +14,7 @@ struct CandleBuilder {
     high: Decimal,
     low: Decimal,
     close: Decimal,
-    volume: f64,
+    volume: Decimal,
     start_time: DateTime<Utc>,
 }
 
@@ -33,7 +33,7 @@ impl CandleBuilder {
             high: price,
             low: price,
             close: price,
-            volume: 0.0, // We rely on quotes, volume might be missing or aggregated later
+            volume: Decimal::ZERO, // We rely on quotes, volume might be missing or aggregated later
             start_time,
         }
     }
@@ -46,11 +46,8 @@ impl CandleBuilder {
             self.low = price;
         }
         self.close = price;
-        // Accumulate volume using the provided quantity converted to f64
-        // We use to_f64() which may lose precision for very large numbers or high precision decimals,
-        // but Candle.volume is f64 so this is consistent with the domain model.
-        use rust_decimal::prelude::ToPrimitive;
-        self.volume += quantity.to_f64().unwrap_or(0.0);
+        // Accumulate volume using the provided quantity which is already Decimal
+        self.volume += quantity;
     }
 
     fn build(&self) -> Candle {
@@ -221,7 +218,7 @@ mod tests {
         assert_eq!(candle.high, dec!(105));
         assert_eq!(candle.low, dec!(95));
         assert_eq!(candle.close, dec!(95)); // Last tick of minute 0
-        assert_eq!(candle.volume, 5.0); // 1.5 + 2.5 + 1.0 = 5.0
+        assert_eq!(candle.volume, dec!(5.0)); // 1.5 + 2.5 + 1.0 = 5.0
         assert_eq!(
             candle.timestamp,
             Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0)

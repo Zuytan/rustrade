@@ -182,7 +182,7 @@ async fn test_golden_cross() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: i as i64,
         };
         let event = MarketEvent::Candle(candle);
@@ -296,7 +296,7 @@ async fn test_prevent_short_selling() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: i as i64,
         };
         let event = MarketEvent::Candle(candle);
@@ -426,7 +426,7 @@ async fn test_sell_signal_with_position() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: i as i64,
         };
         let event = MarketEvent::Candle(candle);
@@ -558,7 +558,7 @@ async fn test_dynamic_quantity_scaling() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: i as i64,
         };
         let event = MarketEvent::Candle(candle);
@@ -707,7 +707,7 @@ async fn test_multi_symbol_isolation() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: i as i64,
         };
         let event = MarketEvent::Candle(candle);
@@ -840,7 +840,7 @@ async fn test_advanced_strategy_trend_filter() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: i as i64,
         };
         let event = MarketEvent::Candle(candle);
@@ -860,7 +860,7 @@ async fn test_advanced_strategy_trend_filter() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: (i + 10) as i64,
         };
         let event = MarketEvent::Candle(candle);
@@ -989,7 +989,7 @@ async fn test_risk_based_quantity_calculation() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 1000000.0,
+            volume: Decimal::new(1000000, 0),
             timestamp: (i * 1000) as i64,
         };
         let event = MarketEvent::Candle(candle);
@@ -1066,7 +1066,7 @@ async fn test_news_intelligence_filters() {
             high: Decimal::from(50000),
             low: Decimal::from(50000),
             close: Decimal::from(50000),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: 1000,
         };
         context.candle_history.push_back(candle);
@@ -1190,7 +1190,7 @@ async fn test_trailing_stop_suppresses_sell_signal() {
         high: Decimal::from(150),
         low: Decimal::from(150),
         close: Decimal::from(150),
-        volume: 100.0,
+        volume: Decimal::new(100, 0),
         timestamp: 1000,
     };
 

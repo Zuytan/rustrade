@@ -1,5 +1,6 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::trading::types::{Candle, OrderSide};
+use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use std::collections::VecDeque;
 
@@ -139,11 +140,12 @@ impl SMCStrategy {
         }
 
         // Calculate Average Volume for context
-        let total_vol: f64 = candles
+        let total_vol_dec: rust_decimal::Decimal = candles
             .iter()
             .take(candles.len() - 1)
             .map(|c| c.volume)
             .sum();
+        let total_vol = total_vol_dec.to_f64().unwrap_or(0.0);
         let avg_vol = total_vol / (candles.len() as f64 - 1.0);
         let vol_threshold = avg_vol * self.volume_multiplier;
 
@@ -157,7 +159,8 @@ impl SMCStrategy {
                     // Check structure: Bearish -> Bullish
                     if curr.close < curr.open && next.close > next.open {
                         // Volume Check: Next candle (impulsive) should have high volume
-                        if next.volume > vol_threshold {
+                        if next.volume > Decimal::from_f64_retain(vol_threshold).unwrap_or_default()
+                        {
                             return Some(curr.low.to_f64().unwrap_or(0.0));
                         }
                     }
@@ -169,7 +172,8 @@ impl SMCStrategy {
                     let next = &candles[i + 1];
                     if curr.close > curr.open && next.close < next.open {
                         // Volume Check
-                        if next.volume > vol_threshold {
+                        if next.volume > Decimal::from_f64_retain(vol_threshold).unwrap_or_default()
+                        {
                             return Some(curr.high.to_f64().unwrap_or(0.0));
                         }
                     }
@@ -338,7 +342,7 @@ mod tests {
             high: Decimal::from_f64(high).unwrap(),
             low: Decimal::from_f64(low).unwrap(),
             close: Decimal::from_f64(close).unwrap(),
-            volume,
+            volume: Decimal::from_f64(volume).unwrap(),
             timestamp: 0,
         }
     }

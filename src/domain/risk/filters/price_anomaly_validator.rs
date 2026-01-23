@@ -148,6 +148,7 @@ mod tests {
     use crate::domain::risk::state::RiskState;
     use crate::domain::trading::portfolio::Portfolio;
     use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
+    use rust_decimal::prelude::FromPrimitive;
     use rust_decimal_macros::dec;
     use std::collections::HashMap;
 
@@ -163,7 +164,7 @@ mod tests {
                     high: dec_price,
                     low: dec_price,
                     close: dec_price,
-                    volume: 1000.0,              // f64 type
+                    volume: Decimal::from_f64(1000.0).unwrap(),
                     timestamp: i as i64 * 60000, // 1 minute apart
                 }
             })

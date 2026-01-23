@@ -51,7 +51,7 @@ pub struct Candle {
     pub high: Decimal,
     pub low: Decimal,
     pub close: Decimal,
-    pub volume: f64,
+    pub volume: Decimal,
     pub timestamp: i64,
 }
 

@@ -50,7 +50,7 @@ impl BreakoutStrategy {
             if low < lowest_low {
                 lowest_low = low;
             }
-            total_volume += candle.volume;
+            total_volume += candle.volume.to_f64().unwrap_or(0.0);
             count += 1;
         }
 
@@ -80,7 +80,7 @@ impl TradingStrategy for BreakoutStrategy {
             let current_vol = ctx.candles.back()?.volume;
             let current_price = ctx.price_f64;
 
-            let vol_ok = current_vol >= avg_vol * self.volume_multiplier;
+            let vol_ok = current_vol.to_f64().unwrap_or(0.0) >= avg_vol * self.volume_multiplier;
 
             // Breakout Long: Price breaks above recent high
             if current_price > high * (1.0 + self.breakout_threshold_pct) && vol_ok {
@@ -122,7 +122,7 @@ mod tests {
             high: Decimal::from_f64(high).unwrap(),
             low: Decimal::from_f64(low).unwrap(),
             close: Decimal::from_f64(close).unwrap(),
-            volume,
+            volume: Decimal::from_f64(volume).unwrap(),
             timestamp: 0,
         }
     }

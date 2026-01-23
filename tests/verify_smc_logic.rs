@@ -13,7 +13,7 @@ fn create_candle(price: f64) -> Candle {
         high: Decimal::from_f64_retain(price + 1.0).unwrap(),
         low: Decimal::from_f64_retain(price - 1.0).unwrap(),
         close: Decimal::from_f64_retain(price).unwrap(),
-        volume: 1000.0,
+        volume: Decimal::new(1000, 0),
         timestamp: 1000,
     }
 }

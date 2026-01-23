@@ -1,11 +1,13 @@
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
 /// Real-time spread data extracted from market quotes
 #[derive(Debug, Clone)]
 pub struct SpreadData {
-    pub bid: f64,
-    pub ask: f64,
+    pub bid: Decimal,
+    pub ask: Decimal,
     pub spread_bps: f64, // (ask - bid) / mid * 10000 basis points
     pub timestamp: i64,
 }
@@ -33,6 +35,10 @@ impl SpreadCache {
 
     /// Update spread data for a symbol from market quote
     pub fn update(&self, symbol: String, bid: f64, ask: f64) {
+        let bid_dec = Decimal::from_f64(bid).unwrap_or(Decimal::ZERO);
+        let ask_dec = Decimal::from_f64(ask).unwrap_or(Decimal::ZERO);
+
+        // Calculate mid price in f64 for bps calculation (only statistical)
         let mid = (bid + ask) / 2.0;
         let spread_bps = if mid > 0.0 {
             ((ask - bid) / mid) * 10000.0 // Convert to basis points
@@ -52,8 +58,8 @@ impl SpreadCache {
         }
 
         let data = SpreadData {
-            bid,
-            ask,
+            bid: bid_dec,
+            ask: ask_dec,
             spread_bps,
             timestamp: chrono::Utc::now().timestamp_millis(),
         };
@@ -112,6 +118,7 @@ impl Default for SpreadCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_spread_calculation() {
@@ -133,8 +140,8 @@ mod tests {
         cache.update("ETH/USD".to_string(), 3000.0, 3001.0);
 
         let data = cache.get_spread_data("ETH/USD").unwrap();
-        assert_eq!(data.bid, 3000.0);
-        assert_eq!(data.ask, 3001.0);
+        assert_eq!(data.bid, dec!(3000.0));
+        assert_eq!(data.ask, dec!(3001.0));
     }
 
     #[test]

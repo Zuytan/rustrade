@@ -137,7 +137,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
             high: Decimal::from_f64_retain(*p).unwrap(),
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: 100.0,
+            volume: Decimal::new(100, 0),
             timestamp: i as i64,
         });
         market_service.publish(event).await;

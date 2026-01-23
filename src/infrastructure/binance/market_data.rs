@@ -435,7 +435,7 @@ impl BinanceMarketDataService {
                             high: Decimal::from_f64_retain(high).unwrap_or(Decimal::ZERO),
                             low: Decimal::from_f64_retain(low).unwrap_or(Decimal::ZERO),
                             close: Decimal::from_f64_retain(close).unwrap_or(Decimal::ZERO),
-                            volume,
+                            volume: Decimal::from_f64_retain(volume).unwrap_or(Decimal::ZERO),
                             timestamp,
                         })
                     })

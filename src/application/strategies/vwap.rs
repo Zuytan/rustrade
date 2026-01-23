@@ -1,5 +1,7 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
+use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 
 /// VWAP (Volume Weighted Average Price) Strategy
 ///
@@ -30,26 +32,23 @@ impl VWAPStrategy {
             return None;
         }
 
-        let mut cumulative_tp_vol = 0.0;
-        let mut cumulative_vol = 0.0;
+        let mut cumulative_tp_vol = Decimal::ZERO;
+        let mut cumulative_vol = Decimal::ZERO;
 
         for candle in &ctx.candles {
-            let high = candle.high.to_f64().unwrap_or(0.0);
-            let low = candle.low.to_f64().unwrap_or(0.0);
-            let close = candle.close.to_f64().unwrap_or(0.0);
             let volume = candle.volume;
 
-            if volume <= 0.0 {
+            if volume <= Decimal::ZERO {
                 continue;
             }
 
-            let typical_price = (high + low + close) / 3.0;
-            cumulative_tp_vol += typical_price * volume;
+            let typ_price = (candle.high + candle.low + candle.close) / dec!(3.0);
+            cumulative_tp_vol += typ_price * volume;
             cumulative_vol += volume;
         }
 
-        if cumulative_vol > 0.0 {
-            Some(cumulative_tp_vol / cumulative_vol)
+        if cumulative_vol > Decimal::ZERO {
+            (cumulative_tp_vol / cumulative_vol).to_f64()
         } else {
             None
         }
@@ -135,6 +134,8 @@ mod tests {
     use crate::domain::trading::types::Candle;
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+
+    use rust_decimal_macros::dec;
     use std::collections::VecDeque;
 
     fn mock_candle(high: f64, low: f64, close: f64, volume: f64) -> Candle {
@@ -144,7 +145,7 @@ mod tests {
             high: Decimal::from_f64(high).unwrap(),
             low: Decimal::from_f64(low).unwrap(),
             close: Decimal::from_f64(close).unwrap(),
-            volume,
+            volume: Decimal::from_f64(volume).unwrap_or(Decimal::ZERO),
             timestamp: 0,
         }
     }

@@ -246,6 +246,7 @@ mod tests {
     use crate::domain::market::strategy_config::StrategyMode;
     use crate::domain::trading::types::Candle;
     use rust_decimal::Decimal;
+    use rust_decimal::prelude::FromPrimitive;
 
     fn create_test_context() -> SymbolContext {
         let config = super::super::analyst::AnalystConfig::default();
@@ -264,7 +265,7 @@ mod tests {
             high: Decimal::from_f64_retain(price * 1.01).unwrap(),
             low: Decimal::from_f64_retain(price * 0.99).unwrap(),
             close: Decimal::from_f64_retain(price).unwrap(),
-            volume: 1000.0,
+            volume: Decimal::from_f64(1000.0).unwrap(),
             timestamp: 1000,
         }
     }

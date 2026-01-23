@@ -1,6 +1,7 @@
 use crate::domain::market::timeframe::Timeframe;
 use crate::domain::market::timeframe_candle::TimeframeCandle;
 use crate::domain::trading::types::Candle;
+use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
 
 /// Aggregates 1-minute candles into higher timeframes
@@ -54,7 +55,7 @@ impl TimeframeAggregator {
                         candle.high,
                         candle.low,
                         candle.close,
-                        candle.volume,
+                        candle.volume.to_f64().unwrap_or(0.0),
                     );
 
                     // Check if candle is complete
@@ -82,7 +83,7 @@ impl TimeframeAggregator {
                         candle.high,
                         candle.low,
                         candle.close,
-                        candle.volume,
+                        candle.volume.to_f64().unwrap_or(0.0),
                         period_start,
                     );
                     self.active_candles.insert(key, new_candle);
@@ -96,7 +97,7 @@ impl TimeframeAggregator {
                     candle.high,
                     candle.low,
                     candle.close,
-                    candle.volume,
+                    candle.volume.to_f64().unwrap_or(0.0),
                     period_start,
                 );
                 self.active_candles.insert(key, new_candle);
@@ -158,6 +159,7 @@ impl Default for TimeframeAggregator {
 mod tests {
     use super::*;
     use rust_decimal::Decimal;
+    use rust_decimal::prelude::FromPrimitive;
     use rust_decimal_macros::dec;
 
     fn create_test_candle(symbol: &str, timestamp: i64, close: f64) -> Candle {
@@ -167,7 +169,7 @@ mod tests {
             high: Decimal::from_f64_retain(close + 1.0).unwrap(),
             low: Decimal::from_f64_retain(close - 1.0).unwrap(),
             close: Decimal::from_f64_retain(close).unwrap(),
-            volume: 1000.0,
+            volume: Decimal::from_f64(1000.0).unwrap(),
             timestamp,
         }
     }

@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
 use tracing::info;
@@ -154,7 +155,7 @@ impl CandleRepository for SqliteCandleRepository {
         .bind(candle.high.to_string())
         .bind(candle.low.to_string())
         .bind(candle.close.to_string())
-        .bind(candle.volume) // Bind as f64
+        .bind(candle.volume.to_f64().unwrap_or(0.0)) // Bind as f64
         .execute(&self.pool)
         .await
         .context("Failed to save candle")?;
@@ -181,7 +182,8 @@ impl CandleRepository for SqliteCandleRepository {
                 high: Decimal::from_str(row.try_get("high")?).unwrap_or_default(),
                 low: Decimal::from_str(row.try_get("low")?).unwrap_or_default(),
                 close: Decimal::from_str(row.try_get("close")?).unwrap_or_default(),
-                volume: row.try_get::<f64, _>("volume")?,
+                volume: Decimal::from_f64_retain(row.try_get::<f64, _>("volume")?)
+                    .unwrap_or(Decimal::ZERO),
             });
         }
         Ok(candles)

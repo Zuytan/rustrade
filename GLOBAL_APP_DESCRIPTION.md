@@ -22,6 +22,7 @@ The application operates as a mesh of autonomous agents communicating via high-p
   - **Global**: Halts trading if Daily Loss or Drawdown limits are breached.
   - **Infrastructure**: Wraps API calls with retry policies and breakers to handle broker outages gracefully.
   - **Panic Mode**: "Blind Liquidation" logic ensures positions can be exited even if price feeds are down.
+  - **Order Monitor**: Active tracking of Limit orders with automatic timeout detection and fallback to Market orders ("Cancel & Replace") to ensure execution.
 
 ### Circuit Breaker Thresholds
 

@@ -199,7 +199,7 @@ mod tests {
             high: Decimal::from_f64(high).unwrap(),
             low: Decimal::from_f64(low).unwrap(),
             close: Decimal::from_f64(close).unwrap(),
-            volume: 1000.0,
+            volume: Decimal::from_f64(1000.0).unwrap(),
             timestamp: 0,
         }
     }
