@@ -41,6 +41,17 @@ impl MarketDataService for OandaMarketDataService {
         Ok(rx)
     }
 
+    async fn get_tradable_assets(&self) -> Result<Vec<String>> {
+        // Return major pairs for now
+        Ok(vec![
+            "EUR_USD".to_string(),
+            "GBP_USD".to_string(),
+            "USD_JPY".to_string(),
+            "AUD_USD".to_string(),
+            "USD_CAD".to_string(),
+        ])
+    }
+
     async fn get_top_movers(&self) -> Result<Vec<String>> {
         // OANDA doesn't have a "movers" endpoint like stock screeners.
         // Return a fixed list of majors/minors for now.

@@ -1,4 +1,5 @@
-use super::common::{AlpacaBar, CRYPTO_UNIVERSE};
+use super::common::AlpacaBar;
+// CRYPTO_UNIVERSE removed - now using dynamic discovery
 use super::websocket::AlpacaWebSocketManager;
 use crate::config::AssetClass;
 use crate::domain::ports::MarketDataService;
@@ -32,6 +33,8 @@ pub struct AlpacaMarketDataService {
     spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
     candle_repository: Option<Arc<dyn crate::domain::repositories::CandleRepository>>,
     circuit_breaker: Arc<CircuitBreaker>,
+    /// Cache for tradable crypto assets (symbol list + timestamp)
+    assets_cache: std::sync::RwLock<Option<(Vec<String>, std::time::Instant)>>,
 }
 
 impl AlpacaMarketDataService {
@@ -301,7 +304,7 @@ impl AlpacaMarketDataService {
         })
     }
 
-    async fn get_crypto_top_movers(&self) -> Result<Vec<String>> {
+    async fn get_crypto_top_movers(&self, symbols: &[String]) -> Result<Vec<String>> {
         let scanner = crypto_movers::Scanner {
             client: &self.client,
             api_key: &self.api_key,
@@ -310,7 +313,7 @@ impl AlpacaMarketDataService {
             min_volume: self.min_volume_threshold,
         };
 
-        scanner.scan().await
+        scanner.scan(symbols).await
     }
 }
 
@@ -402,6 +405,7 @@ impl AlpacaMarketDataServiceBuilder {
             spread_cache,
             candle_repository,
             circuit_breaker,
+            assets_cache: std::sync::RwLock::new(None),
         }
     }
 }
@@ -444,13 +448,85 @@ impl MarketDataService for AlpacaMarketDataService {
         Ok(rx)
     }
 
+    async fn get_tradable_assets(&self) -> Result<Vec<String>> {
+        // For stocks, we don't cache - the movers API returns dynamic list
+        if self.asset_class != AssetClass::Crypto {
+            // Return empty - stocks use the movers API directly
+            return Ok(vec![]);
+        }
+
+        // Check cache first (1 hour TTL)
+        const CACHE_TTL_SECS: u64 = 3600;
+        {
+            let cache = self.assets_cache.read().unwrap();
+            #[allow(clippy::collapsible_if)]
+            if let Some((assets, cached_at)) = cache.as_ref() {
+                if cached_at.elapsed().as_secs() < CACHE_TTL_SECS {
+                    return Ok(assets.clone());
+                }
+            }
+        }
+
+        info!("AlpacaMarketDataService: Fetching tradable crypto assets from /v2/assets");
+
+        let url = "https://api.alpaca.markets/v2/assets".to_string();
+        let url_with_query =
+            build_url_with_query(&url, &[("status", "active"), ("asset_class", "crypto")]);
+
+        let response = self
+            .client
+            .get(&url_with_query)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .send()
+            .await
+            .context("Failed to fetch crypto assets from Alpaca")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Alpaca assets fetch failed: {}", error_text);
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct AlpacaAssetInfo {
+            symbol: String,
+            tradable: bool,
+        }
+
+        let assets: Vec<AlpacaAssetInfo> = response
+            .json()
+            .await
+            .context("Failed to parse Alpaca assets response")?;
+
+        let tradable_symbols: Vec<String> = assets
+            .into_iter()
+            .filter(|a| a.tradable)
+            .map(|a| a.symbol)
+            .collect();
+
+        info!(
+            "AlpacaMarketDataService: Found {} tradable crypto assets",
+            tradable_symbols.len()
+        );
+
+        // Update cache
+        {
+            let mut cache = self.assets_cache.write().unwrap();
+            *cache = Some((tradable_symbols.clone(), std::time::Instant::now()));
+        }
+
+        Ok(tradable_symbols)
+    }
+
     async fn get_top_movers(&self) -> Result<Vec<String>> {
         if self.asset_class == AssetClass::Crypto {
+            // Get dynamic list of crypto assets
+            let crypto_universe = self.get_tradable_assets().await.unwrap_or_default();
             info!(
                 "MarketScanner: Scanning crypto top movers from universe of {} pairs",
-                CRYPTO_UNIVERSE.len()
+                crypto_universe.len()
             );
-            return self.get_crypto_top_movers().await;
+            return self.get_crypto_top_movers(&crypto_universe).await;
         }
 
         let url = format!("{}/v1beta1/screener/stocks/movers", self.data_base_url);
@@ -1007,62 +1083,86 @@ mod crypto_movers {
     }
 
     impl<'a> Scanner<'a> {
-        pub async fn scan(&self) -> Result<Vec<String>> {
+        pub async fn scan(&self, symbols: &[String]) -> Result<Vec<String>> {
+            if symbols.is_empty() {
+                return Ok(vec![]);
+            }
+
             let now = chrono::Utc::now();
             let start = now - chrono::Duration::hours(24);
-
-            let symbols: Vec<String> = CRYPTO_UNIVERSE.iter().map(|s| s.to_string()).collect();
-            let symbols_param = symbols.join(",");
-
-            let url = format!("{}/v1beta3/crypto/us/bars", self.base_url);
-
             let timeframe_str = "1Day".to_string();
             let start_str = start.to_rfc3339();
             let end_str = now.to_rfc3339();
             let limit_str = "1".to_string();
 
-            let url_with_query = build_url_with_query(
-                &url,
-                &[
-                    ("symbols", &symbols_param),
-                    ("timeframe", &timeframe_str),
-                    ("start", &start_str),
-                    ("end", &end_str),
-                    ("limit", &limit_str),
-                ],
-            );
+            let mut all_movers = Vec::new();
 
-            let response = self
-                .client
-                .get(&url_with_query)
-                .header("APCA-API-KEY-ID", self.api_key)
-                .header("APCA-API-SECRET-KEY", self.api_secret)
-                .send()
-                .await
-                .context("Failed to fetch crypto bars for movers detection")?;
+            // Batch symbols to avoid URL length limits (approx 40 symbols per batch)
+            const BATCH_SIZE: usize = 40;
+            for chunk in symbols.chunks(BATCH_SIZE) {
+                let symbols_param = chunk.join(",");
+                let url = format!("{}/v1beta3/crypto/us/bars", self.base_url);
 
-            if !response.status().is_success() {
-                let err = response.text().await.unwrap_or_default();
-                error!("MarketScanner: Crypto bars fetch failed: {}", err);
-                return Ok(vec![]);
-            }
+                let url_with_query = build_url_with_query(
+                    &url,
+                    &[
+                        ("symbols", &symbols_param),
+                        ("timeframe", &timeframe_str),
+                        ("start", &start_str),
+                        ("end", &end_str),
+                        ("limit", &limit_str),
+                    ],
+                );
 
-            let json_val: serde_json::Value = response.json().await?;
-            let bars_map = response_parser::parse_crypto_bars(json_val)?;
+                let response = match self
+                    .client
+                    .get(&url_with_query)
+                    .header("APCA-API-KEY-ID", self.api_key)
+                    .header("APCA-API-SECRET-KEY", self.api_secret)
+                    .send()
+                    .await
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("MarketScanner: Crypto bars batch fetch failed: {}", e);
+                        continue;
+                    }
+                };
 
-            let mut movers = Vec::new();
-            for (symbol, bars) in bars_map {
-                if let Some(bar) = bars.first() {
-                    let price_change_pct = (bar.close - bar.open) / bar.open;
+                if !response.status().is_success() {
+                    let err = response.text().await.unwrap_or_default();
+                    error!("MarketScanner: Crypto bars fetch failed for batch: {}", err);
+                    continue;
+                }
 
-                    if bar.volume >= self.min_volume {
-                        movers.push((symbol, price_change_pct.abs()));
+                let json_val: serde_json::Value = match response.json().await {
+                    Ok(val) => val,
+                    Err(e) => {
+                        error!("MarketScanner: Failed to parse JSON for batch: {}", e);
+                        continue;
+                    }
+                };
+
+                match response_parser::parse_crypto_bars(json_val) {
+                    Ok(bars_map) => {
+                        for (symbol, bars) in bars_map {
+                            if let Some(bar) = bars.first() {
+                                let price_change_pct = (bar.close - bar.open) / bar.open;
+
+                                if bar.volume >= self.min_volume {
+                                    all_movers.push((symbol, price_change_pct.abs()));
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("MarketScanner: Failed to parse crypto bars: {}", e);
                     }
                 }
             }
 
-            movers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            let top_movers: Vec<String> = movers.into_iter().take(10).map(|(s, _)| s).collect();
+            all_movers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let top_movers: Vec<String> = all_movers.into_iter().take(10).map(|(s, _)| s).collect();
 
             Ok(top_movers)
         }

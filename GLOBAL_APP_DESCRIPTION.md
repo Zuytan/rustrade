@@ -113,7 +113,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 
 ### Data Optimization
 - **Smart Caching**: `CandleRepository` caches historical data locally (SQLite). Services use an incremental load strategy to minimize API calls and vastly speed up startup (Warmup).
-- **Crypto Scanner**: dedicated "Top Movers" scanner for 24/7 crypto markets.
+- **Dynamic Crypto Scanner**: dedicated "Top Movers" scanner for 24/7 crypto markets, automatically discovering new listings via exchange APIs.
 
 ## 7. Performance & Verification
 

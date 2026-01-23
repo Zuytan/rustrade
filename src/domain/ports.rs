@@ -10,6 +10,8 @@ use tokio::sync::{broadcast, mpsc::Receiver};
 pub trait MarketDataService: Send + Sync {
     async fn subscribe(&self, symbols: Vec<String>) -> Result<Receiver<MarketEvent>>;
     async fn get_top_movers(&self) -> Result<Vec<String>>;
+    /// Fetch all tradable assets from the exchange (dynamic discovery)
+    async fn get_tradable_assets(&self) -> Result<Vec<String>>;
     async fn get_prices(
         &self,
         symbols: Vec<String>,

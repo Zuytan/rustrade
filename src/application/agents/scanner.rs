@@ -128,6 +128,10 @@ mod tests {
             unimplemented!()
         }
 
+        async fn get_tradable_assets(&self) -> Result<Vec<String>> {
+            Ok(vec![])
+        }
+
         async fn get_top_movers(&self) -> Result<Vec<String>> {
             let mut guard = self.movers.lock().unwrap();
             let movers = guard.take().unwrap_or_default();

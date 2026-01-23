@@ -1,19 +1,5 @@
 //! Common types and constants for Binance infrastructure
 
-/// Major crypto pairs to scan for top movers on Binance
-pub const CRYPTO_UNIVERSE: &[&str] = &[
-    "BTC/USDT",
-    "ETH/USDT",
-    "BNB/USDT",
-    "SOL/USDT",
-    "ADA/USDT",
-    "XRP/USDT",
-    "DOT/USDT",
-    "AVAX/USDT",
-    "MATIC/USDT",
-    "LINK/USDT",
-];
-
 #[cfg(test)]
 mod tests {
     use crate::domain::trading::types::{denormalize_crypto_symbol, normalize_crypto_symbol};

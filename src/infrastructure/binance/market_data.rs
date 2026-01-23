@@ -6,7 +6,7 @@
 //! - Top movers scanning
 //! - Multi-symbol price fetching
 
-use super::common::CRYPTO_UNIVERSE;
+// CRYPTO_UNIVERSE removed - now using dynamic discovery
 use super::websocket::BinanceWebSocketManager;
 use crate::application::market_data::spread_cache::SpreadCache;
 use crate::domain::ports::MarketDataService;
@@ -38,6 +38,8 @@ pub struct BinanceMarketDataService {
     spread_cache: Arc<SpreadCache>,
     candle_repository: Option<Arc<dyn CandleRepository>>,
     circuit_breaker: Arc<CircuitBreaker>,
+    /// Cache for tradable assets (symbol list + timestamp)
+    assets_cache: std::sync::RwLock<Option<(Vec<String>, std::time::Instant)>>,
 }
 
 impl BinanceMarketDataService {
@@ -117,6 +119,7 @@ impl BinanceMarketDataServiceBuilder {
             spread_cache,
             candle_repository,
             circuit_breaker,
+            assets_cache: std::sync::RwLock::new(None),
         }
     }
 }
@@ -165,10 +168,79 @@ impl MarketDataService for BinanceMarketDataService {
         Ok(rx)
     }
 
+    async fn get_tradable_assets(&self) -> Result<Vec<String>> {
+        // Check cache first (1 hour TTL)
+        const CACHE_TTL_SECS: u64 = 3600;
+        {
+            let cache = self.assets_cache.read().unwrap();
+            #[allow(clippy::collapsible_if)]
+            if let Some((assets, cached_at)) = cache.as_ref() {
+                if cached_at.elapsed().as_secs() < CACHE_TTL_SECS {
+                    return Ok(assets.clone());
+                }
+            }
+        }
+
+        info!("BinanceMarketDataService: Fetching tradable assets from exchangeInfo");
+
+        let url = format!("{}/api/v3/exchangeInfo", self.base_url);
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .context("Failed to fetch exchangeInfo from Binance")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Binance exchangeInfo fetch failed: {}", error_text);
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct SymbolInfo {
+            symbol: String,
+            status: String,
+            #[serde(rename = "quoteAsset")]
+            quote_asset: String,
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct ExchangeInfo {
+            symbols: Vec<SymbolInfo>,
+        }
+
+        let info: ExchangeInfo = response
+            .json()
+            .await
+            .context("Failed to parse Binance exchangeInfo")?;
+
+        let assets: Vec<String> = info
+            .symbols
+            .into_iter()
+            .filter(|s| s.status == "TRADING" && s.quote_asset == "USDT")
+            .filter_map(|s| normalize_crypto_symbol(&s.symbol).ok())
+            .collect();
+
+        info!(
+            "BinanceMarketDataService: Found {} tradable USDT pairs",
+            assets.len()
+        );
+
+        // Update cache
+        {
+            let mut cache = self.assets_cache.write().unwrap();
+            *cache = Some((assets.clone(), std::time::Instant::now()));
+        }
+
+        Ok(assets)
+    }
+
     async fn get_top_movers(&self) -> Result<Vec<String>> {
+        // Use dynamic asset list instead of static CRYPTO_UNIVERSE
+        let all_assets = self.get_tradable_assets().await.unwrap_or_default();
         info!(
             "MarketScanner: Scanning Binance top movers from universe of {} pairs",
-            CRYPTO_UNIVERSE.len()
+            all_assets.len()
         );
 
         // Binance 24hr ticker endpoint

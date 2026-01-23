@@ -51,6 +51,9 @@ impl MarketDataService for ConfigurableMockMarketData {
         let (_, rx) = mpsc::channel(1);
         Ok(rx)
     }
+    async fn get_tradable_assets(&self) -> Result<Vec<String>, anyhow::Error> {
+        Ok(vec![])
+    }
     async fn get_top_movers(&self) -> Result<Vec<String>, anyhow::Error> {
         Ok(vec![])
     }

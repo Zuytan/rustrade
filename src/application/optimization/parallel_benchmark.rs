@@ -190,6 +190,10 @@ mod tests {
             Ok(prices)
         }
 
+        async fn get_tradable_assets(&self) -> Result<Vec<String>> {
+            Ok(vec![])
+        }
+
         async fn get_top_movers(&self) -> Result<Vec<String>> {
             Ok(vec![])
         }

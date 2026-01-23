@@ -179,6 +179,18 @@ impl MarketDataService for MockMarketDataService {
         Ok(rx)
     }
 
+    async fn get_tradable_assets(&self) -> Result<Vec<String>> {
+        Ok(vec![
+            "AAPL".to_string(),
+            "MSFT".to_string(),
+            "NVDA".to_string(),
+            "TSLA".to_string(),
+            "GOOGL".to_string(),
+            "BTC/USD".to_string(),
+            "ETH/USD".to_string(),
+        ])
+    }
+
     async fn get_top_movers(&self) -> Result<Vec<String>> {
         Ok(vec![
             "AAPL".to_string(),
