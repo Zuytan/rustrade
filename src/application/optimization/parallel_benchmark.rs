@@ -125,7 +125,7 @@ impl ParallelBenchmarkRunner {
     ) -> Result<BacktestResult> {
         // Create a fresh portfolio for this backtest
         let mut portfolio = Portfolio::new();
-        portfolio.cash = Decimal::new(100_000, 0); // $100k starting capital
+        portfolio.cash = Decimal::ZERO; // Explicitly zero. Capital must be injected via events or config.
         let portfolio_lock = Arc::new(RwLock::new(portfolio));
 
         // Get transaction costs from environment or use defaults

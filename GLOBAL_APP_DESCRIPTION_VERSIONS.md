@@ -7,6 +7,7 @@
   - Removed `initial_cash` ($100k) default configuration to enforce reliance on real broker data.
   - Implemented `Portfolio.synchronized` flag; Risk Manager now waits for broker synchronization before starting.
 - **Stale State Protection**: Added a safety check in `SessionManager` to detect and reset stale risk states (e.g. from previous Mock sessions) if equity variance exceeds 50%.
+- **Simulation Safety**: Purged all hardcoded default capital values (e.g., $100k) from backtesting and optimization engines. Simulations now strictly initialize with $0, requiring explicit funding configuration.
 
 ## Version 0.85.0 - Critical Portfolio Synchronization Fix (January 2026)
 

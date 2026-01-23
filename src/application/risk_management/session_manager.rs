@@ -366,46 +366,46 @@ mod tests {
 
     #[tokio::test]
     async fn test_initialize_session_resets_on_equity_mismatch() {
-            // Persisted state: HWM = 100,000 (Mock/Default)
-            let stale_state = RiskState {
-                id: "global".to_string(),
-                session_start_equity: Decimal::from(100000),
-                daily_start_equity: Decimal::from(100000),
-                equity_high_water_mark: Decimal::from(100000),
-                consecutive_losses: 0,
-                reference_date: Utc::now().date_naive(),
-                updated_at: Utc::now().timestamp(),
-                daily_drawdown_reset: false,
-            };
+        // Persisted state: HWM = 100,000 (Mock/Default)
+        let stale_state = RiskState {
+            id: "global".to_string(),
+            session_start_equity: Decimal::from(100000),
+            daily_start_equity: Decimal::from(100000),
+            equity_high_water_mark: Decimal::from(100000),
+            consecutive_losses: 0,
+            reference_date: Utc::now().date_naive(),
+            updated_at: Utc::now().timestamp(),
+            daily_drawdown_reset: false,
+        };
 
-            let repo = Arc::new(MockRiskStateRepo {
-                state: Arc::new(tokio::sync::RwLock::new(Some(stale_state))),
-            });
+        let repo = Arc::new(MockRiskStateRepo {
+            state: Arc::new(tokio::sync::RwLock::new(Some(stale_state))),
+        });
 
-            let market = Arc::new(MockMarketData {
-                prices: HashMap::new(),
-            });
+        let market = Arc::new(MockMarketData {
+            prices: HashMap::new(),
+        });
 
-            let manager = SessionManager::new(Some(repo), market);
+        let manager = SessionManager::new(Some(repo), market);
 
-            // Actual Portfolio: Cash = 10,000 (Real/Alpaca)
-            let mut portfolio = Portfolio::new();
-            portfolio.cash = Decimal::from(10000);
-            let mut current_prices = HashMap::new();
+        // Actual Portfolio: Cash = 10,000 (Real/Alpaca)
+        let mut portfolio = Portfolio::new();
+        portfolio.cash = Decimal::from(10000);
+        let mut current_prices = HashMap::new();
 
-            // Initialize session
-            let state = manager
-                .initialize_session(&portfolio, &mut current_prices)
-                .await
-                .unwrap();
+        // Initialize session
+        let state = manager
+            .initialize_session(&portfolio, &mut current_prices)
+            .await
+            .unwrap();
 
-            // 1. Should RESET HWM to current equity (10,000) because 90% variance > 50% threshold
-            assert_eq!(state.equity_high_water_mark, Decimal::from(10000));
-            assert_eq!(state.session_start_equity, Decimal::from(10000));
+        // 1. Should RESET HWM to current equity (10,000) because 90% variance > 50% threshold
+        assert_eq!(state.equity_high_water_mark, Decimal::from(10000));
+        assert_eq!(state.session_start_equity, Decimal::from(10000));
 
-            // 2. Should NOT inherit the stale 100k state
-            assert_ne!(state.equity_high_water_mark, Decimal::from(100000));
-        }
+        // 2. Should NOT inherit the stale 100k state
+        assert_ne!(state.equity_high_water_mark, Decimal::from(100000));
+    }
 
     #[tokio::test]
     async fn test_no_reset_same_day() {
