@@ -68,22 +68,24 @@ pub struct StrategyMetrics {
 ///
 /// # Example
 /// ```
-/// use crate::application::monitoring::strategy_validator::{StrategyValidator, ValidationThresholds};
-/// use crate::application::monitoring::empirical_win_rate_provider::EmpiricalWinRateProvider;
-/// use crate::domain::performance::metrics::PerformanceMetrics;
+/// use rustrade::application::monitoring::strategy_validator::{StrategyValidator, ValidationThresholds};
+/// use rustrade::application::monitoring::empirical_win_rate_provider::EmpiricalWinRateProvider;
+/// use rustrade::domain::performance::metrics::PerformanceMetrics;
 /// use std::sync::Arc;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// // Create mock repository and win rate provider
 /// # use async_trait::async_trait;
-/// # use crate::domain::repositories::TradeRepository;
+/// # use rustrade::domain::repositories::TradeRepository;
+/// # use rustrade::domain::trading::types;
 /// # struct MockRepo;
 /// # #[async_trait]
 /// # impl TradeRepository for MockRepo {
-/// #     async fn save(&self, _: &crate::domain::trading::types::Order) -> anyhow::Result<()> { Ok(()) }
-/// #     async fn find_by_symbol(&self, _: &str) -> anyhow::Result<Vec<crate::domain::trading::types::Order>> { Ok(vec![]) }
-/// #     async fn find_recent(&self, _: usize) -> anyhow::Result<Vec<crate::domain::trading::types::Order>> { Ok(vec![]) }
-/// #     async fn get_all(&self) -> anyhow::Result<Vec<crate::domain::trading::types::Order>> { Ok(vec![]) }
+/// #     async fn save(&self, _: &types::Order) -> anyhow::Result<()> { Ok(()) }
+/// #     async fn find_by_symbol(&self, _: &str) -> anyhow::Result<Vec<types::Order>> { Ok(vec![]) }
+/// #     async fn find_by_status(&self, _: rustrade::domain::trading::types::OrderStatus) -> anyhow::Result<Vec<types::Order>> { Ok(vec![]) }
+/// #     async fn find_recent(&self, _: usize) -> anyhow::Result<Vec<types::Order>> { Ok(vec![]) }
+/// #     async fn get_all(&self) -> anyhow::Result<Vec<types::Order>> { Ok(vec![]) }
 /// #     async fn count(&self) -> anyhow::Result<usize> { Ok(0) }
 /// # }
 /// let repo = Arc::new(MockRepo);

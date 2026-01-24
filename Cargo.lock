@@ -4173,7 +4173,7 @@ dependencies = [
 
 [[package]]
 name = "rustrade"
-version = "0.89.0"
+version = "0.89.1"
 dependencies = [
  "anyhow",
  "async-trait",

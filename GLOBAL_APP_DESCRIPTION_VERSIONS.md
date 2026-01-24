@@ -1,5 +1,15 @@
 # Rustrade - Historique des Versions
 
+## Version 0.89.1 - Documentation & Assessment (January 2026)
+
+### Project Assessment
+- **Comprehensive Audit**: Conducted a full project evaluation, confirming architecture stability and code quality.
+- **Roadmap Generation**: Created a roadmap for future ML enhancements (Deep Learning) and Platform expansion (Web UI).
+
+### Documentation
+- **Strategy Documentation Cleanup**: Reorganized `GLOBAL_APP_DESCRIPTION.md` to clearly distinguish between Production-Ready and Legacy strategies.
+- **Doctest Fixes**: Resolved compilation errors in `strategy_validator` documentation examples.
+
 ## Version 0.89.0 - Advanced Observability & Monitoring (January 2026)
 
 ### Observability Infrastructure

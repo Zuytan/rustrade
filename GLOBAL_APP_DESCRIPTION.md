@@ -51,14 +51,22 @@ The system enforces three safety limits configured via `CircuitBreakerConfig`:
 ## 3. Trading Intelligence
 
 ### Strategy Engine
-Rustrade supports a diverse suite of strategies, organized by market approach:
-- **Trend Following**: `TrendRiding` (EMA Crossovers), `AdvancedTripleFilter` (SMA + RSI + MACD + ADX), `StatisticalMomentum` (ATR-normalized).
-- **Mean Reversion**: `MeanReversion` (Bollinger Bands), `VWAP` (Volume Weighted Average Price), `ZScoreMeanReversion` (Statistical Z-Score).
-- **Market Structure**: `SMC` (Smart Money Concepts - Order Blocks, FVGs with Strict Zone Mitigation logic), `Breakout` (Volume/Range).
+Rustrade supports a diverse suite of strategies. The system has evolved to prioritize statistical and ML-driven approaches over traditional technical analysis.
+
+#### Core Strategies (Production Ready)
+- **Statistical Trend**: `StatisticalMomentum` (ATR-normalized momentum with dynamic volatility adjustment).
+- **Statistical Mean Reversion**: `ZScoreMeanReversion` (Statistical Z-Score deviations from mean).
+- **Market Structure**: `SMC` (Smart Money Concepts - Order Blocks, FVGs with Strict Zone Mitigation logic).
 - **Order Flow**: `OrderFlow` (Institutional footprints via stacked imbalances, Cumulative Delta, HVN support/resistance).
 - **Machine Learning**: `MLStrategy` (Random Forest Regressor utilizing advanced statistical features).
 - **Adaptive**: `RegimeAdaptive` (Dynamic ensemble that switches strategies and risk profile based on Hurst Exponent and Volatility).
 - **Ensemble**: Voting system combining multiple strategies.
+
+#### Legacy Strategies (Deprecated)
+*Kept for backward compatibility and A/B testing. Use modern equivalents for production.*
+- **Trend Following**: `TrendRiding` (EMA Crossovers), `AdvancedTripleFilter` (SMA + RSI + MACD + ADX) — *Superseded by `StatisticalMomentum` / `MLStrategy`*.
+- **Mean Reversion**: `MeanReversion` (Bollinger Bands), `VWAP` (Volume Weighted Average Price) — *Superseded by `ZScoreMeanReversion`*.
+- **Breakout**: `Breakout` (Volume/Range), `Momentum` — *Superseded by `SMC` / `OrderFlow`*.
 
 ### Adaptive Features
 - **Regime Adaptation**: The `RegimeAdaptive` mode employs a `RegimeDetector` (using ADX, Variance, Linear Regression) to classify the market as `Trending` (Up/Down), `Ranging`, or `Volatile`. It automatically switches the active strategy (e.g., Trend -> VWAP in range) to match conditions.
