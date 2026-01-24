@@ -134,8 +134,6 @@ mod tests {
     use crate::domain::trading::types::Candle;
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
-
-    use rust_decimal_macros::dec;
     use std::collections::VecDeque;
 
     fn mock_candle(high: f64, low: f64, close: f64, volume: f64) -> Candle {

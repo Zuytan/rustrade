@@ -56,8 +56,16 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
-    let health_service = Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new());
-    health_service.set_market_data_status(rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online, None).await;
+    let health_service = Arc::new(
+        rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new(
+        ),
+    );
+    health_service
+        .set_market_data_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
 
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
@@ -184,9 +192,17 @@ async fn test_pending_order_ttl_cleanup() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
-    let health_service = Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new());
-    health_service.set_market_data_status(rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online, None).await;
-    
+    let health_service = Arc::new(
+        rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new(
+        ),
+    );
+    health_service
+        .set_market_data_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
+
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
         proposal_rx,
