@@ -27,6 +27,25 @@ pub async fn detect_market_regime(
     candle_timestamp: i64,
     context: &SymbolContext,
 ) -> MarketRegime {
+    // 1. Try Fast Feature-based Detection (Phase 4 Enhanced)
+    // If we have calculated features (Hurst, Volatility) for the current candle, use them.
+    // This is O(1) compared to O(N) fetching and processing historical candles.
+    if let (Some(hurst), Some(vol)) = (
+        context.last_features.hurst_exponent,
+        context.last_features.realized_volatility,
+    ) {
+        #[allow(clippy::collapsible_if)]
+        if let Ok(regime) = context.regime_detector.detect_from_features(
+            Some(hurst),
+            Some(vol),
+            context.last_features.skewness,
+        ) {
+            return regime;
+        }
+    }
+
+    // 2. Fallback to Historical Candle Analysis
+    // Necessary during warmup or if advanced features are not yet ready (need ~50 bars)
     if let Some(repo) = repo {
         let end_ts = candle_timestamp;
         let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days lookback
@@ -72,8 +91,16 @@ pub fn apply_dynamic_risk_scaling(
                 context.config.apply_risk_appetite(&new_appetite);
                 // Also update the stored score
                 context.config.risk_appetite_score = Some(new_score);
+
+                // Re-initialize the active strategy to pick up new risk parameters
+                // (e.g. RSI thresholds, stop multipliers, etc.)
+                context.strategy = crate::application::strategies::StrategyFactory::create(
+                    context.active_strategy_mode,
+                    &context.config,
+                );
+
                 info!(
-                    "RegimeHandler [{}]: Dynamic Risk Scaling active. Score {} -> {} ({:?})",
+                    "RegimeHandler [{}]: Dynamic Risk Scaling active. Score {} -> {} ({:?}). Strategy re-initialized.",
                     symbol, base_score, new_score, regime.regime_type
                 );
             }

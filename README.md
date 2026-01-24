@@ -33,6 +33,8 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 - **Standard**: Dual SMA Crossover (Golden/Death Cross).
 - **Advanced**: Triple Filter System (SMA Trend + RSI Momentum + MACD + **ADX Trend Strength**).
 - **Dynamic**: Automatically switches strategies based on Market Regime (e.g., Trend Riding vs Mean Reversion).
+- **Statistical**: Z-Score Mean Reversion & Statistical Momentum (Regression Slope).
+- **Machine Learning**: Random Forest Classifier trained on technical features (`MLStrategy`).
 - **Trend Riding**: Long-term trend following with trailing stops.
 - **Mean Reversion**: Contrarian strategy for overbought/oversold conditions (BB + RSI).
 
@@ -128,6 +130,9 @@ cargo run --bin benchmark -- --symbol AAPL,TSLA,NVDA,MSFT --start 2024-01-01 --e
 
 # Optimize parameters
 cargo run --bin optimize -- --symbol TSLA --grid-config grid.toml
+
+# Train ML Model
+cargo run --bin train_ml
 ```
 
 ## 🏗️ Architecture

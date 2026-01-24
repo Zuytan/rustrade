@@ -67,6 +67,9 @@ pub struct StrategyEnvConfig {
 
     // Risk Appetite Override
     pub risk_appetite: Option<RiskAppetite>,
+
+    // ML Configuration
+    pub enable_ml_data_collection: bool,
 }
 
 impl StrategyEnvConfig {
@@ -173,6 +176,10 @@ impl StrategyEnvConfig {
             take_profit_pct: Self::parse_f64("TAKE_PROFIT_PCT", 0.05).unwrap_or(0.05),
             profit_target_multiplier,
             risk_appetite,
+            enable_ml_data_collection: env::var("ENABLE_ML_DATA_COLLECTION")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse::<bool>()
+                .unwrap_or(false),
         })
     }
 

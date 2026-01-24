@@ -46,6 +46,10 @@ fn create_context(candles: VecDeque<Candle>) -> AnalysisContext {
         volume_profile: None,
         ofi_history: vec![0.5, 0.5, 0.5].into_iter().collect(),
         timeframe_features: None,
+        hurst_exponent: None,
+        skewness: None,
+        momentum_normalized: None,
+        realized_volatility: None,
     }
 }
 

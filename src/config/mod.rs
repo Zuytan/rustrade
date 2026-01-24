@@ -157,6 +157,9 @@ pub struct Config {
     pub adaptive_evaluation_hour: u32,
     pub risk_appetite: Option<RiskAppetite>,
 
+    // ML
+    pub enable_ml_data_collection: bool,
+
     // Observability (from ObservabilityEnvConfig)
     pub observability_enabled: bool,
     pub observability_port: u16,
@@ -264,6 +267,7 @@ impl Config {
             regime_detection_window: risk.regime_detection_window,
             adaptive_evaluation_hour: risk.adaptive_evaluation_hour,
             risk_appetite: strategy.risk_appetite,
+            enable_ml_data_collection: strategy.enable_ml_data_collection,
 
             // Observability
             observability_enabled: observability.enabled,

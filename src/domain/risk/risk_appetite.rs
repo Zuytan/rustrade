@@ -149,6 +149,20 @@ impl RiskAppetite {
         Self::interpolate(self.score, 1, 9, 0.5, 1.0)
     }
 
+    /// Calculate Maximum Daily Loss Percentage
+    /// Conservative: 1% (0.01)
+    /// Aggressive: 5% (0.05)
+    pub fn calculate_max_daily_loss_pct(&self) -> f64 {
+        Self::interpolate(self.score, 1, 9, 0.01, 0.05)
+    }
+
+    /// Calculate Maximum Drawdown Percentage
+    /// Conservative: 3% (0.03)
+    /// Aggressive: 15% (0.15)
+    pub fn calculate_max_drawdown_pct(&self) -> f64 {
+        Self::interpolate(self.score, 1, 9, 0.03, 0.15)
+    }
+
     /// Linear interpolation helper
     ///
     /// Maps a score within [score_min, score_max] to a value within [value_min, value_max]

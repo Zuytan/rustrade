@@ -49,18 +49,24 @@ The system enforces three safety limits configured via `CircuitBreakerConfig`:
 ## 3. Trading Intelligence
 
 ### Strategy Engine
-Rustrade supports a diverse suite of strategies, dynamically interchangeable:
-- **Trend Following**: `TrendRiding` (EMA Crossovers), `AdvancedTripleFilter` (SMA + RSI + MACD + ADX).
-- **Mean Reversion**: `MeanReversion` (Bollinger Bands), `VWAP` (Volume Weighted Average Price).
+Rustrade supports a diverse suite of strategies, organized by market approach:
+- **Trend Following**: `TrendRiding` (EMA Crossovers), `AdvancedTripleFilter` (SMA + RSI + MACD + ADX), `StatisticalMomentum` (ATR-normalized).
+- **Mean Reversion**: `MeanReversion` (Bollinger Bands), `VWAP` (Volume Weighted Average Price), `ZScoreMeanReversion` (Statistical Z-Score).
 - **Market Structure**: `SMC` (Smart Money Concepts - Order Blocks, FVGs with Strict Zone Mitigation logic), `Breakout` (Volume/Range).
 - **Order Flow**: `OrderFlow` (Institutional footprints via stacked imbalances, Cumulative Delta, HVN support/resistance).
-- **Momentum**: `MomentumDivergence` (RSI Divergences).
-- **Ensemble**: Voting system combining multiple strategies for high-conviction signals.
+- **Machine Learning**: `MLStrategy` (Random Forest Regressor utilizing advanced statistical features).
+- **Adaptive**: `RegimeAdaptive` (Dynamic ensemble that switches strategies and risk profile based on Hurst Exponent and Volatility).
+- **Ensemble**: Voting system combining multiple strategies.
 
 ### Adaptive Features
 - **Regime Adaptation**: The `RegimeAdaptive` mode employs a `RegimeDetector` (using ADX, Variance, Linear Regression) to classify the market as `Trending` (Up/Down), `Ranging`, or `Volatile`. It automatically switches the active strategy (e.g., Trend -> VWAP in range) to match conditions.
 - **Dynamic Risk Scaling**: Automatically scales down risk exposure (Risk Score) during adverse regimes (e.g., Flash Crashes).
 - **Multi-Timeframe Analysis**: Aggregates 1-minute data into higher timeframes (5m, 15m, 1h, 4h, 1d) to validate trends ("Zoom Out" confirmation).
+
+### Machine Learning Architecture
+- **Data Collection**: `DataCollector` agent passively captures FeatureSets and labels them with future returns (1m, 5m, 15m), persisting them to CSV for training.
+- **Inference Engine**: `SmartCorePredictor` loads pre-trained Random Forest models to generate real-time trade probabilities.
+- **Training Pipeline**: Standalone `train_ml` binary for offline model retraining.
 
 ### News & Sentiment
 - **NLP Analysis**: Uses local VADER sentiment analysis with financial keyword boosting to classify news headlines (Bullish/Bearish).

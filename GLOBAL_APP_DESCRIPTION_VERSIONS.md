@@ -1,5 +1,29 @@
 # Rustrade - Historique des Versions
 
+## Version 0.87.0 - Adaptive Regime & Statistical Modernization (January 2026)
+
+### Adaptive Regime Architecture
+- **Dynamic Strategy Switching**: Implemented `regime_handler.rs` which dynamically shifts between `StatMomentum`, `ZScoreMR`, and Legacy strategies based on market conditions.
+- **Enhanced Regime Detection**: refactored `MarketRegimeDetector` to use O(1) feature-based detection (Hurst Exponent, Realized Volatility, Skewness).
+- **Dynamic Risk Scaling**: Automatically adjusts `risk_appetite_score` and strategy parameters (RSI thresholds, stop multipliers) in real-time as market volatility shifts.
+
+### ML & Statistical Enhancements
+- **Probabilistic ML Signals**: Refactored `MLStrategy` and `train_ml` to use Regression-based confidence scores (0.0-1.0) instead of binary classification for more nuanced trade entry.
+- **Statistical Positioning**: Integrated ATR-normalized momentum and Z-score based mean reversion as core strategy components.
+
+## Version 0.86.0 - Machine Learning & Statistical Models (January 2026)
+
+### Machine Learning Infrastructure
+- **Offline Training Pipeline**: Implemented a complete end-to-end ML workflow.
+  - `DataCollector`: Captures live features and labels (future returns) to CSV.
+  - `train_ml`: Standalone binary to train Random Forest classifiers (SmartCore) from collected data.
+  - `MLStrategy`: Executes trades based on model probability scores (>0.6 Buy, <0.4 Sell).
+- **Architecture**: Decoupled `MLPredictor` trait allowing plug-and-play of different models (XGBoost, LinReg) in the future.
+
+### New Statistical Strategies
+- **Z-Score Mean Reversion**: Pure statistical approach trading extreme deviations (>2 std dev) from the mean.
+- **Statistical Momentum**: Volatility-normalized momentum strategy using Linear Regression slope for trend confirmation.
+
 ## Version 0.85.1 - Safe Portfolio Initialization & False Drawdown Fix (January 2026)
 
 ### Critical Stability Fixes

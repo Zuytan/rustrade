@@ -267,6 +267,7 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
         breakout_threshold_pct: 0.002,
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
+        enable_ml_data_collection: false,
     }
 }
 
@@ -346,6 +347,18 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
         }
         crate::domain::market::strategy_config::StrategyMode::Ensemble => {
             Arc::new(EnsembleStrategy::default_ensemble())
+        }
+        crate::domain::market::strategy_config::StrategyMode::ZScoreMR => {
+            Arc::new(ZScoreMeanReversionStrategy::default())
+        }
+        crate::domain::market::strategy_config::StrategyMode::StatMomentum => {
+            Arc::new(StatisticalMomentumStrategy::default())
+        }
+        crate::domain::market::strategy_config::StrategyMode::ML => {
+            let path = std::path::PathBuf::from("data/ml/model.bin");
+            let predictor =
+                crate::application::ml::smartcore_predictor::SmartCorePredictor::new(path);
+            Arc::new(MLStrategy::new(Arc::new(Box::new(predictor)), 0.6))
         }
     }
 }

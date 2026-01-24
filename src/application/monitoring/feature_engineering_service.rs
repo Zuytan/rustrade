@@ -1,7 +1,12 @@
 use crate::application::agents::analyst_config::AnalystConfig;
+use crate::application::market_data::statistical_features::{
+    calculate_hurst_exponent, calculate_skewness,
+};
+use crate::application::risk_management::volatility::calculate_realized_volatility;
 use crate::domain::ports::FeatureEngineeringService;
 use crate::domain::trading::types::{Candle, FeatureSet};
 use rust_decimal::prelude::ToPrimitive;
+use std::collections::VecDeque;
 use ta::Next;
 use ta::indicators::{
     AverageTrueRange, BollingerBands, ExponentialMovingAverage, MovingAverageConvergenceDivergence,
@@ -128,6 +133,7 @@ pub struct TechnicalFeatureEngineeringService {
     ema_fast: ExponentialMovingAverage,
     ema_slow: ExponentialMovingAverage,
     adx: ManualAdx,
+    price_history: VecDeque<f64>,
 }
 
 impl TechnicalFeatureEngineeringService {
@@ -156,6 +162,7 @@ impl TechnicalFeatureEngineeringService {
             ema_slow: ExponentialMovingAverage::new(config.ema_slow_period)
                 .expect("ema_slow_period from AnalystConfig must be > 0"),
             adx: ManualAdx::new(config.adx_period),
+            price_history: VecDeque::with_capacity(100),
         }
     }
 }
@@ -196,6 +203,55 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
                     .unwrap()
             });
 
+        // Calculate ATR early as it is needed for momentum normalization
+        let atr_val = self.atr.next(&item);
+
+        // Update price history
+        self.price_history.push_back(price);
+        if self.price_history.len() > 100 {
+            self.price_history.pop_front();
+        }
+
+        // Calculate advanced features
+        // Convert VecDeque to Vec for calculations
+        let prices_vec: Vec<f64> = self.price_history.iter().copied().collect();
+
+        // Hurst Exponent (requires ~50 periods)
+        let hurst_exponent = if prices_vec.len() >= 50 {
+            calculate_hurst_exponent(&prices_vec, &[2, 4, 8, 16])
+        } else {
+            None
+        };
+
+        // Skewness (requires ~20 periods of returns)
+        let skewness = if prices_vec.len() >= 20 {
+            // Calculate returns
+            let returns: Vec<f64> = prices_vec
+                .windows(2)
+                .map(|w| (w[1] - w[0]) / w[0])
+                .collect();
+            calculate_skewness(&returns)
+        } else {
+            None
+        };
+
+        // Realized Volatility
+        let realized_volatility = if prices_vec.len() >= 20 {
+            calculate_realized_volatility(&prices_vec, 525600.0) // 1 minute candles -> 525600 minutes/year
+        } else {
+            None
+        };
+
+        // Normalized Momentum: (Price - Price_N) / ATR
+        // Using N=10 same as StatMomentum
+        let momentum_normalized = if prices_vec.len() >= 11 && atr_val > 0.0 {
+            let n = 10;
+            let past_price = prices_vec[prices_vec.len() - 1 - n];
+            Some((price - past_price) / atr_val)
+        } else {
+            None
+        };
+
         FeatureSet {
             rsi: Some(rsi_val),
             macd_line: Some(macd_val.macd),
@@ -207,10 +263,17 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             bb_upper: Some(bb_val.upper),
             bb_middle: Some(bb_val.average),
             bb_lower: Some(bb_val.lower),
-            atr: Some(self.atr.next(&item)),
+            atr: Some(atr_val),
             ema_fast: Some(self.ema_fast.next(price)),
             ema_slow: Some(self.ema_slow.next(price)),
             adx: Some(self.adx.next(high, low, price)),
+
+            // Advanced Statistical Features (Phase 2)
+            hurst_exponent,
+            skewness,
+            momentum_normalized,
+            realized_volatility,
+
             timeframe: Some(crate::domain::market::timeframe::Timeframe::OneMin),
         }
     }

@@ -58,6 +58,8 @@ pub struct AnalystConfig {
     pub breakout_volume_mult: f64,
     // Hard Stop Configuration
     pub max_loss_per_trade_pct: f64, // Maximum loss per trade before forced exit (e.g., -0.05 = -5%)
+    // ML Configuration
+    pub enable_ml_data_collection: bool,
 }
 
 impl Default for AnalystConfig {
@@ -110,6 +112,7 @@ impl Default for AnalystConfig {
             breakout_threshold_pct: 0.002,
             breakout_volume_mult: 1.1,
             max_loss_per_trade_pct: -0.05, // -5% max loss per trade
+            enable_ml_data_collection: true,
         }
     }
 }
@@ -161,6 +164,7 @@ impl From<crate::config::Config> for AnalystConfig {
             breakout_threshold_pct: 0.0005, // 0.05% threshold (sensitive)
             breakout_volume_mult: 0.1, // 10% of average (effectively disable volume filter for now)
             max_loss_per_trade_pct: -0.05,
+            enable_ml_data_collection: config.enable_ml_data_collection,
         }
     }
 }
@@ -199,6 +203,8 @@ impl From<&AnalystConfig> for crate::application::risk_management::sizing_engine
             max_positions: config.max_positions,
             max_position_size_pct: config.max_position_size_pct,
             static_trade_quantity: config.trade_quantity,
+            enable_vol_targeting: false, // Disabled by default for now
+            target_volatility: 0.15,     // 15% target if enabled
         }
     }
 }

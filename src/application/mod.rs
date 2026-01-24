@@ -5,6 +5,9 @@ pub mod bootstrap;
 // Market data processing
 pub mod market_data;
 
+// Machine Learning
+pub mod ml;
+
 // Performance monitoring and analytics
 pub mod monitoring;
 

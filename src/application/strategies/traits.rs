@@ -64,6 +64,16 @@ pub struct AnalysisContext {
     /// Historical OFI values for divergence detection (last 20 values)
     pub ofi_history: VecDeque<f64>,
 
+    // Advanced Statistical Features (Phase 2)
+    /// Hurst Exponent (0-1): H>0.5 = trending, H<0.5 = mean-reverting
+    pub hurst_exponent: Option<f64>,
+    /// Skewness: distribution asymmetry (positive = right tail, negative = left tail)
+    pub skewness: Option<f64>,
+    /// ATR-normalized momentum: (Price - Price_N) / ATR
+    pub momentum_normalized: Option<f64>,
+    /// Realized volatility: annualized rolling volatility
+    pub realized_volatility: Option<f64>,
+
     // Multi-timeframe data (optional for backward compatibility)
     pub timeframe_features: Option<HashMap<Timeframe, TimeframeFeatures>>,
 }

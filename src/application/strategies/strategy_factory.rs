@@ -2,7 +2,8 @@ use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::strategies::{
     AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, BreakoutStrategy, DualSMAStrategy,
     DynamicRegimeConfig, DynamicRegimeStrategy, EnsembleStrategy, MeanReversionStrategy,
-    MomentumDivergenceStrategy, SMCStrategy, TradingStrategy, TrendRidingStrategy, VWAPStrategy,
+    MomentumDivergenceStrategy, SMCStrategy, StatisticalMomentumStrategy, TradingStrategy,
+    TrendRidingStrategy, VWAPStrategy, ZScoreMeanReversionStrategy,
 };
 use crate::domain::market::strategy_config::StrategyMode;
 use std::sync::Arc;
@@ -75,6 +76,18 @@ impl StrategyFactory {
             )),
             StrategyMode::Momentum => Arc::new(MomentumDivergenceStrategy::default()),
             StrategyMode::Ensemble => Arc::new(EnsembleStrategy::default_ensemble()),
+            // NEW: Modern statistical strategies
+            StrategyMode::ZScoreMR => Arc::new(ZScoreMeanReversionStrategy::default()),
+            StrategyMode::StatMomentum => Arc::new(StatisticalMomentumStrategy::default()),
+            StrategyMode::ML => {
+                let path = std::path::PathBuf::from("data/ml/model.bin");
+                let predictor =
+                    crate::application::ml::smartcore_predictor::SmartCorePredictor::new(path);
+                Arc::new(crate::application::strategies::MLStrategy::new(
+                    Arc::new(Box::new(predictor)),
+                    0.6, // Default threshold
+                ))
+            }
         }
     }
 }

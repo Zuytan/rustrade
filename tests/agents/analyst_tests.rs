@@ -145,6 +145,7 @@ async fn test_golden_cross() {
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
         smc_volume_multiplier: 1.5,
+        enable_ml_data_collection: false,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -259,6 +260,7 @@ async fn test_prevent_short_selling() {
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
         smc_volume_multiplier: 1.5,
+        enable_ml_data_collection: false,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -390,6 +392,7 @@ async fn test_sell_signal_with_position() {
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
         smc_volume_multiplier: 1.5,
+        enable_ml_data_collection: false,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -516,6 +519,7 @@ async fn test_dynamic_quantity_scaling() {
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
         smc_volume_multiplier: 1.5,
+        enable_ml_data_collection: false,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -657,6 +661,7 @@ async fn test_multi_symbol_isolation() {
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
         smc_volume_multiplier: 1.5,
+        enable_ml_data_collection: false,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -802,6 +807,7 @@ async fn test_advanced_strategy_trend_filter() {
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
         smc_volume_multiplier: 1.5,
+        enable_ml_data_collection: false,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -945,6 +951,7 @@ async fn test_risk_based_quantity_calculation() {
         breakout_volume_mult: 1.1,
         max_loss_per_trade_pct: -0.05,
         smc_volume_multiplier: 1.5,
+        enable_ml_data_collection: false,
     };
 
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(

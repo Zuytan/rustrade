@@ -70,6 +70,13 @@ impl SignalGenerator {
             cumulative_delta,
             volume_profile,
             ofi_history: ofi_history.clone(),
+
+            // Advanced Statistical Features (Phase 2)
+            // Advanced Statistical Features (Phase 2)
+            hurst_exponent: features.hurst_exponent,
+            skewness: features.skewness,
+            momentum_normalized: features.momentum_normalized,
+            realized_volatility: features.realized_volatility,
             timeframe_features: None, // Will be populated by Analyst when multi-timeframe is enabled
         };
 

@@ -171,6 +171,10 @@ mod tests {
             cumulative_delta,
             volume_profile,
             ofi_history: ofi_history.into_iter().collect(),
+            hurst_exponent: None,
+            skewness: None,
+            momentum_normalized: None,
+            realized_volatility: None,
             timeframe_features: None,
         }
     }

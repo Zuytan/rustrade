@@ -37,6 +37,8 @@ pub struct CandlePipeline {
     execution_service: Arc<dyn ExecutionService>,
     candle_repository: Option<Arc<dyn CandleRepository>>,
     trade_evaluator: TradeEvaluator,
+    data_collector:
+        Option<Arc<std::sync::Mutex<crate::application::ml::data_collector::DataCollector>>>,
 }
 
 impl CandlePipeline {
@@ -45,11 +47,15 @@ impl CandlePipeline {
         execution_service: Arc<dyn ExecutionService>,
         candle_repository: Option<Arc<dyn CandleRepository>>,
         trade_evaluator: TradeEvaluator,
+        data_collector: Option<
+            Arc<std::sync::Mutex<crate::application::ml::data_collector::DataCollector>>,
+        >,
     ) -> Self {
         Self {
             execution_service,
             candle_repository,
             trade_evaluator,
+            data_collector,
         }
     }
 
@@ -109,6 +115,22 @@ impl CandlePipeline {
     /// Stage 2: Update technical indicators
     fn update_indicators(&self, ctx: &mut PipelineContext<'_>) {
         ctx.context.update(ctx.candle);
+
+        // Collect training data if collector is active
+        #[allow(clippy::collapsible_if)]
+        if let Some(collector_lock) = &self.data_collector {
+            if let Ok(mut collector) = collector_lock.lock() {
+                // Convert Decimal price to f64
+                let price_f64 =
+                    rust_decimal::prelude::ToPrimitive::to_f64(&ctx.candle.close).unwrap_or(0.0);
+                collector.process_update(
+                    ctx.symbol,
+                    price_f64,
+                    ctx.candle.timestamp,
+                    &ctx.context.last_features,
+                );
+            }
+        }
     }
 
     /// Stage 3: Synchronize position state with portfolio
@@ -311,7 +333,7 @@ mod tests {
 
         let trade_evaluator = TradeEvaluator::new(trade_filter, signal_processor);
 
-        CandlePipeline::new(execution_service, None, trade_evaluator)
+        CandlePipeline::new(execution_service, None, trade_evaluator, None)
     }
 
     fn create_test_context() -> SymbolContext {

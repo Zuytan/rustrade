@@ -156,6 +156,7 @@ impl GridSearchOptimizer {
                                     breakout_threshold_pct: 0.002,
                                     breakout_volume_mult: 1.1,
                                     max_loss_per_trade_pct: -0.05,
+                                    enable_ml_data_collection: false,
                                 });
                             }
                         }
@@ -399,6 +400,7 @@ mod tests {
                 breakout_threshold_pct: 0.002,
                 breakout_volume_mult: 1.1,
                 max_loss_per_trade_pct: -0.05,
+                enable_ml_data_collection: false,
             },
             sharpe_ratio: 2.0,
             total_return: 15.0,

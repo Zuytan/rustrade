@@ -24,11 +24,11 @@ fn test_strategy_selector_ranging_to_vwap() {
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
 
-    // Should switch to VWAP for high-volatility Ranging regime
+    // Should switch to ZScoreMR for Ranging regime (Modern Logic)
     assert_eq!(
         new_mode,
-        StrategyMode::VWAP,
-        "Should select VWAP strategy for high-volatility Ranging regime"
+        StrategyMode::ZScoreMR,
+        "Should select ZScoreMR strategy for Ranging regime"
     );
 }
 
@@ -49,11 +49,11 @@ fn test_strategy_selector_ranging_low_vol_to_mean_reversion() {
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
 
-    // Should switch to MeanReversion for low-volatility Ranging regime
+    // Should switch to ZScoreMR for Ranging regime
     assert_eq!(
         new_mode,
-        StrategyMode::MeanReversion,
-        "Should select MeanReversion strategy for low-volatility Ranging regime"
+        StrategyMode::ZScoreMR,
+        "Should select ZScoreMR strategy for Ranging regime"
     );
 }
 
@@ -74,11 +74,11 @@ fn test_strategy_selector_trending_up_to_trend_riding() {
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&trending_regime, &config, current_mode);
 
-    // Should switch to TrendRiding for trending markets
+    // Should switch to StatMomentum for trending markets
     assert_eq!(
         new_mode,
-        StrategyMode::TrendRiding,
-        "Should select TrendRiding strategy for TrendingUp regime"
+        StrategyMode::StatMomentum,
+        "Should select StatMomentum strategy for TrendingUp regime"
     );
 }
 
@@ -95,8 +95,8 @@ fn test_strategy_selector_trending_down_to_trend_riding() {
 
     assert_eq!(
         new_mode,
-        StrategyMode::TrendRiding,
-        "Should select TrendRiding strategy for TrendingDown regime"
+        StrategyMode::StatMomentum,
+        "Should select StatMomentum strategy for TrendingDown regime"
     );
 }
 
@@ -149,19 +149,19 @@ fn test_strategy_selector_unknown_to_standard() {
 fn test_strategy_selector_no_change_when_same() {
     let config = AnalystConfig::default();
 
-    // Low volatility ranging -> MeanReversion
+    // Low volatility ranging -> ZScoreMR
     let ranging_regime = MarketRegime::new(MarketRegimeType::Ranging, 0.8, 1.0, 10.0);
 
-    // Already using MeanReversion (which is correct for low-vol Ranging)
-    let current_mode = StrategyMode::MeanReversion;
+    // Already using ZScoreMR
+    let current_mode = StrategyMode::ZScoreMR;
 
     let (new_mode, _strategy) =
         StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
 
-    // Should stay with MeanReversion
+    // Should stay with ZScoreMR
     assert_eq!(
         new_mode,
-        StrategyMode::MeanReversion,
-        "Should keep MeanReversion when already appropriate for low-vol Ranging"
+        StrategyMode::ZScoreMR,
+        "Should keep ZScoreMR when already appropriate for Ranging"
     );
 }

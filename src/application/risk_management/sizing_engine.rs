@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::application::market_data::spread_cache::SpreadCache;
+use crate::application::risk_management::volatility::calculate_realized_volatility;
 
 #[derive(Debug, Clone)]
 pub struct SizingConfig {
@@ -11,6 +12,9 @@ pub struct SizingConfig {
     pub max_positions: usize,
     pub max_position_size_pct: f64,
     pub static_trade_quantity: Decimal,
+    // NEW: Volatility Targeting
+    pub enable_vol_targeting: bool,
+    pub target_volatility: f64, // Target annualized volatility (e.g., 0.15 = 15%)
 }
 
 pub struct SizingEngine {
@@ -23,14 +27,43 @@ impl SizingEngine {
     }
 
     /// Calculate quantity with slippage adjustment based on bid-ask spread
+    /// and optionally volatility targeting
     pub fn calculate_quantity_with_slippage(
         &self,
         config: &SizingConfig,
         total_equity: Decimal,
         price: Decimal,
         symbol: &str,
+        recent_prices: Option<&[f64]>, // NEW: for volatility calculation
     ) -> Decimal {
-        let base_qty = Self::calculate_quantity(config, total_equity, price, symbol);
+        let mut base_qty = Self::calculate_quantity(config, total_equity, price, symbol);
+
+        // NEW: Apply volatility targeting if enabled
+        if config.enable_vol_targeting {
+            #[allow(clippy::collapsible_if)]
+            if let Some(prices) = recent_prices {
+                if let Some(realized_vol) = calculate_realized_volatility(prices, 252.0) {
+                    if realized_vol > 0.0 {
+                        // Vol targeting: scale position inversely to volatility
+                        // If realized_vol = 20% and target = 15%, multiplier = 15/20 = 0.75
+                        let vol_multiplier = config.target_volatility / realized_vol;
+                        let vol_multiplier = vol_multiplier.clamp(0.25, 2.0); // Limit to 25%-200%
+
+                        info!(
+                            "SizingEngine: Vol targeting for {} - Realized: {:.2}%, Target: {:.2}%, Multiplier: {:.2}x",
+                            symbol,
+                            realized_vol * 100.0,
+                            config.target_volatility * 100.0,
+                            vol_multiplier
+                        );
+
+                        base_qty *= Decimal::from_f64_retain(vol_multiplier).unwrap_or(Decimal::ONE);
+
+                        base_qty = base_qty.round_dp(4);
+                    }
+                }
+            }
+        }
 
         // Apply slippage adjustment
         if let Some(spread_pct) = self.spread_cache.get_spread_pct(symbol) {
@@ -152,6 +185,8 @@ mod tests {
             max_positions: 5,
             max_position_size_pct: 0.20,
             static_trade_quantity: dec!(1.0),
+            enable_vol_targeting: false,
+            target_volatility: 0.15,
         }
     }
 
@@ -167,8 +202,13 @@ mod tests {
 
         // Equity: 100,000. Risk 1% = 1,000 target.
         // Price 100. Quantity = 10.
-        let qty =
-            engine.calculate_quantity_with_slippage(&config, dec!(100000), dec!(100), "BTC/USD");
+        let qty = engine.calculate_quantity_with_slippage(
+            &config,
+            dec!(100000),
+            dec!(100),
+            "BTC/USD",
+            None,
+        );
 
         assert_eq!(qty, dec!(10));
     }
@@ -186,8 +226,13 @@ mod tests {
         // Multiplier logic: 0.002 / 0.005 = 0.4
         // Expected qty: 10 * 0.4 = 4.
 
-        let qty =
-            engine.calculate_quantity_with_slippage(&config, dec!(100000), dec!(100), "BTC/USD");
+        let qty = engine.calculate_quantity_with_slippage(
+            &config,
+            dec!(100000),
+            dec!(100),
+            "BTC/USD",
+            None,
+        );
 
         assert_eq!(qty, dec!(4));
     }
@@ -200,8 +245,13 @@ mod tests {
         let engine = SizingEngine::new(spread_cache);
         let config = create_test_config();
 
-        let qty =
-            engine.calculate_quantity_with_slippage(&config, dec!(100000), dec!(100), "BTC/USD");
+        let qty = engine.calculate_quantity_with_slippage(
+            &config,
+            dec!(100000),
+            dec!(100),
+            "BTC/USD",
+            None,
+        );
 
         // Should be base quantity (10)
         assert_eq!(qty, dec!(10));
@@ -216,8 +266,13 @@ mod tests {
         config.risk_per_trade_percent = 0.0; // Disable risk sizing
         config.static_trade_quantity = dec!(5);
 
-        let qty =
-            engine.calculate_quantity_with_slippage(&config, dec!(100000), dec!(100), "BTC/USD");
+        let qty = engine.calculate_quantity_with_slippage(
+            &config,
+            dec!(100000),
+            dec!(100),
+            "BTC/USD",
+            None,
+        );
 
         assert_eq!(qty, dec!(5));
     }

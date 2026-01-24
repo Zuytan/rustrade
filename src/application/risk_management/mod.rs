@@ -15,3 +15,4 @@ pub mod session_manager;
 pub mod sizing_engine;
 pub mod state;
 pub mod trailing_stops; // New
+pub mod volatility; // NEW: Volatility calculation for vol targeting

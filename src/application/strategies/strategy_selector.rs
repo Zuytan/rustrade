@@ -54,35 +54,18 @@ impl StrategySelector {
 
         match regime.regime_type {
             MarketRegimeType::TrendingUp | MarketRegimeType::TrendingDown => {
-                // Strong trends → Trend following
-                // But if coming from Ranging, we might be seeing a Breakout
-                if current_mode == StrategyMode::VWAP || current_mode == StrategyMode::MeanReversion
-                {
-                    // Potential breakout from consolidation!
-                    // Use Breakout for the first leg, then switch to TrendRiding
-                    if regime.confidence < 0.7 {
-                        StrategyMode::Breakout
-                    } else {
-                        StrategyMode::TrendRiding
-                    }
-                } else {
-                    StrategyMode::TrendRiding
-                }
+                // Strong trends → Statistical Momentum (Modern)
+                // Using regression slope and normalized momentum for better stability
+                StrategyMode::StatMomentum
             }
             MarketRegimeType::Ranging => {
-                // Sideways/consolidation → Mean Reversion strategies
-                // Use MeanReversion if volatility is low, VWAP otherwise
-                if regime.volatility_score < 1.5 {
-                    // Low volatility ranging - classic mean reversion
-                    StrategyMode::MeanReversion
-                } else {
-                    // Higher volatility ranging - use VWAP for tighter control
-                    StrategyMode::VWAP
-                }
+                // Sideways/consolidation → Z-Score Mean Reversion (Modern)
+                // Pure statistical deviation trading
+                StrategyMode::ZScoreMR
             }
             MarketRegimeType::Volatile => {
-                // High volatility → Momentum divergence detection
-                // Divergences often signal reversals in volatile conditions
+                // High volatility → Momentum divergence detection remains reliable
+                // Or switch to pure volatility harvesting if available
                 StrategyMode::Momentum
             }
             MarketRegimeType::Unknown => {
@@ -122,21 +105,21 @@ mod tests {
     }
 
     #[test]
-    fn test_trending_uses_trend_riding() {
+    fn test_trending_uses_stat_momentum() {
         let config = default_config();
         let regime = make_regime(MarketRegimeType::TrendingUp, 0.8);
 
         let (mode, _) = StrategySelector::select_strategy(&regime, &config, StrategyMode::Standard);
-        assert_eq!(mode, StrategyMode::TrendRiding);
+        assert_eq!(mode, StrategyMode::StatMomentum);
     }
 
     #[test]
-    fn test_ranging_uses_vwap() {
+    fn test_ranging_uses_zscore() {
         let config = default_config();
         let regime = make_regime(MarketRegimeType::Ranging, 0.7);
 
         let (mode, _) = StrategySelector::select_strategy(&regime, &config, StrategyMode::Standard);
-        assert_eq!(mode, StrategyMode::VWAP);
+        assert_eq!(mode, StrategyMode::ZScoreMR);
     }
 
     #[test]
@@ -146,20 +129,6 @@ mod tests {
 
         let (mode, _) = StrategySelector::select_strategy(&regime, &config, StrategyMode::Standard);
         assert_eq!(mode, StrategyMode::Momentum);
-    }
-
-    #[test]
-    fn test_breakout_on_range_to_trend_transition() {
-        let config = default_config();
-        // Was in VWAP (Ranging), now detecting early TrendingUp
-        let regime = make_regime(MarketRegimeType::TrendingUp, 0.6); // Low confidence = early trend
-
-        let (mode, _) = StrategySelector::select_strategy(&regime, &config, StrategyMode::VWAP);
-        assert_eq!(
-            mode,
-            StrategyMode::Breakout,
-            "Should use Breakout when transitioning from Range to Trend"
-        );
     }
 
     #[test]

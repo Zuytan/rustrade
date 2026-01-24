@@ -122,6 +122,8 @@ impl SignalProcessor {
             max_positions: config.max_positions,
             max_position_size_pct: config.max_position_size_pct,
             static_trade_quantity: config.trade_quantity,
+            enable_vol_targeting: false, // Disabled by default for now
+            target_volatility: 0.15,     // 15% target if enabled
         };
 
         self.sizing_engine.calculate_quantity_with_slippage(
@@ -129,6 +131,7 @@ impl SignalProcessor {
             total_equity,
             price,
             symbol,
+            None, // No volatility targeting in signal processor for now
         )
     }
 

@@ -33,7 +33,7 @@ impl EnsembleStrategy {
 
     /// Create a default ensemble with common strategies
     pub fn default_ensemble() -> Self {
-        use super::{
+        use crate::application::strategies::legacy::{
             AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, DualSMAStrategy,
             MeanReversionStrategy,
         };
@@ -143,7 +143,7 @@ impl std::fmt::Debug for EnsembleStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::strategies::{DualSMAStrategy, MeanReversionStrategy};
+    use crate::application::strategies::legacy::{DualSMAStrategy, MeanReversionStrategy};
     use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
     use std::collections::VecDeque;
@@ -183,6 +183,10 @@ mod tests {
             cumulative_delta: 0.0,
             volume_profile: None,
             ofi_history: VecDeque::new(),
+            hurst_exponent: None,
+            skewness: None,
+            momentum_normalized: None,
+            realized_volatility: None,
         }
     }
 

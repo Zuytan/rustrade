@@ -81,20 +81,29 @@ impl RiskEnvConfig {
         let min_profit_ratio_base = Self::parse_f64("MIN_PROFIT_RATIO", 2.0).unwrap_or(2.0);
 
         // Apply risk appetite overrides
-        let (risk_per_trade_percent, max_position_size_pct, min_profit_ratio) =
-            if let Some(ref appetite) = risk_appetite {
-                (
-                    appetite.calculate_risk_per_trade_percent(),
-                    appetite.calculate_max_position_size_pct(),
-                    appetite.calculate_min_profit_ratio(),
-                )
-            } else {
-                (
-                    risk_per_trade_base,
-                    max_position_size_base,
-                    min_profit_ratio_base,
-                )
-            };
+        let (
+            risk_per_trade_percent,
+            max_position_size_pct,
+            min_profit_ratio,
+            max_daily_loss_pct,
+            max_drawdown_pct,
+        ) = if let Some(ref appetite) = risk_appetite {
+            (
+                appetite.calculate_risk_per_trade_percent(),
+                appetite.calculate_max_position_size_pct(),
+                appetite.calculate_min_profit_ratio(),
+                appetite.calculate_max_daily_loss_pct(), // Override default
+                appetite.calculate_max_drawdown_pct(),   // Override default
+            )
+        } else {
+            (
+                risk_per_trade_base,
+                max_position_size_base,
+                min_profit_ratio_base,
+                Self::parse_f64("MAX_DAILY_LOSS_PCT", 0.02)?,
+                Self::parse_f64("MAX_DRAWDOWN_PCT", 0.1)?,
+            )
+        };
 
         // Dynamic symbol mode
         let dynamic_symbol_mode = Self::parse_bool("DYNAMIC_SYMBOL_MODE", false);
@@ -127,8 +136,8 @@ impl RiskEnvConfig {
             max_position_size_pct,
             max_position_value_usd: Self::parse_f64("MAX_POSITION_VALUE_USD", 5000.0)?,
             risk_per_trade_percent,
-            max_daily_loss_pct: Self::parse_f64("MAX_DAILY_LOSS_PCT", 0.02)?,
-            max_drawdown_pct: Self::parse_f64("MAX_DRAWDOWN_PCT", 0.1)?,
+            max_daily_loss_pct,
+            max_drawdown_pct,
             consecutive_loss_limit: Self::parse_usize("CONSECUTIVE_LOSS_LIMIT", 3)?,
             pending_order_ttl_ms: env::var("PENDING_ORDER_TTL_MS")
                 .ok()

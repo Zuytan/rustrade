@@ -13,10 +13,13 @@ use crate::domain::trading::types::OrderStatus;
 use crate::domain::trading::types::{MarketEvent, TradeProposal};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
+
+use crate::application::ml::data_collector::DataCollector;
 
 use crate::domain::trading::symbol_context::SymbolContext;
 
@@ -128,10 +131,26 @@ impl Analyst {
                 pipeline_trade_filter,
                 pipeline_signal_processor,
             );
+        // Initialize Data Collector if enabled
+        let data_collector = if config.enable_ml_data_collection {
+            let mut path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            path.push("data");
+            path.push("ml");
+            // Ensure directory exists
+            let _ = std::fs::create_dir_all(&path);
+            path.push("training_data.csv");
+
+            info!("Analyst: ML Data Collection ENABLED. Output: {:?}", path);
+            Some(Arc::new(Mutex::new(DataCollector::new(path))))
+        } else {
+            None
+        };
+
         let pipeline = super::candle_pipeline::CandlePipeline::new(
             dependencies.execution_service.clone(),
             dependencies.candle_repository.clone(),
             pipeline_trade_evaluator,
+            data_collector,
         );
 
         Self {

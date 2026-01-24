@@ -1,4 +1,4 @@
-use super::traits::{AnalysisContext, Signal, TradingStrategy};
+use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStrategy};
 
 /// Trend Riding Strategy
 ///
@@ -105,6 +105,10 @@ mod tests {
             cumulative_delta: 0.0,
             volume_profile: None,
             ofi_history: VecDeque::new(),
+            hurst_exponent: None,
+            skewness: None,
+            momentum_normalized: None,
+            realized_volatility: None,
         }
     }
 
