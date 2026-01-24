@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock; // Added
 use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::application::monitoring::connection_health_service::ConnectionHealthService;
@@ -42,6 +42,7 @@ use crate::application::monitoring::performance_monitoring_service::PerformanceM
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::config::AssetClass;
+use crate::infrastructure::observability::Metrics;
 
 pub use crate::domain::risk::risk_config::{RiskConfig, RiskConfigError};
 
@@ -96,6 +97,7 @@ pub struct RiskManager {
     // Services
     #[allow(dead_code)] // Todo: Use in LiquidationService in next task
     spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
+    metrics: Metrics,
 }
 
 impl RiskManager {
@@ -116,6 +118,7 @@ impl RiskManager {
         candle_repository: Option<Arc<dyn CandleRepository>>,
         spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
         connection_health_service: Arc<ConnectionHealthService>,
+        metrics: Metrics,
     ) -> Result<Self, RiskConfigError> {
         // Validate configuration
         risk_config
@@ -234,6 +237,7 @@ impl RiskManager {
             spread_cache,
             connection_health_service,
             last_quote_timestamp: Utc::now().timestamp(),
+            metrics,
         })
     }
 
@@ -369,7 +373,10 @@ impl RiskManager {
         {
             tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
             self.circuit_breaker_service.set_halted(true);
+            self.metrics.circuit_breaker_status.set(1.0); // Reset in handle_command if needed
             self.liquidate_portfolio(&reason).await;
+        } else if !self.circuit_breaker_service.is_halted() {
+            self.metrics.circuit_breaker_status.set(0.0);
         }
 
         // Capture performance snapshot if monitor available
@@ -433,6 +440,7 @@ impl RiskManager {
 
     /// Emergency liquidation of entire portfolio
     /// Delegates to LiquidationService for emergency liquidation logic
+    #[instrument(skip(self))]
     async fn liquidate_portfolio(&mut self, reason: &str) {
         // Delegate liquidation to LiquidationService
         self.liquidation_service
@@ -503,6 +511,8 @@ impl RiskManager {
                 warn!(
                     "RiskManager: MANUAL CIRCUIT BREAKER TRIGGERED! Executing Panic Liquidation."
                 );
+                self.circuit_breaker_service.set_halted(true);
+                self.metrics.circuit_breaker_status.set(1.0);
                 self.liquidate_portfolio("Manual Circuit Breaker Trigger")
                     .await;
                 Ok(())
@@ -538,6 +548,7 @@ impl RiskManager {
     }
 
     /// Handle order update command
+    #[instrument(skip(self, update), fields(symbol = %update.symbol, order_id = %update.order_id, status = ?update.status))]
     async fn cmd_handle_order_update(
         &mut self,
         update: OrderUpdate,
@@ -564,6 +575,7 @@ impl RiskManager {
     }
 
     /// Handle trade proposal command
+    #[instrument(skip(self, proposal), fields(symbol = %proposal.symbol, side = ?proposal.side))]
     async fn cmd_handle_proposal(
         &mut self,
         proposal: TradeProposal,
@@ -637,6 +649,7 @@ impl RiskManager {
         if let Some(reason) = self.check_circuit_breaker(current_equity) {
             error!("RiskManager: CIRCUIT BREAKER TRIGGERED - {}", reason);
             self.circuit_breaker_service.set_halted(true);
+            self.metrics.circuit_breaker_status.set(1.0);
             self.liquidate_portfolio(&reason).await;
             return Ok(());
         }
@@ -751,12 +764,15 @@ impl RiskManager {
 
         // Submit order
         info!(
-            "RiskManager: Submitting {:?} order for {} qty {} @ {}",
-            proposal.side, proposal.symbol, proposal.quantity, proposal.price
+            symbol = %proposal.symbol,
+            side = ?proposal.side,
+            qty = %proposal.quantity,
+            price = %proposal.price,
+            "RiskManager: Submitting order"
         );
 
         if let Err(e) = self.order_tx.send(order.clone()).await {
-            error!("RiskManager: Failed to send order: {}", e);
+            error!(error = %e, "RiskManager: Failed to send order");
             self.order_reconciler
                 .remove_order(&order.id, &self.portfolio_state_manager);
             return Err(Box::new(e));

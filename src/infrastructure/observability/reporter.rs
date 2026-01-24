@@ -153,8 +153,15 @@ impl MetricsReporter {
                 positions,
             },
             system: SystemSnapshot {
-                circuit_breaker_tripped: false, // TODO: Wire up from RiskManager state
-                sentiment_score: None,          // TODO: Wire up from sentiment provider
+                circuit_breaker_tripped: self.metrics.circuit_breaker_status.get() > 0.0,
+                sentiment_score: {
+                    let score = self.metrics.sentiment_score.get();
+                    if score > 0.0 {
+                        Some(score as u32)
+                    } else {
+                        None
+                    }
+                },
             },
         })
     }

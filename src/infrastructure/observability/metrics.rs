@@ -3,7 +3,7 @@
 //! All metrics use the `rustrade_` prefix and are read-only.
 
 use prometheus::{
-    CounterVec, Gauge, GaugeVec, Opts, Registry, TextEncoder,
+    CounterVec, Gauge, GaugeVec, HistogramOpts, HistogramVec, Opts, Registry, TextEncoder,
     core::{AtomicF64, GenericGauge, GenericGaugeVec},
 };
 use std::sync::Arc;
@@ -30,6 +30,18 @@ pub struct Metrics {
     pub sentiment_score: GenericGauge<AtomicF64>,
     /// Uptime in seconds
     pub uptime_seconds: GenericGauge<AtomicF64>,
+    /// API latency in seconds
+    pub api_latency_seconds: HistogramVec,
+    /// WebSocket reconnection attempts
+    pub websocket_reconnects_total: CounterVec,
+    /// Strategy signals generated
+    pub trade_signals_total: CounterVec,
+    /// Current win rate (0-1)
+    pub win_rate_current: GenericGauge<AtomicF64>,
+    /// Current drawdown (0-1)
+    pub drawdown_current: GenericGauge<AtomicF64>,
+    /// Trades today
+    pub trades_today: CounterVec,
 }
 
 impl Metrics {
@@ -92,6 +104,54 @@ impl Metrics {
         ))?;
         registry.register(Box::new(uptime_seconds.clone()))?;
 
+        let api_latency_seconds = HistogramVec::new(
+            HistogramOpts::new(
+                "rustrade_api_latency_seconds",
+                "API request latency in seconds",
+            )
+            .buckets(vec![
+                0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+            ]),
+            &["broker", "endpoint"],
+        )?;
+        registry.register(Box::new(api_latency_seconds.clone()))?;
+
+        let websocket_reconnects_total = CounterVec::new(
+            Opts::new(
+                "rustrade_websocket_reconnects_total",
+                "Total WebSocket reconnection attempts",
+            ),
+            &["broker"],
+        )?;
+        registry.register(Box::new(websocket_reconnects_total.clone()))?;
+
+        let trade_signals_total = CounterVec::new(
+            Opts::new(
+                "rustrade_trade_signals_total",
+                "Total strategy signals generated",
+            ),
+            &["strategy", "signal_type"],
+        )?;
+        registry.register(Box::new(trade_signals_total.clone()))?;
+
+        let win_rate_current = Gauge::with_opts(Opts::new(
+            "rustrade_win_rate_current",
+            "Current win rate (0-1)",
+        ))?;
+        registry.register(Box::new(win_rate_current.clone()))?;
+
+        let drawdown_current = Gauge::with_opts(Opts::new(
+            "rustrade_drawdown_current",
+            "Current drawdown (0-1)",
+        ))?;
+        registry.register(Box::new(drawdown_current.clone()))?;
+
+        let trades_today = CounterVec::new(
+            Opts::new("rustrade_trades_today", "Total trades executed today"),
+            &["side", "outcome"],
+        )?;
+        registry.register(Box::new(trades_today.clone()))?;
+
         Ok(Self {
             registry: Arc::new(registry),
             portfolio_value_usd,
@@ -103,6 +163,12 @@ impl Metrics {
             circuit_breaker_status,
             sentiment_score,
             uptime_seconds,
+            api_latency_seconds,
+            websocket_reconnects_total,
+            trade_signals_total,
+            win_rate_current,
+            drawdown_current,
+            trades_today,
         })
     }
 
@@ -125,6 +191,27 @@ impl Metrics {
     /// Increment order counter
     pub fn inc_orders(&self, side: &str, status: &str) {
         self.orders_total.with_label_values(&[side, status]).inc();
+    }
+
+    /// Observe API latency
+    pub fn observe_api_latency(&self, broker: &str, endpoint: &str, latency: f64) {
+        self.api_latency_seconds
+            .with_label_values(&[broker, endpoint])
+            .observe(latency);
+    }
+
+    /// Increment WebSocket reconnects
+    pub fn inc_reconnects(&self, broker: &str) {
+        self.websocket_reconnects_total
+            .with_label_values(&[broker])
+            .inc();
+    }
+
+    /// Increment trade signals
+    pub fn inc_signals(&self, strategy: &str, signal_type: &str) {
+        self.trade_signals_total
+            .with_label_values(&[strategy, signal_type])
+            .inc();
     }
 }
 

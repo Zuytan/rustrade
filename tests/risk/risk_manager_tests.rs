@@ -13,6 +13,7 @@ use rustrade::domain::sentiment::{Sentiment, SentimentClassification};
 use rustrade::domain::trading::portfolio::{Portfolio, Position};
 use rustrade::domain::trading::types::{Candle, MarketEvent, Order, OrderSide, OrderType, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
+use rustrade::infrastructure::observability::Metrics;
 
 use chrono::Utc;
 use rust_decimal::Decimal;
@@ -151,6 +152,7 @@ async fn test_circuit_breaker_on_market_crash() {
         None,
         Arc::new(SpreadCache::new()),
         Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 
@@ -477,6 +479,7 @@ async fn test_pdt_protection_rejection() {
         None,
         Arc::new(SpreadCache::new()),
         Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 
@@ -561,6 +564,7 @@ async fn test_sector_exposure_limit() {
         None,
         Arc::new(SpreadCache::new()),
         Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -637,6 +641,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         None,
         Arc::new(SpreadCache::new()),
         Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 
@@ -781,6 +786,7 @@ async fn test_sentiment_risk_adjustment() {
         None,
         Arc::new(SpreadCache::new()),
         Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });

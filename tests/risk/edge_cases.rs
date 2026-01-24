@@ -8,6 +8,7 @@ use rustrade::config::AssetClass;
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
+use rustrade::infrastructure::observability::Metrics;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
@@ -54,6 +55,7 @@ async fn test_pdt_protection_boundary() {
         None,
         Arc::new(SpreadCache::new()),
         health_service,
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 
@@ -159,6 +161,7 @@ async fn test_max_daily_loss_prevents_trading() {
         None,
         Arc::new(SpreadCache::new()),
         health_service,
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 
@@ -241,6 +244,7 @@ async fn test_circuit_breaker_on_drawdown() {
         None,
         Arc::new(SpreadCache::new()),
         health_service,
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 

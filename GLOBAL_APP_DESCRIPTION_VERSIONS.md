@@ -1,5 +1,20 @@
 # Rustrade - Historique des Versions
 
+## Version 0.89.0 - Advanced Observability & Monitoring (January 2026)
+
+### Observability Infrastructure
+- **Full Tracing Instrumentation**: Added `#[instrument]` to critical agents (`Analyst`, `RiskManager`, `Executor`) for detailed request tracing and debugging.
+- **Custom Prometheus Metrics**: Expanded metrics coverage to include:
+  - **Business**: Live win rate, current max drawdown, and daily trade counters.
+  - **Performance**: API latency distribution (Histogram) and WebSocket reconnection tracking.
+  - **System**: Circuit breaker trip status and Fear & Greed sentiment score integration.
+- **Latency Tracking**: Introduced `LatencyGuard` RAII utility for automatic measurement and recording of API call durations.
+
+### Quality & Testing
+- **Structured Logging**: Refactored critical log lines to use structured fields (`symbol`, `side`, `qty`) instead of string interpolation, enabling advanced log analysis.
+- **Improved Test Coverage**: Added unit tests for `LatencyTracker` and synchronized the entire integration test suite with new service signatures.
+- **Full Verification**: 100% of risk and scenario tests pass with high reliability under full observability instrumentation.
+
 ## Version 0.88.0 - System Resilience & Connection Health (January 2026)
 
 ### Connection Resilience

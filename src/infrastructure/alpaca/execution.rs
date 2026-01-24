@@ -3,6 +3,7 @@ use crate::domain::ports::ExecutionService;
 use crate::domain::ports::OrderUpdate;
 use crate::domain::trading::types::{Order, OrderSide};
 use crate::infrastructure::core::http_client_factory::{HttpClientFactory, build_url_with_query};
+use crate::infrastructure::observability::{LatencyGuard, Metrics};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest_middleware::ClientWithMiddleware;
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 // ===== Execution Service (REST API) =====
 
@@ -24,6 +25,7 @@ pub struct AlpacaExecutionService {
     #[allow(dead_code)] // Used in background polling task
     circuit_breaker: Arc<crate::infrastructure::core::circuit_breaker::CircuitBreaker>,
     portfolio: Arc<RwLock<crate::domain::trading::portfolio::Portfolio>>, // Renamed from portfolio_cache and now injected
+    metrics: Metrics,
 }
 
 impl AlpacaExecutionService {
@@ -32,6 +34,7 @@ impl AlpacaExecutionService {
         api_secret: String,
         base_url: String,
         portfolio: Arc<RwLock<crate::domain::trading::portfolio::Portfolio>>,
+        metrics: Metrics,
     ) -> Self {
         let client = HttpClientFactory::create_client();
         let trading_stream = Arc::new(AlpacaTradingStream::new(
@@ -176,6 +179,7 @@ impl AlpacaExecutionService {
             trading_stream,
             circuit_breaker,
             portfolio,
+            metrics,
         }
     }
 }
@@ -233,7 +237,14 @@ struct AlpacaOrder {
 
 #[async_trait]
 impl ExecutionService for AlpacaExecutionService {
+    #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side))]
     async fn execute(&self, order: Order) -> Result<()> {
+        let _latency = LatencyGuard::new(
+            self.metrics
+                .api_latency_seconds
+                .with_label_values(&["Alpaca", "v2/orders"]),
+        );
+
         let side_str = match order.side {
             OrderSide::Buy => "buy",
             OrderSide::Sell => "sell",
@@ -379,7 +390,13 @@ impl ExecutionService for AlpacaExecutionService {
         Ok(orders)
     }
 
+    #[instrument(skip(self))]
     async fn cancel_order(&self, order_id: &str) -> Result<()> {
+        let _latency = LatencyGuard::new(
+            self.metrics
+                .api_latency_seconds
+                .with_label_values(&["Alpaca", "v2/orders_cancel"]),
+        );
         let url = format!("{}/v2/orders/{}", self.base_url, order_id);
 
         let response = self

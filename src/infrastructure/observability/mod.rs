@@ -8,8 +8,10 @@
 //!
 //! **Security**: This system only SENDS data, it never accepts requests.
 
+pub mod latency_tracker;
 pub mod metrics;
 pub mod reporter;
 
+pub use latency_tracker::LatencyGuard;
 pub use metrics::Metrics;
 pub use reporter::MetricsReporter;

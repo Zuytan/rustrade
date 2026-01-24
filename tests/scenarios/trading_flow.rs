@@ -5,6 +5,7 @@ use rustrade::config::{Config, Mode};
 use rustrade::domain::ports::ExecutionService;
 use rustrade::domain::trading::types::{MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
+use rustrade::infrastructure::observability::Metrics;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -240,6 +241,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         adaptive_optimization_service: None,
         performance_monitor: None,
         connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        metrics: Metrics::default(),
     };
 
     let app = Application {
@@ -271,6 +273,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         spread_cache: spread_cache.clone(),
         risk_state_repository: null_risk_state, // Again, this field is likely ignored by start() which uses persistence
         connection_health_service: services.connection_health_service.clone(),
+        metrics: services.metrics.clone(),
         persistence,
         services,
     };

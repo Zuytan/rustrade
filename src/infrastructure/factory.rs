@@ -7,6 +7,7 @@ use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataServ
 use crate::infrastructure::binance::{BinanceExecutionService, BinanceMarketDataService};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::oanda::{OandaExecutionService, OandaMarketDataService};
+use crate::infrastructure::observability::Metrics;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -17,6 +18,7 @@ impl ServiceFactory {
         config: &Config,
         candle_repo: Option<Arc<dyn CandleRepository>>,
         portfolio: Arc<RwLock<Portfolio>>,
+        metrics: Metrics,
     ) -> (
         Arc<dyn MarketDataService>,
         Arc<dyn ExecutionService>,
@@ -49,6 +51,7 @@ impl ServiceFactory {
                     config.alpaca_secret_key.clone(),
                     config.alpaca_base_url.clone(),
                     portfolio.clone(),
+                    metrics.clone(),
                 );
 
                 (

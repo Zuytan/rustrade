@@ -136,21 +136,30 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 ## 8. Server Mode & Observability
 
 ### Headless Deployment
-Rustrade can run without a GUI for server deployments:
-- **Server Binary**: `cargo run --bin server` - Runs the full trading system without UI.
-- **UI Optional**: The `ui` feature flag can be disabled for headless builds.
+Rustrade is optimized for headless server deployments:
+- **Server Binary**: `cargo run --bin server` runs the full trading system without a GUI.
+- **Production Builds**: The `ui` feature flag can be disabled for minimal resource footprint.
 
-### Push-Based Metrics
-The system outputs metrics **outbound only** - no HTTP server, no incoming connections:
-- **Structured JSON to stdout**: Periodic output prefixed with `METRICS_JSON:` for log aggregators
-- **Configurable interval**: `OBSERVABILITY_INTERVAL` environment variable (default: 60s)
+### Advanced Observability
+The system features a multi-tier observability stack designed for high-frequency monitoring:
 
-Metrics include:
-- Portfolio value, cash, positions count
-- Per-symbol position details (quantity, average price, value)
-- System status (circuit breaker, uptime, version)
+#### 1. Real-Time Metrics (Prometheus)
+If `OBSERVABILITY_ENABLED=true`, the system spawns an internal Prometheus server (default: `:9090`).
+- **Business Metrics**: Real-time Win Rate, Current Max Drawdown, and Daily Trade volume.
+- **Performance Metrics**: API Latency histograms (via `LatencyTracker`) and WebSocket connection uptime/reconnection counters.
+- **System Health**: Circuit breaker trip status and Fear & Greed sentiment score integration.
 
-**Security Note**: The system only SENDS data, it never accepts incoming requests.
+#### 2. Distributed Tracing
+All core agents (`Analyst`, `RiskManager`, `Executor`) are instrumented using the `tracing` crate.
+- **Structured Instrumentation**: `#[instrument]` spans capture transaction context (e.g., `symbol`, `side`, `order_id`) across asynchronous flows.
+- **Flow Visualization**: Enables detailed bottleneck analysis and event sequencing in complex multi-agent interactions.
+
+#### 3. Structured Logging
+- **Log Format**: Migration from string interpolation to structured tracing fields.
+- **Searchability**: Allows log aggregators (Loki, Elasticsearch) to perform high-speed indexed searches on metadata fields without complex regex parsing.
+
+#### 4. Legacy JSON Metrics (Push-Based)
+For lightweight monitoring, the system continues to support periodic structured JSON snapshots to `stdout` (prefixed with `METRICS_JSON:`).
 
 ## 9. Contributor Documentation
 

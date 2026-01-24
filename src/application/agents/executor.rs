@@ -13,7 +13,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::Receiver;
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 
 pub struct Executor {
     execution_service: Arc<dyn ExecutionService>,
@@ -63,6 +63,7 @@ impl Executor {
         }
     }
 
+    #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side, qty = %order.quantity))]
     async fn handle_order(&self, mut order: Order) {
         info!(
             "Executor: Processing Order {}. Symbol: {}, Qty: {}",
@@ -133,6 +134,7 @@ impl Executor {
     }
 
     /// Startup task to sync locally pending orders with exchange state
+    #[instrument(skip(self))]
     async fn reconcile_on_startup(&self) -> Result<()> {
         let repo = match &self.repository {
             Some(r) => r,
@@ -185,6 +187,7 @@ impl Executor {
         Ok(())
     }
 
+    #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side))]
     async fn update_portfolio(&self, order: &Order, is_reversal: bool) {
         let mut portfolio =
             match tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write())

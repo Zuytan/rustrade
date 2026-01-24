@@ -23,6 +23,7 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 - **Regime Detection**: Automatically detects Bull, Bear, Sideways, and Volatile market regimes.
 - **Dynamic Scanning**: Real-time discovery of "Top Movers" and volatility opportunities (Stocks & Crypto).
 - **System Health Monitoring**: Centralized `ConnectionHealthService` that tracks physical connectivity and broadcasts status to all agents for safe execution.
+- **Advanced Observability**: Full `tracing` instrumentation, custom Prometheus metrics (win rate, drawdown, latency), and structured logging.
 
 ### 🖥️ Native User Interface (New)
 - **High-Performance Dashboard**: Built with `egui` (0.31) for zero-latency monitoring.
@@ -98,6 +99,8 @@ The application is configured primarily via environment variables. You can set t
 | `ADX_PERIOD` | `14` | ADX smoothing period. |
 | `ADX_THRESHOLD` | `25.0` | Minimum trend strength for entry. |
 | `RSI_THRESHOLD` | `75.0` | RSI Overbought threshold. |
+| `OBSERVABILITY_ENABLED` | `false` | Enable Prometheus metrics server. |
+| `OBSERVABILITY_PORT` | `9090` | Port for Prometheus metrics. |
 
 ## 📚 Documentation
 

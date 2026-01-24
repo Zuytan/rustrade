@@ -25,7 +25,7 @@
 use anyhow::Result;
 use rustrade::application::system::Application;
 use rustrade::config::Config;
-use rustrade::infrastructure::observability::{Metrics, MetricsReporter};
+use rustrade::infrastructure::observability::MetricsReporter;
 use tracing::{Level, info};
 use tracing_subscriber::prelude::*;
 
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
     // Start metrics reporter if enabled
     if config.observability_enabled {
-        let metrics = Metrics::new()?;
+        let metrics = handle.metrics.clone();
 
         // Use observability_port as interval for now (repurpose the config field)
         // In future, add OBSERVABILITY_INTERVAL env var

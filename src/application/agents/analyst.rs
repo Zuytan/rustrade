@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::application::ml::data_collector::DataCollector;
 
@@ -286,7 +286,12 @@ impl Analyst {
                          // If order is Filled or Canceled, we clear the pending state immediately
                          match order_update.status {
                              OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => {
-                                 info!("Analyst: Order {} for {} resolved ({:?}). Clearing pending state.", order_update.order_id, order_update.symbol, order_update.status);
+                                 info!(
+                                     order_id = %order_update.order_id,
+                                     symbol = %order_update.symbol,
+                                     status = ?order_update.status,
+                                     "Analyst: Order resolved. Clearing pending state."
+                                 );
                                  context.position_manager.clear_pending();
                              }
                              _ => {}
@@ -345,6 +350,7 @@ impl Analyst {
         .await
     }
 
+    #[instrument(skip(self, candle), fields(symbol = %candle.symbol))]
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
         let timestamp = candle.timestamp * 1000;
@@ -429,6 +435,7 @@ impl Analyst {
     }
 
     #[doc(hidden)]
+    #[instrument(skip(self))]
     pub async fn ensure_symbol_initialized(
         &mut self,
         symbol: &str,
@@ -436,8 +443,9 @@ impl Analyst {
     ) {
         if !self.symbol_states.contains_key(symbol) {
             info!(
-                "Analyst: Initializing context for {} (Warmup end: {})",
-                symbol, end_time
+                symbol = %symbol,
+                warmup_end = %end_time,
+                "Analyst: Initializing context"
             );
             let (strategy, config) = self
                 .warmup_service
@@ -460,6 +468,7 @@ impl Analyst {
         }
     }
     #[doc(hidden)]
+    #[instrument(skip(self, signal), fields(symbol = %signal.symbol, sentiment = ?signal.sentiment))]
     pub async fn handle_news_signal(&mut self, signal: crate::domain::listener::NewsSignal) {
         // Ensure context exists
         let timestamp = chrono::Utc::now();

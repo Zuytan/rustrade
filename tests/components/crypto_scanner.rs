@@ -15,6 +15,7 @@ use rustrade::application::agents::sentinel::SentinelCommand;
 use rustrade::config::AssetClass;
 use rustrade::domain::ports::MarketDataService; // Added for trait method access
 use rustrade::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
+use rustrade::infrastructure::observability::Metrics;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
@@ -48,6 +49,7 @@ async fn test_crypto_scanner_integration() {
         secret_key,
         base_url,
         portfolio.clone(),
+        Metrics::default(),
     ));
 
     // Create command channel

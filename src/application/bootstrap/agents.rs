@@ -32,6 +32,7 @@ use crate::infrastructure::binance::BinanceSectorProvider;
 use crate::infrastructure::news::mock_news::MockNewsService;
 use crate::infrastructure::news::rss::RssNewsService;
 use crate::infrastructure::oanda::OandaSectorProvider;
+use crate::infrastructure::observability::Metrics;
 use crate::infrastructure::sentiment::alternative_me::AlternativeMeSentimentProvider;
 
 // We need a struct to return all the control channels
@@ -54,6 +55,7 @@ impl AgentsBootstrap {
         persistence: &PersistenceHandle,
         portfolio: Arc<RwLock<Portfolio>>,
         connection_health_service: Arc<ConnectionHealthService>,
+        metrics: Metrics,
     ) -> Result<AgentsHandle> {
         info!("Initializing Agents...");
 
@@ -176,6 +178,7 @@ impl AgentsBootstrap {
             Some(persistence.candle_repository.clone()),
             services.spread_cache.clone(),
             connection_health_service.clone(),
+            metrics.clone(),
         )?;
 
         // 5. Order Throttler & Executor
@@ -208,7 +211,12 @@ impl AgentsBootstrap {
         spawn_listener(config, analyst_cmd_tx.clone(), news_broadcast_tx.clone());
 
         // Sentiment Polling
-        spawn_sentiment_poller(config, risk_cmd_tx.clone(), sentiment_broadcast_tx);
+        spawn_sentiment_poller(
+            config,
+            risk_cmd_tx.clone(),
+            sentiment_broadcast_tx,
+            metrics.clone(),
+        );
 
         // Adaptive Optimization
         spawn_adaptive_optimization(config, services.adaptive_optimization_service.clone());
@@ -430,6 +438,7 @@ fn spawn_sentiment_poller(
     config: &Config,
     sentiment_tx: mpsc::Sender<RiskCommand>,
     sentiment_broadcast_tx: broadcast::Sender<Sentiment>,
+    metrics: Metrics,
 ) {
     let asset_class = config.asset_class;
     tokio::spawn(async move {
@@ -444,6 +453,7 @@ fn spawn_sentiment_poller(
                 let _ = sentiment_tx
                     .send(RiskCommand::UpdateSentiment(sentiment.clone()))
                     .await;
+                metrics.sentiment_score.set(sentiment.value as f64);
                 let _ = sentiment_broadcast_tx.send(sentiment);
             }
 
@@ -457,6 +467,7 @@ fn spawn_sentiment_poller(
                         {
                             error!("Failed to send sentiment update: {}", e);
                         }
+                        metrics.sentiment_score.set(sentiment.value as f64);
                         let _ = sentiment_broadcast_tx.send(sentiment);
                     }
                     Err(e) => {

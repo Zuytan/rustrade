@@ -18,6 +18,7 @@ use crate::application::{
     risk_management::commands::RiskCommand,
 };
 use crate::config::Config;
+use crate::infrastructure::observability::Metrics;
 
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{
@@ -39,6 +40,7 @@ pub struct SystemHandle {
     pub connection_health_service: Arc<ConnectionHealthService>,
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
+    pub metrics: Metrics,
 }
 
 pub struct Application {
@@ -63,6 +65,7 @@ pub struct Application {
     pub spread_cache: Arc<SpreadCache>,
     pub risk_state_repository: Arc<dyn RiskStateRepository>,
     pub connection_health_service: Arc<ConnectionHealthService>,
+    pub metrics: Metrics,
 }
 
 impl Application {
@@ -74,11 +77,14 @@ impl Application {
         // initial_portfolio.cash = config.initial_cash; // Removed dangerous default
         let portfolio = Arc::new(RwLock::new(initial_portfolio));
 
-        // 2. Initialize Persistence
+        // 1. Initialize Metrics & Persistence
+        let metrics = Metrics::new()?;
         let persistence = PersistenceBootstrap::init().await?;
 
         // 3. Initialize Services (needs Persistence and Portfolio)
-        let services = ServicesBootstrap::init(&config, &persistence, portfolio.clone()).await?;
+        let services =
+            ServicesBootstrap::init(&config, &persistence, portfolio.clone(), metrics.clone())
+                .await?;
 
         // Log Risk Appetite configuration
         if let Some(ref appetite) = config.risk_appetite {
@@ -106,6 +112,7 @@ impl Application {
             spread_cache: services.spread_cache.clone(),
             risk_state_repository: persistence.risk_state_repository.clone(),
             connection_health_service: services.connection_health_service.clone(),
+            metrics: metrics.clone(),
             persistence,
             services,
         })
@@ -141,6 +148,7 @@ impl Application {
             &self.persistence,
             self.portfolio.clone(),
             self.connection_health_service.clone(),
+            self.metrics.clone(),
         )
         .await?;
 
@@ -156,6 +164,7 @@ impl Application {
             connection_health_service: self.connection_health_service.clone(),
             strategy_mode: self.config.strategy_mode,
             risk_appetite: self.config.risk_appetite,
+            metrics: self.metrics.clone(),
         })
     }
 }

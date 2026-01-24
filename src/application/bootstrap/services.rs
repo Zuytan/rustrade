@@ -19,6 +19,7 @@ use crate::domain::performance::performance_evaluator::{
 use crate::domain::trading::portfolio::Portfolio;
 use crate::infrastructure::factory::ServiceFactory;
 use crate::infrastructure::mock::MockExecutionService;
+use crate::infrastructure::observability::Metrics;
 
 pub struct ServicesHandle {
     pub market_service: Arc<dyn MarketDataService>,
@@ -27,6 +28,7 @@ pub struct ServicesHandle {
     pub adaptive_optimization_service: Option<Arc<AdaptiveOptimizationService>>,
     pub performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     pub connection_health_service: Arc<ConnectionHealthService>,
+    pub metrics: Metrics,
 }
 
 pub struct ServicesBootstrap;
@@ -36,6 +38,7 @@ impl ServicesBootstrap {
         config: &Config,
         persistence: &PersistenceHandle,
         portfolio: Arc<RwLock<Portfolio>>,
+        metrics: Metrics,
     ) -> Result<ServicesHandle> {
         // 0. Initialize Health Service
         let connection_health_service = Arc::new(ConnectionHealthService::new());
@@ -45,6 +48,7 @@ impl ServicesBootstrap {
             config,
             Some(persistence.candle_repository.clone()),
             portfolio.clone(),
+            metrics.clone(),
         );
 
         // 2. Initialize Adaptive Optimization Services
@@ -104,6 +108,7 @@ impl ServicesBootstrap {
             adaptive_optimization_service,
             performance_monitor,
             connection_health_service,
+            metrics,
         })
     }
 }

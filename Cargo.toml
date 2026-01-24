@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.88.0"
+version = "0.89.0"
 edition = "2024"
 default-run = "rustrade"
 
@@ -51,6 +51,7 @@ tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 toml = "0.9"  # For grid config parsing
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-attributes = "0.1"
 url = "2.5.8"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 # Binance API dependencies

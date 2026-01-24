@@ -8,6 +8,7 @@ use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService
 use rust_decimal::Decimal;
 use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::application::monitoring::connection_health_service::ConnectionHealthService;
+use rustrade::infrastructure::observability::Metrics;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
@@ -79,6 +80,7 @@ async fn test_concurrent_proposals_respect_limits() {
         None,
         Arc::new(SpreadCache::new()),
         health_service,
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 
@@ -197,6 +199,7 @@ async fn test_backpressure_drops_excess_proposals() {
         None,
         Arc::new(SpreadCache::new()),
         health_service,
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 

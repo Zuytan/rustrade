@@ -4173,7 +4173,7 @@ dependencies = [
 
 [[package]]
 name = "rustrade"
-version = "0.88.0"
+version = "0.89.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4213,6 +4213,7 @@ dependencies = [
  "tokio-tungstenite",
  "toml",
  "tracing",
+ "tracing-attributes",
  "tracing-subscriber",
  "url",
  "uuid",
