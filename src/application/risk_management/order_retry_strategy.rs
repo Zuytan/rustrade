@@ -59,6 +59,7 @@ impl OrderRetryStrategy {
                 price: mid_price,
                 quantity,
                 order_type: OrderType::Limit,
+                status: crate::domain::trading::types::OrderStatus::New,
                 timestamp: chrono::Utc::now().timestamp_millis(),
             };
         }
@@ -75,6 +76,7 @@ impl OrderRetryStrategy {
             price: Decimal::ZERO,
             quantity,
             order_type: OrderType::Market,
+            status: crate::domain::trading::types::OrderStatus::New,
             timestamp: chrono::Utc::now().timestamp_millis(),
         }
     }

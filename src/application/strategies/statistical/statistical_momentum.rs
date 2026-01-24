@@ -82,9 +82,9 @@ impl TradingStrategy for StatisticalMomentumStrategy {
         let momentum = self.calculate_normalized_momentum(ctx)?;
 
         // BUY: Strong positive momentum + trend confirmation
-        if !ctx.has_position 
-            && momentum > self.momentum_threshold 
-            && self.check_trend_confirmation(ctx, true) 
+        if !ctx.has_position
+            && momentum > self.momentum_threshold
+            && self.check_trend_confirmation(ctx, true)
         {
             return Some(
                 Signal::buy(format!(

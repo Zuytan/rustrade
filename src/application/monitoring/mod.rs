@@ -1,4 +1,5 @@
 // Performance monitoring and feature engineering modules
+pub mod connection_health_service;
 pub mod correlation_service;
 pub mod cost_evaluator;
 pub mod empirical_win_rate_provider;

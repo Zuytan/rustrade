@@ -94,6 +94,7 @@ impl OrderMonitor {
                     price: Decimal::ZERO, // Market order
                     quantity: monitored.order.quantity,
                     order_type: OrderType::Market,
+                    status: crate::domain::trading::types::OrderStatus::New,
                     timestamp: now,
                 };
 
@@ -134,6 +135,7 @@ mod tests {
             price,
             quantity: dec!(1.0),
             order_type: OrderType::Limit,
+            status: crate::domain::trading::types::OrderStatus::New,
             timestamp: chrono::Utc::now().timestamp_millis(),
         }
     }

@@ -1,5 +1,6 @@
 use rust_decimal_macros::dec;
 use rustrade::application::market_data::spread_cache::SpreadCache;
+use rustrade::application::monitoring::connection_health_service::ConnectionHealthService;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::risk_manager::RiskConfig;
 use rustrade::application::risk_management::risk_manager::RiskManager;
@@ -29,6 +30,14 @@ async fn test_pdt_protection_boundary() {
     // Cache stale time 0 to force refresh
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 0));
 
+    let health_service = Arc::new(ConnectionHealthService::new());
+    health_service
+        .set_market_data_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
+
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
@@ -44,6 +53,7 @@ async fn test_pdt_protection_boundary() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        health_service,
     )
     .expect("Test config should be valid");
 
@@ -125,6 +135,14 @@ async fn test_max_daily_loss_prevents_trading() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 0)); // No cache
 
+    let health_service = Arc::new(ConnectionHealthService::new());
+    health_service
+        .set_market_data_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
+
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
@@ -140,6 +158,7 @@ async fn test_max_daily_loss_prevents_trading() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        health_service,
     )
     .expect("Test config should be valid");
 
@@ -198,6 +217,14 @@ async fn test_circuit_breaker_on_drawdown() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 0));
 
+    let health_service = Arc::new(ConnectionHealthService::new());
+    health_service
+        .set_market_data_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
+
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
@@ -213,6 +240,7 @@ async fn test_circuit_breaker_on_drawdown() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        health_service,
     )
     .expect("Test config should be valid");
 

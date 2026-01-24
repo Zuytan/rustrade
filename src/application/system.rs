@@ -12,6 +12,7 @@ use crate::application::bootstrap::{
 use crate::application::{
     agents::{analyst::AnalystCommand, sentinel::SentinelCommand},
     market_data::spread_cache::SpreadCache,
+    monitoring::connection_health_service::ConnectionHealthService,
     monitoring::performance_monitoring_service::PerformanceMonitoringService,
     optimization::adaptive_optimization_service::AdaptiveOptimizationService,
     risk_management::commands::RiskCommand,
@@ -35,6 +36,7 @@ pub struct SystemHandle {
     pub candle_rx: broadcast::Receiver<Candle>,
     pub sentiment_rx: broadcast::Receiver<Sentiment>,
     pub news_rx: broadcast::Receiver<crate::domain::listener::NewsEvent>,
+    pub connection_health_service: Arc<ConnectionHealthService>,
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
 }
@@ -60,6 +62,7 @@ pub struct Application {
     pub performance_monitor: Option<Arc<PerformanceMonitoringService>>,
     pub spread_cache: Arc<SpreadCache>,
     pub risk_state_repository: Arc<dyn RiskStateRepository>,
+    pub connection_health_service: Arc<ConnectionHealthService>,
 }
 
 impl Application {
@@ -102,6 +105,7 @@ impl Application {
             performance_monitor: services.performance_monitor.clone(),
             spread_cache: services.spread_cache.clone(),
             risk_state_repository: persistence.risk_state_repository.clone(),
+            connection_health_service: services.connection_health_service.clone(),
             persistence,
             services,
         })
@@ -136,6 +140,7 @@ impl Application {
             &self.services,
             &self.persistence,
             self.portfolio.clone(),
+            self.connection_health_service.clone(),
         )
         .await?;
 
@@ -148,6 +153,7 @@ impl Application {
             candle_rx: agents.candle_rx,
             sentiment_rx: agents.sentiment_rx,
             news_rx: agents.news_rx,
+            connection_health_service: self.connection_health_service.clone(),
             strategy_mode: self.config.strategy_mode,
             risk_appetite: self.config.risk_appetite,
         })

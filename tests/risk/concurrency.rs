@@ -7,6 +7,7 @@ use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService
 
 use rust_decimal::Decimal;
 use rustrade::application::market_data::spread_cache::SpreadCache;
+use rustrade::application::monitoring::connection_health_service::ConnectionHealthService;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
@@ -48,6 +49,20 @@ async fn test_concurrent_proposals_respect_limits() {
     ));
 
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
+    let health_service = Arc::new(ConnectionHealthService::new());
+    health_service
+        .set_market_data_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
+    health_service
+        .set_execution_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
+
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
@@ -63,6 +78,7 @@ async fn test_concurrent_proposals_respect_limits() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        health_service,
     )
     .expect("Test config should be valid");
 
@@ -157,6 +173,14 @@ async fn test_backpressure_drops_excess_proposals() {
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
+    let health_service = Arc::new(ConnectionHealthService::new());
+    health_service
+        .set_market_data_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
+
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
@@ -172,6 +196,7 @@ async fn test_backpressure_drops_excess_proposals() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        health_service,
     )
     .expect("Test config should be valid");
 

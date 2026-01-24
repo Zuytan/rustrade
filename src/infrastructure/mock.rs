@@ -405,6 +405,12 @@ impl crate::domain::repositories::TradeRepository for NullTradeRepository {
     async fn find_by_symbol(&self, _symbol: &str) -> Result<Vec<Order>> {
         Ok(vec![])
     }
+    async fn find_by_status(
+        &self,
+        _status: crate::domain::trading::types::OrderStatus,
+    ) -> Result<Vec<Order>> {
+        Ok(vec![])
+    }
     async fn find_recent(&self, _limit: usize) -> Result<Vec<Order>> {
         Ok(vec![])
     }

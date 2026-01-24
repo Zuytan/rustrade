@@ -39,9 +39,12 @@ impl TradeRepository for SqliteOrderRepository {
     async fn save(&self, order: &Order) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO orders (id, symbol, side, price, quantity, order_type, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO NOTHING
+            INSERT INTO orders (id, symbol, side, price, quantity, order_type, status, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                status = excluded.status,
+                price = excluded.price,
+                quantity = excluded.quantity
             "#,
         )
         .bind(&order.id)
@@ -50,6 +53,7 @@ impl TradeRepository for SqliteOrderRepository {
         .bind(order.price.to_string())
         .bind(order.quantity.to_string())
         .bind(format!("{}", order.order_type)) // Enum as string
+        .bind(format!("{:?}", order.status)) // Enum as string (New, Filled, etc.)
         .bind(order.timestamp)
         .execute(&self.pool)
         .await
@@ -69,6 +73,17 @@ impl TradeRepository for SqliteOrderRepository {
     async fn find_by_symbol(&self, symbol: &str) -> Result<Vec<Order>> {
         let rows = sqlx::query("SELECT * FROM orders WHERE symbol = ? ORDER BY timestamp DESC")
             .bind(symbol)
+            .fetch_all(&self.pool)
+            .await?;
+        self.map_rows_to_orders(rows)
+    }
+
+    async fn find_by_status(
+        &self,
+        status: crate::domain::trading::types::OrderStatus,
+    ) -> Result<Vec<Order>> {
+        let rows = sqlx::query("SELECT * FROM orders WHERE status = ? ORDER BY timestamp DESC")
+            .bind(format!("{:?}", status))
             .fetch_all(&self.pool)
             .await?;
         self.map_rows_to_orders(rows)
@@ -115,6 +130,18 @@ impl SqliteOrderRepository {
                 _ => crate::domain::trading::types::OrderType::Market,
             };
 
+            let status_str: String = row.try_get("status").unwrap_or_else(|_| "NEW".to_string());
+            let status = match status_str.to_uppercase().as_str() {
+                "NEW" => crate::domain::trading::types::OrderStatus::New,
+                "FILLED" => crate::domain::trading::types::OrderStatus::Filled,
+                "CANCELED" | "CANCELLED" => crate::domain::trading::types::OrderStatus::Canceled,
+                "PARTIALLYFILLED" => crate::domain::trading::types::OrderStatus::PartiallyFilled,
+                "PENDING" => crate::domain::trading::types::OrderStatus::Pending,
+                "REJECTED" => crate::domain::trading::types::OrderStatus::Rejected,
+                "EXPIRED" => crate::domain::trading::types::OrderStatus::Expired,
+                _ => crate::domain::trading::types::OrderStatus::New,
+            };
+
             orders.push(Order {
                 id: row.try_get("id")?,
                 symbol: row.try_get("symbol")?,
@@ -122,6 +149,7 @@ impl SqliteOrderRepository {
                 price: Decimal::from_str(row.try_get("price")?).unwrap_or_default(),
                 quantity: Decimal::from_str(row.try_get("quantity")?).unwrap_or_default(),
                 order_type,
+                status,
                 timestamp: row.try_get("timestamp")?,
             });
         }

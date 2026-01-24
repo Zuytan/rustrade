@@ -185,6 +185,7 @@ struct AlpacaOrderRequest {
     symbol: String,
     qty: String,
     side: String,
+    client_order_id: String,
     #[serde(rename = "type")]
     order_type: String,
     time_in_force: String,
@@ -278,6 +279,7 @@ impl ExecutionService for AlpacaExecutionService {
             symbol: order.symbol.clone(),
             qty: order.quantity.to_string(),
             side: side_str.to_string(),
+            client_order_id: order.id.clone(),
             order_type: final_type,
             time_in_force: tif.to_string(),
             limit_price: final_limit,
@@ -366,6 +368,7 @@ impl ExecutionService for AlpacaExecutionService {
                     price: Decimal::ZERO,
                     quantity: qty,
                     order_type: crate::domain::trading::types::OrderType::Market,
+                    status: crate::domain::trading::types::OrderStatus::New,
                     timestamp: chrono::DateTime::parse_from_rfc3339(&ao.created_at)
                         .unwrap_or_default()
                         .timestamp(),
@@ -455,6 +458,7 @@ impl ExecutionService for AlpacaExecutionService {
                 price,
                 quantity: qty,
                 order_type: crate::domain::trading::types::OrderType::Market,
+                status: crate::domain::trading::types::OrderStatus::Filled, // Today orders are usually resolved
                 timestamp: created_at,
             });
         }

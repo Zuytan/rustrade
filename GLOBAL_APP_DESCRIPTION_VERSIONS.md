@@ -1,5 +1,26 @@
 # Rustrade - Historique des Versions
 
+## Version 0.88.0 - System Resilience & Connection Health (January 2026)
+
+### Connection Resilience
+- **Singleton WebSocket Architecture**: Standardized `AlpacaMarketDataService` to use a single shared `AlpacaWebSocketManager` instance, ensuring only one physical connection per broker regardless of subscribed symbols.
+- **Infinite Reconnection Loop**: Fixed premature loop termination in `AlpacaWebSocketManager` that broke on clean disconnections or 406 errors. Now persists indefinitely with exponential backoff until explicit shutdown.
+- **Alpaca 406 Error Resolution**: Eliminated redundant reconnection logic in `Sentinel` agent that conflicted with infrastructure-level stream management, preventing connection limit violations.
+
+### System Health Monitoring
+- **Connection Health Service**: Introduced centralized `ConnectionHealthService` for broadcast-based monitoring of market data and execution stream status across all agents.
+- **Health-Aware Risk Management**: `RiskManager` now validates connection health before accepting proposals, preventing trades during connectivity issues.
+- **Executor Startup Reconciliation**: Enhanced `Executor` to broadcast execution stream status on startup and during reconnection events.
+
+### Code Quality & Stability
+- **Test Suite Synchronization**: Updated 30+ test cases to support new `ConnectionHealthService` and 15-argument `RiskManager` constructor signature.
+- **Infinite Test Loop Fix**: Resolved hanging tests in `audit_fixes.rs` by properly initializing connection health status to `Online` before running `RiskManager`.
+- **100% Test Pass Rate**: All risk management, scenario, component, and agent tests passing successfully.
+- **Zero Clippy Warnings**: Achieved clean build with strict linting enabled (`-D warnings`).
+
+### Documentation
+- **Architecture Updates**: Updated `AGENTS.md`, `README.md`, and `GLOBAL_APP_DESCRIPTION.md` to reflect singleton WebSocket architecture, centralized health monitoring, and Executor's reconciliation responsibilities.
+
 ## Version 0.87.0 - Adaptive Regime & Statistical Modernization (January 2026)
 
 ### Adaptive Regime Architecture

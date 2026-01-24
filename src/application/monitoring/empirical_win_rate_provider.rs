@@ -310,6 +310,13 @@ mod tests {
                 .collect())
         }
 
+        async fn find_by_status(
+            &self,
+            _status: crate::domain::trading::types::OrderStatus,
+        ) -> anyhow::Result<Vec<Order>> {
+            Ok(vec![])
+        }
+
         async fn find_recent(&self, _limit: usize) -> anyhow::Result<Vec<Order>> {
             Ok(self.orders.clone())
         }
@@ -331,6 +338,7 @@ mod tests {
             price,
             quantity: dec!(10.0),
             order_type: crate::domain::trading::types::OrderType::Market,
+            status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp: 0,
         }
     }
@@ -343,6 +351,7 @@ mod tests {
             price,
             quantity: dec!(10.0),
             order_type: crate::domain::trading::types::OrderType::Market,
+            status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp: 1000,
         }
     }

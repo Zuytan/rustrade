@@ -7,6 +7,7 @@ use crate::domain::ports::{ExecutionService, MarketDataService};
 // Unused imports removed
 use crate::application::bootstrap::persistence::PersistenceHandle;
 use crate::application::market_data::spread_cache::SpreadCache;
+use crate::application::monitoring::connection_health_service::ConnectionHealthService;
 use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
 use crate::application::optimization::{
     adaptive_optimization_service::AdaptiveOptimizationService,
@@ -25,6 +26,7 @@ pub struct ServicesHandle {
     pub spread_cache: Arc<SpreadCache>,
     pub adaptive_optimization_service: Option<Arc<AdaptiveOptimizationService>>,
     pub performance_monitor: Option<Arc<PerformanceMonitoringService>>,
+    pub connection_health_service: Arc<ConnectionHealthService>,
 }
 
 pub struct ServicesBootstrap;
@@ -35,6 +37,9 @@ impl ServicesBootstrap {
         persistence: &PersistenceHandle,
         portfolio: Arc<RwLock<Portfolio>>,
     ) -> Result<ServicesHandle> {
+        // 0. Initialize Health Service
+        let connection_health_service = Arc::new(ConnectionHealthService::new());
+
         // 1. Initialize Infrastructure Services (Using Factory)
         let (market_service, execution_service, spread_cache) = ServiceFactory::create_services(
             config,
@@ -50,6 +55,7 @@ impl ServicesBootstrap {
                 market_service.clone(),
                 portfolio.clone(),
                 persistence.order_repository.clone(),
+                connection_health_service.clone(),
                 config.regime_detection_window,
             )))
         } else {
@@ -97,6 +103,7 @@ impl ServicesBootstrap {
             spread_cache,
             adaptive_optimization_service,
             performance_monitor,
+            connection_health_service,
         })
     }
 }

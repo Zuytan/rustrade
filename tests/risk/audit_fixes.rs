@@ -56,6 +56,9 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
+    let health_service = Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new());
+    health_service.set_market_data_status(rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online, None).await;
+
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
         proposal_rx,
@@ -72,6 +75,7 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        health_service,
     )
     .expect("Test config should be valid");
 
@@ -98,8 +102,8 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
             symbol: "AAPL".to_string(),
             side: OrderSide::Sell,
             price: dec!(90),
-            quantity: dec!(1),
-            order_type: OrderType::Limit,
+            quantity: dec!(0.5),
+            order_type: OrderType::Market,
             reason: format!("Loss Trade {}", i),
             timestamp: chrono::Utc::now().timestamp_millis(),
         };
@@ -180,6 +184,9 @@ async fn test_pending_order_ttl_cleanup() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(mock_exec.clone(), 5000));
 
+    let health_service = Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new());
+    health_service.set_market_data_status(rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online, None).await;
+    
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
     let mut risk_manager = RiskManager::new(
         proposal_rx,
@@ -196,6 +203,7 @@ async fn test_pending_order_ttl_cleanup() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        health_service,
     )
     .expect("Test config should be valid");
 

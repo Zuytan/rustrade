@@ -4,12 +4,42 @@ use rust_decimal::Decimal;
 use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::liquidation_service::LiquidationService;
-use rustrade::domain::ports::{ExecutionService, OrderUpdate};
+use rustrade::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
 use rustrade::domain::trading::portfolio::{Portfolio, Position};
-use rustrade::domain::trading::types::{Order, OrderType}; // OrderSide not needed explicitly if checking field
+use rustrade::domain::trading::types::{Candle, Order, OrderType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
+
+struct MockMarketService;
+#[async_trait]
+impl MarketDataService for MockMarketService {
+    async fn subscribe(
+        &self,
+        _s: Vec<String>,
+    ) -> Result<mpsc::Receiver<rustrade::domain::trading::types::MarketEvent>> {
+        let (_, rx) = mpsc::channel(1);
+        Ok(rx)
+    }
+    async fn get_tradable_assets(&self) -> Result<Vec<String>> {
+        Ok(vec![])
+    }
+    async fn get_top_movers(&self) -> Result<Vec<String>> {
+        Ok(vec![])
+    }
+    async fn get_prices(&self, _s: Vec<String>) -> Result<HashMap<String, Decimal>> {
+        Ok(HashMap::new())
+    }
+    async fn get_historical_bars(
+        &self,
+        _s: &str,
+        _st: chrono::DateTime<chrono::Utc>,
+        _e: chrono::DateTime<chrono::Utc>,
+        _t: &str,
+    ) -> Result<Vec<Candle>> {
+        Ok(vec![])
+    }
+}
 
 struct StatefulMockExecution {
     portfolio: Arc<RwLock<Portfolio>>,
@@ -75,8 +105,12 @@ async fn test_smart_liquidation_uses_limit_when_spread_available() {
 
     // 3. Setup Liquidation Service
     let (order_tx, mut order_rx) = mpsc::channel(10);
-    let service =
-        LiquidationService::new(order_tx, portfolio_manager.clone(), spread_cache.clone());
+    let service = LiquidationService::new(
+        order_tx,
+        portfolio_manager.clone(),
+        Arc::new(MockMarketService),
+        spread_cache.clone(),
+    );
 
     // 4. Trigger Liquidation
     let mut current_prices = HashMap::new();
@@ -124,8 +158,12 @@ async fn test_smart_liquidation_falls_back_to_market_when_no_spread() {
 
     // 3. Setup Liquidation Service
     let (order_tx, mut order_rx) = mpsc::channel(10);
-    let service =
-        LiquidationService::new(order_tx, portfolio_manager.clone(), spread_cache.clone());
+    let service = LiquidationService::new(
+        order_tx,
+        portfolio_manager.clone(),
+        Arc::new(MockMarketService),
+        spread_cache.clone(),
+    );
 
     // 4. Trigger Liquidation
     let mut current_prices = HashMap::new();
@@ -172,8 +210,12 @@ async fn test_panic_mode_forces_market_order() {
 
     // 3. Setup Liquidation Service
     let (order_tx, mut order_rx) = mpsc::channel(10);
-    let service =
-        LiquidationService::new(order_tx, portfolio_manager.clone(), spread_cache.clone());
+    let service = LiquidationService::new(
+        order_tx,
+        portfolio_manager.clone(),
+        Arc::new(MockMarketService),
+        spread_cache.clone(),
+    );
 
     // 4. Trigger Liquidation with NO PRICE (Panic Mode)
     let mut current_prices = HashMap::new();

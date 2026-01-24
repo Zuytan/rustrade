@@ -179,6 +179,7 @@ impl Simulator {
                 spread_cache: Arc::new(
                     crate::application::market_data::spread_cache::SpreadCache::new(),
                 ),
+                connection_health_service: Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
             },
         );
 
@@ -300,6 +301,7 @@ impl Simulator {
                 price: execution_price,
                 quantity: prop.quantity,
                 order_type: crate::domain::trading::types::OrderType::Market,
+                status: crate::domain::trading::types::OrderStatus::Filled,
                 timestamp: prop.timestamp,
             };
 

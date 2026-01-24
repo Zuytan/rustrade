@@ -65,6 +65,18 @@ impl TradeRepository for InMemoryTradeRepository {
             .collect())
     }
 
+    async fn find_by_status(
+        &self,
+        status: crate::domain::trading::types::OrderStatus,
+    ) -> Result<Vec<Order>> {
+        let trades = self.trades.read().await;
+        Ok(trades
+            .iter()
+            .filter(|t| t.status == status)
+            .cloned()
+            .collect())
+    }
+
     async fn find_recent(&self, limit: usize) -> Result<Vec<Order>> {
         let trades = self.trades.read().await;
         Ok(trades.iter().rev().take(limit).cloned().collect())
@@ -142,6 +154,7 @@ mod tests {
             quantity: dec!(10),
             price: dec!(100),
             order_type: crate::domain::trading::types::OrderType::Market,
+            status: crate::domain::trading::types::OrderStatus::New,
             timestamp: Utc::now().timestamp(),
         }
     }

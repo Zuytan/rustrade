@@ -86,25 +86,26 @@ mod tests {
     use crate::domain::trading::types::OrderType;
     use rust_decimal_macros::dec;
 
-    fn create_order(side: OrderSide, price: Decimal, qty: Decimal) -> Order {
+    fn create_order(side: OrderSide, price: Decimal, quantity: Decimal, timestamp: i64) -> Order {
         Order {
             id: "test".to_string(),
             symbol: "TEST".to_string(),
             side,
             price,
-            quantity: qty,
+            quantity,
             order_type: OrderType::Market,
-            timestamp: 0,
+            status: crate::domain::trading::types::OrderStatus::Filled,
+            timestamp,
         }
     }
 
     #[test]
     fn test_calculate_metrics_simple_win() {
         let orders = vec![
-            create_order(OrderSide::Buy, dec!(100), dec!(1)),
-            create_order(OrderSide::Sell, dec!(110), dec!(1)), // +10%
-            create_order(OrderSide::Buy, dec!(100), dec!(1)),
-            create_order(OrderSide::Sell, dec!(110), dec!(1)), // +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), 0), // +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), 0), // +10%
         ];
 
         let (sharpe, win_rate) = calculate_metrics_from_orders(&orders);
@@ -117,10 +118,10 @@ mod tests {
     #[test]
     fn test_calculate_metrics_mixed() {
         let orders = vec![
-            create_order(OrderSide::Buy, dec!(100), dec!(1)),
-            create_order(OrderSide::Sell, dec!(110), dec!(1)), // +10%
-            create_order(OrderSide::Buy, dec!(100), dec!(1)),
-            create_order(OrderSide::Sell, dec!(90), dec!(1)), // -10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), 0), // +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
+            create_order(OrderSide::Sell, dec!(90), dec!(1), 0), // -10%
         ];
 
         // Mean = 0. StdDev = 0.1414... (approx) (variance = ((0.1-0)^2 + (-0.1-0)^2)/1 = 0.02. sqrt(0.02) ~ 0.1414)
@@ -135,10 +136,10 @@ mod tests {
     #[test]
     fn test_calculate_metrics_positive_sharpe() {
         let orders = vec![
-            create_order(OrderSide::Buy, dec!(100), dec!(1)),
-            create_order(OrderSide::Sell, dec!(110), dec!(1)), // +10%
-            create_order(OrderSide::Buy, dec!(100), dec!(1)),
-            create_order(OrderSide::Sell, dec!(105), dec!(1)), // +5%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), 0), // +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
+            create_order(OrderSide::Sell, dec!(105), dec!(1), 0), // +5%
         ];
         // Mean = 7.5%. Var = ((10-7.5)^2 + (5-7.5)^2)/1 = (6.25 + 6.25) = 12.5. StdDev = 3.53% (0.0353)
         // Sharpe = 0.075 / 0.0353 ~ 2.12

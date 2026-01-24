@@ -1,5 +1,8 @@
 use crate::application::market_data::candle_aggregator::CandleAggregator;
 use crate::application::market_data::spread_cache::SpreadCache;
+use crate::application::monitoring::connection_health_service::{
+    ConnectionHealthService, ConnectionStatus,
+};
 use crate::application::monitoring::cost_evaluator::CostEvaluator;
 use crate::application::optimization::win_rate_provider::{StaticWinRateProvider, WinRateProvider};
 
@@ -39,6 +42,7 @@ pub struct AnalystDependencies {
     pub win_rate_provider: Option<Arc<dyn WinRateProvider>>,
     pub ui_candle_tx: Option<broadcast::Sender<Candle>>,
     pub spread_cache: Arc<SpreadCache>,
+    pub connection_health_service: Arc<ConnectionHealthService>,
 }
 
 #[allow(dead_code)] // candle_repository and trade_evaluator used indirectly by pipeline
@@ -63,6 +67,8 @@ pub struct Analyst {
     cmd_rx: Receiver<AnalystCommand>,
     news_handler: crate::application::agents::news_handler::NewsHandler,
     ui_candle_tx: Option<broadcast::Sender<Candle>>,
+    health_service: Arc<ConnectionHealthService>,
+    market_data_online: bool,
 }
 
 impl Analyst {
@@ -177,6 +183,8 @@ impl Analyst {
                 ),
             ),
             ui_candle_tx: dependencies.ui_candle_tx,
+            health_service: dependencies.connection_health_service,
+            market_data_online: true, // Default to true, will be updated by run loop
         }
     }
 
@@ -238,6 +246,29 @@ impl Analyst {
                             info!("Analyst: Market event channel closed. Exiting main loop.");
                             break;
                         }
+                    }
+                }
+
+                // Handle Health Events
+                Ok(health_event) = async {
+                    self.health_service.subscribe().recv().await
+                } => {
+                    if health_event.component == "MarketData" {
+                         match health_event.status {
+                             ConnectionStatus::Online => {
+                                 if !self.market_data_online {
+                                     debug!("Analyst: Market Data back ONLINE. Resuming analysis.");
+                                     self.market_data_online = true;
+                                 }
+                             }
+                             ConnectionStatus::Offline => {
+                                 if self.market_data_online {
+                                     debug!("Analyst: Market Data OFFLINE. Pausing analysis to prevent calculations on stale data.");
+                                     self.market_data_online = false;
+                                 }
+                             }
+                             _ => {}
+                         }
                     }
                 }
 
@@ -317,6 +348,16 @@ impl Analyst {
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
         let timestamp = candle.timestamp * 1000;
+
+        // --- RESILIENCE GUARD ---
+        if !self.market_data_online {
+            debug!(
+                "Analyst [{}]: Synthesis PAUSED (Market Data Offline). Skipping candle.",
+                symbol
+            );
+            return;
+        }
+        // -------------------------
 
         // Broadcast to UI
         if let Some(tx) = &self.ui_candle_tx {

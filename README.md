@@ -22,6 +22,7 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 - **Multi-Agent Architecture**: 6 specialized agents (Sentinel, Scanner, Analyst, Risk Manager, Order Throttler, Executor).
 - **Regime Detection**: Automatically detects Bull, Bear, Sideways, and Volatile market regimes.
 - **Dynamic Scanning**: Real-time discovery of "Top Movers" and volatility opportunities (Stocks & Crypto).
+- **System Health Monitoring**: Centralized `ConnectionHealthService` that tracks physical connectivity and broadcasts status to all agents for safe execution.
 
 ### 🖥️ Native User Interface (New)
 - **High-Performance Dashboard**: Built with `egui` (0.31) for zero-latency monitoring.
@@ -45,6 +46,7 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 - **Persistence ("No Amnesia")**: Retains critical risk state (HWM, Daily Loss) across restarts.
 - **Panic Mode**: Blind emergency liquidation during data outages.
 - **PDT Protection**: Pattern Day Trader safeguards for accounts < $25k.
+- **Singleton Connectivity**: Unified WebSocket architecture preventing multi-connection conflicts and 406 errors.
 
 ### 🔬 Backtesting & Optimization
 - **Historical Backtesting**: Simulate strategies against past data with S&P500 benchmark comparison.
@@ -157,6 +159,9 @@ flowchart TB
         A --> STR[Strategy Engine]
         STR --> SIG[Signal Generator]
         R --> VAL[Validation Pipeline]
+        S -.-> CH[Connection Health]
+        E -.-> CH
+        CH -.-> R
     end
     
     E --> BROKER[Broker API]

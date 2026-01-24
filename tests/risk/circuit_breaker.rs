@@ -72,6 +72,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
 

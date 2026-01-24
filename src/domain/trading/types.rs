@@ -109,6 +109,7 @@ pub struct Order {
     pub price: Decimal,
     pub quantity: Decimal,
     pub order_type: OrderType,
+    pub status: OrderStatus,
     pub timestamp: i64,
 }
 

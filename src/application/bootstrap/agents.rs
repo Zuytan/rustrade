@@ -13,6 +13,7 @@ use crate::application::agents::{
 };
 use crate::application::bootstrap::persistence::PersistenceHandle;
 use crate::application::bootstrap::services::ServicesHandle;
+use crate::application::monitoring::connection_health_service::ConnectionHealthService;
 use crate::application::monitoring::correlation_service::CorrelationService;
 use crate::application::optimization::win_rate_provider::HistoricalWinRateProvider;
 use crate::application::risk_management::{
@@ -52,6 +53,7 @@ impl AgentsBootstrap {
         services: &ServicesHandle,
         persistence: &PersistenceHandle,
         portfolio: Arc<RwLock<Portfolio>>,
+        connection_health_service: Arc<ConnectionHealthService>,
     ) -> Result<AgentsHandle> {
         info!("Initializing Agents...");
 
@@ -75,6 +77,7 @@ impl AgentsBootstrap {
             market_tx,
             config.symbols.clone(),
             Some(sentinel_cmd_rx),
+            connection_health_service.clone(),
         );
 
         // 2. Market Scanner
@@ -112,6 +115,7 @@ impl AgentsBootstrap {
                 win_rate_provider: Some(win_rate_provider),
                 ui_candle_tx: Some(candle_tx),
                 spread_cache: services.spread_cache.clone(),
+                connection_health_service: connection_health_service.clone(),
             },
         );
 
@@ -171,6 +175,7 @@ impl AgentsBootstrap {
             Some(persistence.risk_state_repository.clone()),
             Some(persistence.candle_repository.clone()),
             services.spread_cache.clone(),
+            connection_health_service.clone(),
         )?;
 
         // 5. Order Throttler & Executor
@@ -188,6 +193,7 @@ impl AgentsBootstrap {
             portfolio.clone(),
             Some(persistence.order_repository.clone()),
             retry_config,
+            connection_health_service.clone(),
         );
 
         // SPAWN TASKS

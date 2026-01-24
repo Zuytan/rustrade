@@ -54,6 +54,7 @@ async fn test_immediate_warmup() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 
@@ -166,6 +167,7 @@ async fn test_golden_cross() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 
@@ -281,6 +283,7 @@ async fn test_prevent_short_selling() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 
@@ -413,6 +416,7 @@ async fn test_sell_signal_with_position() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 
@@ -540,6 +544,7 @@ async fn test_dynamic_quantity_scaling() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 
@@ -682,6 +687,7 @@ async fn test_multi_symbol_isolation() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 
@@ -828,6 +834,7 @@ async fn test_advanced_strategy_trend_filter() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 
@@ -973,6 +980,7 @@ async fn test_risk_based_quantity_calculation() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 
@@ -1053,6 +1061,7 @@ async fn test_news_intelligence_filters() {
         win_rate_provider: None,
         ui_candle_tx: None,
         spread_cache: Arc::new(SpreadCache::new()),
+        connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     };
 
     let mut analyst = Analyst::new(market_rx, cmd_rx, proposal_tx, config, strategy, deps);
@@ -1183,6 +1192,7 @@ async fn test_trailing_stop_suppresses_sell_signal() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 

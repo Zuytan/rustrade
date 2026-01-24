@@ -242,13 +242,12 @@ impl AlpacaWebSocketManager {
                 {
                     Ok(authenticated) => {
                         if authenticated {
-                            info!(
-                                "WebSocketManager: Connection ended cleanly after successful authentication"
+                            warn!(
+                                "WebSocketManager: Connection ended (authenticated). Reconnecting..."
                             );
                         } else {
-                            info!("WebSocketManager: Connection ended before authentication");
+                            warn!("WebSocketManager: Connection ended (pre-auth). Reconnecting...");
                         }
-                        break;
                     }
                     Err(e) => {
                         error!("WebSocketManager error: {}. Reconnecting...", e);

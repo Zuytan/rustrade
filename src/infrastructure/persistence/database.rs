@@ -58,6 +58,7 @@ impl Database {
                 price TEXT NOT NULL,
                 quantity TEXT NOT NULL,
                 order_type TEXT DEFAULT 'MARKET',
+                status TEXT DEFAULT 'NEW',
                 timestamp INTEGER NOT NULL
             );
             "#,
@@ -69,6 +70,10 @@ impl Database {
         // Migration: Attempt to add order_type column if it doesn't exist (for existing DBs)
         // We ignore error if column already exists (Generic error handling for now)
         let _ = sqlx::query("ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'MARKET'")
+            .execute(&mut *conn)
+            .await;
+
+        let _ = sqlx::query("ALTER TABLE orders ADD COLUMN status TEXT DEFAULT 'NEW'")
             .execute(&mut *conn)
             .await;
 

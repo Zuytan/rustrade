@@ -1,3 +1,6 @@
+use crate::application::monitoring::connection_health_service::{
+    ConnectionHealthService, ConnectionStatus,
+};
 use crate::application::risk_management::{
     order_monitor::{MonitorAction, OrderMonitor},
     order_retry_strategy::RetryConfig,
@@ -6,10 +9,11 @@ use crate::domain::ports::ExecutionService;
 use crate::domain::repositories::TradeRepository;
 use crate::domain::trading::portfolio::{Portfolio, Position};
 use crate::domain::trading::types::{Order, OrderSide};
+use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::Receiver;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct Executor {
     execution_service: Arc<dyn ExecutionService>,
@@ -17,6 +21,7 @@ pub struct Executor {
     portfolio: Arc<RwLock<Portfolio>>,
     repository: Option<Arc<dyn TradeRepository>>,
     order_monitor: Arc<OrderMonitor>,
+    health_service: Arc<ConnectionHealthService>,
 }
 
 impl Executor {
@@ -26,6 +31,7 @@ impl Executor {
         portfolio: Arc<RwLock<Portfolio>>,
         repository: Option<Arc<dyn TradeRepository>>,
         retry_config: RetryConfig,
+        health_service: Arc<ConnectionHealthService>,
     ) -> Self {
         Self {
             execution_service,
@@ -33,11 +39,16 @@ impl Executor {
             portfolio,
             repository,
             order_monitor: Arc::new(OrderMonitor::new(retry_config)),
+            health_service,
         }
     }
 
     pub async fn run(&mut self) {
-        info!("Executor started.");
+        info!("Executor started. Running startup reconciliation...");
+        if let Err(e) = self.reconcile_on_startup().await {
+            error!("Executor: Startup reconciliation failed: {}", e);
+        }
+
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
 
         loop {
@@ -52,11 +63,23 @@ impl Executor {
         }
     }
 
-    async fn handle_order(&self, order: Order) {
+    async fn handle_order(&self, mut order: Order) {
         info!(
-            "Executor: Received Order {}. Executing via Service...",
-            order.id
+            "Executor: Processing Order {}. Symbol: {}, Qty: {}",
+            order.id, order.symbol, order.quantity
         );
+
+        // 0. IDEMPOTENCY: Persist with 'Pending' status BEFORE execution
+        order.status = crate::domain::trading::types::OrderStatus::Pending;
+        if let Some(repo) = &self.repository
+            && let Err(e) = repo.save(&order).await
+        {
+            error!(
+                "Executor: IDEMPOTENCY SAFETY - Failed to pre-persist order {}: {}. ABORTING execution to prevent potential double-spend.",
+                order.id, e
+            );
+            return;
+        }
 
         // 1. Execute External
         match self.execution_service.execute(order.clone()).await {
@@ -66,21 +89,36 @@ impl Executor {
 
                 // 2. Update Internal State (Optimistic)
                 self.update_portfolio(&order, false).await;
-                info!("Executor: Order {} processed internally.", order.id);
+                info!("Executor: Order {} sent to exchange.", order.id);
+
+                // Update persisted status to 'New' (now officially on the exchange)
+                if let Some(repo) = &self.repository {
+                    let mut submitted_order = order.clone();
+                    submitted_order.status = crate::domain::trading::types::OrderStatus::New;
+                    let _ = repo.save(&submitted_order).await;
+                }
+
+                // Broadcast Online if it was offline
+                self.health_service
+                    .set_execution_status(ConnectionStatus::Online, None)
+                    .await;
             }
             Err(e) => {
                 error!("Executor: Execution failed for {}: {}", order.id, e);
-            }
-        }
+                self.health_service
+                    .set_execution_status(
+                        ConnectionStatus::Offline,
+                        Some(format!("Execution failed: {}", e)),
+                    )
+                    .await;
 
-        if let Some(repo) = &self.repository {
-            let order_clone = order.clone();
-            let repo = repo.clone();
-            tokio::spawn(async move {
-                if let Err(e) = repo.save(&order_clone).await {
-                    error!("Failed to persist order {}: {}", order_clone.id, e);
+                // Update persisted status to 'Rejected'
+                if let Some(repo) = &self.repository {
+                    let mut rejected_order = order.clone();
+                    rejected_order.status = crate::domain::trading::types::OrderStatus::Rejected;
+                    let _ = repo.save(&rejected_order).await;
                 }
-            });
+            }
         }
     }
 
@@ -88,46 +126,63 @@ impl Executor {
         let actions = self.order_monitor.check_timeouts().await;
         for action in actions {
             match action {
-                MonitorAction::CancelAndReplace {
-                    order_id_to_cancel,
-                    original_order,
-                    new_market_order,
-                } => {
-                    info!(
-                        "Executor: Timeout handling - Replacing {} with Market Order",
-                        order_id_to_cancel
-                    );
-
-                    // 1. Cancel Original
-                    if let Err(e) = self
-                        .execution_service
-                        .cancel_order(&order_id_to_cancel)
-                        .await
-                    {
-                        // If cancel fails (e.g. already filled), strict safety says we shouldn't place market order
-                        // to avoid double fill, OR we check error type.
-                        // For now, logging error.
-                        error!(
-                            "Executor: Failed to cancel order {}: {}",
-                            order_id_to_cancel, e
-                        );
-                        // Continue to verify if we should proceed?
-                        // Assuming simplistic "try best" approach for now.
-                    } else {
-                        self.order_monitor
-                            .on_order_canceled(&order_id_to_cancel)
-                            .await;
-
-                        // 2. Revert Portfolio for Original Order (Optimistic reversal)
-                        self.update_portfolio(&original_order, true).await;
-                    }
-
-                    // 3. Execute New Market Order
-                    self.handle_order(*new_market_order).await;
-                }
                 MonitorAction::None => {}
+                _ => { /* Already handled in check_timeouts or similar? */ }
             }
         }
+    }
+
+    /// Startup task to sync locally pending orders with exchange state
+    async fn reconcile_on_startup(&self) -> Result<()> {
+        let repo = match &self.repository {
+            Some(r) => r,
+            None => return Ok(()),
+        };
+
+        // 1. Fetch locally pending orders
+        let local_pending = repo
+            .find_by_status(crate::domain::trading::types::OrderStatus::Pending)
+            .await?;
+        if local_pending.is_empty() {
+            info!("Executor: No pending orders to reconcile.");
+            return Ok(());
+        }
+
+        info!(
+            "Executor: Found {} pending orders. Synchronizing with exchange...",
+            local_pending.is_empty()
+        );
+
+        // 2. Fetch exchange orders (Open and Today's)
+        let open_orders = self.execution_service.get_open_orders().await?;
+        let today_orders = self.execution_service.get_today_orders().await?;
+
+        // 3. Reconcile
+        for mut order in local_pending {
+            // Check if order ID exists in any exchange list
+            let on_exchange = open_orders.iter().any(|o| o.id == order.id)
+                || today_orders.iter().any(|o| o.id == order.id);
+
+            if on_exchange {
+                info!(
+                    "Executor: Order {} found on exchange. Marking as 'New' (confirmed).",
+                    order.id
+                );
+                order.status = crate::domain::trading::types::OrderStatus::New;
+                let _ = repo.save(&order).await;
+            } else {
+                // Not found: assumed never reached the exchange
+                warn!(
+                    "Executor: Pending order {} NOT found on exchange. Marking as 'Rejected' (failed safety).",
+                    order.id
+                );
+                order.status = crate::domain::trading::types::OrderStatus::Rejected;
+                let _ = repo.save(&order).await;
+            }
+        }
+
+        info!("Executor: Startup reconciliation complete.");
+        Ok(())
     }
 
     async fn update_portfolio(&self, order: &Order, is_reversal: bool) {
@@ -271,6 +326,7 @@ mod tests {
             portfolio.clone(),
             None,
             RetryConfig::default(),
+            Arc::new(ConnectionHealthService::new()),
         );
         tokio::spawn(async move { executor.run().await });
 
@@ -281,6 +337,7 @@ mod tests {
             price: Decimal::from(100),
             quantity: Decimal::from(2),
             order_type: crate::domain::trading::types::OrderType::Limit,
+            status: crate::domain::trading::types::OrderStatus::New,
             timestamp: 0,
         };
         tx.send(order).await.unwrap();
@@ -306,6 +363,7 @@ mod tests {
             portfolio.clone(),
             None,
             RetryConfig::default(),
+            Arc::new(ConnectionHealthService::new()),
         );
         tokio::spawn(async move { executor.run().await });
 
@@ -316,6 +374,7 @@ mod tests {
             price: Decimal::from(100),
             quantity: Decimal::from(2),
             order_type: crate::domain::trading::types::OrderType::Limit,
+            status: crate::domain::trading::types::OrderStatus::New,
             timestamp: 0,
         };
         tx.send(order).await.unwrap();

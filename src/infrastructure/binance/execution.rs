@@ -93,6 +93,7 @@ impl ExecutionService for BinanceExecutionService {
                     ("side", side.to_string()),
                     ("type", order_type.to_string()),
                     ("quantity", order.quantity.to_string()),
+                    ("newClientOrderId", order.id.clone()),
                     ("timestamp", timestamp.to_string()),
                 ];
 
@@ -306,6 +307,7 @@ impl ExecutionService for BinanceExecutionService {
                     order_type,
                     quantity,
                     price,
+                    status: crate::domain::trading::types::OrderStatus::New,
                     timestamp: chrono::Utc::now().timestamp(),
                 })
             })

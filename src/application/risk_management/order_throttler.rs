@@ -139,8 +139,10 @@ impl OrderThrottler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::trading::types::OrderSide;
+    use crate::domain::trading::types::{OrderSide, OrderStatus, OrderType};
+    use chrono::Utc;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
     use tokio::sync::mpsc;
 
     fn create_test_order(id: &str) -> Order {
@@ -149,9 +151,10 @@ mod tests {
             symbol: "BTC".to_string(),
             side: OrderSide::Buy,
             price: Decimal::from(100),
-            quantity: Decimal::from(1),
-            order_type: crate::domain::trading::types::OrderType::Market,
-            timestamp: 0,
+            quantity: dec!(1.0),
+            order_type: OrderType::Market,
+            status: OrderStatus::New,
+            timestamp: Utc::now().timestamp_millis(),
         }
     }
 

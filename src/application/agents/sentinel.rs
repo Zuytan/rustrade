@@ -1,3 +1,6 @@
+use crate::application::monitoring::connection_health_service::{
+    ConnectionHealthService, ConnectionStatus,
+};
 use crate::domain::ports::MarketDataService;
 use crate::domain::trading::types::MarketEvent;
 use std::sync::Arc;
@@ -15,6 +18,7 @@ pub struct Sentinel {
     market_tx: Sender<MarketEvent>,
     symbols: Vec<String>,
     cmd_rx: Option<Receiver<SentinelCommand>>,
+    health_service: Arc<ConnectionHealthService>,
 }
 
 impl Sentinel {
@@ -23,12 +27,14 @@ impl Sentinel {
         market_tx: Sender<MarketEvent>,
         symbols: Vec<String>,
         cmd_rx: Option<Receiver<SentinelCommand>>,
+        health_service: Arc<ConnectionHealthService>,
     ) -> Self {
         Self {
             market_service,
             market_tx,
             symbols,
             cmd_rx,
+            health_service,
         }
     }
 
@@ -36,12 +42,26 @@ impl Sentinel {
         let mut current_symbols = self.symbols.clone();
 
         info!("Sentinel subscribing to: {:?}", current_symbols);
+        self.health_service
+            .set_market_data_status(ConnectionStatus::Offline, Some("Initializing".to_string()))
+            .await;
 
         // Single subscription to the shared WebSocket
         let mut market_rx = match self.market_service.subscribe(current_symbols.clone()).await {
-            Ok(rx) => rx,
+            Ok(rx) => {
+                self.health_service
+                    .set_market_data_status(ConnectionStatus::Online, None)
+                    .await;
+                rx
+            }
             Err(e) => {
                 error!("Sentinel subscribe failed: {}", e);
+                self.health_service
+                    .set_market_data_status(
+                        ConnectionStatus::Offline,
+                        Some(format!("Initial subscribe failed: {}", e)),
+                    )
+                    .await;
                 return;
             }
         };
@@ -57,42 +77,9 @@ impl Sentinel {
                             }
                         }
                         None => {
-                            warn!("Sentinel market stream ended. Attempting to reconnect...");
-
-                            // Attempt to reconnect with exponential backoff
-                            let mut reconnect_attempts = 0;
-                            const MAX_RECONNECT_ATTEMPTS: u32 = 3;
-
-                            while reconnect_attempts < MAX_RECONNECT_ATTEMPTS {
-                                reconnect_attempts += 1;
-                                let backoff_ms = 1000 * (2_u64.pow(reconnect_attempts - 1));
-
-                                warn!(
-                                    "Sentinel: Reconnection attempt {}/{} (waiting {}ms)...",
-                                    reconnect_attempts, MAX_RECONNECT_ATTEMPTS, backoff_ms
-                                );
-
-                                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
-
-                                match self.market_service.subscribe(current_symbols.clone()).await {
-                                    Ok(new_rx) => {
-                                        market_rx = new_rx;
-                                        info!("Sentinel: Successfully reconnected to market stream");
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                            "Sentinel: Reconnection attempt {}/{} failed: {}",
-                                            reconnect_attempts, MAX_RECONNECT_ATTEMPTS, e
-                                        );
-
-                                        if reconnect_attempts >= MAX_RECONNECT_ATTEMPTS {
-                                            error!("Sentinel: Max reconnection attempts reached. Shutting down.");
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
+                            warn!("Sentinel market stream ended. Market data processing stopped.");
+                            self.health_service.set_market_data_status(ConnectionStatus::Offline, Some("Market stream ended".to_string())).await;
+                            return;
                         }
                     }
                 }
@@ -213,7 +200,13 @@ mod tests {
             events: vec![expected_event.clone()],
         });
 
-        let mut sentinel = Sentinel::new(service, market_tx, vec!["ETH/USD".to_string()], None);
+        let mut sentinel = Sentinel::new(
+            service,
+            market_tx,
+            vec!["ETH/USD".to_string()],
+            None,
+            Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        );
 
         tokio::spawn(async move {
             sentinel.run().await;

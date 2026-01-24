@@ -55,6 +55,12 @@ pub trait TradeRepository: Send + Sync {
     /// Find all trades for a specific symbol
     async fn find_by_symbol(&self, symbol: &str) -> Result<Vec<Order>>;
 
+    /// Find all trades by status
+    async fn find_by_status(
+        &self,
+        status: crate::domain::trading::types::OrderStatus,
+    ) -> Result<Vec<Order>>;
+
     /// Find the most recent trades
     async fn find_recent(&self, limit: usize) -> Result<Vec<Order>>;
 

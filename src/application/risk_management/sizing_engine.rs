@@ -57,7 +57,8 @@ impl SizingEngine {
                             vol_multiplier
                         );
 
-                        base_qty *= Decimal::from_f64_retain(vol_multiplier).unwrap_or(Decimal::ONE);
+                        base_qty *=
+                            Decimal::from_f64_retain(vol_multiplier).unwrap_or(Decimal::ONE);
 
                         base_qty = base_qty.round_dp(4);
                     }

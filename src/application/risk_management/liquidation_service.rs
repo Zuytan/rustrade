@@ -6,6 +6,7 @@
 use crate::application::market_data::spread_cache::SpreadCache;
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use crate::application::risk_management::order_retry_strategy::{OrderRetryStrategy, RetryConfig};
+use crate::domain::ports::MarketDataService;
 use crate::domain::trading::types::{Order, OrderSide};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -23,6 +24,7 @@ use tracing::{error, info, warn};
 pub struct LiquidationService {
     order_tx: Sender<Order>,
     portfolio_state_manager: Arc<PortfolioStateManager>,
+    market_service: Arc<dyn MarketDataService>,
     order_retry_strategy: OrderRetryStrategy,
     spread_cache: Arc<SpreadCache>,
 }
@@ -32,11 +34,13 @@ impl LiquidationService {
     pub fn new(
         order_tx: Sender<Order>,
         portfolio_state_manager: Arc<PortfolioStateManager>,
+        market_service: Arc<dyn MarketDataService>,
         spread_cache: Arc<SpreadCache>,
     ) -> Self {
         Self {
             order_tx,
             portfolio_state_manager,
+            market_service,
             order_retry_strategy: OrderRetryStrategy::new(RetryConfig::default()),
             spread_cache,
         }
@@ -61,18 +65,32 @@ impl LiquidationService {
             reason
         );
 
+        // Pre-fetch REST prices as fallback for all positions
+        let symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
+        let fallback_prices = self
+            .market_service
+            .get_prices(symbols)
+            .await
+            .unwrap_or_default();
+
         for (symbol, position) in &snapshot.portfolio.positions {
             if position.quantity > Decimal::ZERO {
                 // Get spread data for intelligent order placement
                 let spread_data = self.spread_cache.get_spread_data(symbol);
-                let current_price = current_prices.get(symbol).cloned().unwrap_or(Decimal::ZERO);
+
+                // Use input price, or fallback to REST price
+                let current_price = current_prices
+                    .get(symbol)
+                    .cloned()
+                    .or_else(|| fallback_prices.get(symbol).cloned())
+                    .unwrap_or(Decimal::ZERO);
 
                 // Panic mode (Blind Liquidation) if no price or price is zero
                 let panic_mode = current_price <= Decimal::ZERO;
 
                 if panic_mode {
                     warn!(
-                        "LiquidationService: No price for {} - EXECUTING BLIND MARKET ORDER (Panic Mode)",
+                        "LiquidationService: No price for {} (even REST fallback) - EXECUTING BLIND MARKET ORDER (Panic Mode)",
                         symbol
                     );
                 }

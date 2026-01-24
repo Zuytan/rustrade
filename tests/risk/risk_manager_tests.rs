@@ -150,6 +150,7 @@ async fn test_circuit_breaker_on_market_crash() {
         None,
         None,
         Arc::new(SpreadCache::new()),
+        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
 
@@ -218,6 +219,9 @@ async fn test_buy_approval() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -263,6 +267,9 @@ async fn test_buy_rejection_insufficient_funds() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -323,6 +330,9 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
 
@@ -385,6 +395,9 @@ async fn test_sell_approval() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -431,6 +444,7 @@ async fn test_pdt_protection_rejection() {
             price: Decimal::from(50),
             quantity: Decimal::from(10),
             order_type: OrderType::Limit,
+            status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp: Utc::now().timestamp_millis(),
         })
         .await
@@ -460,6 +474,9 @@ async fn test_pdt_protection_rejection() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
 
@@ -541,6 +558,9 @@ async fn test_sector_exposure_limit() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -614,6 +634,9 @@ async fn test_circuit_breaker_triggers_liquidation() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
 
@@ -691,6 +714,9 @@ async fn test_crypto_daily_reset() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
 
@@ -752,6 +778,9 @@ async fn test_sentiment_risk_adjustment() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -870,6 +899,9 @@ async fn test_blind_liquidation_panic_mode() {
         None,
         None,
         None,
+        None,
+        Arc::new(SpreadCache::new()),
+        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });

@@ -46,29 +46,44 @@ impl ListenerAgent {
     pub async fn run(&self) {
         info!("Listener Agent started.");
 
-        let mut news_rx = match self.news_service.subscribe_news().await {
-            Ok(rx) => rx,
-            Err(e) => {
-                error!(
-                    "Failed to subscribe to news service: {}. Listener Agent stopping.",
-                    e
-                );
-                return;
-            }
-        };
+        let mut reconnect_attempts = 0;
+        const MAX_BACKOFF_MS: u64 = 60000;
 
-        while let Some(event) = news_rx.recv().await {
-            info!("Received news event: {} - {}", event.source, event.title);
+        loop {
+            reconnect_attempts += 1;
+            let backoff_ms =
+                (1000 * (2_u64.pow(reconnect_attempts.min(6) - 1))).min(MAX_BACKOFF_MS);
 
-            // Forward to UI broadcast if available
-            if let Some(tx) = &self.news_broadcast_tx {
-                let _ = tx.send(event.clone());
+            if reconnect_attempts > 1 {
+                warn!("Listener Agent: Reconnecting in {}ms...", backoff_ms);
+                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
             }
 
-            self.process_event(&event).await;
+            let mut news_rx = match self.news_service.subscribe_news().await {
+                Ok(rx) => {
+                    info!("Successfully subscribed to news service.");
+                    reconnect_attempts = 0; // Reset on success
+                    rx
+                }
+                Err(e) => {
+                    error!("Failed to subscribe to news service: {}. Retrying...", e);
+                    continue;
+                }
+            };
+
+            while let Some(event) = news_rx.recv().await {
+                info!("Received news event: {} - {}", event.source, event.title);
+
+                // Forward to UI broadcast if available
+                if let Some(tx) = &self.news_broadcast_tx {
+                    let _ = tx.send(event.clone());
+                }
+
+                self.process_event(&event).await;
+            }
+
+            warn!("Listener Agent news stream ended. Re-establishing...");
         }
-
-        warn!("Listener Agent stopped (stream ended).");
     }
 
     async fn process_event(&self, event: &NewsEvent) {

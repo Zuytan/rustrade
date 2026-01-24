@@ -28,6 +28,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         market_tx,
         vec![],
         Some(sentinel_cmd_rx),
+        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
     );
 
     // 2. Setup MarketScanner (Dynamic Mode)
@@ -109,6 +110,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
                 rustrade::application::market_data::spread_cache::SpreadCache::new(),
             ),
             ui_candle_tx: None,
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         },
     );
 

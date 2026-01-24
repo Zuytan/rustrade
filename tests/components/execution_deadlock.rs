@@ -77,6 +77,7 @@ async fn test_execution_timeouts_on_deadlock() {
         price: Decimal::from(100),
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
+        status: rustrade::domain::trading::types::OrderStatus::New,
         timestamp: 0,
     };
 

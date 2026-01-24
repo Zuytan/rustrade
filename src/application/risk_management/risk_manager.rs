@@ -36,6 +36,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use crate::application::monitoring::connection_health_service::ConnectionHealthService;
 use crate::application::monitoring::correlation_service::CorrelationService;
 use crate::application::monitoring::performance_monitoring_service::PerformanceMonitoringService;
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
@@ -81,6 +82,10 @@ pub struct RiskManager {
     // halted moved to CircuitBreakerService
     daily_pnl: Decimal,
 
+    // NEW Resilience State
+    connection_health_service: Arc<ConnectionHealthService>,
+    last_quote_timestamp: i64,
+
     // Cache
     current_prices: HashMap<String, Decimal>,
     // pending_reservations moved to OrderReconciler
@@ -110,6 +115,7 @@ impl RiskManager {
         risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
         candle_repository: Option<Arc<dyn CandleRepository>>,
         spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
+        connection_health_service: Arc<ConnectionHealthService>,
     ) -> Result<Self, RiskConfigError> {
         // Validate configuration
         risk_config
@@ -178,6 +184,7 @@ impl RiskManager {
         let liquidation_service = LiquidationService::new(
             order_tx.clone(),
             portfolio_state_manager.clone(),
+            market_service.clone(),
             spread_cache.clone(),
         );
 
@@ -225,6 +232,8 @@ impl RiskManager {
             risk_state_repository,
             candle_repository,
             spread_cache,
+            connection_health_service,
+            last_quote_timestamp: Utc::now().timestamp(),
         })
     }
 
@@ -567,11 +576,37 @@ impl RiskManager {
             return Ok(());
         }
 
+        // --- STALE DATA GUARD ---
+        if self
+            .connection_health_service
+            .get_market_data_status()
+            .await
+            == crate::application::monitoring::connection_health_service::ConnectionStatus::Offline
+        {
+            debug!(
+                "RiskManager: Market Data OFFLINE. Rejecting proposal for {}",
+                proposal.symbol
+            );
+            return Ok(());
+        }
+
+        let now = Utc::now().timestamp();
+        let age = now - self.last_quote_timestamp;
+        if age > 30 {
+            debug!(
+                "RiskManager: Market Data STALE ({}s > 30s). Rejecting proposal for {}",
+                age, proposal.symbol
+            );
+            return Ok(());
+        }
+        // -------------------------
+
         debug!("RiskManager: reviewing proposal {:?}", proposal);
 
         // Update current price
         self.current_prices
             .insert(proposal.symbol.clone(), proposal.price);
+        self.last_quote_timestamp = now; // Update freshness
 
         // Get portfolio snapshot
         let mut snapshot = self.portfolio_state_manager.get_snapshot().await;
@@ -696,6 +731,7 @@ impl RiskManager {
             price: proposal.price,
             quantity: proposal.quantity,
             order_type: proposal.order_type,
+            status: crate::domain::trading::types::OrderStatus::Pending,
             timestamp: Utc::now().timestamp_millis(),
         };
 
@@ -779,6 +815,16 @@ impl RiskManager {
                 _ = refresh_interval.tick() => {
                     if let Err(e) = self.handle_command(RiskCommand::RefreshPortfolio).await {
                         error!("RiskManager: Portfolio refresh failed: {}", e);
+                    }
+                }
+
+                // Listen for Health Events
+                Ok(health_event) = async {
+                    self.connection_health_service.subscribe().recv().await
+                } => {
+                    if health_event.component == "MarketData" && health_event.status == crate::application::monitoring::connection_health_service::ConnectionStatus::Offline {
+                        warn!("RiskManager: Detected Market Data OFFLINE via HealthService. Safeguarding...");
+                        // Future: Could force reconcile or tighter stops here
                     }
                 }
 

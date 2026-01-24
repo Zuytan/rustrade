@@ -6,7 +6,7 @@ Rustrade is a high-performance algorithmic trading bot written in Rust.
 
 **Architecture**: Domain-Driven Design (DDD) with autonomous agents communicating via channels.
 
-**Agents**: Sentinel (data), Analyst (brain), RiskManager (gatekeeper), Executor (orders), Listener (news), User (UI).
+**Agents**: Sentinel (data normalization), Analyst (brain), RiskManager (gatekeeper), Executor (orders & reconciliation), Listener (news), User (UI), ConnectionHealthService (system-wide status).
 
 ## Agent Protocol (MANDATORY)
 
