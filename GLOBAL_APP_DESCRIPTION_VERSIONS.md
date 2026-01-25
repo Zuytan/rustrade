@@ -1,5 +1,20 @@
 # Rustrade - Historique des Versions
 
+## Version 0.90.0 - Sentinel Reliability & Data Integrity (January 2026)
+
+### Sentinel Agent Upgrades
+- **Strict Data Validation**: Implemented `StrictEventValidator` to filter out physically impossible data (e.g., negative prices, zero volume, invalid candle spreads) before they reach the Analyst.
+- **Zombie Stream Detection**: Integrated `StreamHealthMonitor` with a 10s heartbeat threshold. Sentinel now detects and broadcasts "silence" events as system-wide Offline status, even if TCP is technically connected.
+- **Performance Optimized**: Heartbeat checks run on an asynchronous interval to avoid slowing down the high-frequency event relay path.
+
+### Infrastructure & Domain
+- **New Validation Domain**: Created `src/domain/validation` to centralize all data integrity rules.
+- **Improved Monitoring**: Added `StreamHealthMonitor` utility in `src/application/monitoring` for reuse across different agents.
+
+### Quality & Verification
+- **100% Test Coverage**: All reliability features verified with unit tests for edge cases (flash crashes, connection silences).
+- **Test Suite Synchronization**: Verified entire 370+ test suite passes with the new Sentinel components.
+
 ## Version 0.89.1 - Documentation & Assessment (January 2026)
 
 ### Project Assessment

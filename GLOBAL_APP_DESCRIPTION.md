@@ -10,6 +10,9 @@ The system prioritizes capital preservation through a "Paranoid" Risk Management
 ### Agent System
 The application operates as a mesh of autonomous agents communicating via high-performance channels, managed by a unified **`SystemClient`** facade:
 - **Sentinel Agent**: Normalizes real-time market data. Relies on the infrastructure layer's singleton WebSocket manager for robust, low-latency streaming and automatic reconnection.
+  - **Reliability Upgrades**:
+    - **Strict Validation**: Employs `StrictEventValidator` to filter out non-positive prices and anomalous candles (Low > High) before internal propagation.
+    - **Heartbeat Monitoring**: Integrates `StreamHealthMonitor` to detect "zombie" connections; marks stream as Offline if no data is received within a 10s threshold.
 - **Analyst Agent**: The "Brain". Modular architecture (`RegimeHandler`, `PositionLifecycle`, `NewsHandler`) separating regime detection, position management, and news processing. Maintains symbol state and generates trade proposals.
 - **Risk Manager**: The "Gatekeeper". Validates every proposal against a strict set of risk rules and portfolio limits. Enforces real-time connectivity checks before approving trades.
 - **Executor Agent**: Handles order placement, modification, and reconciliation. Automatically reconciles locally 'Pending' orders with exchange state on startup to prevent "ghost" orders or double-spending.

@@ -1,9 +1,12 @@
 use crate::application::monitoring::connection_health_service::{
     ConnectionHealthService, ConnectionStatus,
 };
+use crate::application::monitoring::heartbeat::StreamHealthMonitor;
 use crate::domain::ports::MarketDataService;
 use crate::domain::trading::types::MarketEvent;
+use crate::domain::validation::data_quality::StrictEventValidator;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info, warn};
 
@@ -19,6 +22,8 @@ pub struct Sentinel {
     symbols: Vec<String>,
     cmd_rx: Option<Receiver<SentinelCommand>>,
     health_service: Arc<ConnectionHealthService>,
+    heartbeat: StreamHealthMonitor,
+    last_heal_attempt: Option<std::time::Instant>,
 }
 
 impl Sentinel {
@@ -29,12 +34,17 @@ impl Sentinel {
         cmd_rx: Option<Receiver<SentinelCommand>>,
         health_service: Arc<ConnectionHealthService>,
     ) -> Self {
+        // Crypto threshold: 10s for silence
+        let heartbeat = StreamHealthMonitor::new("Sentinel", Duration::from_secs(10));
+
         Self {
             market_service,
             market_tx,
             symbols,
             cmd_rx,
             health_service,
+            heartbeat,
+            last_heal_attempt: None,
         }
     }
 
@@ -66,11 +76,23 @@ impl Sentinel {
             }
         };
 
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(2));
+
         loop {
             tokio::select! {
                 maybe_event = market_rx.recv() => {
                     match maybe_event {
                         Some(event) => {
+                            // 1. Update Heartbeat
+                            self.heartbeat.record_event();
+
+                            // 2. Validate Event
+                            if !StrictEventValidator::validate_event(&event) {
+                                // Event dropped by validator, skip forwarding
+                                continue;
+                            }
+
+                            // 3. Forward Event
                             if let Err(e) = self.market_tx.send(event).await {
                                 error!("Sentinel: Failed to forward event: {}", e);
                                 return; // Fatal: internal channel closed
@@ -81,6 +103,43 @@ impl Sentinel {
                             self.health_service.set_market_data_status(ConnectionStatus::Offline, Some("Market stream ended".to_string())).await;
                             return;
                         }
+                    }
+                }
+
+                // 4. Periodic Heartbeat Check
+                _ = heartbeat_interval.tick() => {
+                    if !self.heartbeat.is_healthy() {
+                        let elapsed = self.heartbeat.last_event_elapsed();
+                        let msg = format!("No data received for {:?}", elapsed);
+                        self.health_service.set_market_data_status(
+                            ConnectionStatus::Offline,
+                            Some(msg)
+                        ).await;
+
+                        // Phase 2: Self-healing
+                        // If it's very silent (e.g. > 30s), try to re-subscribe
+                        // Throttled to once every 60s to avoid hammering
+                        let cooldown = Duration::from_secs(60);
+                        let can_heal = self.last_heal_attempt.map(|t| t.elapsed() > cooldown).unwrap_or(true);
+
+                        if elapsed > Duration::from_secs(30) && can_heal {
+                            warn!("Sentinel: Stream silent for >30s ({:?}). Attempting forced re-subscription...", elapsed);
+                            self.last_heal_attempt = Some(std::time::Instant::now());
+
+                            match self.market_service.subscribe(current_symbols.clone()).await {
+                                Ok(new_rx) => {
+                                    market_rx = new_rx;
+                                    self.heartbeat.record_event(); // Reset heartbeat to avoid immediate retry
+                                    info!("Sentinel: Forced re-subscription successful for symbols: {:?}", current_symbols);
+                                }
+                                Err(e) => {
+                                    error!("Sentinel: Forced re-subscription failed: {}", e);
+                                }
+                            }
+                        }
+                    } else if self.health_service.get_market_data_status().await == ConnectionStatus::Offline {
+                         // Auto-recover status if heartbeat is back
+                         self.health_service.set_market_data_status(ConnectionStatus::Online, None).await;
                     }
                 }
 

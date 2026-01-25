@@ -30,3 +30,6 @@ pub mod sentiment;
 
 // Listener / News domain
 pub mod listener;
+
+// Data Validation domain
+pub mod validation;
