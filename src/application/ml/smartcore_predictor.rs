@@ -64,15 +64,17 @@ impl SmartCorePredictor {
             fs.macd_line.unwrap_or(0.0),
             fs.macd_signal.unwrap_or(0.0),
             fs.macd_hist.unwrap_or(0.0),
-            // BB Width & Position calculation duplicated here for now
-            // Ideally should be central utility
-            0.0, // Placeholder for derived features to match training data
-            0.5, // Placeholder
-            0.0, // Placeholder
+            fs.bb_width.unwrap_or(0.0),
+            fs.bb_position.unwrap_or(0.5),
+            fs.atr_pct.unwrap_or(0.0),
             fs.hurst_exponent.unwrap_or(0.5),
             fs.skewness.unwrap_or(0.0),
             fs.momentum_normalized.unwrap_or(0.0),
             fs.realized_volatility.unwrap_or(0.0),
+            fs.ofi.unwrap_or(0.0),
+            fs.cumulative_delta.unwrap_or(0.0),
+            fs.spread_bps.unwrap_or(0.0),
+            fs.adx.unwrap_or(0.0),
         ]
     }
 }

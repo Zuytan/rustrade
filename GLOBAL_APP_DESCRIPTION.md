@@ -77,9 +77,11 @@ Rustrade supports a diverse suite of strategies. The system has evolved to prior
 - **Multi-Timeframe Analysis**: Aggregates 1-minute data into higher timeframes (5m, 15m, 1h, 4h, 1d) to validate trends ("Zoom Out" confirmation).
 
 ### Machine Learning Architecture
-- **Data Collection**: `DataCollector` agent passively captures FeatureSets and labels them with future returns (1m, 5m, 15m), persisting them to CSV for training.
-- **Inference Engine**: `SmartCorePredictor` loads pre-trained Random Forest models to generate real-time trade probabilities.
-- **Training Pipeline**: Standalone `train_ml` binary for offline model retraining.
+- **Data Collection**: `DataCollector` agent passively captures enriched `FeatureSet` (including Order Flow and Statistical Microstructure) and labels them with future returns (1m, 5m, 15m).
+- **Inference Engine**: `SmartCorePredictor` (SmartCore) or `InferenceEngine` (ONNX/XGBoost) loads pre-trained models to generate real-time trade probabilities.
+- **Training Pipeline**: 
+  - `train_gen`: High-speed dataset generation via historical backtesting.
+  - `train_ml`: Standalone binary for offline model retraining.
 
 ### News & Sentiment
 - **NLP Analysis**: Uses local VADER sentiment analysis with financial keyword boosting to classify news headlines (Bullish/Bearish).

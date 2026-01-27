@@ -170,6 +170,7 @@ pub enum PositionLifecycle {
 /// Technical indicators for a symbol
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FeatureSet {
+    pub last_price: Option<f64>,
     pub rsi: Option<f64>,
     pub macd_line: Option<f64>,
     pub macd_signal: Option<f64>,
@@ -184,12 +185,19 @@ pub struct FeatureSet {
     pub ema_fast: Option<f64>,
     pub ema_slow: Option<f64>,
     pub adx: Option<f64>,
+    pub bb_width: Option<f64>,
+    pub bb_position: Option<f64>,
+    pub atr_pct: Option<f64>,
 
     // Advanced Statistical Features (Phase 2)
     pub hurst_exponent: Option<f64>,
     pub skewness: Option<f64>,
     pub momentum_normalized: Option<f64>,
     pub realized_volatility: Option<f64>,
+    // Microstructure Features (Phase 2)
+    pub ofi: Option<f64>,
+    pub cumulative_delta: Option<f64>,
+    pub spread_bps: Option<f64>,
     /// The timeframe these indicators were calculated on
     pub timeframe: Option<crate::domain::market::timeframe::Timeframe>,
 }

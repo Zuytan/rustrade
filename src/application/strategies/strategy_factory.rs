@@ -80,12 +80,24 @@ impl StrategyFactory {
             StrategyMode::ZScoreMR => Arc::new(ZScoreMeanReversionStrategy::default()),
             StrategyMode::StatMomentum => Arc::new(StatisticalMomentumStrategy::default()),
             StrategyMode::ML => {
-                let path = std::path::PathBuf::from("data/ml/model.bin");
-                let predictor =
-                    crate::application::ml::smartcore_predictor::SmartCorePredictor::new(path);
+                let onnx_path = std::path::PathBuf::from("data/ml/model.onnx");
+                let bin_path = std::path::PathBuf::from("data/ml/model.bin");
+
+                let predictor: Arc<Box<dyn crate::application::ml::predictor::MLPredictor>> =
+                    if onnx_path.exists() {
+                        let p =
+                            crate::application::ml::onnx_predictor::OnnxPredictor::new(onnx_path);
+                        Arc::new(Box::new(p))
+                    } else {
+                        let p =
+                            crate::application::ml::smartcore_predictor::SmartCorePredictor::new(
+                                bin_path,
+                            );
+                        Arc::new(Box::new(p))
+                    };
+
                 Arc::new(crate::application::strategies::MLStrategy::new(
-                    Arc::new(Box::new(predictor)),
-                    0.6, // Default threshold
+                    predictor, 0.0005, // Threshold: 0.05% expected return (Regression Mode)
                 ))
             }
         }

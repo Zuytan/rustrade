@@ -38,6 +38,7 @@ This document provides a comprehensive overview of all trading strategies implem
 | SMC | Institutional | All | Medium | Order Blocks + FVG |
 | Dynamic | Adaptive | All | Variable | Regime Detection |
 | Ensemble | Meta | All | Low | Multi-Strategy Vote |
+| ML | Predictive | All | Medium | ONNX / SmartCore Models |
 
 ---
 
@@ -393,6 +394,38 @@ Signal = Weighted vote if > threshold (e.g., 60%)
 - When seeking high-conviction signals
 - Risk-averse trading
 - When no single strategy dominates
+
+---
+
+## Machine Learning Strategies
+
+### ML (High-Performance Inference)
+
+The ML strategy uses pre-trained models to predict price movements based on a rich set of technical and order flow features.
+
+#### Runtime Support
+
+Rustrade supports two inference runtimes:
+1. **ONNX Runtime (`ort`)**: Recommended for high-performance inference with XGBoost, LightGBM, or Deep Learning models.
+2. **SmartCore**: Legacy support for Random Forest models trained with the built-in `train_ml` utility.
+
+#### Hybrid Loading Logic
+
+The `StrategyFactory` automatically detects and prioritizes models:
+- If `data/ml/model.onnx` exists → Uses **ONNX Runtime**.
+- Else if `data/ml/model.bin` exists → Uses **SmartCore**.
+- Otherwise → Returns neutral signals.
+
+#### Feature Matrix
+
+The following features are fed into the models (order is critical for ONNX):
+- RSI, MACD (Line, Signal, Hist), Bollinger Position/Width, ATR%, Hurst Exponent, Skewness, Normalized Momentum, Realized Volatility, OFI, Cumulative Delta, Spread (BPS), ADX.
+
+#### When to Use
+
+- When historical patterns are complex and non-linear.
+- In markets with rich order flow data (ONNX can process more features efficiently).
+- When you have a custom-trained model from Python/Scikit-learn/PyTorch exported to ONNX.
 
 ---
 

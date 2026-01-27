@@ -21,6 +21,10 @@ pub struct TrainingDataPoint {
     pub skewness: f64,
     pub momentum_norm: f64,
     pub volatility: f64,
+    pub ofi: f64,
+    pub cumulative_delta: f64,
+    pub spread_bps: f64,
+    pub adx: f64,
     // Labels (Future Returns)
     pub return_1m: Option<f64>,
     pub return_5m: Option<f64>,
@@ -73,33 +77,10 @@ impl DataCollector {
     fn extract_features(
         &self,
         symbol: &str,
-        price: f64,
+        _price: f64,
         timestamp: i64,
         fs: &FeatureSet,
     ) -> TrainingDataPoint {
-        let bb_width = if let (Some(u), Some(l), Some(m)) = (fs.bb_upper, fs.bb_lower, fs.bb_middle)
-        {
-            if m > 0.0 { (u - l) / m } else { 0.0 }
-        } else {
-            0.0
-        };
-
-        let bb_position = if let (Some(u), Some(l)) = (fs.bb_upper, fs.bb_lower) {
-            if u - l > 0.0 {
-                (price - l) / (u - l)
-            } else {
-                0.5
-            }
-        } else {
-            0.5
-        };
-
-        let atr_pct = if let Some(atr) = fs.atr {
-            if price > 0.0 { atr / price } else { 0.0 }
-        } else {
-            0.0
-        };
-
         TrainingDataPoint {
             timestamp,
             symbol: symbol.to_string(),
@@ -107,13 +88,17 @@ impl DataCollector {
             macd: fs.macd_line.unwrap_or(0.0),
             macd_signal: fs.macd_signal.unwrap_or(0.0),
             macd_hist: fs.macd_hist.unwrap_or(0.0),
-            bb_width,
-            bb_position,
-            atr_pct,
+            bb_width: fs.bb_width.unwrap_or(0.0),
+            bb_position: fs.bb_position.unwrap_or(0.5),
+            atr_pct: fs.atr_pct.unwrap_or(0.0),
             hurst: fs.hurst_exponent.unwrap_or(0.5),
             skewness: fs.skewness.unwrap_or(0.0),
             momentum_norm: fs.momentum_normalized.unwrap_or(0.0),
             volatility: fs.realized_volatility.unwrap_or(0.0),
+            ofi: fs.ofi.unwrap_or(0.0),
+            cumulative_delta: fs.cumulative_delta.unwrap_or(0.0),
+            spread_bps: fs.spread_bps.unwrap_or(0.0),
+            adx: fs.adx.unwrap_or(0.0),
             return_1m: None,
             return_5m: None,
             return_15m: None,

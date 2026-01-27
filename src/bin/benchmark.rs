@@ -43,6 +43,10 @@ enum Commands {
         /// Risk Score (1-10)
         #[arg(short, long, default_value = "5")]
         risk: u8,
+
+        /// Asset class (stock or crypto)
+        #[arg(long, default_value = "stock")]
+        asset_class: String,
     },
     /// Matrix benchmark (Parameter Grid Search)
     Matrix {
@@ -78,9 +82,29 @@ async fn main() -> anyhow::Result<()> {
             strategy,
             parallel,
             risk,
+            asset_class,
         } => {
-            let symbol_list: Vec<String> =
+            unsafe {
+                std::env::set_var("ASSET_CLASS", &asset_class);
+            }
+
+            let mut symbol_list: Vec<String> =
                 symbols.split(',').map(|s| s.trim().to_string()).collect();
+
+            // Normalize crypto symbols
+            if asset_class.to_lowercase() == "crypto" {
+                symbol_list = symbol_list
+                    .into_iter()
+                    .map(|s| {
+                        if !s.contains('/') {
+                            rustrade::domain::trading::types::normalize_crypto_symbol(&s)
+                                .unwrap_or(s)
+                        } else {
+                            s
+                        }
+                    })
+                    .collect();
+            }
             let start_date = NaiveDate::parse_from_str(&start, "%Y-%m-%d")?;
 
             // Logic to determine dates

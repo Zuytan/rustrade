@@ -78,6 +78,7 @@ impl SignalGenerator {
             momentum_normalized: features.momentum_normalized,
             realized_volatility: features.realized_volatility,
             timeframe_features: None, // Will be populated by Analyst when multi-timeframe is enabled
+            feature_set: Some(features.clone()), // Propagate raw features for ML
         };
 
         if let Some(strategy_signal) = strategy.analyze(&analysis_ctx) {

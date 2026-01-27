@@ -1,5 +1,34 @@
 # Rustrade - Historique des Versions
 
+## Version 0.92.0 - Cycle 3: AI Agent Optimization & Live Verification (January 2026)
+
+### ML Optimization & Performance
+- **Hyperparameter Tuning**: Automated script (`optimize_ml.sh`) iterates through Random Forest parameters (Trees, Depth, Splits) to maximize Net Profit.
+- **Pure Rust Training**: Enhanced `train_ml` binary replaces Python scripts, allowing full model training and saving natively in Rust.
+- **Improved Metrics**: Benchmark engine now accurately tracks P&L per strategy, enabling automated selection of the best performing model.
+
+### Reliability & Verification
+- **Paper Trading Verified**: Confirmed end-to-end system stability in Alpaca Paper Trading environment (Crypto).
+- **Quality Assurance**: 100% test pass rate, zero clippy warnings, and thread-safe ML inference verified under load.
+
+## Version 0.91.0 - AI Agent Phase 1: Data Enrichment & Dataset Generation (January 2026)
+
+### AI Infrastructure
+- **Enhanced Feature Set**: Expanded `FeatureSet` to include market microstructure data:
+  - **Order Flow**: Live Order Flow Imbalance (OFI) and Cumulative Delta.
+  - **Smart Features**: Pre-calculated Bollinger Band Width/Position and ATR-normalized volatility.
+- **Dataset Generation Binaire**: Introduced `train_gen` CLI tool to rapidly generate massive ML datasets by replaying historical market data through the backtesting engine.
+- **Unified Feature Pipeline**: Centralized feature calculation in `TechnicalFeatureEngineeringService` to ensure zero drift between training and real-time inference.
+
+### Machine Learning
+- **Enriched Collector**: `DataCollector` now captures the full 18+ feature vector along with multi-horizon return labels (1m, 5m, 15m).
+- **Predictor Alignment**: Updated `SmartCorePredictor` to support the expanded feature space.
+
+### Quality & Cleanup
+- **Safe Env Management**: Fixed unsafe environment variable manipulation in a multi-threaded context.
+- **Strict Linting**: Verified zero clippy warnings and 100% test pass rate across the new AI components.
+
+
 ## Version 0.90.0 - Sentinel Reliability & Data Integrity (January 2026)
 
 ### Sentinel Agent Upgrades

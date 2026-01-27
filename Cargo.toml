@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.90.0"
+version = "0.92.0"
 edition = "2024"
 default-run = "rustrade"
 
@@ -75,4 +75,6 @@ clap = { version = "4.5.54", features = ["derive"] }
 smartcore = { version = "0.4.9", features = ["serde"] }
 csv = "1.4.0"
 bincode = "1.3"
+ort = { version = "2.0.0-rc.9", features = ["ndarray"] }
+ndarray = "0.15"
 

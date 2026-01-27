@@ -19,8 +19,8 @@ results.json
 benchmark_results/
 optimization*.json
 check_output.txt
-.rustrade/   # Local settings directory
-data/        # ML training data and models
+.rustrade/
+data/
 
 # --- OS & TOOLS ---
 .DS_Store

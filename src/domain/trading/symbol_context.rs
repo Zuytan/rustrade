@@ -146,6 +146,11 @@ impl SymbolContext {
                 100, // lookback
             ));
         }
+
+        // Populate new Microstructure features in last_features for ML
+        self.last_features.ofi = Some(self.ofi_value);
+        self.last_features.cumulative_delta = Some(self.cumulative_delta.value);
+        self.last_features.spread_bps = Some(self.config.spread_bps);
     }
 }
 

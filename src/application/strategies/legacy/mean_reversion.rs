@@ -110,6 +110,7 @@ mod tests {
             momentum_normalized: None,
             realized_volatility: None,
             timeframe_features: None,
+            feature_set: None,
         }
     }
 

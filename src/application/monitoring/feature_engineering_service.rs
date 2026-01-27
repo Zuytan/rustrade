@@ -252,7 +252,22 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             None
         };
 
+        let bb_width = if bb_val.average > 0.0 {
+            (bb_val.upper - bb_val.lower) / bb_val.average
+        } else {
+            0.0
+        };
+
+        let bb_position = if bb_val.upper - bb_val.lower > 1e-9 {
+            (price - bb_val.lower) / (bb_val.upper - bb_val.lower)
+        } else {
+            0.5
+        };
+
+        let atr_pct = if price > 0.0 { atr_val / price } else { 0.0 };
+
         FeatureSet {
+            last_price: Some(price),
             rsi: Some(rsi_val),
             macd_line: Some(macd_val.macd),
             macd_signal: Some(macd_val.signal),
@@ -267,6 +282,9 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             ema_fast: Some(self.ema_fast.next(price)),
             ema_slow: Some(self.ema_slow.next(price)),
             adx: Some(self.adx.next(high, low, price)),
+            bb_width: Some(bb_width),
+            bb_position: Some(bb_position),
+            atr_pct: Some(atr_pct),
 
             // Advanced Statistical Features (Phase 2)
             hurst_exponent,
@@ -275,6 +293,7 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             realized_volatility,
 
             timeframe: Some(crate::domain::market::timeframe::Timeframe::OneMin),
+            ..Default::default()
         }
     }
 }
