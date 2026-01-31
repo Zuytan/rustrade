@@ -12,6 +12,7 @@ pub mod sentiment;
 
 pub mod optimal_parameters_persistence;
 pub mod settings_persistence;
+pub mod simulation;
 
 pub use core::event_bus::EventBus;
 pub use persistence::in_memory::{InMemoryPortfolioRepository, InMemoryTradeRepository};

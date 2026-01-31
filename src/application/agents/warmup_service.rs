@@ -4,6 +4,7 @@ use crate::domain::ports::MarketDataService;
 use crate::domain::repositories::StrategyRepository;
 use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::Candle;
+use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
@@ -132,13 +133,56 @@ impl WarmupService {
                 // Update context with each candle
                 for candle in &bars {
                     context.update(candle);
+
+                    // Construct minimal AnalysisContext for warmup (Sequential ML models need this)
+                    // We primarily populate feature_set as that's what MLStrategy uses
+                    let price_f64 = candle.close.to_f64().unwrap_or(0.0);
+
+                    // Helper to safely get features (SymbolContext.last_features is updated)
+                    let fs = &context.last_features;
+
+                    // Create dummy/default values for required fields that aren't critical for ML warmup
+                    // but needed to satisfy struct constructor
+                    let ctx = crate::application::strategies::AnalysisContext {
+                        symbol: symbol.to_string(),
+                        current_price: candle.close,
+                        price_f64,
+                        fast_sma: 0.0,
+                        slow_sma: 0.0,
+                        trend_sma: 0.0,
+                        rsi: fs.rsi.unwrap_or(50.0),
+                        macd_value: fs.macd_line.unwrap_or(0.0), // using macd_line as value
+                        macd_signal: fs.macd_signal.unwrap_or(0.0),
+                        macd_histogram: fs.macd_hist.unwrap_or(0.0),
+                        last_macd_histogram: context.last_macd_histogram,
+                        atr: 0.0,
+                        bb_lower: 0.0,
+                        bb_upper: 0.0,
+                        bb_middle: 0.0,
+                        adx: fs.adx.unwrap_or(0.0),
+                        has_position: false,
+                        timestamp: candle.timestamp,
+                        candles: std::collections::VecDeque::new(), // optimizing: don't clone history for warmup
+                        rsi_history: std::collections::VecDeque::new(),
+                        ofi_value: fs.ofi.unwrap_or(0.0),
+                        cumulative_delta: fs.cumulative_delta.unwrap_or(0.0),
+                        volume_profile: None,
+                        ofi_history: std::collections::VecDeque::new(),
+                        hurst_exponent: fs.hurst_exponent,
+                        skewness: fs.skewness,
+                        momentum_normalized: fs.momentum_normalized,
+                        realized_volatility: fs.realized_volatility,
+                        timeframe_features: None,
+                        feature_set: Some(fs.clone()),
+                    };
+
+                    context.strategy.warmup(&ctx);
                 }
 
                 debug!(
-                    "WarmupService: Warmup complete for {} with {} candles. Last SMA_50: {:?}",
+                    "WarmupService: Warmup complete for {} with {} candles.",
                     symbol,
-                    bars.len(),
-                    context.last_features.sma_50
+                    bars.len()
                 );
 
                 // Calculate and cache reward/risk ratio for trade filtering

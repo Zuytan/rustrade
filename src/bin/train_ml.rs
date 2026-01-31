@@ -1,5 +1,5 @@
 use clap::Parser;
-use rustrade::application::ml::data_collector::TrainingDataPoint;
+use serde::Deserialize;
 use smartcore::ensemble::random_forest_regressor::{
     RandomForestRegressor, RandomForestRegressorParameters,
 };
@@ -8,6 +8,28 @@ use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
+
+#[derive(Debug, Deserialize)]
+struct TrainingRecord {
+    timestamp: i64,
+    symbol: String,
+    rsi: f64,
+    macd: f64,
+    macd_signal: f64,
+    macd_hist: f64,
+    bb_width: f64,
+    bb_position: f64,
+    atr_pct: f64,
+    hurst: f64,
+    skewness: f64,
+    momentum_norm: f64,
+    volatility: f64,
+    ofi: f64,
+    cumulative_delta: f64,
+    spread_bps: f64,
+    adx: f64,
+    return_5m: Option<f64>,
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -55,10 +77,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut y: Vec<f64> = Vec::new();
 
     for result in rdr.deserialize() {
-        let record: TrainingDataPoint = result?;
+        let record: TrainingRecord = result?;
 
         if let Some(ret) = record.return_5m {
             // Features must match SmartCorePredictor::features_to_vec exactly!
+            // Which now matches feature_registry order.
+            // We manually reconstruct the vector here.
             let features = vec![
                 record.rsi,
                 record.macd,
@@ -93,9 +117,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let x_matrix = DenseMatrix::from_2d_vec(&x).map_err(|e| format!("Matrix error: {}", e))?;
 
     let params = RandomForestRegressorParameters::default()
-        .with_n_trees(args.n_trees as usize)
-        .with_max_depth(args.max_depth as u16)
-        .with_min_samples_split(args.min_split as usize);
+        .with_n_trees(args.n_trees)
+        .with_max_depth(args.max_depth)
+        .with_min_samples_split(args.min_split);
 
     println!(
         "Training Random Forest Regressor (Trees: {}, Depth: {}, MinSplit: {})...",

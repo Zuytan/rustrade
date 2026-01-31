@@ -25,14 +25,35 @@ impl ServiceFactory {
         Arc<SpreadCache>,
     ) {
         match config.mode {
-            Mode::Mock => (
-                Arc::new(MockMarketDataService::new()),
-                Arc::new(MockExecutionService::with_costs(
-                    portfolio,
-                    config.create_fee_model(),
-                )),
-                Arc::new(SpreadCache::new()),
-            ),
+            Mode::Mock => {
+                let execution_service = if config.simulation_enabled {
+                    use crate::infrastructure::simulation::latency_model::NetworkLatency;
+                    use crate::infrastructure::simulation::slippage_model::VolatilitySlippage;
+
+                    let latency_model = Arc::new(NetworkLatency::new(
+                        config.simulation_latency_base_ms,
+                        config.simulation_latency_jitter_ms,
+                    ));
+                    let slippage_model = Arc::new(VolatilitySlippage::new(
+                        config.simulation_slippage_volatility,
+                    ));
+
+                    MockExecutionService::with_simulation_models(
+                        portfolio,
+                        config.create_fee_model(),
+                        latency_model,
+                        slippage_model,
+                    )
+                } else {
+                    MockExecutionService::with_costs(portfolio, config.create_fee_model())
+                };
+
+                (
+                    Arc::new(MockMarketDataService::new()),
+                    Arc::new(execution_service),
+                    Arc::new(SpreadCache::new()),
+                )
+            }
             Mode::Alpaca => {
                 let market_service = AlpacaMarketDataService::builder()
                     .api_key(config.alpaca_api_key.clone())

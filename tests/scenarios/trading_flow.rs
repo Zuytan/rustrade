@@ -108,6 +108,10 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         enabled_timeframes: vec![rustrade::domain::market::timeframe::Timeframe::OneMin],
         trend_timeframe: rustrade::domain::market::timeframe::Timeframe::OneHour,
         enable_ml_data_collection: false,
+        simulation_enabled: false,
+        simulation_latency_base_ms: 0,
+        simulation_latency_jitter_ms: 0,
+        simulation_slippage_volatility: 0.0,
     });
 
     config.mode = Mode::Mock;

@@ -58,24 +58,7 @@ impl SmartCorePredictor {
     }
 
     fn features_to_vec(&self, fs: &FeatureSet) -> Vec<f64> {
-        // Must match DataCollector order!
-        vec![
-            fs.rsi.unwrap_or(50.0),
-            fs.macd_line.unwrap_or(0.0),
-            fs.macd_signal.unwrap_or(0.0),
-            fs.macd_hist.unwrap_or(0.0),
-            fs.bb_width.unwrap_or(0.0),
-            fs.bb_position.unwrap_or(0.5),
-            fs.atr_pct.unwrap_or(0.0),
-            fs.hurst_exponent.unwrap_or(0.5),
-            fs.skewness.unwrap_or(0.0),
-            fs.momentum_normalized.unwrap_or(0.0),
-            fs.realized_volatility.unwrap_or(0.0),
-            fs.ofi.unwrap_or(0.0),
-            fs.cumulative_delta.unwrap_or(0.0),
-            fs.spread_bps.unwrap_or(0.0),
-            fs.adx.unwrap_or(0.0),
-        ]
+        crate::domain::ml::feature_registry::features_to_f64_vector(fs)
     }
 }
 

@@ -1,5 +1,25 @@
 # Rustrade - Historique des Versions
 
+## Version 0.93.0 - High-Fidelity Simulation & DL Infrastructure (January 2026)
+
+### High-Fidelity Simulation
+- **Network Latency Simulation**: Introduced `LatencyModel` (Base + Jitter) to simulate realistic execution delays in `MockExecutionService`.
+- **Dynamic Slippage Model**: Implemented `SlippageModel` based on market volatility to simulate price impact and bid-ask spreads.
+- **Improved Benchmarking**: Updated `BenchmarkEngine` to integrate simulation models, enabling stress-testing of strategies under realistic conditions.
+- **Full Configuration**: Added `SIMULATION_ENABLED`, `SIMULATION_LATENCY_BASE_MS`, and `SIMULATION_SLIPPAGE_VOLATILITY` settings.
+
+### Deep Learning Infrastructure
+- **Sequential ML Support**: Refactored `OnnxPredictor` to be stateful, supporting LSTM/GRU models with a sliding history window.
+- **Feature Registry**: Centralized feature ordering to ensure strict consistency between Rust inference and Python training.
+- **Warmup Mechanism**: Implemented `warmup` service to pre-initialize model state with historical data, eliminating the "cold start" latency for sequential models.
+- **Python Pipeline**: Provided `train_lstm.py` and dedicated requirements for training deep learning models externally and exporting to ONNX.
+
+### Quality & Reliability
+- **Rand 0.9 Migration**: Updated simulation models to use the latest `rand` API (`random_range`, `rng`).
+- **Test Synchronization**: Updated global `Config` initializers across the entire integration test suite.
+- **100% Verification**: Verified ~1% performance degradation on benchmarks when simulation is enabled, confirming model effectiveness.
+
+
 ## Version 0.92.0 - Cycle 3: AI Agent Optimization & Live Verification (January 2026)
 
 ### ML Optimization & Performance

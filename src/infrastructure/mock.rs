@@ -231,23 +231,25 @@ impl MarketDataService for MockMarketDataService {
 
 use crate::domain::trading::portfolio::Portfolio;
 
+use crate::infrastructure::simulation::latency_model::{LatencyModel, ZeroLatency};
+use crate::infrastructure::simulation::slippage_model::{SlippageModel, ZeroSlippage};
+
 pub struct MockExecutionService {
     portfolio: Arc<RwLock<Portfolio>>,
     orders: Arc<RwLock<Vec<Order>>>,
     fee_model: Arc<dyn FeeModel>,
+    // New simulation models
+    latency_model: Arc<dyn LatencyModel>,
+    slippage_model: Arc<dyn SlippageModel>,
     order_update_sender: broadcast::Sender<OrderUpdate>,
 }
 
 impl MockExecutionService {
     pub fn new(portfolio: Arc<RwLock<Portfolio>>) -> Self {
         {
-            // Initializing sync immediately for Mock
-            // Use try_write to avoid panicking in async context (blocking_write is forbidden)
             if let Ok(mut guard) = portfolio.try_write() {
                 guard.synchronized = true;
             } else {
-                // If we can't get the lock, we assume it might be locked by the test setup
-                // or already synchronized. We log a warning but don't panic.
                 tracing::warn!(
                     "MockExecutionService: Could not acquire lock to set synchronized=true. Assuming handled elsewhere."
                 );
@@ -257,6 +259,24 @@ impl MockExecutionService {
             portfolio,
             orders: Arc::new(RwLock::new(Vec::new())),
             fee_model: Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
+            latency_model: Arc::new(ZeroLatency),
+            slippage_model: Arc::new(ZeroSlippage),
+            order_update_sender: broadcast::channel(100).0,
+        }
+    }
+
+    pub fn with_simulation_models(
+        portfolio: Arc<RwLock<Portfolio>>,
+        fee_model: Arc<dyn FeeModel>,
+        latency_model: Arc<dyn LatencyModel>,
+        slippage_model: Arc<dyn SlippageModel>,
+    ) -> Self {
+        Self {
+            portfolio,
+            orders: Arc::new(RwLock::new(Vec::new())),
+            fee_model,
+            latency_model,
+            slippage_model,
             order_update_sender: broadcast::channel(100).0,
         }
     }
@@ -266,6 +286,8 @@ impl MockExecutionService {
             portfolio,
             orders: Arc::new(RwLock::new(Vec::new())),
             fee_model,
+            latency_model: Arc::new(ZeroLatency),
+            slippage_model: Arc::new(ZeroSlippage),
             order_update_sender: broadcast::channel(100).0,
         }
     }
@@ -276,6 +298,13 @@ impl ExecutionService for MockExecutionService {
     async fn execute(&self, order: Order) -> Result<()> {
         info!("MockExecution: Placing order {}...", order.id);
 
+        // Simulate Network Latency
+        let latency = self.latency_model.next_latency();
+        if !latency.is_zero() {
+            tracing::debug!("MockExecution: Simulating network latency of {:?}", latency);
+            tokio::time::sleep(latency).await;
+        }
+
         let mut port =
             tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write())
                 .await
@@ -285,37 +314,34 @@ impl ExecutionService for MockExecutionService {
                     )
                 })?;
 
-        // Calculate costs using FeeModel
+        // Calculate Execution Price with Slippage
+        let execution_price =
+            self.slippage_model
+                .calculate_execution_price(order.price, order.quantity, order.side);
+
+        // Calculate commissions (fee model now only handles commission part mostly, but legacy might still have slippage)
+        // We set slippage_pct to 0 in costs calculation context if we want to separate totally,
+        // but let's assume FeeModel provided is 'CommissionOnly' or similar,
+        // OR we interpret fee_model.calculate_costs strictly.
+        // For backwards compatibility, if FeeModel returns slippage_cost, we add it.
+        // But cleaner is to use execution price.
+
         let costs = self
             .fee_model
-            .calculate_cost(order.quantity, order.price, order.side);
+            .calculate_cost(order.quantity, execution_price, order.side);
 
-        let slippage_amount = costs.slippage_cost; // Value lost due to slippage
         let commission = costs.fee;
 
-        // Effective price adjustment due to slippage
-        // For Buy: we pay more -> price + slippage_per_unit
-        // For Sell: we get less -> price - slippage_per_unit
-        let slippage_per_unit = if order.quantity > Decimal::ZERO {
-            slippage_amount / order.quantity
-        } else {
-            Decimal::ZERO
-        };
-
-        let execution_price = match order.side {
-            crate::domain::trading::types::OrderSide::Buy => order.price + slippage_per_unit,
-            crate::domain::trading::types::OrderSide::Sell => order.price - slippage_per_unit,
-        };
+        // Slippage Impact calc for logging
+        let price_impact = (execution_price - order.price).abs() * order.quantity;
 
         // Total cost value (base value)
         let cost = execution_price * order.quantity;
 
-        if !commission.is_zero() || !slippage_amount.is_zero() {
-            info!(
-                "MockExecution: Order {} - Slippage: ${:.4}, Commission: ${:.4}, Total Impact: ${:.4}",
-                order.id, slippage_amount, commission, costs.total_impact
-            );
-        }
+        info!(
+            "MockExecution: Order {} - Price: {} -> {}, Slippage Impact: ${:.4}, Commission: ${:.4}",
+            order.id, order.price, execution_price, price_impact, commission
+        );
 
         match order.side {
             crate::domain::trading::types::OrderSide::Buy => {

@@ -6,13 +6,16 @@
 mod broker_config;
 mod observability_config;
 mod risk_env_config;
+mod simulation_config;
 mod strategy_config;
 
 pub use broker_config::{AlpacaConfig, BinanceConfig, BrokerEnvConfig, OandaConfig};
 pub use observability_config::ObservabilityEnvConfig;
 pub use risk_env_config::RiskEnvConfig;
+pub use simulation_config::SimulationEnvConfig;
 pub use strategy_config::StrategyEnvConfig;
 
+// ... (imports remain)
 // Re-export StrategyMode for backward compatibility
 pub use crate::domain::market::strategy_config::StrategyMode;
 use crate::domain::market::timeframe::Timeframe;
@@ -69,16 +72,13 @@ impl FromStr for AssetClass {
 }
 
 /// Main application configuration.
-///
-/// This struct aggregates all configuration from sub-modules and provides
-/// backward-compatible field access for the rest of the application.
 #[derive(Debug, Clone)]
 pub struct Config {
     // Core
     pub mode: Mode,
     pub asset_class: AssetClass,
 
-    // Broker (from BrokerEnvConfig)
+    // ... (Broker fields)
     pub alpaca_api_key: String,
     pub alpaca_secret_key: String,
     pub alpaca_base_url: String,
@@ -93,7 +93,7 @@ pub struct Config {
     pub binance_base_url: String,
     pub binance_ws_url: String,
 
-    // Strategy (from StrategyEnvConfig)
+    // ... (Strategy fields)
     pub fast_sma_period: usize,
     pub slow_sma_period: usize,
     pub trend_sma_period: usize,
@@ -126,7 +126,7 @@ pub struct Config {
     pub take_profit_pct: f64,
     pub profit_target_multiplier: f64,
 
-    // Risk (from RiskEnvConfig)
+    // ... (Risk fields)
     pub max_positions: usize,
     pub max_position_size_pct: f64,
     pub max_position_value_usd: f64,
@@ -156,23 +156,23 @@ pub struct Config {
     pub regime_detection_window: usize,
     pub adaptive_evaluation_hour: u32,
     pub risk_appetite: Option<RiskAppetite>,
-
-    // ML
     pub enable_ml_data_collection: bool,
 
-    // Observability (from ObservabilityEnvConfig)
+    // Simulation
+    pub simulation_enabled: bool,
+    pub simulation_latency_base_ms: u64,
+    pub simulation_latency_jitter_ms: u64,
+    pub simulation_slippage_volatility: f64,
+
+    // ... (Observability fields)
     pub observability_enabled: bool,
     pub observability_port: u16,
     pub observability_bind_address: String,
 }
 
 impl Config {
-    /// Load configuration from environment variables.
-    ///
-    /// This orchestrates loading from all sub-config modules and composes
-    /// them into a unified Config struct.
     pub fn from_env() -> Result<Self> {
-        // Core settings
+        // ... (Core settings)
         let mode_str = env::var("MODE").unwrap_or_else(|_| "mock".to_string());
         let mode = Mode::from_str(&mode_str)?;
 
@@ -184,12 +184,13 @@ impl Config {
         let strategy = StrategyEnvConfig::from_env().context("Failed to load strategy config")?;
         let risk = RiskEnvConfig::from_env().context("Failed to load risk config")?;
         let observability = ObservabilityEnvConfig::from_env();
+        let simulation = SimulationEnvConfig::from_env();
 
         Ok(Self {
             mode,
             asset_class,
 
-            // Broker
+            // ... (Broker mappings)
             alpaca_api_key: broker.alpaca.api_key,
             alpaca_secret_key: broker.alpaca.secret_key,
             alpaca_base_url: broker.alpaca.base_url,
@@ -204,7 +205,7 @@ impl Config {
             binance_base_url: broker.binance.base_url,
             binance_ws_url: broker.binance.ws_url,
 
-            // Strategy
+            // ... (Strategy mappings)
             fast_sma_period: strategy.fast_sma_period,
             slow_sma_period: strategy.slow_sma_period,
             trend_sma_period: strategy.trend_sma_period,
@@ -237,7 +238,7 @@ impl Config {
             take_profit_pct: strategy.take_profit_pct,
             profit_target_multiplier: strategy.profit_target_multiplier,
 
-            // Risk
+            // ... (Risk mappings)
             max_positions: risk.max_positions,
             max_position_size_pct: risk.max_position_size_pct,
             max_position_value_usd: risk.max_position_value_usd,
@@ -269,7 +270,13 @@ impl Config {
             risk_appetite: strategy.risk_appetite,
             enable_ml_data_collection: strategy.enable_ml_data_collection,
 
-            // Observability
+            // Simulation
+            simulation_enabled: simulation.simulation_enabled,
+            simulation_latency_base_ms: simulation.simulation_latency_base_ms,
+            simulation_latency_jitter_ms: simulation.simulation_latency_jitter_ms,
+            simulation_slippage_volatility: simulation.simulation_slippage_volatility,
+
+            // ... (Observability mappings)
             observability_enabled: observability.enabled,
             observability_port: observability.port,
             observability_bind_address: observability.bind_address,

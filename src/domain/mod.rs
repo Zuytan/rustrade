@@ -3,6 +3,7 @@ pub mod config;
 
 // Market analysis domain
 pub mod market;
+pub mod ml;
 
 // Optimization domain
 pub mod optimization;

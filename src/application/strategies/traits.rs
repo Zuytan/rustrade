@@ -222,6 +222,10 @@ pub trait TradingStrategy: Send + Sync {
     /// Analyze market context and potentially generate a trading signal
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal>;
 
+    /// Warmup the strategy (and internal models) with historical data
+    /// Default implementation is a no-op which is fine for most stateless strategies
+    fn warmup(&self, _ctx: &AnalysisContext) {}
+
     /// Strategy name for logging and identification
     fn name(&self) -> &str;
 }

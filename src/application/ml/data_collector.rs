@@ -1,35 +1,9 @@
+use crate::domain::ml::feature_registry::{self, FEATURE_NAMES};
 use crate::domain::trading::types::FeatureSet;
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use tracing::error;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrainingDataPoint {
-    pub timestamp: i64,
-    pub symbol: String,
-    // Flattened features
-    pub rsi: f64,
-    pub macd: f64,
-    pub macd_signal: f64,
-    pub macd_hist: f64,
-    pub bb_width: f64,
-    pub bb_position: f64, // Position within BB (0..1)
-    pub atr_pct: f64,     // ATR as % of price
-    pub hurst: f64,
-    pub skewness: f64,
-    pub momentum_norm: f64,
-    pub volatility: f64,
-    pub ofi: f64,
-    pub cumulative_delta: f64,
-    pub spread_bps: f64,
-    pub adx: f64,
-    // Labels (Future Returns)
-    pub return_1m: Option<f64>,
-    pub return_5m: Option<f64>,
-    pub return_15m: Option<f64>,
-}
 
 pub struct DataCollector {
     buffer: VecDeque<PendingDataPoint>,
@@ -39,9 +13,13 @@ pub struct DataCollector {
 
 struct PendingDataPoint {
     timestamp: i64,
-    _symbol: String,
+    symbol: String,
     price: f64,
-    features: TrainingDataPoint,
+    // Store raw features vector directly from registry to ensure consistency
+    features: Vec<f64>,
+    return_1m: Option<f64>,
+    return_5m: Option<f64>,
+    return_15m: Option<f64>,
 }
 
 impl DataCollector {
@@ -49,7 +27,7 @@ impl DataCollector {
         Self {
             buffer: VecDeque::new(),
             output_path,
-            _history_size: 20, // Keep enough history for 15m returns
+            _history_size: 20,
         }
     }
 
@@ -60,75 +38,39 @@ impl DataCollector {
         timestamp: i64,
         feature_set: &FeatureSet,
     ) {
-        let features = self.extract_features(symbol, price, timestamp, feature_set);
+        // Use Registry to extract features in guaranteed order
+        let features = feature_registry::features_to_f64_vector(feature_set);
 
         // Add new point to buffer
         self.buffer.push_back(PendingDataPoint {
             timestamp,
-            _symbol: symbol.to_string(),
+            symbol: symbol.to_string(),
             price,
             features,
+            return_1m: None,
+            return_5m: None,
+            return_15m: None,
         });
 
         // Update labels for older points and flush
         self.update_labels_and_flush(price, timestamp);
     }
 
-    fn extract_features(
-        &self,
-        symbol: &str,
-        _price: f64,
-        timestamp: i64,
-        fs: &FeatureSet,
-    ) -> TrainingDataPoint {
-        TrainingDataPoint {
-            timestamp,
-            symbol: symbol.to_string(),
-            rsi: fs.rsi.unwrap_or(50.0),
-            macd: fs.macd_line.unwrap_or(0.0),
-            macd_signal: fs.macd_signal.unwrap_or(0.0),
-            macd_hist: fs.macd_hist.unwrap_or(0.0),
-            bb_width: fs.bb_width.unwrap_or(0.0),
-            bb_position: fs.bb_position.unwrap_or(0.5),
-            atr_pct: fs.atr_pct.unwrap_or(0.0),
-            hurst: fs.hurst_exponent.unwrap_or(0.5),
-            skewness: fs.skewness.unwrap_or(0.0),
-            momentum_norm: fs.momentum_normalized.unwrap_or(0.0),
-            volatility: fs.realized_volatility.unwrap_or(0.0),
-            ofi: fs.ofi.unwrap_or(0.0),
-            cumulative_delta: fs.cumulative_delta.unwrap_or(0.0),
-            spread_bps: fs.spread_bps.unwrap_or(0.0),
-            adx: fs.adx.unwrap_or(0.0),
-            return_1m: None,
-            return_5m: None,
-            return_15m: None,
-        }
-    }
-
     fn update_labels_and_flush(&mut self, current_price: f64, current_ts: i64) {
-        // Iterate through buffer to populate labels for past points
-        // We can only calculate returns if enough time has passed
-
-        // Strategy: Iterate mutable, identify ready points, calculate, extract ready points to flush
-        // VecDeque doesn't support easy drain_filter yet stable
-
         // 1. Calculate labels
         for point in self.buffer.iter_mut() {
             let elapsed = current_ts - point.timestamp;
 
-            // 1 minute return (assuming ~60s)
-            if elapsed >= 60 && point.features.return_1m.is_none() {
-                point.features.return_1m = Some((current_price - point.price) / point.price);
+            if elapsed >= 60 && point.return_1m.is_none() {
+                point.return_1m = Some((current_price - point.price) / point.price);
             }
 
-            // 5 minute return
-            if elapsed >= 300 && point.features.return_5m.is_none() {
-                point.features.return_5m = Some((current_price - point.price) / point.price);
+            if elapsed >= 300 && point.return_5m.is_none() {
+                point.return_5m = Some((current_price - point.price) / point.price);
             }
 
-            // 15 minute return
-            if elapsed >= 900 && point.features.return_15m.is_none() {
-                point.features.return_15m = Some((current_price - point.price) / point.price);
+            if elapsed >= 900 && point.return_15m.is_none() {
+                point.return_15m = Some((current_price - point.price) / point.price);
             }
         }
 
@@ -137,19 +79,18 @@ impl DataCollector {
             if current_ts - front.timestamp > 900 {
                 if let Some(mut point) = self.buffer.pop_front() {
                     // One last check on returns
-                    if point.features.return_15m.is_none() {
-                        point.features.return_15m =
-                            Some((current_price - point.price) / point.price);
+                    if point.return_15m.is_none() {
+                        point.return_15m = Some((current_price - point.price) / point.price);
                     }
-                    self.write_to_csv(&point.features);
+                    self.write_to_csv(&point);
                 }
             } else {
-                break; // Buffer is sorted by time, so we can stop
+                break; // Buffer is sorted by time
             }
         }
     }
 
-    fn write_to_csv(&self, data: &TrainingDataPoint) {
+    fn write_to_csv(&self, data: &PendingDataPoint) {
         let file_exists = self.output_path.exists();
 
         let file = OpenOptions::new()
@@ -160,12 +101,43 @@ impl DataCollector {
         match file {
             Ok(f) => {
                 let mut wtr = csv::WriterBuilder::new()
-                    .has_headers(!file_exists)
+                    .has_headers(false) // We maintain headers manually to ensure ordering
                     .from_writer(f);
 
-                if let Err(e) = wtr.serialize(data) {
+                // Write Header if new file
+                if !file_exists {
+                    let mut headers = vec!["timestamp".to_string(), "symbol".to_string()];
+                    headers.extend(FEATURE_NAMES.iter().map(|s| s.to_string()));
+                    headers.push("return_1m".to_string());
+                    headers.push("return_5m".to_string());
+                    headers.push("return_15m".to_string());
+
+                    if let Err(e) = wtr.write_record(&headers) {
+                        error!("Failed to write CSV headers: {}", e);
+                    }
+                }
+
+                // Write Data Row
+                // We need to manually construct the record strings because we have mixed types
+                // efficient enough for logging
+                let mut record = Vec::with_capacity(FEATURE_NAMES.len() + 5);
+                record.push(data.timestamp.to_string());
+                record.push(data.symbol.clone());
+
+                // Add features
+                for val in &data.features {
+                    record.push(val.to_string());
+                }
+
+                // Add Labels
+                record.push(data.return_1m.unwrap_or(0.0).to_string());
+                record.push(data.return_5m.unwrap_or(0.0).to_string());
+                record.push(data.return_15m.unwrap_or(0.0).to_string());
+
+                if let Err(e) = wtr.write_record(record) {
                     error!("Failed to serialize training data: {}", e);
                 }
+
                 if let Err(e) = wtr.flush() {
                     error!("Failed to flush CSV writer: {}", e);
                 }

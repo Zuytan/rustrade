@@ -6,6 +6,9 @@ pub trait MLPredictor: Send + Sync {
     /// > 0.5 usually implies Up/Buy
     fn predict(&self, features: &FeatureSet) -> Result<f64, String>;
 
+    /// Warmup the model state (e.g. history buffer for LSTMs)
+    fn warmup(&self, _features: &FeatureSet) {}
+
     /// Get model name/type
     fn name(&self) -> &str;
 

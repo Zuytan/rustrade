@@ -1,14 +1,17 @@
 use super::predictor::MLPredictor;
 use crate::domain::trading::types::FeatureSet;
 use ort::session::Session;
+use std::collections::VecDeque;
 use std::path::PathBuf;
-use tracing::{error, info, warn};
-
 use std::sync::Mutex;
+use tracing::{error, info, warn};
 
 pub struct OnnxPredictor {
     session: Option<Mutex<Session>>,
     model_path: PathBuf,
+    // Buffer for sequential models (LSTM)
+    history_buffer: Mutex<VecDeque<Vec<f32>>>,
+    sequence_length: usize,
 }
 
 impl OnnxPredictor {
@@ -16,6 +19,8 @@ impl OnnxPredictor {
         let mut predictor = Self {
             session: None,
             model_path,
+            history_buffer: Mutex::new(VecDeque::new()),
+            sequence_length: 60, // Default to 60, ideally configurable
         };
         predictor.load_model();
         predictor
@@ -46,69 +51,76 @@ impl OnnxPredictor {
         }
     }
 
-    fn features_to_inputs(&self, fs: &FeatureSet) -> (Vec<usize>, Vec<f32>) {
-        let features = vec![
-            fs.rsi.unwrap_or(50.0) as f32,
-            fs.macd_line.unwrap_or(0.0) as f32,
-            fs.macd_signal.unwrap_or(0.0) as f32,
-            fs.macd_hist.unwrap_or(0.0) as f32,
-            fs.bb_width.unwrap_or(0.0) as f32,
-            fs.bb_position.unwrap_or(0.5) as f32,
-            fs.atr_pct.unwrap_or(0.0) as f32,
-            fs.hurst_exponent.unwrap_or(0.5) as f32,
-            fs.skewness.unwrap_or(0.0) as f32,
-            fs.momentum_normalized.unwrap_or(0.0) as f32,
-            fs.realized_volatility.unwrap_or(0.0) as f32,
-            fs.ofi.unwrap_or(0.0) as f32,
-            fs.cumulative_delta.unwrap_or(0.0) as f32,
-            fs.spread_bps.unwrap_or(0.0) as f32,
-            fs.adx.unwrap_or(0.0) as f32,
-        ];
-        (vec![1, features.len()], features)
+    fn features_to_inputs(&self, fs: &FeatureSet) -> Vec<f32> {
+        crate::domain::ml::feature_registry::features_to_vector(fs)
     }
 }
 
 impl MLPredictor for OnnxPredictor {
-    fn predict(&self, features: &FeatureSet) -> Result<f64, String> {
-        if let Some(session_mutex) = &self.session {
-            let mut session = session_mutex
-                .lock()
-                .map_err(|e| format!("Mutex lock failed: {}", e))?;
-
-            let (shape, data) = self.features_to_inputs(features);
-
-            // In ort 2.0, (shape, data) implements OwnedTensorArrayData if shape is ToShape
-            let input_value = ort::value::Value::from_array((shape.as_slice(), data))
-                .map_err(|e| format!("Input value creation failed: {}", e))?;
-
-            // SessionInputs can be created from a fixed-size array of Values
-            let inputs = ort::inputs![input_value];
-
-            match session.run(inputs) {
-                Ok(outputs) => {
-                    let output_value = outputs
-                        .iter()
-                        .next()
-                        .map(|(_, v)| v)
-                        .ok_or("No output found")?;
-                    let data = output_value
-                        .try_extract_tensor::<f32>()
-                        .map_err(|e| e.to_string())?;
-                    Ok(*data.1.iter().next().ok_or("Empty output")? as f64)
-                }
-                Err(e) => Err(e.to_string()),
+    fn warmup(&self, features: &FeatureSet) {
+        let input_vec = self.features_to_inputs(features);
+        if let Ok(mut buffer) = self.history_buffer.lock() {
+            if buffer.len() >= self.sequence_length {
+                buffer.pop_front();
             }
-        } else {
-            Ok(0.0) // Neutral return in regression mode
+            buffer.push_back(input_vec);
+        }
+    }
+
+    fn predict(&self, features: &FeatureSet) -> Result<f64, String> {
+        // Update buffer first
+        self.warmup(features);
+
+        let mut session_mutex = match &self.session {
+            Some(m) => m.lock().map_err(|e| format!("Mutex lock failed: {}", e))?,
+            None => return Ok(0.0),
+        };
+
+        // Check if we have enough history
+        let buffer = self
+            .history_buffer
+            .lock()
+            .map_err(|e| format!("Buffer lock failed: {}", e))?;
+
+        if buffer.len() < self.sequence_length {
+            // Cold Start: Not enough data yet
+            return Ok(0.0);
+        }
+
+        // Flatten buffer into a single vector [batch, seq_len, features]
+        // Currently just 1 batch
+        let flat_data: Vec<f32> = buffer.iter().flatten().cloned().collect();
+        let feature_dim = buffer[0].len();
+
+        let shape = vec![1, self.sequence_length, feature_dim];
+
+        let input_value = ort::value::Value::from_array((shape.as_slice(), flat_data))
+            .map_err(|e| format!("Input value creation failed: {}", e))?;
+
+        let inputs = ort::inputs![input_value];
+
+        match session_mutex.run(inputs) {
+            Ok(outputs) => {
+                let output_value = outputs
+                    .iter()
+                    .next()
+                    .map(|(_, v)| v)
+                    .ok_or("No output found")?;
+                let data = output_value
+                    .try_extract_tensor::<f32>()
+                    .map_err(|e| e.to_string())?;
+                Ok(*data.1.iter().next().ok_or("Empty output")? as f64)
+            }
+            Err(e) => Err(e.to_string()),
         }
     }
 
     fn name(&self) -> &str {
-        "ONNX Runtime"
+        "ONNX Runtime (LSTM)"
     }
 
     fn version(&self) -> &str {
-        "v2.0 (ort)"
+        "v2.1 (Stateful)"
     }
 }
 
@@ -119,26 +131,20 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_onnx_predictor_no_model() {
+    fn test_onnx_predictor_stateful_logic() {
         let predictor = OnnxPredictor::new(PathBuf::from("non_existent.onnx"));
         let fs = FeatureSet::default();
-        let result = predictor.predict(&fs);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 0.0);
-    }
 
-    #[test]
-    fn test_features_to_inputs() {
-        let predictor = OnnxPredictor::new(PathBuf::from("dummy.onnx"));
-        let fs = FeatureSet {
-            rsi: Some(65.0),
-            adx: Some(25.0),
-            ..Default::default()
-        };
+        // Warmup 59 times
+        for _ in 0..59 {
+            let res = predictor.predict(&fs);
+            assert!(res.is_ok());
+            assert_eq!(res.unwrap(), 0.0); // Cold start
+        }
 
-        let (shape, data) = predictor.features_to_inputs(&fs);
-        assert_eq!(shape, vec![1, 15]);
-        assert_eq!(data[0], 65.0); // RSI
-        assert_eq!(data[14], 25.0); // ADX
+        // 60th time - buffer full
+        // It will still return 0.0 because no model loaded, but logic path is exercised
+        let res = predictor.predict(&fs);
+        assert!(res.is_ok());
     }
 }

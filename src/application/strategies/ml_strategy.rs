@@ -15,16 +15,9 @@ impl MLStrategy {
             threshold,
         }
     }
-}
 
-impl TradingStrategy for MLStrategy {
-    fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
-        // Construct FeatureSet from ctx context (simplified, ideally passed directly)
-        // Since AnalysisContext deconstructs FeatureSet, we reconstruct what we need or modify analyze signature.
-        // But AnalysisContext has the raw fields.
-        // Use full FeatureSet if available (propagated from SignalGenerator)
-        // Otherwise fallback to reconstruction (for backward campatibility or tests)
-        let features = if let Some(fs) = &ctx.feature_set {
+    fn extract_features(&self, ctx: &AnalysisContext) -> FeatureSet {
+        if let Some(fs) = &ctx.feature_set {
             fs.clone()
         } else {
             FeatureSet {
@@ -42,7 +35,18 @@ impl TradingStrategy for MLStrategy {
                 realized_volatility: ctx.realized_volatility,
                 ..Default::default()
             }
-        };
+        }
+    }
+}
+
+impl TradingStrategy for MLStrategy {
+    fn warmup(&self, ctx: &AnalysisContext) {
+        let features = self.extract_features(ctx);
+        self.predictor.warmup(&features);
+    }
+
+    fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
+        let features = self.extract_features(ctx);
 
         match self.predictor.predict(&features) {
             Ok(score) => {

@@ -131,10 +131,31 @@ impl BenchmarkEngine {
         let commission = Decimal::from_f64(0.001).expect("0.001 is a valid f64 for Decimal");
         let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
 
-        let execution_service = Arc::new(MockExecutionService::with_costs(
-            portfolio_lock.clone(),
-            fee_model,
-        ));
+        // Check for simulation mode (Step 2: High-Fidelity Simulation)
+        let execution_service = if self.base_config.simulation_enabled {
+            use crate::infrastructure::simulation::latency_model::NetworkLatency;
+            use crate::infrastructure::simulation::slippage_model::VolatilitySlippage;
+
+            let latency_model = Arc::new(NetworkLatency::new(
+                self.base_config.simulation_latency_base_ms,
+                self.base_config.simulation_latency_jitter_ms,
+            ));
+            let slippage_model = Arc::new(VolatilitySlippage::new(
+                self.base_config.simulation_slippage_volatility,
+            ));
+
+            Arc::new(MockExecutionService::with_simulation_models(
+                portfolio_lock.clone(),
+                fee_model,
+                latency_model,
+                slippage_model,
+            ))
+        } else {
+            Arc::new(MockExecutionService::with_costs(
+                portfolio_lock.clone(),
+                fee_model,
+            ))
+        };
 
         let simulator = Simulator::new(self.market_service.clone(), execution_service, config);
 
