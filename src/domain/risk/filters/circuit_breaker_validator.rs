@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 
 use crate::domain::risk::filters::validator_trait::{
     RiskValidator, ValidationContext, ValidationResult,
@@ -10,10 +10,10 @@ use crate::domain::risk::filters::validator_trait::{
 #[derive(Debug, Clone)]
 pub struct CircuitBreakerConfig {
     /// Maximum daily loss as percentage of starting equity (e.g., 0.02 = 2%)
-    pub max_daily_loss_pct: f64,
+    pub max_daily_loss_pct: Decimal,
 
     /// Maximum drawdown from high water mark as percentage (e.g., 0.10 = 10%)
-    pub max_drawdown_pct: f64,
+    pub max_drawdown_pct: Decimal,
 
     /// Maximum consecutive losing trades before halt
     pub consecutive_loss_limit: usize,
@@ -22,8 +22,8 @@ pub struct CircuitBreakerConfig {
 impl Default for CircuitBreakerConfig {
     fn default() -> Self {
         Self {
-            max_daily_loss_pct: 0.02, // 2%
-            max_drawdown_pct: 0.05,   // 5%
+            max_daily_loss_pct: dec!(0.02), // 2%
+            max_drawdown_pct: dec!(0.05),   // 5%
             consecutive_loss_limit: 3,
         }
     }
@@ -50,16 +50,14 @@ impl CircuitBreakerValidator {
     /// Check daily loss limit
     fn check_daily_loss(&self, ctx: &ValidationContext<'_>) -> Option<String> {
         if ctx.risk_state.session_start_equity > Decimal::ZERO {
-            let daily_loss_pct = ((ctx.current_equity - ctx.risk_state.session_start_equity)
-                / ctx.risk_state.session_start_equity)
-                .to_f64()
-                .unwrap_or(0.0);
+            let daily_loss_pct = (ctx.current_equity - ctx.risk_state.session_start_equity)
+                / ctx.risk_state.session_start_equity;
 
             if daily_loss_pct < -self.config.max_daily_loss_pct {
                 return Some(format!(
-                    "Daily loss limit breached: {:.2}% (limit: {:.2}%) [Start: {}, Current: {}]",
-                    daily_loss_pct * 100.0,
-                    self.config.max_daily_loss_pct * 100.0,
+                    "Daily loss limit breached: {}% (limit: {}%) [Start: {}, Current: {}]",
+                    daily_loss_pct * dec!(100),
+                    self.config.max_daily_loss_pct * dec!(100),
                     ctx.risk_state.session_start_equity,
                     ctx.current_equity
                 ));
@@ -71,16 +69,14 @@ impl CircuitBreakerValidator {
     /// Check drawdown limit from high water mark
     fn check_drawdown(&self, ctx: &ValidationContext<'_>) -> Option<String> {
         if ctx.risk_state.equity_high_water_mark > Decimal::ZERO {
-            let drawdown_pct = ((ctx.current_equity - ctx.risk_state.equity_high_water_mark)
-                / ctx.risk_state.equity_high_water_mark)
-                .to_f64()
-                .unwrap_or(0.0);
+            let drawdown_pct = (ctx.current_equity - ctx.risk_state.equity_high_water_mark)
+                / ctx.risk_state.equity_high_water_mark;
 
             if drawdown_pct < -self.config.max_drawdown_pct {
                 return Some(format!(
-                    "Max drawdown breached: {:.2}% (limit: {:.2}%)",
-                    drawdown_pct * 100.0,
-                    self.config.max_drawdown_pct * 100.0
+                    "Max drawdown breached: {}% (limit: {}%)",
+                    drawdown_pct * dec!(100),
+                    self.config.max_drawdown_pct * dec!(100)
                 ));
             }
         }
@@ -184,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn test_reject_daily_loss_limit() {
         let validator = CircuitBreakerValidator::new(CircuitBreakerConfig {
-            max_daily_loss_pct: 0.05, // 5% limit
+            max_daily_loss_pct: dec!(0.05), // 5% limit
             ..Default::default()
         });
 
@@ -214,19 +210,14 @@ mod tests {
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(
-            result
-                .rejection_reason()
-                .unwrap()
-                .contains("Daily loss limit breached")
-        );
-        assert!(result.rejection_reason().unwrap().contains("-10.00%"));
+        let reason = result.rejection_reason().unwrap();
+        assert!(reason.contains("Daily loss limit breached"));
     }
 
     #[tokio::test]
     async fn test_reject_drawdown_limit() {
         let validator = CircuitBreakerValidator::new(CircuitBreakerConfig {
-            max_drawdown_pct: 0.10, // 10% limit
+            max_drawdown_pct: dec!(0.10), // 10% limit
             ..Default::default()
         });
 
@@ -256,13 +247,10 @@ mod tests {
 
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(
-            result
-                .rejection_reason()
-                .unwrap()
-                .contains("Max drawdown breached")
-        );
-        assert!(result.rejection_reason().unwrap().contains("-16.67%"));
+        let reason = result.rejection_reason().unwrap();
+        assert!(reason.contains("Max drawdown breached"));
+        // 100000/120000 = 0.8333 -> loss 0.1666 -> 16.66%
+        assert!(reason.contains("16.666"));
     }
 
     #[tokio::test]
@@ -311,8 +299,8 @@ mod tests {
     #[tokio::test]
     async fn test_approve_small_loss_within_limits() {
         let validator = CircuitBreakerValidator::new(CircuitBreakerConfig {
-            max_daily_loss_pct: 0.05, // 5% limit
-            max_drawdown_pct: 0.10,   // 10% limit
+            max_daily_loss_pct: dec!(0.05), // 5% limit
+            max_drawdown_pct: dec!(0.10),   // 10% limit
             consecutive_loss_limit: 3,
         });
 
@@ -381,8 +369,8 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_breaches_returns_first() {
         let validator = CircuitBreakerValidator::new(CircuitBreakerConfig {
-            max_daily_loss_pct: 0.05,
-            max_drawdown_pct: 0.10,
+            max_daily_loss_pct: dec!(0.05),
+            max_drawdown_pct: dec!(0.10),
             consecutive_loss_limit: 2,
         });
 

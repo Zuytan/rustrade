@@ -2,7 +2,8 @@ use crate::application::market_data::spread_cache::SpreadCache;
 use crate::domain::trading::fee_model::FeeModel;
 use crate::domain::trading::types::TradeProposal;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 
 /// Detailed breakdown of transaction costs for a trade
@@ -30,11 +31,12 @@ pub struct TradeCost {
 /// use rust_decimal::Decimal;
 ///
 /// use rust_decimal::prelude::FromPrimitive;
+/// use rust_decimal_macros::dec;
 /// use std::sync::Arc;
 /// use rustrade::domain::trading::fee_model::ConstantFeeModel;
 ///
-/// let fee_model = Arc::new(ConstantFeeModel::new(Decimal::from_f64(0.005).unwrap(), Decimal::from_f64(0.001).unwrap()));
-/// let evaluator = CostEvaluator::new(fee_model, 5.0);
+/// let fee_model = Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001)));
+/// let evaluator = CostEvaluator::new(fee_model, dec!(5.0));
 /// let proposal = TradeProposal {
 ///     symbol: "AAPL".to_string(),
 ///     side: OrderSide::Buy,
@@ -63,10 +65,10 @@ pub struct CostEvaluator {
 
 impl CostEvaluator {
     /// Create a new CostEvaluator with specified fee model
-    pub fn new(fee_model: Arc<dyn FeeModel>, spread_bps: f64) -> Self {
+    pub fn new(fee_model: Arc<dyn FeeModel>, spread_bps: Decimal) -> Self {
         Self {
             fee_model,
-            default_spread_bps: Decimal::from_f64(spread_bps).unwrap_or(Decimal::ZERO),
+            default_spread_bps: spread_bps,
             spread_cache: None,
         }
     }
@@ -74,12 +76,12 @@ impl CostEvaluator {
     /// Create CostEvaluator with real-time spread tracking
     pub fn with_spread_cache(
         fee_model: Arc<dyn FeeModel>,
-        default_spread_bps: f64,
+        default_spread_bps: Decimal,
         spread_cache: Arc<SpreadCache>,
     ) -> Self {
         Self {
             fee_model,
-            default_spread_bps: Decimal::from_f64(default_spread_bps).unwrap_or(Decimal::ZERO),
+            default_spread_bps,
             spread_cache: Some(spread_cache),
         }
     }
@@ -111,7 +113,8 @@ impl CostEvaluator {
         // Spread: Use REAL spread from cache if available, otherwise use default
         let raw_spread_bps = if let Some(ref cache) = self.spread_cache {
             if let Some(real_spread_pct) = cache.get_spread_pct(&proposal.symbol) {
-                Decimal::from_f64(real_spread_pct * 10000.0).unwrap_or(self.default_spread_bps)
+                Decimal::from_f64_retain(real_spread_pct * 10000.0)
+                    .unwrap_or(self.default_spread_bps)
             } else {
                 tracing::debug!(
                     "CostEvaluator: No real spread for {}, using DEFAULT {:.2} bps",
@@ -186,13 +189,14 @@ impl CostEvaluator {
     /// use rustrade::application::monitoring::cost_evaluator::CostEvaluator;
     /// use rustrade::domain::trading::types::{TradeProposal, OrderSide, OrderType};
     /// use rust_decimal::Decimal;
+    /// use rust_decimal_macros::dec;
     ///
     /// use rust_decimal::prelude::FromPrimitive;
     /// use std::sync::Arc;
     /// use rustrade::domain::trading::fee_model::ConstantFeeModel;
     ///
-    /// let fee_model = Arc::new(ConstantFeeModel::new(Decimal::from_f64(0.005).unwrap(), Decimal::from_f64(0.001).unwrap()));
-    /// let evaluator = CostEvaluator::new(fee_model, 5.0);
+    /// let fee_model = Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001)));
+    /// let evaluator = CostEvaluator::new(fee_model, dec!(5.0));
     /// let proposal = TradeProposal {
     ///     symbol: "AAPL".to_string(),
     ///     side: OrderSide::Buy,
@@ -206,18 +210,17 @@ impl CostEvaluator {
     /// // Trade costs $1.50, expected profit is $5.00, min ratio is 2.0
     /// // Threshold = $1.50 * 2.0 = $3.00
     /// // $5.00 >= $3.00 → Profitable ✅
-    /// let is_profitable = evaluator.is_profitable(&proposal, Decimal::from(5), 2.0);
+    /// let is_profitable = evaluator.is_profitable(&proposal, Decimal::from(5), Decimal::from_f64_retain(2.0).unwrap());
     /// assert!(is_profitable);
     /// ```
     pub fn is_profitable(
         &self,
         proposal: &TradeProposal,
         expected_profit: Decimal,
-        min_profit_ratio: f64,
+        min_profit_ratio: Decimal,
     ) -> bool {
         let costs = self.evaluate(proposal);
-        let min_threshold =
-            costs.total_cost * Decimal::from_f64(min_profit_ratio).unwrap_or(Decimal::from(2));
+        let min_threshold = costs.total_cost * min_profit_ratio;
 
         expected_profit >= min_threshold
     }
@@ -236,14 +239,11 @@ impl CostEvaluator {
     pub fn calculate_expected_profit(
         &self,
         proposal: &TradeProposal,
-        atr: f64,
-        profit_target_multiplier: f64,
+        atr: Decimal,
+        profit_target_multiplier: Decimal,
     ) -> Decimal {
-        let atr_decimal = Decimal::from_f64(atr).unwrap_or(Decimal::ZERO);
-        let multiplier = Decimal::from_f64(profit_target_multiplier).unwrap_or(Decimal::ONE);
-
         // Expected profit = ATR * multiplier * quantity
-        atr_decimal * multiplier * proposal.quantity
+        atr * profit_target_multiplier * proposal.quantity
     }
 
     /// Get profit-to-cost ratio for a trade
@@ -251,15 +251,18 @@ impl CostEvaluator {
     /// # Returns
     /// Ratio of expected profit to total costs (e.g., 2.5 means profit is 2.5x costs)
     /// Returns 0.0 if costs are zero (edge case)
-    pub fn get_profit_cost_ratio(&self, proposal: &TradeProposal, expected_profit: Decimal) -> f64 {
+    pub fn get_profit_cost_ratio(
+        &self,
+        proposal: &TradeProposal,
+        expected_profit: Decimal,
+    ) -> Decimal {
         let costs = self.evaluate(proposal);
 
         if costs.total_cost <= Decimal::ZERO {
-            return 0.0;
+            return Decimal::ZERO;
         }
 
-        let ratio = expected_profit / costs.total_cost;
-        ratio.to_f64().unwrap_or(0.0)
+        expected_profit / costs.total_cost
     }
 }
 
@@ -273,11 +276,8 @@ impl Default for CostEvaluator {
     fn default() -> Self {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         Self::new(
-            Arc::new(ConstantFeeModel::new(
-                Decimal::from_f64(0.005).expect("0.005 is a valid f64 for Decimal"),
-                Decimal::from_f64(0.001).expect("0.001 is a valid f64 for Decimal"),
-            )),
-            5.0,
+            Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+            dec!(5.0),
         )
     }
 }
@@ -305,7 +305,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -329,14 +329,14 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // Total costs: $1.55 (from previous test)
         // Min threshold: $1.55 * 2.0 = $3.10
         // Expected profit: $5.00 > $3.10 ✅
-        assert!(evaluator.is_profitable(&proposal, dec!(5.0), 2.0));
+        assert!(evaluator.is_profitable(&proposal, dec!(5.0), dec!(2.0)));
     }
 
     #[test]
@@ -344,14 +344,14 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // Total costs: $1.55
         // Min threshold: $1.55 * 2.0 = $3.10
         // Expected profit: $2.00 < $3.10 ❌
-        assert!(!evaluator.is_profitable(&proposal, dec!(2.0), 2.0));
+        assert!(!evaluator.is_profitable(&proposal, dec!(2.0), dec!(2.0)));
     }
 
     #[test]
@@ -359,14 +359,14 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // Total costs: $1.55
         // Min threshold: $1.55 * 2.0 = $3.10
         // Expected profit: $3.10 = $3.10 ✅ (equal passes)
-        assert!(evaluator.is_profitable(&proposal, dec!(3.10), 2.0));
+        assert!(evaluator.is_profitable(&proposal, dec!(3.10), dec!(2.0)));
     }
 
     #[test]
@@ -374,13 +374,13 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
         // ATR = $2.00, multiplier = 1.5, quantity = 10
         // Expected profit = $2.00 * 1.5 * 10 = $30.00
-        let expected_profit = evaluator.calculate_expected_profit(&proposal, 2.0, 1.5);
+        let expected_profit = evaluator.calculate_expected_profit(&proposal, dec!(2.0), dec!(1.5));
         assert_eq!(expected_profit, dec!(30.0));
     }
 
@@ -389,7 +389,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -397,7 +397,7 @@ mod tests {
         // Expected profit: $6.50
         // Ratio: $6.50 / $1.30 = 5.0
         let ratio = evaluator.get_profit_cost_ratio(&proposal, dec!(6.50));
-        assert!((ratio - 5.0).abs() < 0.01); // Float comparison with tolerance
+        assert_eq!(ratio, dec!(5.0));
     }
 
     #[test]
@@ -417,7 +417,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(500.0), dec!(100.0)); // $50,000 trade
 
@@ -441,7 +441,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(0.0));
 
@@ -457,7 +457,7 @@ mod tests {
         use crate::domain::trading::fee_model::ConstantFeeModel;
         let evaluator = CostEvaluator::new(
             Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
-            5.0,
+            dec!(5.0),
         );
         let proposal = create_test_proposal(dec!(100.0), dec!(10.0));
 
@@ -465,9 +465,9 @@ mod tests {
         // Ratio: 5.0 (very conservative)
         // Min threshold: $1.55 * 5.0 = $7.75
         // Expected profit: $10.00 > $7.75 ✅
-        assert!(evaluator.is_profitable(&proposal, dec!(10.0), 5.0));
+        assert!(evaluator.is_profitable(&proposal, dec!(10.0), dec!(5.0)));
 
         // Expected profit: $5.00 < $7.75 ❌
-        assert!(!evaluator.is_profitable(&proposal, dec!(5.0), 5.0));
+        assert!(!evaluator.is_profitable(&proposal, dec!(5.0), dec!(5.0)));
     }
 }

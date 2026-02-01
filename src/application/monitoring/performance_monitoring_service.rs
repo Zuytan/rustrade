@@ -9,6 +9,7 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::Order;
 use anyhow::Result;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -40,7 +41,7 @@ impl PerformanceMonitoringService {
             snapshot_repository,
             candle_repository,
             market_service,
-            regime_detector: MarketRegimeDetector::new(regime_window_size, 25.0, 2.0), // Defaults, should come from config
+            regime_detector: MarketRegimeDetector::new(regime_window_size, dec!(25.0), dec!(2.0)), // Defaults, should come from config
             portfolio,
             trade_repository,
             connection_health_service,

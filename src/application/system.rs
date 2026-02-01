@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{info, warn};
@@ -92,10 +93,10 @@ impl Application {
                 "Risk Appetite Score: {} ({:?}) - Calculated Parameters: risk_per_trade={:.2}%, trailing_stop={:.1}x, rsi_threshold={:.0}, max_position={:.1}%",
                 appetite.score(),
                 appetite.profile(),
-                config.risk_per_trade_percent * 100.0,
+                config.risk_per_trade_percent * dec!(100.0),
                 config.trailing_stop_atr_multiplier,
                 config.rsi_threshold,
-                config.max_position_size_pct * 100.0
+                config.max_position_size_pct * dec!(100.0)
             );
         }
 

@@ -20,13 +20,13 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
     // 1. Setup Portfolio with Cash and Positions
     // Start with 10k cash + 10 shares AAPL @ 100 ($1000 value)
     let mut portfolio = Portfolio::new();
-    portfolio.cash = dec!(10000);
+    portfolio.cash = dec!(10000.0);
     portfolio.positions.insert(
         "AAPL".to_string(),
         Position {
             symbol: "AAPL".to_string(),
-            quantity: dec!(10),
-            average_price: dec!(100),
+            quantity: dec!(10.0),
+            average_price: dec!(100.0),
         },
     );
     let portfolio = Arc::new(RwLock::new(portfolio));
@@ -35,18 +35,18 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
     let mock_market = Arc::new(MockMarketDataService::new());
 
     // Set price to 100 initially
-    mock_market.set_price("AAPL", dec!(100)).await;
+    mock_market.set_price("AAPL", dec!(100.0)).await;
 
     let (proposal_tx, proposal_rx) = mpsc::channel(100);
     let (order_tx, mut order_rx) = mpsc::channel(100);
 
     let risk_config = RiskConfig {
-        consecutive_loss_limit: 3, // Trigger after 3 losses
-        max_daily_loss_pct: 0.50,  // High limit to avoid triggering this
-        max_drawdown_pct: 0.50,
-        max_position_size_pct: 1.0,
+        consecutive_loss_limit: 3,      // Trigger after 3 losses
+        max_daily_loss_pct: dec!(0.50), // High limit to avoid triggering this
+        max_drawdown_pct: dec!(0.50),
+        max_position_size_pct: dec!(1.0),
         valuation_interval_seconds: 1,
-        max_sector_exposure_pct: 1.0,
+        max_sector_exposure_pct: dec!(1.0),
         sector_provider: None,
         allow_pdt_risk: false,
         pending_order_ttl_ms: None,
@@ -105,13 +105,13 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
     // Sell 1 @ 90. (Loss $10). Consecutive Losses: 3 -> HALT
 
     // Set market price to 90
-    mock_market.set_price("AAPL", dec!(90)).await;
+    mock_market.set_price("AAPL", dec!(90.0)).await;
 
     for i in 1..=3 {
         let proposal = TradeProposal {
             symbol: "AAPL".to_string(),
             side: OrderSide::Sell,
-            price: dec!(90),
+            price: dec!(90.0),
             quantity: dec!(0.5),
             order_type: OrderType::Market,
             reason: format!("Loss Trade {}", i),
@@ -141,8 +141,8 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
     let proposal = TradeProposal {
         symbol: "AAPL".to_string(),
         side: OrderSide::Sell,
-        price: dec!(150), // Profit! But system is halted
-        quantity: dec!(1),
+        price: dec!(150.0), // Profit! But system is halted
+        quantity: dec!(1.0),
         order_type: OrderType::Limit,
         reason: "Test Halt".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
@@ -175,7 +175,7 @@ async fn test_pending_order_ttl_cleanup() {
     // No pause! We rely on real system time for TTL check via chrono::Utc::now()
 
     let mut portfolio = Portfolio::new();
-    portfolio.cash = dec!(10000);
+    portfolio.cash = dec!(10000.0);
     let portfolio = Arc::new(RwLock::new(portfolio));
 
     let mock_exec = Arc::new(MockExecutionService::new(portfolio.clone()));
@@ -188,7 +188,7 @@ async fn test_pending_order_ttl_cleanup() {
     let risk_config = RiskConfig {
         pending_order_ttl_ms: Some(100),
         valuation_interval_seconds: 1,
-        max_position_size_pct: 1.0,
+        max_position_size_pct: dec!(1.0),
         ..RiskConfig::default()
     };
 
@@ -237,8 +237,8 @@ async fn test_pending_order_ttl_cleanup() {
     let proposal = TradeProposal {
         symbol: "MSFT".to_string(),
         side: OrderSide::Buy,
-        price: dec!(300),
-        quantity: dec!(10), // $3000
+        price: dec!(300.0),
+        quantity: dec!(10.0), // $3000
         order_type: OrderType::Limit,
         reason: "TTL Test".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
@@ -260,7 +260,7 @@ async fn test_pending_order_ttl_cleanup() {
 
     assert_eq!(
         reserved_after,
-        dec!(0),
+        dec!(0.0),
         "Reservation should be released after TTL expiry"
     );
     println!("✅ Verified: Stale pending order cleaned up after TTL");

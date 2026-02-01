@@ -2,6 +2,8 @@ use super::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::application::strategies::legacy::advanced::{
     AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy,
 };
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 /// Configuration for Dynamic Regime Strategy
 ///
@@ -10,32 +12,33 @@ use crate::application::strategies::legacy::advanced::{
 pub struct DynamicRegimeConfig {
     pub fast_period: usize,
     pub slow_period: usize,
-    pub sma_threshold: f64,
+    pub sma_threshold: Decimal,
     pub trend_sma_period: usize,
-    pub rsi_threshold: f64,
-    pub trend_divergence_threshold: f64,
+    pub rsi_threshold: Decimal,
+    pub trend_divergence_threshold: Decimal,
     // Risk-appetite adaptive parameters
     pub signal_confirmation_bars: usize,
     pub macd_requires_rising: bool,
-    pub trend_tolerance_pct: f64,
-    pub macd_min_threshold: f64,
-    pub adx_threshold: f64,
+    pub trend_tolerance_pct: Decimal,
+    pub macd_min_threshold: Decimal,
+    pub adx_threshold: Decimal,
 }
 
 impl Default for DynamicRegimeConfig {
     fn default() -> Self {
+        use rust_decimal_macros::dec;
         Self {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
-            trend_divergence_threshold: 0.005,
+            rsi_threshold: dec!(75.0),
+            trend_divergence_threshold: dec!(0.005),
             signal_confirmation_bars: 1,
             macd_requires_rising: true,
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            adx_threshold: 25.0,
+            trend_tolerance_pct: Decimal::ZERO,
+            macd_min_threshold: Decimal::ZERO,
+            adx_threshold: dec!(25.0),
         }
     }
 }
@@ -49,7 +52,7 @@ impl Default for DynamicRegimeConfig {
 pub struct DynamicRegimeStrategy {
     advanced_strategy: AdvancedTripleFilterStrategy,
     #[allow(dead_code)]
-    trend_divergence_threshold: f64, // Legacy field, now using ADX-based regime detection
+    trend_divergence_threshold: Decimal, // Legacy field, now using ADX-based regime detection
 }
 
 impl DynamicRegimeStrategy {
@@ -81,10 +84,10 @@ impl DynamicRegimeStrategy {
     pub fn new(
         fast_period: usize,
         slow_period: usize,
-        sma_threshold: f64,
+        sma_threshold: Decimal,
         trend_sma_period: usize,
-        rsi_threshold: f64,
-        trend_divergence_threshold: f64,
+        rsi_threshold: Decimal,
+        trend_divergence_threshold: Decimal,
     ) -> Self {
         Self::with_config(DynamicRegimeConfig {
             fast_period,
@@ -128,18 +131,19 @@ impl TradingStrategy for DynamicRegimeStrategy {
                 // Buy: Just need price above trend
                 // Sell: Only if trend breaks (price below trend SMA)
 
-                if ctx.fast_sma > ctx.slow_sma * (1.0 + 0.001) {
+                if ctx.fast_sma > ctx.slow_sma * (Decimal::ONE + dec!(0.001)) {
                     // Golden cross
-                    // Golden cross
-                    if ctx.price_f64 > ctx.trend_sma {
+                    if ctx.current_price > ctx.trend_sma {
                         return Some(Signal::buy(
                             "Dynamic (Trend): Strong trend detected, buying above Trend SMA"
                                 .to_string(),
                         ));
                     }
-                } else if ctx.fast_sma < ctx.slow_sma * (1.0 - 0.001) && ctx.has_position {
+                } else if ctx.fast_sma < ctx.slow_sma * (Decimal::ONE - dec!(0.001))
+                    && ctx.has_position
+                {
                     // Death cross
-                    if ctx.price_f64 < ctx.trend_sma {
+                    if ctx.current_price < ctx.trend_sma {
                         return Some(Signal::sell(
                             "Dynamic (Trend): Trend broken, exiting".to_string(),
                         ));
@@ -172,37 +176,37 @@ mod tests {
     use std::collections::VecDeque;
 
     fn create_test_context(
-        fast_sma: f64,
-        slow_sma: f64,
-        price: f64,
-        trend_sma: f64,
+        fast_sma: Decimal,
+        slow_sma: Decimal,
+        price: Decimal,
+        trend_sma: Decimal,
         has_position: bool,
     ) -> AnalysisContext {
         AnalysisContext {
             symbol: "TEST".to_string(),
-            current_price: dec!(100.0),
-            price_f64: price,
+            current_price: price,
+            price_f64: 0.0,
             fast_sma,
             slow_sma,
             trend_sma,
-            rsi: 50.0,
-            macd_value: 0.5,
-            macd_signal: 0.3,
-            macd_histogram: 0.2,
-            last_macd_histogram: Some(0.1),
-            atr: 1.0,
-            bb_lower: 0.0,
-            bb_middle: 0.0,
-            bb_upper: 0.0,
-            adx: 30.0, // Strong trend for dynamic strategy tests
+            rsi: dec!(50.0),
+            macd_value: dec!(0.5),
+            macd_signal: dec!(0.3),
+            macd_histogram: dec!(0.2),
+            last_macd_histogram: Some(dec!(0.1)),
+            atr: Decimal::ONE,
+            bb_lower: Decimal::ZERO,
+            bb_middle: Decimal::ZERO,
+            bb_upper: Decimal::ZERO,
+            adx: dec!(30.0), // Strong trend for dynamic strategy tests
             has_position,
             timestamp: 0,
             timeframe_features: None,
             candles: std::collections::VecDeque::new(),
             rsi_history: std::collections::VecDeque::new(),
             // OFI fields (defaults for tests)
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,
@@ -218,14 +222,14 @@ mod tests {
         let strategy = DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
-            trend_divergence_threshold: 0.005,
+            rsi_threshold: dec!(75.0),
+            trend_divergence_threshold: dec!(0.005),
             ..Default::default()
         });
         // Large divergence = strong trend
-        let ctx = create_test_context(105.0, 100.0, 110.0, 95.0, false);
+        let ctx = create_test_context(dec!(105.0), dec!(100.0), dec!(110.0), dec!(95.0), false);
 
         let signal = strategy.analyze(&ctx);
 
@@ -240,14 +244,14 @@ mod tests {
         let strategy = DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
-            trend_divergence_threshold: 0.005,
+            rsi_threshold: dec!(75.0),
+            trend_divergence_threshold: dec!(0.005),
             ..Default::default()
         });
         // Large divergence but death cross with price still above trend
-        let mut ctx = create_test_context(98.0, 100.0, 102.0, 95.0, true);
+        let mut ctx = create_test_context(dec!(98.0), dec!(100.0), dec!(102.0), dec!(95.0), true);
         ctx.has_position = true;
 
         let signal = strategy.analyze(&ctx);
@@ -264,15 +268,15 @@ mod tests {
         let strategy = DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
-            trend_divergence_threshold: 0.005,
+            rsi_threshold: dec!(75.0),
+            trend_divergence_threshold: dec!(0.005),
             ..Default::default()
         });
         // Small divergence = choppy market, and override ADX to be low
-        let mut ctx = create_test_context(100.2, 100.0, 105.0, 95.0, false);
-        ctx.adx = 20.0; // Low ADX = choppy market
+        let mut ctx = create_test_context(dec!(100.2), dec!(100.0), dec!(105.0), dec!(95.0), false);
+        ctx.adx = dec!(20.0); // Low ADX = choppy market
 
         let signal = strategy.analyze(&ctx);
 

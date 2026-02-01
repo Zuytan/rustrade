@@ -1,3 +1,5 @@
+use rust_decimal_macros::dec;
+
 use rust_decimal::Decimal;
 
 use rustrade::application::agents::analyst_config::AnalystConfig;
@@ -43,7 +45,7 @@ fn test_atr_reacts_to_volatility_without_price_change() {
     // With 14 period, (2.0 * 13 + 20) / 14 = (26+20)/14 = 3.28
 
     assert!(
-        atr > 2.5,
+        atr > dec!(2.5),
         "ATR should reflect the increased volatility (Expected > 2.5, Got {})",
         atr
     );

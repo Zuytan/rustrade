@@ -11,7 +11,6 @@ use crate::domain::ports::ExecutionService;
 use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::{OrderSide, TradeProposal};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tracing::{info, warn};
@@ -29,6 +28,8 @@ pub enum NewsAction {
     /// No action taken
     NoAction,
 }
+
+use rust_decimal_macros::dec;
 
 use crate::application::agents::signal_processor::SignalProcessor;
 
@@ -51,21 +52,17 @@ impl NewsHandler {
         price: Decimal,
         timestamp: i64,
     ) -> NewsAction {
-        let price_f64 = price.to_f64().unwrap_or(0.0);
-        let sma_50 = context.last_features.sma_50.unwrap_or(0.0);
-        let rsi = context.last_features.rsi.unwrap_or(50.0);
+        let sma_50 = context.last_features.sma_50.unwrap_or(Decimal::ZERO);
+        let rsi = context.last_features.rsi.unwrap_or(dec!(50.0));
 
         info!(
             "NewsHandler: Analyzing BULLISH news for {}. Price: {}, SMA50: {}, RSI: {}",
-            signal.symbol, price_f64, sma_50, rsi
+            signal.symbol, price, sma_50, rsi
         );
 
         // 1. Trend Filter: Avoid buying falling knives
-        if price_f64 < sma_50 {
-            let reason = format!(
-                "Price ({:.2}) below SMA50 ({:.2}) - Bearish Trend",
-                price_f64, sma_50
-            );
+        if price < sma_50 {
+            let reason = format!("Price ({}) below SMA50 ({}) - Bearish Trend", price, sma_50);
             warn!(
                 "NewsHandler: REJECTED Bullish News for {}. {}",
                 signal.symbol, reason
@@ -74,8 +71,8 @@ impl NewsHandler {
         }
 
         // 2. Overbought Filter: Avoid FOMO
-        if rsi > 75.0 {
-            let reason = format!("RSI {:.1} indicates Overbought", rsi);
+        if rsi > dec!(75.0) {
+            let reason = format!("RSI {} indicates Overbought", rsi);
             warn!(
                 "NewsHandler: REJECTED Bullish News for {}. {}",
                 signal.symbol, reason
@@ -133,19 +130,21 @@ pub fn process_bearish_news(
     timestamp: i64,
 ) -> NewsAction {
     let (quantity, avg_price) = portfolio_position;
-    let price_f64 = current_price.to_f64().unwrap_or(0.0);
-    let avg_price_f64 = avg_price.to_f64().unwrap_or(price_f64);
-    let pnl_pct = (price_f64 - avg_price_f64) / avg_price_f64;
+    let pnl_pct = if !avg_price.is_zero() {
+        (current_price - avg_price) / avg_price
+    } else {
+        Decimal::ZERO
+    };
 
     info!(
-        "NewsHandler: Processing BEARISH news for {}. PnL: {:.2}%",
+        "NewsHandler: Processing BEARISH news for {}. PnL: {}%",
         signal.symbol,
-        pnl_pct * 100.0
+        pnl_pct * dec!(100.0)
     );
 
-    if pnl_pct > 0.05 {
+    if pnl_pct > dec!(0.05) {
         // SCENARIO 1: Profitable Position -> Tighten Stop to Protect Gains
-        tighten_stop_on_bearish_news(context, &signal.symbol, current_price, pnl_pct);
+        tighten_stop_on_bearish_news(context, &signal.symbol, current_price);
         return NewsAction::TightenStop;
     }
 
@@ -162,8 +161,8 @@ pub fn process_bearish_news(
         quantity, // Sell ALL
         order_type: crate::domain::trading::types::OrderType::Market,
         reason: format!(
-            "News Panic Sell (PnL: {:.2}%): {}",
-            pnl_pct * 100.0,
+            "News Panic Sell (PnL: {}%): {}",
+            pnl_pct * dec!(100.0),
             signal.headline
         ),
         timestamp,
@@ -173,23 +172,20 @@ pub fn process_bearish_news(
 }
 
 /// Tightens trailing stop on bearish news for profitable positions.
-fn tighten_stop_on_bearish_news(
-    context: &mut SymbolContext,
-    symbol: &str,
-    current_price: Decimal,
-    _pnl_pct: f64,
-) {
-    let price_f64 = current_price.to_f64().unwrap_or(0.0);
-    let atr = context.last_features.atr.unwrap_or(price_f64 * 0.01);
+fn tighten_stop_on_bearish_news(context: &mut SymbolContext, symbol: &str, current_price: Decimal) {
+    let atr = context
+        .last_features
+        .atr
+        .unwrap_or(current_price * dec!(0.01));
 
     // 0.5% gap approximately
-    let tight_multiplier = (price_f64 * 0.005) / atr;
+    let tight_multiplier =
+        (current_price * dec!(0.005)) / if atr.is_zero() { Decimal::ONE } else { atr };
 
     use crate::application::risk_management::trailing_stops::StopState;
 
     if let StopState::ActiveStop { stop_price, .. } = &mut context.position_manager.trailing_stop {
-        let new_stop_f64 = price_f64 - (atr * tight_multiplier.max(0.5));
-        let new_stop = Decimal::from_f64_retain(new_stop_f64).unwrap_or(*stop_price);
+        let new_stop = current_price - (atr * tight_multiplier.max(dec!(0.5)));
 
         if new_stop > *stop_price {
             *stop_price = new_stop;
@@ -200,12 +196,8 @@ fn tighten_stop_on_bearish_news(
         }
     } else {
         // Create new tight stop
-        let atr_decimal = Decimal::from_f64_retain(atr).unwrap_or(Decimal::ONE);
-        let tight_mult_decimal =
-            Decimal::from_f64_retain(tight_multiplier.max(0.5)).unwrap_or(Decimal::ONE);
-
         context.position_manager.trailing_stop =
-            StopState::on_buy(current_price, atr_decimal, tight_mult_decimal);
+            StopState::on_buy(current_price, atr, tight_multiplier.max(dec!(0.5)));
         info!(
             "NewsHandler: News CREATED Tight Trailing Stop for {}",
             symbol
@@ -235,7 +227,7 @@ mod tests {
 
     fn create_test_context() -> SymbolContext {
         let config = AnalystConfig::default();
-        let strategy = Arc::new(DualSMAStrategy::new(20, 60, 0.0));
+        let strategy = Arc::new(DualSMAStrategy::new(20, 60, dec!(0.0)));
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
     }
@@ -243,7 +235,7 @@ mod tests {
     #[test]
     fn test_bearish_news_action_profitable() {
         let mut context = create_test_context();
-        context.last_features.atr = Some(1.0);
+        context.last_features.atr = Some(dec!(1.0));
 
         // Setup an active trailing stop
         context.position_manager.trailing_stop =
@@ -279,7 +271,7 @@ mod tests {
     #[test]
     fn test_bearish_news_action_losing() {
         let mut context = create_test_context();
-        context.last_features.atr = Some(1.0);
+        context.last_features.atr = Some(dec!(1.0));
 
         let signal = NewsSignal {
             symbol: "TEST".to_string(),

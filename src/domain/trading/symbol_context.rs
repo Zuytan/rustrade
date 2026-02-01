@@ -7,6 +7,7 @@ use crate::application::strategies::TradingStrategy;
 use crate::domain::market::market_regime::MarketRegimeDetector;
 use crate::domain::ports::{ExpectancyEvaluator, FeatureEngineeringService};
 use crate::domain::trading::types::{Candle, FeatureSet};
+use rust_decimal::Decimal;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
@@ -32,8 +33,8 @@ pub struct SymbolContext {
     pub last_entry_time: Option<i64>,
     pub min_hold_time_ms: i64,
     pub active_strategy_mode: crate::domain::market::strategy_config::StrategyMode,
-    pub last_macd_histogram: Option<f64>,
-    pub cached_reward_risk_ratio: f64,
+    pub last_macd_histogram: Option<Decimal>,
+    pub cached_reward_risk_ratio: Decimal,
     pub warmup_succeeded: bool,
     pub candle_history: VecDeque<Candle>,
     // Multi-timeframe support
@@ -41,12 +42,12 @@ pub struct SymbolContext {
         crate::application::market_data::timeframe_aggregator::TimeframeAggregator,
     pub timeframe_features: HashMap<crate::domain::market::timeframe::Timeframe, FeatureSet>,
     pub enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
-    pub rsi_history: VecDeque<f64>,
+    pub rsi_history: VecDeque<Decimal>,
     // Order Flow Imbalance (OFI) state
-    pub ofi_value: f64,
+    pub ofi_value: Decimal,
     pub cumulative_delta: crate::domain::market::order_flow::CumulativeDelta,
     pub volume_profile: Option<crate::domain::market::order_flow::VolumeProfile>,
-    pub ofi_history: VecDeque<f64>,
+    pub ofi_history: VecDeque<Decimal>,
 }
 
 impl SymbolContext {
@@ -64,6 +65,7 @@ impl SymbolContext {
         enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     ) -> Self {
         let min_hold_time_ms = config.min_hold_time_minutes * 60 * 1000;
+        use rust_decimal_macros::dec;
 
         Self {
             feature_service: Box::new(TechnicalFeatureEngineeringService::new(&config)),
@@ -72,14 +74,17 @@ impl SymbolContext {
             strategy,
             config: config.clone(),
             last_features: FeatureSet::default(),
-            regime_detector: MarketRegimeDetector::new(20, 25.0, 2.0),
-            expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(1.5, win_rate_provider)),
+            regime_detector: MarketRegimeDetector::new(20, dec!(25.0), dec!(2.0)),
+            expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(
+                dec!(1.5),
+                win_rate_provider,
+            )),
             taken_profit: false,
             last_entry_time: None,
             min_hold_time_ms,
             active_strategy_mode: config.strategy_mode,
             last_macd_histogram: None,
-            cached_reward_risk_ratio: 2.0, // Default to 2:1
+            cached_reward_risk_ratio: dec!(2.0), // Default to 2:1
             warmup_succeeded: false,
             candle_history: VecDeque::with_capacity(100),
             timeframe_aggregator:
@@ -88,9 +93,9 @@ impl SymbolContext {
             enabled_timeframes,
             rsi_history: VecDeque::with_capacity(100),
             // Initialize OFI state
-            ofi_value: 0.0,
+            ofi_value: Decimal::ZERO,
             cumulative_delta: crate::domain::market::order_flow::CumulativeDelta {
-                value: 0.0,
+                value: Decimal::ZERO,
                 history: VecDeque::with_capacity(20),
             },
             volume_profile: None,
@@ -161,7 +166,6 @@ mod tests {
     use crate::application::strategies::StrategyFactory;
     use crate::domain::market::strategy_config::StrategyMode;
     use rust_decimal::Decimal;
-    use rust_decimal::prelude::FromPrimitive;
 
     fn create_test_config() -> crate::application::agents::analyst_config::AnalystConfig {
         crate::application::agents::analyst_config::AnalystConfig::default()
@@ -174,7 +178,7 @@ mod tests {
             high: Decimal::from_f64_retain(price * 1.01).unwrap(),
             low: Decimal::from_f64_retain(price * 0.99).unwrap(),
             close: Decimal::from_f64_retain(price).unwrap(),
-            volume: Decimal::from_f64(1000.0).unwrap(),
+            volume: Decimal::from_f64_retain(1000.0).unwrap(),
             timestamp,
         }
     }
@@ -191,7 +195,8 @@ mod tests {
         assert_eq!(context.candle_history.len(), 0);
         assert!(!context.warmup_succeeded);
         assert!(!context.taken_profit);
-        assert_eq!(context.cached_reward_risk_ratio, 2.0);
+        use rust_decimal_macros::dec;
+        assert_eq!(context.cached_reward_risk_ratio, dec!(2.0));
         assert_eq!(
             context.min_hold_time_ms,
             config.min_hold_time_minutes * 60 * 1000

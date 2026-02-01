@@ -61,7 +61,7 @@ impl RiskValidator for BuyingPowerValidator {
                 estimated_cost, ctx.available_cash
             );
             return ValidationResult::Reject(format!(
-                "Insufficient buying power. Cost: {:.2}, Available: {:.2}",
+                "Insufficient buying power. Cost: {}, Available: {}",
                 estimated_cost, ctx.available_cash
             ));
         }

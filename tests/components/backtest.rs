@@ -1,3 +1,5 @@
+use rust_decimal_macros::dec;
+
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
@@ -56,7 +58,7 @@ async fn test_backtest_strategy_on_historical_data() {
     ));
 
     let mut portfolio = Portfolio::new();
-    portfolio.cash = Decimal::new(100000, 0);
+    portfolio.cash = dec!(100000.0);
     let portfolio_lock = Arc::new(RwLock::new(portfolio));
     let execution_service = Arc::new(MockExecutionService::new(portfolio_lock));
 
@@ -69,50 +71,50 @@ async fn test_backtest_strategy_on_historical_data() {
         fast_sma_period: 5,
         slow_sma_period: 20,
         max_positions: 1,
-        trade_quantity: Decimal::from(1),
-        sma_threshold: 0.001,
+        trade_quantity: dec!(1.0),
+        sma_threshold: dec!(0.001),
         order_cooldown_seconds: 60,
-        risk_per_trade_percent: 0.02,
+        risk_per_trade_percent: dec!(0.02),
         strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
         trend_sma_period: 200,
         rsi_period: 14,
         macd_fast_period: 12,
         macd_slow_period: 26,
         macd_signal_period: 9,
-        trend_divergence_threshold: 0.005,
-        trailing_stop_atr_multiplier: 3.0,
+        trend_divergence_threshold: dec!(0.005),
+        trailing_stop_atr_multiplier: dec!(3.0),
         atr_period: 14,
-        rsi_threshold: 55.0,
-        trend_riding_exit_buffer_pct: 0.03,
-        mean_reversion_rsi_exit: 50.0,
+        rsi_threshold: dec!(55.0),
+        trend_riding_exit_buffer_pct: dec!(0.03),
+        mean_reversion_rsi_exit: dec!(50.0),
         fee_model: Arc::new(rustrade::domain::trading::fee_model::ConstantFeeModel::new(
             Decimal::ZERO,
             Decimal::ZERO,
         )),
-        max_position_size_pct: 0.1,
+        max_position_size_pct: dec!(0.1),
         mean_reversion_bb_period: 20,
-        bb_std_dev: 2.0,
+        bb_std_dev: dec!(2.0),
         ema_fast_period: 50,
         ema_slow_period: 150,
-        take_profit_pct: 0.05,
+        take_profit_pct: dec!(0.05),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: 5.0,
-        min_profit_ratio: 2.0,
+        spread_bps: dec!(5.0),
+        min_profit_ratio: dec!(2.0),
         macd_requires_rising: true,
-        trend_tolerance_pct: 0.0,
-        macd_min_threshold: 0.0,
-        profit_target_multiplier: 1.5,
+        trend_tolerance_pct: dec!(0.0),
+        macd_min_threshold: dec!(0.0),
+        profit_target_multiplier: dec!(1.5),
         adx_period: 14,
-        adx_threshold: 25.0,
+        adx_threshold: dec!(25.0),
         smc_ob_lookback: 20,
-        smc_min_fvg_size_pct: 0.005,
+        smc_min_fvg_size_pct: dec!(0.005),
         risk_appetite_score: None,
         breakout_lookback: 10,
-        breakout_threshold_pct: 0.002,
-        breakout_volume_mult: 1.1,
-        max_loss_per_trade_pct: -0.05,
-        smc_volume_multiplier: 1.5,
+        breakout_threshold_pct: dec!(0.002),
+        breakout_volume_mult: dec!(1.1),
+        max_loss_per_trade_pct: dec!(-0.05),
+        smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
     };
 

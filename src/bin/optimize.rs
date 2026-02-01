@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use chrono::{NaiveDate, TimeZone, Utc};
 use clap::{Parser, Subcommand};
+use rust_decimal_macros::dec;
 use rustrade::application::optimization::engine::OptimizeEngine;
 use rustrade::application::optimization::optimizer::ParameterGrid;
 use rustrade::application::optimization::reporting::OptimizeReporter;
@@ -396,25 +397,25 @@ fn get_grid_for_profile(profile: RiskProfile) -> ParameterGrid {
         RiskProfile::Conservative => ParameterGrid {
             fast_sma: vec![10, 15, 20],
             slow_sma: vec![50, 60, 80],
-            rsi_threshold: vec![55.0, 60.0, 65.0],
-            trend_divergence_threshold: vec![0.002, 0.003, 0.005],
-            trailing_stop_atr_multiplier: vec![1.5, 2.0, 2.5],
+            rsi_threshold: vec![dec!(55.0), dec!(60.0), dec!(65.0)],
+            trend_divergence_threshold: vec![dec!(0.002), dec!(0.003), dec!(0.005)],
+            trailing_stop_atr_multiplier: vec![dec!(1.5), dec!(2.0), dec!(2.5)],
             order_cooldown_seconds: vec![300, 600, 900],
         },
         RiskProfile::Balanced => ParameterGrid {
             fast_sma: vec![15, 20, 25],
             slow_sma: vec![50, 60, 100],
-            rsi_threshold: vec![60.0, 65.0, 70.0],
-            trend_divergence_threshold: vec![0.003, 0.005, 0.008],
-            trailing_stop_atr_multiplier: vec![2.5, 3.0, 4.0],
+            rsi_threshold: vec![dec!(60.0), dec!(65.0), dec!(70.0)],
+            trend_divergence_threshold: vec![dec!(0.003), dec!(0.005), dec!(0.008)],
+            trailing_stop_atr_multiplier: vec![dec!(2.5), dec!(3.0), dec!(4.0)],
             order_cooldown_seconds: vec![0, 300, 600],
         },
         RiskProfile::Aggressive => ParameterGrid {
             fast_sma: vec![20, 25, 30],
             slow_sma: vec![60, 80, 100],
-            rsi_threshold: vec![65.0, 70.0, 75.0],
-            trend_divergence_threshold: vec![0.005, 0.008, 0.01],
-            trailing_stop_atr_multiplier: vec![3.5, 4.5, 6.0],
+            rsi_threshold: vec![dec!(65.0), dec!(70.0), dec!(75.0)],
+            trend_divergence_threshold: vec![dec!(0.005), dec!(0.008), dec!(0.01)],
+            trailing_stop_atr_multiplier: vec![dec!(3.5), dec!(4.5), dec!(6.0)],
             order_cooldown_seconds: vec![0, 60, 180],
         },
     }

@@ -100,7 +100,7 @@ async fn test_smart_liquidation_uses_limit_when_spread_available() {
 
     // 2. Setup SpreadCache with Data
     let spread_cache = Arc::new(SpreadCache::new());
-    // Bid: 50000, Ask: 50100 -> Mid: 50050. Spread is available.
+    // Bid: dec!(50000.0), Ask: 50100 -> Mid: 50050. Spread is available.
     spread_cache.update("BTC/USD".to_string(), 50000.0, 50100.0);
 
     // 3. Setup Liquidation Service

@@ -1,4 +1,5 @@
 use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStrategy};
+use rust_decimal::Decimal;
 
 /// Dual Simple Moving Average (SMA) crossover strategy
 ///
@@ -8,11 +9,11 @@ use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStr
 pub struct DualSMAStrategy {
     pub fast_period: usize,
     pub slow_period: usize,
-    pub threshold: f64,
+    pub threshold: Decimal,
 }
 
 impl DualSMAStrategy {
-    pub fn new(fast_period: usize, slow_period: usize, threshold: f64) -> Self {
+    pub fn new(fast_period: usize, slow_period: usize, threshold: Decimal) -> Self {
         Self {
             fast_period,
             slow_period,
@@ -28,17 +29,17 @@ impl TradingStrategy for DualSMAStrategy {
 
         // Buy: Golden cross above trend (enhanced for reliability)
         // Requires BOTH crossover AND price above trend like TrendRiding
-        if fast > slow * (1.0 + self.threshold) && ctx.price_f64 > ctx.trend_sma {
+        if fast > slow * (Decimal::ONE + self.threshold) && ctx.current_price > ctx.trend_sma {
             return Some(Signal::buy(format!(
-                "Golden Cross + Trend (Fast={:.2} > Slow={:.2}, Price={:.2} > Trend={:.2})",
-                fast, slow, ctx.price_f64, ctx.trend_sma
+                "Golden Cross + Trend (Fast={} > Slow={}, Price={} > Trend={})",
+                fast, slow, ctx.current_price, ctx.trend_sma
             )));
         }
 
         // Sell: Death cross or trend reversal (exit on either condition)
         if ctx.has_position {
-            let death_cross = fast < slow * (1.0 - self.threshold);
-            let trend_break = ctx.price_f64 < ctx.trend_sma;
+            let death_cross = fast < slow * (Decimal::ONE - self.threshold);
+            let trend_break = ctx.current_price < ctx.trend_sma;
 
             if death_cross || trend_break {
                 let reason = if death_cross {
@@ -47,8 +48,8 @@ impl TradingStrategy for DualSMAStrategy {
                     "Trend Break"
                 };
                 return Some(Signal::sell(format!(
-                    "{} (Fast={:.2}, Slow={:.2}, Price={:.2}, Trend={:.2})",
-                    reason, fast, slow, ctx.price_f64, ctx.trend_sma
+                    "{} (Fast={}, Slow={}, Price={}, Trend={})",
+                    reason, fast, slow, ctx.current_price, ctx.trend_sma
                 )));
             }
         }
@@ -68,32 +69,36 @@ mod tests {
     use rust_decimal_macros::dec;
     use std::collections::VecDeque;
 
-    fn create_test_context(fast_sma: f64, slow_sma: f64, has_position: bool) -> AnalysisContext {
+    fn create_test_context(
+        fast_sma: Decimal,
+        slow_sma: Decimal,
+        has_position: bool,
+    ) -> AnalysisContext {
         AnalysisContext {
             symbol: "TEST".to_string(),
             current_price: dec!(100.0),
             price_f64: 100.0,
             fast_sma,
             slow_sma,
-            trend_sma: 99.0, // Below price to allow buy signals
-            rsi: 50.0,
-            macd_value: 0.0,
-            macd_signal: 0.0,
-            macd_histogram: 0.0,
+            trend_sma: dec!(99.0), // Below price to allow buy signals
+            rsi: dec!(50.0),
+            macd_value: Decimal::ZERO,
+            macd_signal: Decimal::ZERO,
+            macd_histogram: Decimal::ZERO,
             last_macd_histogram: None,
-            atr: 1.0,
-            bb_lower: 0.0,
-            bb_middle: 0.0,
-            bb_upper: 0.0,
-            adx: 0.0,
+            atr: Decimal::ONE,
+            bb_lower: Decimal::ZERO,
+            bb_middle: Decimal::ZERO,
+            bb_upper: Decimal::ZERO,
+            adx: Decimal::ZERO,
             has_position,
             timestamp: 0,
             timeframe_features: None,
             candles: VecDeque::new(),
             rsi_history: VecDeque::new(),
             // OFI fields (defaults for tests)
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,
@@ -106,8 +111,8 @@ mod tests {
 
     #[test]
     fn test_golden_cross_buy_signal() {
-        let strategy = DualSMAStrategy::new(20, 60, 0.001);
-        let ctx = create_test_context(102.0, 100.0, false);
+        let strategy = DualSMAStrategy::new(20, 60, dec!(0.001));
+        let ctx = create_test_context(dec!(102.0), dec!(100.0), false);
 
         let signal = strategy.analyze(&ctx);
 
@@ -119,8 +124,8 @@ mod tests {
 
     #[test]
     fn test_death_cross_sell_signal() {
-        let strategy = DualSMAStrategy::new(20, 60, 0.001);
-        let mut ctx = create_test_context(98.0, 100.0, true);
+        let strategy = DualSMAStrategy::new(20, 60, dec!(0.001));
+        let mut ctx = create_test_context(dec!(98.0), dec!(100.0), true);
         ctx.has_position = true; // Must have position to sell
 
         let signal = strategy.analyze(&ctx);
@@ -133,8 +138,8 @@ mod tests {
 
     #[test]
     fn test_no_signal_when_smas_close() {
-        let strategy = DualSMAStrategy::new(20, 60, 0.001);
-        let ctx = create_test_context(100.05, 100.0, false);
+        let strategy = DualSMAStrategy::new(20, 60, dec!(0.001));
+        let ctx = create_test_context(dec!(100.05), dec!(100.0), false);
 
         let signal = strategy.analyze(&ctx);
 
@@ -143,8 +148,8 @@ mod tests {
 
     #[test]
     fn test_no_sell_without_position() {
-        let strategy = DualSMAStrategy::new(20, 60, 0.001);
-        let ctx = create_test_context(98.0, 100.0, false); // has_position = false
+        let strategy = DualSMAStrategy::new(20, 60, dec!(0.001));
+        let ctx = create_test_context(dec!(98.0), dec!(100.0), false); // has_position = false
 
         let signal = strategy.analyze(&ctx);
 

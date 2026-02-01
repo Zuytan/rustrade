@@ -16,7 +16,7 @@ use thiserror::Error;
 #[derive(Debug, Error, PartialEq)]
 pub enum RiskConfigError {
     #[error("Invalid percentage: {field} = {value}. Must be between 0.0 and 1.0")]
-    InvalidPercentage { field: String, value: f64 },
+    InvalidPercentage { field: String, value: Decimal },
 
     #[error("Invalid limit: {field} = {value}. Must be positive")]
     InvalidLimit { field: String, value: usize },
@@ -37,12 +37,13 @@ pub enum RiskConfigError {
 ///
 /// ```rust
 /// use rustrade::domain::config::RiskConfig;
+/// use rust_decimal_macros::dec;
 ///
 /// let config = RiskConfig::new(
-///     0.1,  // max_position_size_pct
-///     0.3,  // max_sector_exposure_pct
-///     0.02, // max_daily_loss_pct
-///     0.1,  // max_drawdown_pct
+///     dec!(0.1),  // max_position_size_pct
+///     dec!(0.3),  // max_sector_exposure_pct
+///     dec!(0.02), // max_daily_loss_pct
+///     dec!(0.1),  // max_drawdown_pct
 ///     3,    // consecutive_loss_limit
 ///     Some(5000), // pending_order_ttl_ms
 /// ).expect("Valid config");
@@ -50,16 +51,16 @@ pub enum RiskConfigError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiskConfig {
     /// Maximum position size as percentage of portfolio (e.g., 0.1 = 10%)
-    pub max_position_size_pct: f64,
+    pub max_position_size_pct: Decimal,
 
     /// Maximum sector exposure as percentage of portfolio (e.g., 0.3 = 30%)
-    pub max_sector_exposure_pct: f64,
+    pub max_sector_exposure_pct: Decimal,
 
     /// Maximum daily loss as percentage of portfolio (e.g., 0.02 = 2%)
-    pub max_daily_loss_pct: f64,
+    pub max_daily_loss_pct: Decimal,
 
     /// Maximum drawdown from high-water mark as percentage (e.g., 0.1 = 10%)
-    pub max_drawdown_pct: f64,
+    pub max_drawdown_pct: Decimal,
 
     /// Maximum consecutive losses before halting trading
     pub consecutive_loss_limit: usize,
@@ -75,10 +76,10 @@ impl RiskConfig {
     ///
     /// Returns `RiskConfigError` if any parameter violates invariants
     pub fn new(
-        max_position_size_pct: f64,
-        max_sector_exposure_pct: f64,
-        max_daily_loss_pct: f64,
-        max_drawdown_pct: f64,
+        max_position_size_pct: Decimal,
+        max_sector_exposure_pct: Decimal,
+        max_daily_loss_pct: Decimal,
+        max_drawdown_pct: Decimal,
         consecutive_loss_limit: usize,
         pending_order_ttl_ms: Option<i64>,
     ) -> Result<Self, RiskConfigError> {
@@ -125,8 +126,9 @@ impl RiskConfig {
     }
 
     /// Validate a percentage field is in range [0.0, 1.0]
-    fn validate_percentage(&self, field: &str, value: f64) -> Result<(), RiskConfigError> {
-        if !(0.0..=1.0).contains(&value) {
+    fn validate_percentage(&self, field: &str, value: Decimal) -> Result<(), RiskConfigError> {
+        use rust_decimal_macros::dec;
+        if value < Decimal::ZERO || value > dec!(1.0) {
             return Err(RiskConfigError::InvalidPercentage {
                 field: field.to_string(),
                 value,
@@ -135,30 +137,18 @@ impl RiskConfig {
         Ok(())
     }
 
-    /// Convert max_position_size_pct to Decimal for calculations
-    pub fn max_position_size_decimal(&self) -> Decimal {
-        Decimal::try_from(self.max_position_size_pct).unwrap_or(Decimal::ZERO)
-    }
-
-    /// Convert max_daily_loss_pct to Decimal for calculations
-    pub fn max_daily_loss_decimal(&self) -> Decimal {
-        Decimal::try_from(self.max_daily_loss_pct).unwrap_or(Decimal::ZERO)
-    }
-
-    /// Convert max_drawdown_pct to Decimal for calculations
-    pub fn max_drawdown_decimal(&self) -> Decimal {
-        Decimal::try_from(self.max_drawdown_pct).unwrap_or(Decimal::ZERO)
-    }
+    // Removed converting methods as fields are now Decimal
 }
 
 impl Default for RiskConfig {
     /// Conservative default risk parameters
     fn default() -> Self {
+        use rust_decimal_macros::dec;
         Self {
-            max_position_size_pct: 0.1,   // 10%
-            max_sector_exposure_pct: 0.3, // 30%
-            max_daily_loss_pct: 0.02,     // 2%
-            max_drawdown_pct: 0.1,        // 10%
+            max_position_size_pct: dec!(0.1),   // 10%
+            max_sector_exposure_pct: dec!(0.3), // 30%
+            max_daily_loss_pct: dec!(0.02),     // 2%
+            max_drawdown_pct: dec!(0.1),        // 10%
             consecutive_loss_limit: 3,
             pending_order_ttl_ms: None,
         }
@@ -168,46 +158,51 @@ impl Default for RiskConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_valid_config() {
-        let config = RiskConfig::new(0.1, 0.3, 0.02, 0.1, 3, Some(5000));
+        use rust_decimal_macros::dec;
+        let config = RiskConfig::new(dec!(0.1), dec!(0.3), dec!(0.02), dec!(0.1), 3, Some(5000));
         assert!(config.is_ok());
 
         let config = config.unwrap();
-        assert_eq!(config.max_position_size_pct, 0.1);
+        assert_eq!(config.max_position_size_pct, dec!(0.1));
         assert_eq!(config.consecutive_loss_limit, 3);
     }
 
     #[test]
     fn test_invalid_max_position_size() {
-        let result = RiskConfig::new(1.5, 0.3, 0.02, 0.1, 3, None);
+        use rust_decimal_macros::dec;
+        let result = RiskConfig::new(dec!(1.5), dec!(0.3), dec!(0.02), dec!(0.1), 3, None);
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
             RiskConfigError::InvalidPercentage {
                 field: "max_position_size_pct".to_string(),
-                value: 1.5,
+                value: dec!(1.5),
             }
         );
     }
 
     #[test]
     fn test_invalid_negative_percentage() {
-        let result = RiskConfig::new(0.1, -0.1, 0.02, 0.1, 3, None);
+        use rust_decimal_macros::dec;
+        let result = RiskConfig::new(dec!(0.1), dec!(-0.1), dec!(0.02), dec!(0.1), 3, None);
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
             RiskConfigError::InvalidPercentage {
                 field: "max_sector_exposure_pct".to_string(),
-                value: -0.1,
+                value: dec!(-0.1),
             }
         );
     }
 
     #[test]
     fn test_invalid_consecutive_loss_limit() {
-        let result = RiskConfig::new(0.1, 0.3, 0.02, 0.1, 0, None);
+        use rust_decimal_macros::dec;
+        let result = RiskConfig::new(dec!(0.1), dec!(0.3), dec!(0.02), dec!(0.1), 0, None);
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
@@ -220,7 +215,8 @@ mod tests {
 
     #[test]
     fn test_invalid_ttl() {
-        let result = RiskConfig::new(0.1, 0.3, 0.02, 0.1, 3, Some(-100));
+        use rust_decimal_macros::dec;
+        let result = RiskConfig::new(dec!(0.1), dec!(0.3), dec!(0.02), dec!(0.1), 3, Some(-100));
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
@@ -233,22 +229,24 @@ mod tests {
 
     #[test]
     fn test_boundary_values() {
+        use rust_decimal_macros::dec;
         // Test 0.0 (valid minimum)
-        let config = RiskConfig::new(0.0, 0.0, 0.0, 0.0, 1, None);
+        let config = RiskConfig::new(dec!(0.0), dec!(0.0), dec!(0.0), dec!(0.0), 1, None);
         assert!(config.is_ok());
 
         // Test 1.0 (valid maximum)
-        let config = RiskConfig::new(1.0, 1.0, 1.0, 1.0, 1, Some(1));
+        let config = RiskConfig::new(dec!(1.0), dec!(1.0), dec!(1.0), dec!(1.0), 1, Some(1));
         assert!(config.is_ok());
     }
 
     #[test]
     fn test_default_config() {
+        use rust_decimal_macros::dec;
         let config = RiskConfig::default();
-        assert_eq!(config.max_position_size_pct, 0.1);
-        assert_eq!(config.max_sector_exposure_pct, 0.3);
-        assert_eq!(config.max_daily_loss_pct, 0.02);
-        assert_eq!(config.max_drawdown_pct, 0.1);
+        assert_eq!(config.max_position_size_pct, dec!(0.1));
+        assert_eq!(config.max_sector_exposure_pct, dec!(0.3));
+        assert_eq!(config.max_daily_loss_pct, dec!(0.02));
+        assert_eq!(config.max_drawdown_pct, dec!(0.1));
         assert_eq!(config.consecutive_loss_limit, 3);
         assert_eq!(config.pending_order_ttl_ms, None);
     }
@@ -257,10 +255,10 @@ mod tests {
     fn test_decimal_conversions() {
         let config = RiskConfig::default();
 
-        let max_pos = config.max_position_size_decimal();
-        assert_eq!(max_pos, Decimal::try_from(0.1).unwrap());
+        let max_pos = config.max_position_size_pct;
+        assert_eq!(max_pos, dec!(0.1));
 
-        let max_loss = config.max_daily_loss_decimal();
-        assert_eq!(max_loss, Decimal::try_from(0.02).unwrap());
+        let max_loss = config.max_daily_loss_pct;
+        assert_eq!(max_loss, dec!(0.02));
     }
 }

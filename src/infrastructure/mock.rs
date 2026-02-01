@@ -4,7 +4,6 @@ use crate::domain::trading::types::{MarketEvent, Order};
 use anyhow::Result;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::{
@@ -155,7 +154,7 @@ impl MarketDataService for MockMarketDataService {
 
                         let event = MarketEvent::Quote {
                             symbol: symbol.clone(),
-                            price: Decimal::from_f64(new_price).unwrap_or(Decimal::ZERO),
+                            price: Decimal::from_f64_retain(new_price).unwrap_or(Decimal::ZERO),
                             quantity: Decimal::ONE,
                             timestamp: Utc::now().timestamp(),
                         };

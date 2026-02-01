@@ -15,7 +15,8 @@ use crate::infrastructure::mock::MockExecutionService;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -50,7 +51,7 @@ impl OptimizeEngine {
                 .api_secret(api_secret)
                 .data_base_url(data_url)
                 .ws_url(ws_url)
-                .min_volume_threshold(10000.0)
+                .min_volume_threshold(dec!(10000.0).to_f64().unwrap_or(10000.0))
                 .asset_class(asset_class)
                 .candle_repository(None) // No caching needed for optimization
                 .build(),
@@ -138,8 +139,9 @@ impl OptimizeEngine {
                 .parse::<f64>()
                 .unwrap_or(0.001);
 
-            let slippage = Decimal::from_f64(slippage_pct).unwrap_or(Decimal::ZERO);
-            let commission = Decimal::from_f64(commission_per_share).unwrap_or(Decimal::ZERO);
+            let slippage = Decimal::from_f64_retain(slippage_pct).unwrap_or(Decimal::ZERO);
+            let commission =
+                Decimal::from_f64_retain(commission_per_share).unwrap_or(Decimal::ZERO);
             let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
 
             Arc::new(MockExecutionService::with_costs(portfolio_lock, fee_model))

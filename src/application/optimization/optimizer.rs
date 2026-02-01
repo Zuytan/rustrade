@@ -6,7 +6,8 @@ use crate::domain::trading::fee_model::ConstantFeeModel; // Added
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive; // Added
+// Added
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::info;
@@ -16,9 +17,9 @@ use tracing::info;
 pub struct ParameterGrid {
     pub fast_sma: Vec<usize>,
     pub slow_sma: Vec<usize>,
-    pub rsi_threshold: Vec<f64>,
-    pub trend_divergence_threshold: Vec<f64>,
-    pub trailing_stop_atr_multiplier: Vec<f64>,
+    pub rsi_threshold: Vec<Decimal>,
+    pub trend_divergence_threshold: Vec<Decimal>,
+    pub trailing_stop_atr_multiplier: Vec<Decimal>,
     pub order_cooldown_seconds: Vec<u64>,
 }
 
@@ -27,9 +28,9 @@ impl Default for ParameterGrid {
         Self {
             fast_sma: vec![10, 20, 30],
             slow_sma: vec![50, 60, 100],
-            rsi_threshold: vec![60.0, 65.0, 70.0],
-            trend_divergence_threshold: vec![0.003, 0.005, 0.01],
-            trailing_stop_atr_multiplier: vec![2.0, 3.0, 4.0],
+            rsi_threshold: vec![dec!(60.0), dec!(65.0), dec!(70.0)],
+            trend_divergence_threshold: vec![dec!(0.003), dec!(0.005), dec!(0.01)],
+            trailing_stop_atr_multiplier: vec![dec!(2.0), dec!(3.0), dec!(4.0)],
             order_cooldown_seconds: vec![0, 300, 600],
         }
     }
@@ -39,14 +40,14 @@ impl Default for ParameterGrid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationResult {
     pub params: AnalystConfig,
-    pub sharpe_ratio: f64,
-    pub total_return: f64,
-    pub max_drawdown: f64,
-    pub win_rate: f64,
+    pub sharpe_ratio: Decimal,
+    pub total_return: Decimal,
+    pub max_drawdown: Decimal,
+    pub win_rate: Decimal,
     pub total_trades: usize,
-    pub objective_score: f64,
-    pub alpha: f64,
-    pub beta: f64,
+    pub objective_score: Decimal,
+    pub alpha: Decimal,
+    pub beta: Decimal,
 }
 
 impl OptimizationResult {
@@ -55,10 +56,10 @@ impl OptimizationResult {
     pub fn calculate_objective_score(&mut self) {
         // Composite score favoring high Sharpe, return, and win rate
         // while penalizing high drawdown
-        self.objective_score = (self.sharpe_ratio * 0.4)
-            + (self.total_return / 100.0 * 0.3)
-            + (self.win_rate / 100.0 * 0.2)
-            - (self.max_drawdown / 100.0 * 0.1);
+        self.objective_score = (self.sharpe_ratio * dec!(0.4))
+            + (self.total_return / dec!(100.0) * dec!(0.3))
+            + (self.win_rate / dec!(100.0) * dec!(0.2))
+            - (self.max_drawdown / dec!(100.0) * dec!(0.1));
     }
 }
 
@@ -70,7 +71,7 @@ pub struct GridSearchOptimizer {
     execution_service_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync>,
     parameter_grid: ParameterGrid,
     strategy_mode: StrategyMode,
-    min_profit_ratio: f64, // From Config - scales with Risk Appetite
+    min_profit_ratio: Decimal, // From Config - scales with Risk Appetite
 }
 
 impl GridSearchOptimizer {
@@ -79,7 +80,7 @@ impl GridSearchOptimizer {
         execution_service_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync>,
         parameter_grid: ParameterGrid,
         strategy_mode: StrategyMode,
-        min_profit_ratio: f64,
+        min_profit_ratio: Decimal,
     ) -> Self {
         Self {
             market_data,
@@ -115,8 +116,8 @@ impl GridSearchOptimizer {
                                     // Fixed parameters
                                     max_positions: 5,
                                     trade_quantity: Decimal::from(1),
-                                    sma_threshold: 0.001,
-                                    risk_per_trade_percent: 0.02,
+                                    sma_threshold: dec!(0.001),
+                                    risk_per_trade_percent: dec!(0.02),
                                     strategy_mode: self.strategy_mode,
                                     trend_sma_period: 2000,
                                     rsi_period: 14,
@@ -124,38 +125,36 @@ impl GridSearchOptimizer {
                                     macd_slow_period: 26,
                                     macd_signal_period: 9,
                                     atr_period: 14,
-                                    trend_riding_exit_buffer_pct: 0.03,
-                                    mean_reversion_rsi_exit: 50.0,
+                                    trend_riding_exit_buffer_pct: dec!(0.03),
+                                    mean_reversion_rsi_exit: dec!(50.0),
                                     mean_reversion_bb_period: 20,
                                     fee_model: Arc::new(ConstantFeeModel::new(
-                                        Decimal::from_f64(0.005)
-                                            .expect("0.005 is a valid f64 for Decimal"),
-                                        Decimal::from_f64(0.001)
-                                            .expect("0.001 is a valid f64 for Decimal"),
+                                        dec!(0.005),
+                                        dec!(0.001),
                                     )),
-                                    max_position_size_pct: 0.1,
-                                    bb_std_dev: 2.0,
+                                    max_position_size_pct: dec!(0.1),
+                                    bb_std_dev: dec!(2.0),
                                     ema_fast_period: 50,
                                     ema_slow_period: 150,
-                                    take_profit_pct: 0.05,
+                                    take_profit_pct: dec!(0.05),
                                     min_hold_time_minutes: 0,
                                     signal_confirmation_bars: 1,
-                                    spread_bps: 5.0,
+                                    spread_bps: dec!(5.0),
                                     min_profit_ratio: self.min_profit_ratio, // Use configured value
                                     macd_requires_rising: true, // Conservative default for grid search
-                                    trend_tolerance_pct: 0.0,   // Strict default for grid search
-                                    macd_min_threshold: 0.0,    // Neutral default for grid search
-                                    profit_target_multiplier: 1.5, // Conservative default
+                                    trend_tolerance_pct: dec!(0.0), // Strict default for grid search
+                                    macd_min_threshold: dec!(0.0), // Neutral default for grid search
+                                    profit_target_multiplier: dec!(1.5), // Conservative default
                                     adx_period: 14,
-                                    adx_threshold: 25.0,
+                                    adx_threshold: dec!(25.0),
                                     smc_ob_lookback: 20,
-                                    smc_min_fvg_size_pct: 0.005,
-                                    smc_volume_multiplier: 1.5,
+                                    smc_min_fvg_size_pct: dec!(0.005),
+                                    smc_volume_multiplier: dec!(1.5),
                                     risk_appetite_score: None,
                                     breakout_lookback: 10,
-                                    breakout_threshold_pct: 0.002,
-                                    breakout_volume_mult: 1.1,
-                                    max_loss_per_trade_pct: -0.05,
+                                    breakout_threshold_pct: dec!(0.002),
+                                    breakout_volume_mult: dec!(1.1),
+                                    max_loss_per_trade_pct: dec!(-0.05),
                                     enable_ml_data_collection: false,
                                 });
                             }
@@ -221,14 +220,15 @@ impl GridSearchOptimizer {
 
         let mut opt_result = OptimizationResult {
             params: config,
-            sharpe_ratio: metrics.sharpe_ratio,
-            total_return: result.total_return_pct.to_string().parse().unwrap_or(0.0),
-            max_drawdown: metrics.max_drawdown_pct,
-            win_rate: metrics.win_rate,
+            sharpe_ratio: Decimal::from_f64_retain(metrics.sharpe_ratio).unwrap_or(Decimal::ZERO),
+            total_return: result.total_return_pct,
+            max_drawdown: Decimal::from_f64_retain(metrics.max_drawdown_pct)
+                .unwrap_or(Decimal::ZERO),
+            win_rate: Decimal::from_f64_retain(metrics.win_rate).unwrap_or(Decimal::ZERO),
             total_trades: metrics.total_trades,
-            objective_score: 0.0,
-            alpha: result.alpha,
-            beta: result.beta,
+            objective_score: Decimal::ZERO,
+            alpha: Decimal::from_f64_retain(result.alpha).unwrap_or(Decimal::ZERO),
+            beta: Decimal::from_f64_retain(result.beta).unwrap_or(Decimal::ZERO),
         };
 
         opt_result.calculate_objective_score();
@@ -307,9 +307,9 @@ mod tests {
         let grid = ParameterGrid {
             fast_sma: vec![10, 20],
             slow_sma: vec![50, 100],
-            rsi_threshold: vec![65.0],
-            trend_divergence_threshold: vec![0.005],
-            trailing_stop_atr_multiplier: vec![3.0],
+            rsi_threshold: vec![dec!(65.0)],
+            trend_divergence_threshold: vec![dec!(0.005)],
+            trailing_stop_atr_multiplier: vec![dec!(3.0)],
             order_cooldown_seconds: vec![300],
         };
 
@@ -357,65 +357,62 @@ mod tests {
                 slow_sma_period: 60,
                 max_positions: 5,
                 trade_quantity: Decimal::from(1),
-                sma_threshold: 0.001,
+                sma_threshold: dec!(0.001),
                 order_cooldown_seconds: 300,
-                risk_per_trade_percent: 0.02,
+                risk_per_trade_percent: dec!(0.02),
                 strategy_mode: StrategyMode::Standard,
                 trend_sma_period: 2000,
                 rsi_period: 14,
                 macd_fast_period: 12,
                 macd_slow_period: 26,
                 macd_signal_period: 9,
-                trend_divergence_threshold: 0.005,
-                trailing_stop_atr_multiplier: 3.0,
+                trend_divergence_threshold: dec!(0.005),
+                trailing_stop_atr_multiplier: dec!(3.0),
                 atr_period: 14,
-                rsi_threshold: 65.0,
-                trend_riding_exit_buffer_pct: 0.03,
-                mean_reversion_rsi_exit: 50.0,
+                rsi_threshold: dec!(65.0),
+                trend_riding_exit_buffer_pct: dec!(0.03),
+                mean_reversion_rsi_exit: dec!(50.0),
                 mean_reversion_bb_period: 20,
-                fee_model: Arc::new(ConstantFeeModel::new(
-                    Decimal::from_f64(0.005).unwrap(),
-                    Decimal::from_f64(0.001).unwrap(),
-                )),
-                max_position_size_pct: 0.1,
-                bb_std_dev: 2.0,
+                fee_model: Arc::new(ConstantFeeModel::new(dec!(0.005), dec!(0.001))),
+                max_position_size_pct: dec!(0.1),
+                bb_std_dev: dec!(2.0),
                 ema_fast_period: 50,
                 ema_slow_period: 150,
-                take_profit_pct: 0.05,
+                take_profit_pct: dec!(0.05),
                 min_hold_time_minutes: 0,
                 signal_confirmation_bars: 1,
-                spread_bps: 5.0,
-                min_profit_ratio: 2.0,
+                spread_bps: dec!(5.0),
+                min_profit_ratio: dec!(2.0),
                 macd_requires_rising: true,
-                trend_tolerance_pct: 0.0,
-                macd_min_threshold: 0.0,
-                profit_target_multiplier: 1.5,
+                trend_tolerance_pct: dec!(0.0),
+                macd_min_threshold: dec!(0.0),
+                profit_target_multiplier: dec!(1.5),
                 adx_period: 14,
-                adx_threshold: 25.0,
+                adx_threshold: dec!(25.0),
                 smc_ob_lookback: 20,
-                smc_min_fvg_size_pct: 0.005,
-                smc_volume_multiplier: 1.5,
+                smc_min_fvg_size_pct: dec!(0.005),
+                smc_volume_multiplier: dec!(1.5),
                 risk_appetite_score: None,
                 breakout_lookback: 10,
-                breakout_threshold_pct: 0.002,
-                breakout_volume_mult: 1.1,
-                max_loss_per_trade_pct: -0.05,
+                breakout_threshold_pct: dec!(0.002),
+                breakout_volume_mult: dec!(1.1),
+                max_loss_per_trade_pct: dec!(-0.05),
                 enable_ml_data_collection: false,
             },
-            sharpe_ratio: 2.0,
-            total_return: 15.0,
-            max_drawdown: 5.0,
-            win_rate: 60.0,
+            sharpe_ratio: dec!(2.0),
+            total_return: dec!(15.0),
+            max_drawdown: dec!(5.0),
+            win_rate: dec!(60.0),
             total_trades: 20,
-            objective_score: 0.0,
-            alpha: 0.01,
-            beta: 1.0,
+            objective_score: dec!(0.0),
+            alpha: dec!(0.01),
+            beta: dec!(1.0),
         };
 
         result.calculate_objective_score();
 
         // Score = (2.0 * 0.4) + (0.15 * 0.3) + (0.6 * 0.2) - (0.05 * 0.1)
         //       = 0.8 + 0.045 + 0.12 - 0.005 = 0.96
-        assert!((result.objective_score - 0.96).abs() < 0.01);
+        assert!((result.objective_score - dec!(0.96)).abs() < dec!(0.01));
     }
 }

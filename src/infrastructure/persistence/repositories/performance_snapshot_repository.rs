@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 use sqlx::{Row, SqlitePool};
 
 /// Safely parse a Unix timestamp into a DateTime, handling invalid values
@@ -73,7 +73,7 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
                 timestamp: parse_timestamp(row.try_get("timestamp")?)?,
-                equity: Decimal::from_f64(equity_f64).unwrap_or_default(),
+                equity: Decimal::from_f64_retain(equity_f64).unwrap_or_default(),
                 drawdown_pct: row.try_get("drawdown_pct")?,
                 sharpe_rolling_30d: row.try_get("sharpe_rolling_30d")?,
                 win_rate_rolling_30d: row.try_get("win_rate_rolling_30d")?,
@@ -110,7 +110,7 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
                 timestamp: parse_timestamp(row.try_get("timestamp")?)?,
-                equity: Decimal::from_f64(equity_f64).unwrap_or_default(),
+                equity: Decimal::from_f64_retain(equity_f64).unwrap_or_default(),
                 drawdown_pct: row.try_get("drawdown_pct")?,
                 sharpe_rolling_30d: row.try_get("sharpe_rolling_30d")?,
                 win_rate_rolling_30d: row.try_get("win_rate_rolling_30d")?,

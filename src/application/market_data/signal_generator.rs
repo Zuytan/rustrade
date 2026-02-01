@@ -30,16 +30,16 @@ impl SignalGenerator {
         timestamp: i64,
         features: &FeatureSet,
         strategy: &Arc<dyn TradingStrategy>,
-        _sma_threshold: f64, // Unused
+        _sma_threshold: Decimal, // Unused
         has_position: bool,
-        previous_macd_histogram: Option<f64>, // Previous MACD histogram for rising/falling detection
+        previous_macd_histogram: Option<Decimal>, // Previous MACD histogram
         candle_history: &VecDeque<crate::domain::trading::types::Candle>,
-        rsi_history: &VecDeque<f64>,
+        rsi_history: &VecDeque<Decimal>,
         // OFI parameters
-        ofi_value: f64,
-        cumulative_delta: f64,
+        ofi_value: Decimal,
+        cumulative_delta: Decimal,
         volume_profile: Option<crate::domain::market::order_flow::VolumeProfile>,
-        ofi_history: &VecDeque<f64>,
+        ofi_history: &VecDeque<Decimal>,
     ) -> Option<OrderSide> {
         let price_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&price).unwrap_or(0.0);
 
@@ -48,19 +48,19 @@ impl SignalGenerator {
             symbol: symbol.to_string(),
             current_price: price,
             price_f64,
-            fast_sma: features.sma_20.unwrap_or(0.0), // Using SMA 20 as fast
-            slow_sma: features.sma_50.unwrap_or(0.0), // Using SMA 50 as slow
-            trend_sma: features.sma_200.unwrap_or(0.0),
-            rsi: features.rsi.unwrap_or(0.0),
-            macd_value: features.macd_line.unwrap_or(0.0),
-            macd_signal: features.macd_signal.unwrap_or(0.0),
-            macd_histogram: features.macd_hist.unwrap_or(0.0),
-            last_macd_histogram: previous_macd_histogram, // Use tracked previous value
-            atr: features.atr.unwrap_or(0.0),
-            bb_lower: features.bb_lower.unwrap_or(0.0),
-            bb_upper: features.bb_upper.unwrap_or(0.0),
-            bb_middle: features.bb_middle.unwrap_or(0.0),
-            adx: features.adx.unwrap_or(0.0),
+            fast_sma: features.sma_20.unwrap_or(Decimal::ZERO), // Using SMA 20 as fast
+            slow_sma: features.sma_50.unwrap_or(Decimal::ZERO), // Using SMA 50 as slow
+            trend_sma: features.sma_200.unwrap_or(Decimal::ZERO),
+            rsi: features.rsi.unwrap_or(Decimal::ZERO),
+            macd_value: features.macd_line.unwrap_or(Decimal::ZERO),
+            macd_signal: features.macd_signal.unwrap_or(Decimal::ZERO),
+            macd_histogram: features.macd_hist.unwrap_or(Decimal::ZERO),
+            last_macd_histogram: previous_macd_histogram,
+            atr: features.atr.unwrap_or(Decimal::ZERO),
+            bb_lower: features.bb_lower.unwrap_or(Decimal::ZERO),
+            bb_upper: features.bb_upper.unwrap_or(Decimal::ZERO),
+            bb_middle: features.bb_middle.unwrap_or(Decimal::ZERO),
+            adx: features.adx.unwrap_or(Decimal::ZERO),
             has_position,
             timestamp,
             candles: candle_history.clone(),
@@ -101,8 +101,9 @@ impl SignalGenerator {
         let fast = features.ema_fast.or(features.sma_20)?;
         let slow = features.ema_slow.or(features.sma_50)?;
 
-        let is_definitively_above = fast > slow * (1.0 + threshold);
-        let is_definitively_below = fast < slow * (1.0 - threshold);
+        let threshold_dec = Decimal::from_f64_retain(threshold).unwrap_or(Decimal::ZERO);
+        let is_definitively_above = fast > slow * (Decimal::ONE + threshold_dec);
+        let is_definitively_below = fast < slow * (Decimal::ONE - threshold_dec);
 
         match self.last_was_above {
             None => {

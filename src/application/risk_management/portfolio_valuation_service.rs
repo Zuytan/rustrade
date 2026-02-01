@@ -11,7 +11,6 @@ use crate::domain::trading::portfolio::Portfolio;
 use anyhow::Result;
 use chrono::Utc;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -106,15 +105,13 @@ impl PortfolioValuationService {
 
                 // Calculate True Range for latest candle
                 let last = &candles[candles.len() - 1];
-                let high = last.high.to_f64().unwrap_or(0.0);
-                let low = last.low.to_f64().unwrap_or(0.0);
-                let range = high - low;
+                let range = last.high - last.low;
 
-                if range > 0.0 {
+                if range > Decimal::ZERO {
                     let mut vm = self.volatility_manager.write().await;
                     vm.update(range);
                     debug!(
-                        "PortfolioValuationService: Volatility updated for {}. Range: {:.2}, Avg: {:.2}",
+                        "PortfolioValuationService: Volatility updated for {}. Range: {}, Avg: {}",
                         benchmark,
                         range,
                         vm.get_average_volatility()

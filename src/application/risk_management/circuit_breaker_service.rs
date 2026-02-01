@@ -1,13 +1,13 @@
 use crate::domain::risk::state::RiskState;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive; // Ensure path is correct. If it fails, check domain structure.
+use rust_decimal_macros::dec;
 // Actually, RiskState is likely re-exported or strictly under state.
 // verified in risk_manager.rs: use crate::domain::risk::state::RiskState;
 
 #[derive(Clone, Debug)]
 pub struct CircuitBreakerConfig {
-    pub max_daily_loss_pct: f64,
-    pub max_drawdown_pct: f64,
+    pub max_daily_loss_pct: Decimal,
+    pub max_drawdown_pct: Decimal,
     pub consecutive_loss_limit: usize,
 }
 
@@ -32,16 +32,14 @@ impl CircuitBreakerService {
     ) -> Option<String> {
         // Check daily loss limit
         if risk_state.session_start_equity > Decimal::ZERO {
-            let daily_loss_pct = ((current_equity - risk_state.session_start_equity)
-                / risk_state.session_start_equity)
-                .to_f64()
-                .unwrap_or(0.0);
+            let daily_loss_pct = (current_equity - risk_state.session_start_equity)
+                / risk_state.session_start_equity;
 
             if daily_loss_pct < -self.config.max_daily_loss_pct {
                 return Some(format!(
-                    "Daily loss limit breached: {:.2}% (limit: {:.2}%) [Start: {}, Current: {}]",
-                    daily_loss_pct * 100.0,
-                    self.config.max_daily_loss_pct * 100.0,
+                    "Daily loss limit breached: {}% (limit: {}%) [Start: {}, Current: {}]",
+                    daily_loss_pct * dec!(100),
+                    self.config.max_daily_loss_pct * dec!(100),
                     risk_state.session_start_equity,
                     current_equity
                 ));
@@ -50,16 +48,14 @@ impl CircuitBreakerService {
 
         // Check drawdown limit
         if risk_state.equity_high_water_mark > Decimal::ZERO {
-            let drawdown_pct = ((current_equity - risk_state.equity_high_water_mark)
-                / risk_state.equity_high_water_mark)
-                .to_f64()
-                .unwrap_or(0.0);
+            let drawdown_pct = (current_equity - risk_state.equity_high_water_mark)
+                / risk_state.equity_high_water_mark;
 
             if drawdown_pct < -self.config.max_drawdown_pct {
                 return Some(format!(
-                    "Max drawdown breached: {:.2}% (limit: {:.2}%)",
-                    drawdown_pct * 100.0,
-                    self.config.max_drawdown_pct * 100.0
+                    "Max drawdown breached: {}% (limit: {}%)",
+                    drawdown_pct * dec!(100),
+                    self.config.max_drawdown_pct * dec!(100)
                 ));
             }
         }

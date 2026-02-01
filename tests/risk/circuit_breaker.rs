@@ -28,13 +28,13 @@ async fn test_circuit_breaker_triggers_on_crash() {
         "TSLA".to_string(),
         Position {
             symbol: "TSLA".to_string(),
-            quantity: dec!(100),       // 100 shares
-            average_price: dec!(1000), // @ $1000 = $100,000 value
+            quantity: dec!(100.0),       // 100 shares
+            average_price: dec!(1000.0), // @ $1000 = $100,000 value
         },
     );
     let execution_service = Arc::new(MockExecutionService::new(Arc::new(RwLock::new(portfolio))));
     let market_service = Arc::new(MockMarketDataService::new());
-    market_service.set_price("TSLA", dec!(1000)).await; // Align market price with portfolio avg price
+    market_service.set_price("TSLA", dec!(1000.0)).await; // Align market price with portfolio avg price
 
     let state_manager = Arc::new(PortfolioStateManager::new(execution_service.clone(), 500));
 
@@ -44,12 +44,12 @@ async fn test_circuit_breaker_triggers_on_crash() {
 
     let config = RiskConfig {
         pending_order_ttl_ms: None,
-        max_daily_loss_pct: 0.05, // 5% limit
-        max_drawdown_pct: 0.10,
-        max_position_size_pct: 0.50,
+        max_daily_loss_pct: dec!(0.05), // 5% limit
+        max_drawdown_pct: dec!(0.10),
+        max_position_size_pct: dec!(0.50),
         consecutive_loss_limit: 5,
         valuation_interval_seconds: 1, // Fast tick for test
-        max_sector_exposure_pct: 1.0,
+        max_sector_exposure_pct: dec!(1.0),
         sector_provider: None,
         allow_pdt_risk: false,
         correlation_config:
@@ -93,7 +93,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
     // New Price = $850.
 
     info!("Test: Simulating Market Crash (TSLA $1000 -> $850)...");
-    market_service.set_price("TSLA", dec!(850)).await;
+    market_service.set_price("TSLA", dec!(850.0)).await;
 
     // Trigger a valuation update manually or wait for tick?
     // The RiskManager runs a loop with `valuation_interval`.
@@ -111,7 +111,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
     let order = liquidation_order.unwrap();
     assert_eq!(order.symbol, "TSLA");
     assert_eq!(order.side, OrderSide::Sell);
-    assert_eq!(order.quantity, dec!(100)); // Should sell all
+    assert_eq!(order.quantity, dec!(100.0)); // Should sell all
 
     // Verify it's a Market order (based on our Change #1)
     assert!(
@@ -129,8 +129,8 @@ async fn test_circuit_breaker_triggers_on_crash() {
     let proposal = TradeProposal {
         symbol: "AAPL".to_string(),
         side: OrderSide::Buy,
-        price: dec!(150),
-        quantity: dec!(10),
+        price: dec!(150.0),
+        quantity: dec!(10.0),
         order_type: rustrade::domain::trading::types::OrderType::Limit,
         reason: "Test".to_string(),
         timestamp: 0,

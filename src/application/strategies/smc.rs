@@ -1,7 +1,6 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::trading::types::{Candle, OrderSide};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use std::collections::VecDeque;
 
 /// Smart Money Concepts (SMC) Strategy
@@ -13,12 +12,12 @@ use std::collections::VecDeque;
 #[derive(Debug, Clone, Default)]
 pub struct SMCStrategy {
     pub ob_lookback: usize,
-    pub min_fvg_size_pct: f64,
-    pub volume_multiplier: f64,
+    pub min_fvg_size_pct: Decimal,
+    pub volume_multiplier: Decimal,
 }
 
 impl SMCStrategy {
-    pub fn new(ob_lookback: usize, min_fvg_size_pct: f64, volume_multiplier: f64) -> Self {
+    pub fn new(ob_lookback: usize, min_fvg_size_pct: Decimal, volume_multiplier: Decimal) -> Self {
         Self {
             ob_lookback,
             min_fvg_size_pct,
@@ -31,7 +30,7 @@ impl SMCStrategy {
     /// where Candle 2 is a large impulsive candle.
     ///
     /// Enhanced (v0.72): Checks if the FVG has been mitigated (filled) by subsequent price action.
-    fn detect_fvg(&self, candles: &VecDeque<Candle>) -> Option<(OrderSide, f64)> {
+    fn detect_fvg(&self, candles: &VecDeque<Candle>) -> Option<(OrderSide, Decimal)> {
         if candles.len() < 5 {
             return None;
         }
@@ -41,20 +40,22 @@ impl SMCStrategy {
         let start_idx = candles.len() - scan_depth;
 
         // Iterate RECENT to OLD (finding the most relevant recent structure)
-        // actually, typically we want the *closest* active FVG.
-        // Recent ones are more significant.
         for i in (start_idx..candles.len() - 2).rev() {
             let c1 = &candles[i];
             let c3 = &candles[i + 2];
 
-            let high1 = c1.high.to_f64().unwrap_or(0.0);
-            let low1 = c1.low.to_f64().unwrap_or(0.0);
-            let high3 = c3.high.to_f64().unwrap_or(0.0);
-            let low3 = c3.low.to_f64().unwrap_or(0.0);
+            let high1 = c1.high;
+            let low1 = c1.low;
+            let high3 = c3.high;
+            let low3 = c3.low;
 
             if low3 > high1 {
                 let gap = low3 - high1;
-                let gap_pct = gap / high1;
+                let gap_pct = if high1 > Decimal::ZERO {
+                    gap / high1
+                } else {
+                    Decimal::ZERO
+                };
 
                 if gap_pct > self.min_fvg_size_pct {
                     let fvg_bottom = high1;
@@ -66,7 +67,7 @@ impl SMCStrategy {
                     // Check all subsequent candles for invalidation or entry
                     // We start from i+3 (candle AFTER the FVG formation)
                     for (idx, candle) in candles.iter().enumerate().skip(i + 3) {
-                        let low = candle.low.to_f64().unwrap_or(0.0);
+                        let low = candle.low;
 
                         // Strict invalidation: if price closes gap completely
                         if low < fvg_bottom {
@@ -77,14 +78,11 @@ impl SMCStrategy {
                         // Check if CURRENT candle (the last one) is in zone
                         if idx == candles.len() - 1 {
                             // Entry condition: Price CLOSED in zone (Close < Top)
-                            // Using Low would be look-ahead bias if we execute at Close
-                            if candle.close.to_f64().unwrap_or(0.0) <= fvg_top {
+                            if candle.close <= fvg_top {
                                 in_zone = true;
                             }
                         }
                     }
-
-                    // For fresh FVG (no subsequent candles yet), we are NOT in zone yet (impulse)
 
                     if !invalidated && in_zone {
                         return Some((OrderSide::Buy, gap));
@@ -95,7 +93,11 @@ impl SMCStrategy {
             // Bearish FVG: Low1 > High3
             if low1 > high3 {
                 let gap = low1 - high3;
-                let gap_pct = gap / high3;
+                let gap_pct = if high3 > Decimal::ZERO {
+                    gap / high3
+                } else {
+                    Decimal::ZERO
+                };
 
                 if gap_pct > self.min_fvg_size_pct {
                     let fvg_top = low1;
@@ -105,7 +107,7 @@ impl SMCStrategy {
                     let mut in_zone = false;
 
                     for (idx, candle) in candles.iter().enumerate().skip(i + 3) {
-                        let high = candle.high.to_f64().unwrap_or(0.0);
+                        let high = candle.high;
 
                         if high > fvg_top {
                             invalidated = true;
@@ -114,8 +116,7 @@ impl SMCStrategy {
 
                         if idx == candles.len() - 1 {
                             // Entry condition: Price CLOSED in zone (Close > Bottom)
-                            // Using High would be look-ahead bias if we execute at Close
-                            if candle.close.to_f64().unwrap_or(0.0) >= fvg_bottom {
+                            if candle.close >= fvg_bottom {
                                 in_zone = true;
                             }
                         }
@@ -135,20 +136,23 @@ impl SMCStrategy {
     /// A bullish OB is the last bearish candle before a strong impulsive bullish move.
     ///
     /// Enhanced (v0.72): Requires Volume Confirmation. The impulsive move must have volume > average.
-    fn find_last_ob(&self, candles: &VecDeque<Candle>, side: OrderSide) -> Option<f64> {
+    fn find_last_ob(&self, candles: &VecDeque<Candle>, side: OrderSide) -> Option<Decimal> {
         // Lookback logic: look for opposite candle before a move
         if candles.len() < self.ob_lookback {
             return None;
         }
 
         // Calculate Average Volume for context
-        let total_vol_dec: rust_decimal::Decimal = candles
+        let total_vol: Decimal = candles
             .iter()
             .take(candles.len() - 1)
             .map(|c| c.volume)
             .sum();
-        let total_vol = total_vol_dec.to_f64().unwrap_or(0.0);
-        let avg_vol = total_vol / (candles.len() as f64 - 1.0);
+        let avg_vol = if candles.len() > 1 {
+            total_vol / Decimal::from(candles.len() as i64 - 1)
+        } else {
+            Decimal::ZERO
+        };
         let vol_threshold = avg_vol * self.volume_multiplier;
 
         match side {
@@ -161,9 +165,8 @@ impl SMCStrategy {
                     // Check structure: Bearish -> Bullish
                     if curr.close < curr.open && next.close > next.open {
                         // Volume Check: Next candle (impulsive) should have high volume
-                        if next.volume > Decimal::from_f64_retain(vol_threshold).unwrap_or_default()
-                        {
-                            return Some(curr.low.to_f64().unwrap_or(0.0));
+                        if next.volume > vol_threshold {
+                            return Some(curr.low);
                         }
                     }
                 }
@@ -174,9 +177,8 @@ impl SMCStrategy {
                     let next = &candles[i + 1];
                     if curr.close > curr.open && next.close < next.open {
                         // Volume Check
-                        if next.volume > Decimal::from_f64_retain(vol_threshold).unwrap_or_default()
-                        {
-                            return Some(curr.high.to_f64().unwrap_or(0.0));
+                        if next.volume > vol_threshold {
+                            return Some(curr.high);
                         }
                     }
                 }
@@ -195,13 +197,11 @@ impl SMCStrategy {
         let curr_close = candles
             .back()
             .expect("candles verified non-empty by len() >= 10 check")
-            .close
-            .to_f64()
-            .unwrap_or(0.0);
+            .close;
 
         // Simplified MSS: check for break of recent 10-candle high/low
-        let mut max_high = 0.0;
-        let mut min_low = f64::MAX;
+        let mut max_high = Decimal::ZERO;
+        let mut min_low = Decimal::MAX;
 
         for (i, _candle) in candles
             .iter()
@@ -209,8 +209,8 @@ impl SMCStrategy {
             .take(candles.len() - 1)
             .skip(candles.len() - 10)
         {
-            let h = candles[i].high.to_f64().unwrap_or(0.0);
-            let l = candles[i].low.to_f64().unwrap_or(0.0);
+            let h = candles[i].high;
+            let l = candles[i].low;
             if h > max_high {
                 max_high = h;
             }
@@ -241,14 +241,15 @@ impl TradingStrategy for SMCStrategy {
                 OrderSide::Buy => {
                     // Bullish Bias if MSS is bullish or price is above SMA
                     let structure_bullish =
-                        mss == Some(OrderSide::Buy) || ctx.price_f64 > ctx.trend_sma;
+                        mss == Some(OrderSide::Buy) || ctx.current_price > ctx.trend_sma;
 
                     if structure_bullish {
                         // OFI Validation: Require positive OFI for bullish signals
                         // This confirms institutional buying pressure
-                        if ctx.ofi_value < 0.2 {
+                        use rust_decimal_macros::dec;
+                        if ctx.ofi_value < dec!(0.2) {
                             tracing::debug!(
-                                "SMC [{}]: Bullish FVG blocked - Weak OFI ({:.2} < 0.2)",
+                                "SMC [{}]: Bullish FVG blocked - Weak OFI ({} < 0.2)",
                                 ctx.symbol,
                                 ctx.ofi_value
                             );
@@ -256,7 +257,7 @@ impl TradingStrategy for SMCStrategy {
                         }
 
                         // Cumulative Delta Confirmation (optional, increases confidence)
-                        let delta_confirms = ctx.cumulative_delta > 0.0;
+                        let delta_confirms = ctx.cumulative_delta > Decimal::ZERO;
                         let confidence = if delta_confirms && ob.is_some() {
                             0.95 // OFI + Delta + OB = highest confidence
                         } else if delta_confirms || ob.is_some() {
@@ -267,12 +268,12 @@ impl TradingStrategy for SMCStrategy {
 
                         let reason = if let Some(ob_level) = ob {
                             format!(
-                                "SMC: Bullish FVG + OB at {:.2} (OFI={:.2}, Delta={:.2})",
+                                "SMC: Bullish FVG + OB at {} (OFI={}, Delta={})",
                                 ob_level, ctx.ofi_value, ctx.cumulative_delta
                             )
                         } else {
                             format!(
-                                "SMC: Bullish FVG (OFI={:.2}, Delta={:.2})",
+                                "SMC: Bullish FVG (OFI={}, Delta={})",
                                 ctx.ofi_value, ctx.cumulative_delta
                             )
                         };
@@ -281,14 +282,15 @@ impl TradingStrategy for SMCStrategy {
                 }
                 OrderSide::Sell => {
                     let structure_bearish =
-                        mss == Some(OrderSide::Sell) || ctx.price_f64 < ctx.trend_sma;
+                        mss == Some(OrderSide::Sell) || ctx.current_price < ctx.trend_sma;
 
                     if structure_bearish {
                         // OFI Validation: Require negative OFI for bearish signals
                         // This confirms institutional selling pressure
-                        if ctx.ofi_value > -0.2 {
+                        use rust_decimal_macros::dec;
+                        if ctx.ofi_value > dec!(-0.2) {
                             tracing::debug!(
-                                "SMC [{}]: Bearish FVG blocked - Weak OFI ({:.2} > -0.2)",
+                                "SMC [{}]: Bearish FVG blocked - Weak OFI ({} > -0.2)",
                                 ctx.symbol,
                                 ctx.ofi_value
                             );
@@ -296,7 +298,7 @@ impl TradingStrategy for SMCStrategy {
                         }
 
                         // Cumulative Delta Confirmation
-                        let delta_confirms = ctx.cumulative_delta < 0.0;
+                        let delta_confirms = ctx.cumulative_delta < Decimal::ZERO;
                         let confidence = if delta_confirms && ob.is_some() {
                             0.95 // OFI + Delta + OB = highest confidence
                         } else if delta_confirms || ob.is_some() {
@@ -307,12 +309,12 @@ impl TradingStrategy for SMCStrategy {
 
                         let reason = if let Some(ob_level) = ob {
                             format!(
-                                "SMC: Bearish FVG + OB at {:.2} (OFI={:.2}, Delta={:.2})",
+                                "SMC: Bearish FVG + OB at {} (OFI={}, Delta={})",
                                 ob_level, ctx.ofi_value, ctx.cumulative_delta
                             )
                         } else {
                             format!(
-                                "SMC: Bearish FVG (OFI={:.2}, Delta={:.2})",
+                                "SMC: Bearish FVG (OFI={}, Delta={})",
                                 ctx.ofi_value, ctx.cumulative_delta
                             )
                         };
@@ -351,7 +353,8 @@ mod tests {
 
     #[test]
     fn test_bullish_fvg_detection() {
-        let strategy = SMCStrategy::new(20, 0.001, 1.5);
+        use rust_decimal_macros::dec;
+        let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.5));
         let mut candles = VecDeque::new();
 
         // Padding candles to satisfy length check (need 5)
@@ -375,12 +378,13 @@ mod tests {
         assert!(fvg.is_some());
         let (side, gap) = fvg.unwrap();
         assert_eq!(side, OrderSide::Buy);
-        assert_eq!(gap, 3.0);
+        assert_eq!(gap, dec!(3.0));
     }
 
     #[test]
     fn test_bearish_fvg_detection() {
-        let strategy = SMCStrategy::new(20, 0.001, 1.5);
+        use rust_decimal_macros::dec;
+        let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.5));
         let mut candles = VecDeque::new();
 
         // Padding
@@ -404,12 +408,13 @@ mod tests {
         assert!(fvg.is_some());
         let (side, gap) = fvg.unwrap();
         assert_eq!(side, OrderSide::Sell);
-        assert_eq!(gap, 3.0);
+        assert_eq!(gap, dec!(3.0));
     }
 
     #[test]
     fn test_ob_detection() {
-        let strategy = SMCStrategy::new(20, 0.001, 1.2); // 1.2x volume multiplier
+        use rust_decimal_macros::dec;
+        let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.2)); // 1.2x volume multiplier
         let mut candles = VecDeque::new();
 
         // Padding to satisfy OB Lookback (20)
@@ -431,12 +436,13 @@ mod tests {
             ob.is_some(),
             "Should detect OB because volume is high enough"
         );
-        assert_eq!(ob.unwrap(), 100.0);
+        assert_eq!(ob.unwrap(), dec!(100.0));
     }
 
     #[test]
     fn test_ob_detection_fails_low_volume() {
-        let strategy = SMCStrategy::new(20, 0.001, 1.5); // 1.5x volume multiplier
+        use rust_decimal_macros::dec;
+        let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.5)); // 1.5x volume multiplier
         let mut candles = VecDeque::new();
 
         // Add context candles
@@ -458,7 +464,8 @@ mod tests {
 
     #[test]
     fn test_fvg_invalidation() {
-        let strategy = SMCStrategy::new(20, 0.001, 1.0);
+        use rust_decimal_macros::dec;
+        let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.0));
         let mut candles = VecDeque::new();
 
         // Padding
@@ -482,7 +489,8 @@ mod tests {
 
     #[test]
     fn test_mss_detection() {
-        let strategy = SMCStrategy::new(20, 0.001, 1.0);
+        use rust_decimal_macros::dec;
+        let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.0));
         let mut candles = VecDeque::new();
 
         // Add 9 candles with high around 110

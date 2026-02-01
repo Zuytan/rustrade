@@ -153,8 +153,11 @@ impl TechnicalFeatureEngineeringService {
                 .expect("slow_sma_period from AnalystConfig must be > 0"),
             sma_200: SimpleMovingAverage::new(config.trend_sma_period)
                 .expect("trend_sma_period from AnalystConfig must be > 0"),
-            bb: BollingerBands::new(config.mean_reversion_bb_period, config.bb_std_dev)
-                .expect("mean_reversion_bb_period from AnalystConfig must be > 0"),
+            bb: BollingerBands::new(
+                config.mean_reversion_bb_period,
+                config.bb_std_dev.to_f64().unwrap_or(2.0),
+            )
+            .expect("mean_reversion_bb_period from AnalystConfig must be > 0"),
             atr: AverageTrueRange::new(config.atr_period)
                 .expect("atr_period from AnalystConfig must be > 0"),
             ema_fast: ExponentialMovingAverage::new(config.ema_fast_period)
@@ -266,31 +269,35 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
 
         let atr_pct = if price > 0.0 { atr_val / price } else { 0.0 };
 
+        use rust_decimal::Decimal;
+        let to_dec = |v: f64| Decimal::from_f64_retain(v);
+        let to_dec_opt = |v: Option<f64>| v.and_then(Decimal::from_f64_retain);
+
         FeatureSet {
-            last_price: Some(price),
-            rsi: Some(rsi_val),
-            macd_line: Some(macd_val.macd),
-            macd_signal: Some(macd_val.signal),
-            macd_hist: Some(macd_val.histogram),
-            sma_20: Some(self.sma_20.next(price)),
-            sma_50: Some(self.sma_50.next(price)),
-            sma_200: Some(self.sma_200.next(price)),
-            bb_upper: Some(bb_val.upper),
-            bb_middle: Some(bb_val.average),
-            bb_lower: Some(bb_val.lower),
-            atr: Some(atr_val),
-            ema_fast: Some(self.ema_fast.next(price)),
-            ema_slow: Some(self.ema_slow.next(price)),
-            adx: Some(self.adx.next(high, low, price)),
-            bb_width: Some(bb_width),
-            bb_position: Some(bb_position),
-            atr_pct: Some(atr_pct),
+            last_price: to_dec(price),
+            rsi: to_dec(rsi_val),
+            macd_line: to_dec(macd_val.macd),
+            macd_signal: to_dec(macd_val.signal),
+            macd_hist: to_dec(macd_val.histogram),
+            sma_20: to_dec(self.sma_20.next(price)),
+            sma_50: to_dec(self.sma_50.next(price)),
+            sma_200: to_dec(self.sma_200.next(price)),
+            bb_upper: to_dec(bb_val.upper),
+            bb_middle: to_dec(bb_val.average),
+            bb_lower: to_dec(bb_val.lower),
+            atr: to_dec(atr_val),
+            ema_fast: to_dec(self.ema_fast.next(price)),
+            ema_slow: to_dec(self.ema_slow.next(price)),
+            adx: to_dec(self.adx.next(high, low, price)),
+            bb_width: to_dec(bb_width),
+            bb_position: to_dec(bb_position),
+            atr_pct: to_dec(atr_pct),
 
             // Advanced Statistical Features (Phase 2)
-            hurst_exponent,
-            skewness,
-            momentum_normalized,
-            realized_volatility,
+            hurst_exponent: to_dec_opt(hurst_exponent),
+            skewness: to_dec_opt(skewness),
+            momentum_normalized: to_dec_opt(momentum_normalized),
+            realized_volatility: to_dec_opt(realized_volatility),
 
             timeframe: Some(crate::domain::market::timeframe::Timeframe::OneMin),
             ..Default::default()

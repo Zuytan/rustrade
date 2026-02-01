@@ -1,6 +1,6 @@
 use rand::Rng;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,10 +74,10 @@ impl MonteCarloEngine {
         let mean_dd: f64 = max_drawdowns.iter().sum::<f64>() / config.iterations as f64;
 
         MonteCarloResult {
-            final_equity_mean: Decimal::from_f64(mean).unwrap_or_default(),
-            final_equity_median: Decimal::from_f64(median).unwrap_or_default(),
-            percentile_5: Decimal::from_f64(p5).unwrap_or_default(),
-            percentile_95: Decimal::from_f64(p95).unwrap_or_default(),
+            final_equity_mean: Decimal::from_f64_retain(mean).unwrap_or_default(),
+            final_equity_median: Decimal::from_f64_retain(median).unwrap_or_default(),
+            percentile_5: Decimal::from_f64_retain(p5).unwrap_or_default(),
+            percentile_95: Decimal::from_f64_retain(p95).unwrap_or_default(),
             probability_of_profit: prob_profit,
             max_drawdown_mean: mean_dd,
         }

@@ -61,10 +61,10 @@ pub struct ValidationContext<'a> {
     pub current_sentiment: Option<&'a Sentiment>,
 
     /// Current correlation matrix (if available)
-    pub correlation_matrix: Option<&'a HashMap<(String, String), f64>>,
+    pub correlation_matrix: Option<&'a HashMap<(String, String), Decimal>>,
 
     /// Current volatility multiplier (if available, e.g. from VolatilityManager)
-    pub volatility_multiplier: Option<f64>,
+    pub volatility_multiplier: Option<Decimal>,
 
     /// Exposure from pending orders for the proposal's symbol
     pub symbol_pending_exposure: Decimal,
@@ -86,8 +86,8 @@ impl<'a> ValidationContext<'a> {
         current_prices: &'a HashMap<String, Decimal>,
         risk_state: &'a RiskState,
         current_sentiment: Option<&'a Sentiment>,
-        correlation_matrix: Option<&'a HashMap<(String, String), f64>>,
-        volatility_multiplier: Option<f64>,
+        correlation_matrix: Option<&'a HashMap<(String, String), Decimal>>,
+        volatility_multiplier: Option<Decimal>,
         symbol_pending_exposure: Decimal,
         available_cash: Decimal,
         recent_candles: Option<&'a [Candle]>,

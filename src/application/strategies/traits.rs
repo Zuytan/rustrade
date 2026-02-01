@@ -8,13 +8,13 @@ use std::collections::{HashMap, VecDeque};
 #[derive(Debug, Clone)]
 pub struct TimeframeFeatures {
     pub timeframe: Timeframe,
-    pub fast_sma: Option<f64>,
-    pub slow_sma: Option<f64>,
-    pub trend_sma: Option<f64>,
-    pub rsi: Option<f64>,
-    pub macd_histogram: Option<f64>,
-    pub adx: Option<f64>,
-    pub price: Option<f64>,
+    pub fast_sma: Option<Decimal>,
+    pub slow_sma: Option<Decimal>,
+    pub trend_sma: Option<Decimal>,
+    pub rsi: Option<Decimal>,
+    pub macd_histogram: Option<Decimal>,
+    pub adx: Option<Decimal>,
+    pub price: Option<Decimal>,
 }
 
 /// Context provided to trading strategies for analysis
@@ -25,21 +25,21 @@ pub struct AnalysisContext {
     pub price_f64: f64,
 
     // SMA state (primary timeframe)
-    pub fast_sma: f64,
-    pub slow_sma: f64,
-    pub trend_sma: f64,
+    pub fast_sma: Decimal,
+    pub slow_sma: Decimal,
+    pub trend_sma: Decimal,
 
     // Technical indicators (primary timeframe)
-    pub rsi: f64,
-    pub macd_value: f64,
-    pub macd_signal: f64,
-    pub macd_histogram: f64,
-    pub last_macd_histogram: Option<f64>,
-    pub atr: f64,
-    pub bb_lower: f64,
-    pub bb_upper: f64,
-    pub bb_middle: f64,
-    pub adx: f64,
+    pub rsi: Decimal,
+    pub macd_value: Decimal,
+    pub macd_signal: Decimal,
+    pub macd_histogram: Decimal,
+    pub last_macd_histogram: Option<Decimal>,
+    pub atr: Decimal,
+    pub bb_lower: Decimal,
+    pub bb_upper: Decimal,
+    pub bb_middle: Decimal,
+    pub adx: Decimal,
 
     // Position state
     pub has_position: bool,
@@ -51,28 +51,28 @@ pub struct AnalysisContext {
     pub candles: VecDeque<Candle>,
 
     // Historical Indicators (for Momentum/Divergence)
-    pub rsi_history: VecDeque<f64>,
+    pub rsi_history: VecDeque<Decimal>,
 
     // Order Flow Imbalance (OFI) - Microstructure Analysis
     /// Current Order Flow Imbalance value (-1.0 to +1.0)
     /// Positive values indicate buying pressure, negative indicate selling pressure
-    pub ofi_value: f64,
+    pub ofi_value: Decimal,
     /// Cumulative Delta - running sum of order flow imbalances
-    pub cumulative_delta: f64,
+    pub cumulative_delta: Decimal,
     /// Volume Profile - distribution of volume by price level
     pub volume_profile: Option<VolumeProfile>,
     /// Historical OFI values for divergence detection (last 20 values)
-    pub ofi_history: VecDeque<f64>,
+    pub ofi_history: VecDeque<Decimal>,
 
     // Advanced Statistical Features (Phase 2)
     /// Hurst Exponent (0-1): H>0.5 = trending, H<0.5 = mean-reverting
-    pub hurst_exponent: Option<f64>,
+    pub hurst_exponent: Option<Decimal>,
     /// Skewness: distribution asymmetry (positive = right tail, negative = left tail)
-    pub skewness: Option<f64>,
+    pub skewness: Option<Decimal>,
     /// ATR-normalized momentum: (Price - Price_N) / ATR
-    pub momentum_normalized: Option<f64>,
+    pub momentum_normalized: Option<Decimal>,
     /// Realized volatility: annualized rolling volatility
-    pub realized_volatility: Option<f64>,
+    pub realized_volatility: Option<Decimal>,
 
     // Multi-timeframe data (optional for backward compatibility)
     pub timeframe_features: Option<HashMap<Timeframe, TimeframeFeatures>>,
@@ -150,7 +150,7 @@ impl AnalysisContext {
     pub fn multi_timeframe_trend_strength(&self) -> f64 {
         let Some(ref tf_features) = self.timeframe_features else {
             // No multi-timeframe data, use primary timeframe
-            return if self.price_f64 > self.trend_sma {
+            return if self.current_price > self.trend_sma {
                 1.0
             } else {
                 0.0
@@ -158,7 +158,7 @@ impl AnalysisContext {
         };
 
         if tf_features.is_empty() {
-            return if self.price_f64 > self.trend_sma {
+            return if self.current_price > self.trend_sma {
                 1.0
             } else {
                 0.0
@@ -169,7 +169,7 @@ impl AnalysisContext {
         let mut total_count = 0;
 
         // Check primary timeframe
-        if self.price_f64 > self.trend_sma {
+        if self.current_price > self.trend_sma {
             bullish_count += 1;
         }
         total_count += 1;
@@ -193,7 +193,7 @@ impl AnalysisContext {
     }
 
     /// Get ADX from highest available timeframe for regime detection
-    pub fn get_highest_timeframe_adx(&self) -> f64 {
+    pub fn get_highest_timeframe_adx(&self) -> Decimal {
         let Some(ref tf_features) = self.timeframe_features else {
             return self.adx;
         };

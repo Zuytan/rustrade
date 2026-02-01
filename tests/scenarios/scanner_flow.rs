@@ -1,3 +1,5 @@
+use rust_decimal_macros::dec;
+
 use rust_decimal::Decimal;
 use rustrade::application::agents::analyst::{Analyst, AnalystConfig};
 use rustrade::application::agents::scanner::MarketScanner;
@@ -46,53 +48,53 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         slow_sma_period: 3,
         max_positions: 5,
         trade_quantity: Decimal::from(1),
-        sma_threshold: 0.0,
+        sma_threshold: dec!(0.0),
         order_cooldown_seconds: 0,
-        risk_per_trade_percent: 0.1, // 10% risk
+        risk_per_trade_percent: dec!(0.1), // 10% risk
         strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
         trend_sma_period: 100,
         rsi_period: 14,
         macd_fast_period: 12,
         macd_slow_period: 26,
         macd_signal_period: 9,
-        trend_divergence_threshold: 0.0,
-        trailing_stop_atr_multiplier: 3.0,
+        trend_divergence_threshold: dec!(0.0),
+        trailing_stop_atr_multiplier: dec!(3.0),
         atr_period: 14,
-        rsi_threshold: 99.0,
-        trend_riding_exit_buffer_pct: 0.0,
-        mean_reversion_rsi_exit: 50.0,
+        rsi_threshold: dec!(99.0),
+        trend_riding_exit_buffer_pct: dec!(0.0),
+        mean_reversion_rsi_exit: dec!(50.0),
         mean_reversion_bb_period: 20,
         fee_model: Arc::new(rustrade::domain::trading::fee_model::ConstantFeeModel::new(
             Decimal::ZERO,
             Decimal::ZERO,
         )),
-        max_position_size_pct: 0.2,
-        bb_std_dev: 2.0,
+        max_position_size_pct: dec!(0.2),
+        bb_std_dev: dec!(2.0),
         ema_fast_period: 50,
         ema_slow_period: 150,
-        take_profit_pct: 0.05,
+        take_profit_pct: dec!(0.05),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: 5.0,
-        min_profit_ratio: 2.0,
+        spread_bps: dec!(5.0),
+        min_profit_ratio: dec!(2.0),
         macd_requires_rising: true,
-        trend_tolerance_pct: 0.0,
-        macd_min_threshold: 0.0,
-        profit_target_multiplier: 1.5,
+        trend_tolerance_pct: dec!(0.0),
+        macd_min_threshold: dec!(0.0),
+        profit_target_multiplier: dec!(1.5),
         adx_period: 14,
-        adx_threshold: 25.0,
+        adx_threshold: dec!(25.0),
         smc_ob_lookback: 20,
-        smc_min_fvg_size_pct: 0.005,
+        smc_min_fvg_size_pct: dec!(0.005),
         risk_appetite_score: None,
         breakout_lookback: 10,
-        breakout_threshold_pct: 0.002,
-        breakout_volume_mult: 1.1,
-        max_loss_per_trade_pct: -0.05,
-        smc_volume_multiplier: 1.5,
+        breakout_threshold_pct: dec!(0.002),
+        breakout_volume_mult: dec!(1.1),
+        max_loss_per_trade_pct: dec!(-0.05),
+        smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
     };
 
-    let strategy = Arc::new(DualSMAStrategy::new(2, 3, 0.0));
+    let strategy = Arc::new(DualSMAStrategy::new(2, 3, dec!(0.0)));
     let (_analyst_cmd_tx, analyst_cmd_rx) = mpsc::channel(10);
     let mut analyst = Analyst::new(
         market_rx,

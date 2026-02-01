@@ -1,4 +1,5 @@
 use crate::config::Config;
+use rust_decimal_macros::dec;
 use std::env;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -31,10 +32,10 @@ fn test_config_with_risk_score() {
     let expected_rsi = appetite.calculate_rsi_threshold();
     let expected_max_position = appetite.calculate_max_position_size_pct();
 
-    assert!((config.risk_per_trade_percent - expected_risk_trade).abs() < 0.0001);
-    assert!((config.trailing_stop_atr_multiplier - expected_trailing_stop).abs() < 0.01);
-    assert!((config.rsi_threshold - expected_rsi).abs() < 0.1);
-    assert!((config.max_position_size_pct - expected_max_position).abs() < 0.001);
+    assert!((config.risk_per_trade_percent - expected_risk_trade).abs() < dec!(0.0001));
+    assert!((config.trailing_stop_atr_multiplier - expected_trailing_stop).abs() < dec!(0.01));
+    assert!((config.rsi_threshold - expected_rsi).abs() < dec!(0.1));
+    assert!((config.max_position_size_pct - expected_max_position).abs() < dec!(0.001));
 
     // Cleanup
     unsafe {
@@ -64,10 +65,10 @@ fn test_config_without_risk_score() {
     assert!(config.risk_appetite.is_none());
 
     // Should use individual env vars
-    assert!((config.risk_per_trade_percent - 0.015).abs() < 0.0001);
-    assert!((config.trailing_stop_atr_multiplier - 2.8).abs() < 0.01);
-    assert!((config.rsi_threshold - 60.0).abs() < 0.1);
-    assert!((config.max_position_size_pct - 0.15).abs() < 0.001);
+    assert!((config.risk_per_trade_percent - dec!(0.015)).abs() < dec!(0.0001));
+    assert!((config.trailing_stop_atr_multiplier - dec!(2.8)).abs() < dec!(0.01));
+    assert!((config.rsi_threshold - dec!(60.0)).abs() < dec!(0.1));
+    assert!((config.max_position_size_pct - dec!(0.15)).abs() < dec!(0.001));
 
     // Cleanup
     unsafe {
@@ -96,8 +97,8 @@ fn test_config_risk_params_override() {
 
     // Should use calculated values, NOT env var values
     let expected_risk_trade = appetite.calculate_risk_per_trade_percent();
-    assert!((config.risk_per_trade_percent - expected_risk_trade).abs() < 0.0001);
-    assert!(config.risk_per_trade_percent > 0.02); // Score 9 should be aggressive, not 0.001
+    assert!((config.risk_per_trade_percent - expected_risk_trade).abs() < dec!(0.0001));
+    assert!(config.risk_per_trade_percent > dec!(0.02)); // Score 9 should be aggressive, not 0.001
 
     // Cleanup
     unsafe {

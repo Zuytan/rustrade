@@ -15,13 +15,13 @@ use statrs::statistics::{Data, Distribution};
 #[derive(Debug, Clone)]
 pub struct ZScoreMeanReversionStrategy {
     pub lookback_period: usize,
-    pub entry_threshold: f64, // Typically -2.0 (2 std devs below mean)
-    pub exit_threshold: f64,  // Typically 0.0 (return to mean)
+    pub entry_threshold: Decimal, // Typically -2.0 (2 std devs below mean)
+    pub exit_threshold: Decimal,  // Typically 0.0 (return to mean)
     pub min_data_points: usize,
 }
 
 impl ZScoreMeanReversionStrategy {
-    pub fn new(lookback_period: usize, entry_threshold: f64, exit_threshold: f64) -> Self {
+    pub fn new(lookback_period: usize, entry_threshold: Decimal, exit_threshold: Decimal) -> Self {
         Self {
             lookback_period,
             entry_threshold,
@@ -31,7 +31,7 @@ impl ZScoreMeanReversionStrategy {
     }
 
     /// Calculate Z-Score: (Price - Mean) / StdDev
-    fn calculate_zscore(&self, ctx: &AnalysisContext) -> Option<f64> {
+    fn calculate_zscore(&self, ctx: &AnalysisContext) -> Option<Decimal> {
         if ctx.candles.len() < self.min_data_points {
             return None;
         }
@@ -60,16 +60,17 @@ impl ZScoreMeanReversionStrategy {
 
         // Z-Score = (Current Price - Mean) / StdDev
         let zscore = (ctx.price_f64 - mean) / std_dev;
-        Some(zscore)
+        Decimal::from_f64(zscore)
     }
 }
 
 impl Default for ZScoreMeanReversionStrategy {
     fn default() -> Self {
+        use rust_decimal_macros::dec;
         Self::new(
-            20,   // 20-period lookback
-            -2.0, // Entry at 2 std devs below mean
-            0.0,  // Exit at mean
+            20,         // 20-period lookback
+            dec!(-2.0), // Entry at 2 std devs below mean
+            dec!(0.0),  // Exit at mean
         )
     }
 }
@@ -82,8 +83,8 @@ impl TradingStrategy for ZScoreMeanReversionStrategy {
         if !ctx.has_position && zscore < self.entry_threshold {
             return Some(
                 Signal::buy(format!(
-                    "Z-Score MR: Price {:.2} is {:.2} std devs below mean (Z={:.2})",
-                    ctx.price_f64,
+                    "Z-Score MR: Price {} is {} std devs below mean (Z={})",
+                    ctx.current_price,
                     zscore.abs(),
                     zscore
                 ))
@@ -95,8 +96,8 @@ impl TradingStrategy for ZScoreMeanReversionStrategy {
         if ctx.has_position && zscore > self.exit_threshold {
             return Some(
                 Signal::sell(format!(
-                    "Z-Score MR: Price {:.2} returned to mean (Z={:.2})",
-                    ctx.price_f64, zscore
+                    "Z-Score MR: Price {} returned to mean (Z={})",
+                    ctx.current_price, zscore
                 ))
                 .with_confidence(0.80),
             );
@@ -122,8 +123,8 @@ mod tests {
         Candle {
             symbol: "TEST".to_string(),
             open: Decimal::from_f64(close).unwrap(),
-            high: Decimal::from_f64(close * 1.01).unwrap(),
-            low: Decimal::from_f64(close * 0.99).unwrap(),
+            high: Decimal::from_f64(close).unwrap() * dec!(1.01),
+            low: Decimal::from_f64(close).unwrap() * dec!(0.99),
             close: Decimal::from_f64(close).unwrap(),
             volume: dec!(1000.0),
             timestamp: 0,
@@ -135,30 +136,31 @@ mod tests {
         candles: VecDeque<Candle>,
         has_position: bool,
     ) -> AnalysisContext {
+        let d_price = Decimal::from_f64(price).unwrap();
         AnalysisContext {
             symbol: "TEST".to_string(),
-            current_price: Decimal::from_f64(price).unwrap(),
+            current_price: d_price,
             price_f64: price,
-            fast_sma: 0.0,
-            slow_sma: 0.0,
-            trend_sma: 0.0,
-            rsi: 50.0,
-            macd_value: 0.0,
-            macd_signal: 0.0,
-            macd_histogram: 0.0,
+            fast_sma: Decimal::ZERO,
+            slow_sma: Decimal::ZERO,
+            trend_sma: Decimal::ZERO,
+            rsi: dec!(50.0),
+            macd_value: Decimal::ZERO,
+            macd_signal: Decimal::ZERO,
+            macd_histogram: Decimal::ZERO,
             last_macd_histogram: None,
-            atr: 1.0,
-            bb_lower: 0.0,
-            bb_middle: 0.0,
-            bb_upper: 0.0,
-            adx: 25.0,
+            atr: Decimal::ONE,
+            bb_lower: Decimal::ZERO,
+            bb_middle: Decimal::ZERO,
+            bb_upper: Decimal::ZERO,
+            adx: dec!(25.0),
             has_position,
             timestamp: 0,
             timeframe_features: None,
             candles,
             rsi_history: VecDeque::new(),
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,

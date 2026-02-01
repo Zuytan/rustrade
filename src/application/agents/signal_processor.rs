@@ -2,7 +2,7 @@ use crate::domain::ports::ExecutionService;
 use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -122,8 +122,8 @@ impl SignalProcessor {
             max_positions: config.max_positions,
             max_position_size_pct: config.max_position_size_pct,
             static_trade_quantity: config.trade_quantity,
-            enable_vol_targeting: false, // Disabled by default for now
-            target_volatility: 0.15,     // 15% target if enabled
+            enable_vol_targeting: false,   // Disabled by default for now
+            target_volatility: dec!(0.15), // 15% target if enabled
         };
 
         self.sizing_engine.calculate_quantity_with_slippage(
@@ -146,7 +146,7 @@ impl SignalProcessor {
             && rsi > context.config.rsi_threshold
         {
             debug!(
-                "SignalProcessor: Buy signal BLOCKED for {} - RSI {:.2} > {:.2} (Overbought)",
+                "SignalProcessor: Buy signal BLOCKED for {} - RSI {} > {} (Overbought)",
                 symbol, rsi, context.config.rsi_threshold
             );
             return None;
@@ -203,13 +203,10 @@ impl SignalProcessor {
             return None;
         }
 
-        let price_f64 = current_price.to_f64().unwrap_or(0.0);
-        let avg_price = pos.average_price.to_f64().unwrap_or(1.0);
-
-        let pnl_pct = if avg_price != 0.0 {
-            (price_f64 - avg_price) / avg_price
+        let pnl_pct = if pos.average_price > Decimal::ZERO {
+            (current_price - pos.average_price) / pos.average_price
         } else {
-            0.0
+            Decimal::ZERO
         };
 
         if pnl_pct >= context.config.take_profit_pct {
@@ -217,9 +214,9 @@ impl SignalProcessor {
 
             if quantity_to_sell > Decimal::ZERO {
                 debug!(
-                    "SignalProcessor: Triggering Partial Take-Profit (50%) for {} at {:.2}% Gain",
+                    "SignalProcessor: Triggering Partial Take-Profit (50%) for {} at {}% Gain",
                     symbol,
-                    pnl_pct * 100.0
+                    pnl_pct * dec!(100.0)
                 );
 
                 return Some(TradeProposal {
@@ -228,7 +225,7 @@ impl SignalProcessor {
                     price: current_price,
                     quantity: quantity_to_sell,
                     order_type: OrderType::Market,
-                    reason: format!("Partial Take-Profit (+{:.2}%)", pnl_pct * 100.0),
+                    reason: format!("Partial Take-Profit (+{}%)", pnl_pct * dec!(100.0)),
                     timestamp,
                 });
             }
@@ -249,7 +246,8 @@ mod tests {
     use crate::domain::market::strategy_config::StrategyMode;
     use crate::domain::trading::types::Candle;
     use rust_decimal::Decimal;
-    use rust_decimal::prelude::FromPrimitive;
+
+    use rust_decimal_macros::dec;
 
     fn create_test_context() -> SymbolContext {
         let config = super::super::analyst::AnalystConfig::default();
@@ -262,13 +260,14 @@ mod tests {
 
     #[allow(dead_code)]
     fn create_test_candle(symbol: &str, price: f64) -> Candle {
+        let price_dec = Decimal::from_f64_retain(price).unwrap();
         Candle {
             symbol: symbol.to_string(),
-            open: Decimal::from_f64_retain(price).unwrap(),
-            high: Decimal::from_f64_retain(price * 1.01).unwrap(),
-            low: Decimal::from_f64_retain(price * 0.99).unwrap(),
-            close: Decimal::from_f64_retain(price).unwrap(),
-            volume: Decimal::from_f64(1000.0).unwrap(),
+            open: price_dec,
+            high: price_dec * dec!(1.01),
+            low: price_dec * dec!(0.99),
+            close: price_dec,
+            volume: dec!(1000.0),
             timestamp: 1000,
         }
     }
@@ -290,8 +289,8 @@ mod tests {
         let mut context = create_test_context();
 
         // Set RSI to overbought level
-        context.last_features.rsi = Some(75.0);
-        context.config.rsi_threshold = 70.0;
+        context.last_features.rsi = Some(dec!(75.0));
+        context.config.rsi_threshold = dec!(70.0);
 
         let signal = Some(OrderSide::Buy);
         let filtered = SignalProcessor::apply_rsi_filter(signal, &context, "BTC/USD");
@@ -305,8 +304,8 @@ mod tests {
         let mut context = create_test_context();
 
         // Set RSI to normal level
-        context.last_features.rsi = Some(50.0);
-        context.config.rsi_threshold = 70.0;
+        context.last_features.rsi = Some(dec!(50.0));
+        context.config.rsi_threshold = dec!(70.0);
 
         let signal = Some(OrderSide::Buy);
         let filtered = SignalProcessor::apply_rsi_filter(signal, &context, "BTC/USD");
@@ -320,8 +319,8 @@ mod tests {
         let mut context = create_test_context();
 
         // Set RSI to overbought level
-        context.last_features.rsi = Some(75.0);
-        context.config.rsi_threshold = 70.0;
+        context.last_features.rsi = Some(dec!(75.0));
+        context.config.rsi_threshold = dec!(70.0);
 
         let signal = Some(OrderSide::Sell);
         let filtered = SignalProcessor::apply_rsi_filter(signal, &context, "BTC/USD");
@@ -337,9 +336,9 @@ mod tests {
         // Activate trailing stop
         context.position_manager.trailing_stop =
             crate::application::risk_management::trailing_stops::StopState::on_buy(
-                rust_decimal::Decimal::from(50000),
-                rust_decimal::Decimal::from(100),
-                rust_decimal::Decimal::from(2),
+                dec!(50000),
+                dec!(100),
+                dec!(2),
             );
 
         let signal = Some(OrderSide::Sell);
@@ -358,9 +357,9 @@ mod tests {
         // Activate trailing stop
         context.position_manager.trailing_stop =
             crate::application::risk_management::trailing_stops::StopState::on_buy(
-                rust_decimal::Decimal::from(50000),
-                rust_decimal::Decimal::from(100),
-                rust_decimal::Decimal::from(2),
+                dec!(50000),
+                dec!(100),
+                dec!(2),
             );
 
         let signal = Some(OrderSide::Sell);

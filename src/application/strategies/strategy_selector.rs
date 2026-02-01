@@ -2,6 +2,8 @@ use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::strategies::{StrategyFactory, TradingStrategy};
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
 use crate::domain::market::strategy_config::StrategyMode;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tracing::info;
 
@@ -30,7 +32,7 @@ impl StrategySelector {
                 current_mode,
                 proposed_mode,
                 regime.regime_type,
-                regime.confidence * 100.0
+                regime.confidence * dec!(100.0)
             );
         }
 
@@ -45,7 +47,7 @@ impl StrategySelector {
     fn select_mode_for_regime(regime: &MarketRegime, current_mode: StrategyMode) -> StrategyMode {
         // Hysteresis: Only switch if confidence is high enough
         // This prevents rapid switching (whipsawing) between strategies
-        const MIN_CONFIDENCE_TO_SWITCH: f64 = 0.6;
+        const MIN_CONFIDENCE_TO_SWITCH: Decimal = dec!(0.6);
 
         if regime.confidence < MIN_CONFIDENCE_TO_SWITCH && current_mode != StrategyMode::Standard {
             // Low confidence in new regime - stick with current strategy
@@ -98,9 +100,9 @@ mod tests {
     fn make_regime(regime_type: MarketRegimeType, confidence: f64) -> MarketRegime {
         MarketRegime {
             regime_type,
-            confidence,
-            volatility_score: 1.5,
-            trend_strength: 30.0,
+            confidence: Decimal::from_f64_retain(confidence).unwrap_or(Decimal::ZERO),
+            volatility_score: dec!(1.5),
+            trend_strength: dec!(30.0),
         }
     }
 

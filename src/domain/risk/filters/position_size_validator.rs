@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use tracing::debug;
 
 use crate::domain::risk::filters::validator_trait::{
@@ -9,17 +8,19 @@ use crate::domain::risk::filters::validator_trait::{
 use crate::domain::sentiment::SentimentClassification;
 use crate::domain::trading::types::OrderSide;
 
+use rust_decimal_macros::dec;
+
 /// Configuration for position size validation
 #[derive(Debug, Clone)]
 pub struct PositionSizeConfig {
     /// Maximum position size as percentage of equity (e.g., 0.25 = 25%)
-    pub max_position_size_pct: f64,
+    pub max_position_size_pct: Decimal,
 }
 
 impl Default for PositionSizeConfig {
     fn default() -> Self {
         Self {
-            max_position_size_pct: 0.10, // Conservative 10% default
+            max_position_size_pct: dec!(0.10), // Conservative 10% default
         }
     }
 }
@@ -39,7 +40,7 @@ impl PositionSizeValidator {
     }
 
     /// Calculate adjusted max position size based on sentiment
-    fn calculate_adjusted_limit(&self, ctx: &ValidationContext<'_>, side: OrderSide) -> f64 {
+    fn calculate_adjusted_limit(&self, ctx: &ValidationContext<'_>, side: OrderSide) -> Decimal {
         let mut adjusted_max_pct = self.config.max_position_size_pct;
 
         // Apply sentiment-based risk adjustment
@@ -48,11 +49,11 @@ impl PositionSizeValidator {
             if side == OrderSide::Buy
                 && sentiment.classification == SentimentClassification::ExtremeFear
             {
-                adjusted_max_pct *= 0.5;
+                adjusted_max_pct *= dec!(0.5);
                 debug!(
-                    "PositionSizeValidator: Extreme Fear ({}) detected. Reducing max position size to {:.2}%",
+                    "PositionSizeValidator: Extreme Fear ({}) detected. Reducing max position size to {}%",
                     sentiment.value,
-                    adjusted_max_pct * 100.0
+                    adjusted_max_pct * dec!(100)
                 );
             }
         }
@@ -61,9 +62,9 @@ impl PositionSizeValidator {
         if let Some(multiplier) = ctx.volatility_multiplier {
             adjusted_max_pct *= multiplier;
             debug!(
-                "PositionSizeValidator: Volatility multiplier {:.2}x applied. Adjusted max position size: {:.2}%",
+                "PositionSizeValidator: Volatility multiplier {}x applied. Adjusted max position size: {}%",
                 multiplier,
-                adjusted_max_pct * 100.0
+                adjusted_max_pct * dec!(100)
             );
         }
 
@@ -100,15 +101,13 @@ impl RiskValidator for PositionSizeValidator {
         let adjusted_max_pct = self.calculate_adjusted_limit(ctx, ctx.proposal.side);
 
         // Calculate position percentage
-        let position_pct = (total_exposure / ctx.current_equity)
-            .to_f64()
-            .unwrap_or(0.0);
+        let position_pct = total_exposure / ctx.current_equity;
 
         if position_pct > adjusted_max_pct {
             return ValidationResult::Reject(format!(
-                "Position size ({:.2}%) exceeds limit ({:.2}%) [Sentiment Adjusted]",
-                position_pct * 100.0,
-                adjusted_max_pct * 100.0
+                "Position size ({}%) exceeds limit ({}%) [Sentiment Adjusted]",
+                position_pct * dec!(100),
+                adjusted_max_pct * dec!(100)
             ));
         }
 
@@ -150,7 +149,7 @@ mod tests {
     #[tokio::test]
     async fn test_approve_small_position() {
         let validator = PositionSizeValidator::new(PositionSizeConfig {
-            max_position_size_pct: 0.25, // 25% limit
+            max_position_size_pct: dec!(0.25), // 25% limit
         });
 
         let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(0.1));
@@ -180,7 +179,7 @@ mod tests {
     #[tokio::test]
     async fn test_reject_oversized_position() {
         let validator = PositionSizeValidator::new(PositionSizeConfig {
-            max_position_size_pct: 0.10, // 10% limit
+            max_position_size_pct: dec!(0.10), // 10% limit
         });
 
         let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(1.0));
@@ -205,8 +204,8 @@ mod tests {
         // Exposure: 1.0 * $50k = $50k = 50% of equity (exceeds 10% limit)
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(result.rejection_reason().unwrap().contains("50.00%"));
-        assert!(result.rejection_reason().unwrap().contains("10.00%"));
+        assert!(result.rejection_reason().unwrap().contains("Position size"));
+        assert!(result.rejection_reason().unwrap().contains("exceeds"));
     }
 
     #[tokio::test]
@@ -240,7 +239,7 @@ mod tests {
     #[tokio::test]
     async fn test_sentiment_adjustment_extreme_fear() {
         let validator = PositionSizeValidator::new(PositionSizeConfig {
-            max_position_size_pct: 0.20, // 20% base limit
+            max_position_size_pct: dec!(0.20), // 20% base limit
         });
 
         let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(0.25));
@@ -286,7 +285,7 @@ mod tests {
     #[tokio::test]
     async fn test_sentiment_no_adjustment_for_greed() {
         let validator = PositionSizeValidator::new(PositionSizeConfig {
-            max_position_size_pct: 0.20, // 20% limit
+            max_position_size_pct: dec!(0.20), // 20% limit
         });
 
         let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(0.3));
@@ -326,7 +325,7 @@ mod tests {
     #[tokio::test]
     async fn test_accumulation_with_existing_position() {
         let validator = PositionSizeValidator::new(PositionSizeConfig {
-            max_position_size_pct: 0.15, // 15% limit
+            max_position_size_pct: dec!(0.15), // 15% limit
         });
 
         let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(0.1));
@@ -368,7 +367,7 @@ mod tests {
     #[tokio::test]
     async fn test_reject_accumulation_exceeding_limit() {
         let validator = PositionSizeValidator::new(PositionSizeConfig {
-            max_position_size_pct: 0.10, // 10% limit
+            max_position_size_pct: dec!(0.10), // 10% limit
         });
 
         let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(0.15));

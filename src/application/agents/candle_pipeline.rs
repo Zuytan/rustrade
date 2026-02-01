@@ -186,11 +186,8 @@ impl CandlePipeline {
             return None;
         }
 
-        let atr_decimal = Decimal::from_f64_retain(ctx.context.last_features.atr.unwrap_or(0.0))
-            .unwrap_or(Decimal::ZERO);
-        let multiplier_decimal =
-            Decimal::from_f64_retain(ctx.context.config.trailing_stop_atr_multiplier)
-                .unwrap_or(Decimal::from(3));
+        let atr_decimal = ctx.context.last_features.atr.unwrap_or(Decimal::ZERO);
+        let multiplier_decimal = ctx.context.config.trailing_stop_atr_multiplier;
 
         let signal = ctx.context.position_manager.check_trailing_stop(
             ctx.symbol,
@@ -309,6 +306,7 @@ mod tests {
     use crate::infrastructure::mock::MockExecutionService;
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal_macros::dec;
     use std::sync::Arc;
 
     fn create_test_pipeline() -> CandlePipeline {
@@ -338,7 +336,7 @@ mod tests {
 
     fn create_test_context() -> SymbolContext {
         let config = AnalystConfig::default();
-        let strategy = Arc::new(DualSMAStrategy::new(20, 60, 0.0));
+        let strategy = Arc::new(DualSMAStrategy::new(20, 60, dec!(0.0)));
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
     }

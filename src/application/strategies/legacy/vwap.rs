@@ -1,6 +1,5 @@
 use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStrategy};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 
 /// VWAP (Volume Weighted Average Price) Strategy
@@ -10,13 +9,17 @@ use rust_decimal_macros::dec;
 /// - Sell: Price above VWAP + deviation OR position touches VWAP from below
 #[derive(Debug, Clone)]
 pub struct VWAPStrategy {
-    pub deviation_threshold_pct: f64, // % deviation from VWAP for signal (e.g., 0.02 = 2%)
-    pub rsi_oversold: f64,            // RSI threshold for oversold condition
-    pub rsi_overbought: f64,          // RSI threshold for overbought condition
+    pub deviation_threshold_pct: Decimal, // % deviation from VWAP for signal (e.g., 0.02 = 2%)
+    pub rsi_oversold: Decimal,            // RSI threshold for oversold condition
+    pub rsi_overbought: Decimal,          // RSI threshold for overbought condition
 }
 
 impl VWAPStrategy {
-    pub fn new(deviation_threshold_pct: f64, rsi_oversold: f64, rsi_overbought: f64) -> Self {
+    pub fn new(
+        deviation_threshold_pct: Decimal,
+        rsi_oversold: Decimal,
+        rsi_overbought: Decimal,
+    ) -> Self {
         Self {
             deviation_threshold_pct,
             rsi_oversold,
@@ -27,7 +30,7 @@ impl VWAPStrategy {
     /// Calculate VWAP from candle history
     /// VWAP = Σ(Typical Price × Volume) / Σ(Volume)
     /// Typical Price = (High + Low + Close) / 3
-    fn calculate_vwap(&self, ctx: &AnalysisContext) -> Option<f64> {
+    fn calculate_vwap(&self, ctx: &AnalysisContext) -> Option<Decimal> {
         if ctx.candles.is_empty() {
             return None;
         }
@@ -48,7 +51,7 @@ impl VWAPStrategy {
         }
 
         if cumulative_vol > Decimal::ZERO {
-            (cumulative_tp_vol / cumulative_vol).to_f64()
+            Some(cumulative_tp_vol / cumulative_vol)
         } else {
             None
         }
@@ -58,9 +61,9 @@ impl VWAPStrategy {
 impl Default for VWAPStrategy {
     fn default() -> Self {
         Self {
-            deviation_threshold_pct: 0.02, // 2% deviation
-            rsi_oversold: 35.0,
-            rsi_overbought: 65.0,
+            deviation_threshold_pct: dec!(0.02), // 2% deviation
+            rsi_oversold: dec!(35.0),
+            rsi_overbought: dec!(65.0),
         }
     }
 }
@@ -69,11 +72,11 @@ impl TradingStrategy for VWAPStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
         let vwap = self.calculate_vwap(ctx)?;
 
-        if vwap <= 0.0 {
+        if vwap <= Decimal::ZERO {
             return None;
         }
 
-        let deviation = (ctx.price_f64 - vwap) / vwap;
+        let deviation = (ctx.current_price - vwap) / vwap;
 
         // Buy: Price significantly below VWAP AND RSI indicates oversold
         if !ctx.has_position
@@ -82,9 +85,9 @@ impl TradingStrategy for VWAPStrategy {
         {
             return Some(
                 Signal::buy(format!(
-                    "VWAP: Price {:.2} is {:.2}% below VWAP {:.2}, RSI {:.1} < {:.0}",
-                    ctx.price_f64,
-                    deviation * 100.0,
+                    "VWAP: Price {} is {}% below VWAP {}, RSI {} < {}",
+                    ctx.current_price,
+                    deviation * dec!(100.0),
                     vwap,
                     ctx.rsi,
                     self.rsi_oversold
@@ -99,9 +102,9 @@ impl TradingStrategy for VWAPStrategy {
             if deviation > self.deviation_threshold_pct {
                 return Some(
                     Signal::sell(format!(
-                        "VWAP: Price {:.2} is {:.2}% above VWAP {:.2} - Taking profit",
-                        ctx.price_f64,
-                        deviation * 100.0,
+                        "VWAP: Price {} is {}% above VWAP {} - Taking profit",
+                        ctx.current_price,
+                        deviation * dec!(100.0),
                         vwap
                     ))
                     .with_confidence(0.75),
@@ -112,7 +115,7 @@ impl TradingStrategy for VWAPStrategy {
             if ctx.rsi > self.rsi_overbought {
                 return Some(
                     Signal::sell(format!(
-                        "VWAP: RSI {:.1} > {:.0} (overbought) near VWAP {:.2}",
+                        "VWAP: RSI {} > {} (overbought) near VWAP {}",
                         ctx.rsi, self.rsi_overbought, vwap
                     ))
                     .with_confidence(0.70),
@@ -137,13 +140,18 @@ mod tests {
     use std::collections::VecDeque;
 
     fn mock_candle(high: f64, low: f64, close: f64, volume: f64) -> Candle {
+        let d_high = Decimal::from_f64(high).unwrap();
+        let d_low = Decimal::from_f64(low).unwrap();
+        let d_close = Decimal::from_f64(close).unwrap();
+        let d_volume = Decimal::from_f64(volume).unwrap_or(Decimal::ZERO);
+
         Candle {
             symbol: "TEST".to_string(),
-            open: Decimal::from_f64((high + low) / 2.0).unwrap(),
-            high: Decimal::from_f64(high).unwrap(),
-            low: Decimal::from_f64(low).unwrap(),
-            close: Decimal::from_f64(close).unwrap(),
-            volume: Decimal::from_f64(volume).unwrap_or(Decimal::ZERO),
+            open: (d_high + d_low) / dec!(2.0),
+            high: d_high,
+            low: d_low,
+            close: d_close,
+            volume: d_volume,
             timestamp: 0,
         }
     }
@@ -154,32 +162,33 @@ mod tests {
         candles: VecDeque<Candle>,
         has_position: bool,
     ) -> AnalysisContext {
-        use rust_decimal_macros::dec;
+        let d_price = Decimal::from_f64(price).unwrap();
+        let d_rsi = Decimal::from_f64(rsi).unwrap();
         AnalysisContext {
             symbol: "TEST".to_string(),
-            current_price: dec!(100.0),
+            current_price: d_price,
             price_f64: price,
-            fast_sma: 0.0,
-            slow_sma: 0.0,
-            trend_sma: 0.0,
-            rsi,
-            macd_value: 0.0,
-            macd_signal: 0.0,
-            macd_histogram: 0.0,
+            fast_sma: Decimal::ZERO,
+            slow_sma: Decimal::ZERO,
+            trend_sma: Decimal::ZERO,
+            rsi: d_rsi,
+            macd_value: Decimal::ZERO,
+            macd_signal: Decimal::ZERO,
+            macd_histogram: Decimal::ZERO,
             last_macd_histogram: None,
-            atr: 1.0,
-            bb_lower: 0.0,
-            bb_middle: 0.0,
-            bb_upper: 0.0,
-            adx: 25.0,
+            atr: Decimal::ONE,
+            bb_lower: Decimal::ZERO,
+            bb_middle: Decimal::ZERO,
+            bb_upper: Decimal::ZERO,
+            adx: dec!(25.0),
             has_position,
             timestamp: 0,
             timeframe_features: None,
             candles,
             rsi_history: VecDeque::new(),
             // OFI fields (defaults for tests)
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,
@@ -208,7 +217,7 @@ mod tests {
         assert!(vwap.is_some());
         let vwap_val = vwap.unwrap();
         assert!(
-            (vwap_val - 103.33).abs() < 0.1,
+            (vwap_val - dec!(103.33)).abs() < dec!(0.1),
             "VWAP should be ~103.33, got {}",
             vwap_val
         );
@@ -216,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_buy_signal_below_vwap() {
-        let strategy = VWAPStrategy::new(0.02, 35.0, 65.0);
+        let strategy = VWAPStrategy::new(dec!(0.02), dec!(35.0), dec!(65.0));
 
         let mut candles = VecDeque::new();
         // VWAP will be around 100
@@ -238,7 +247,7 @@ mod tests {
 
     #[test]
     fn test_sell_signal_above_vwap() {
-        let strategy = VWAPStrategy::new(0.02, 35.0, 65.0);
+        let strategy = VWAPStrategy::new(dec!(0.02), dec!(35.0), dec!(65.0));
 
         let mut candles = VecDeque::new();
         candles.push_back(mock_candle(105.0, 95.0, 100.0, 1000.0));
@@ -258,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_no_signal_at_vwap() {
-        let strategy = VWAPStrategy::new(0.02, 35.0, 65.0);
+        let strategy = VWAPStrategy::new(dec!(0.02), dec!(35.0), dec!(65.0));
 
         let mut candles = VecDeque::new();
         candles.push_back(mock_candle(105.0, 95.0, 100.0, 1000.0));

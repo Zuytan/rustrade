@@ -5,6 +5,7 @@
 
 use crate::domain::market::strategy_config::StrategyMode;
 use crate::domain::market::timeframe::Timeframe;
+use rust_decimal::Decimal;
 use thiserror::Error;
 
 /// Error type for StrategyConfig validation
@@ -14,7 +15,7 @@ pub enum StrategyConfigError {
     InvalidPeriod { field: String, value: usize },
 
     #[error("Invalid threshold: {field} = {value}. Must be positive")]
-    InvalidThreshold { field: String, value: f64 },
+    InvalidThreshold { field: String, value: Decimal },
 
     #[error("Empty timeframes list")]
     EmptyTimeframes,
@@ -38,22 +39,22 @@ pub struct StrategyConfig {
 
     // RSI Configuration
     pub rsi_period: usize,
-    pub rsi_threshold: f64,
+    pub rsi_threshold: Decimal,
 
     // MACD Configuration
     pub macd_fast_period: usize,
     pub macd_slow_period: usize,
     pub macd_signal_period: usize,
     pub macd_requires_rising: bool,
-    pub macd_min_threshold: f64,
+    pub macd_min_threshold: Decimal,
 
     // ADX Configuration
     pub adx_period: usize,
-    pub adx_threshold: f64,
+    pub adx_threshold: Decimal,
 
     // Trend Configuration
-    pub trend_divergence_threshold: f64,
-    pub trend_tolerance_pct: f64,
+    pub trend_divergence_threshold: Decimal,
+    pub trend_tolerance_pct: Decimal,
 
     // Signal Confirmation
     pub signal_confirmation_bars: usize,
@@ -73,16 +74,16 @@ impl StrategyConfig {
         slow_sma_period: usize,
         trend_sma_period: usize,
         rsi_period: usize,
-        rsi_threshold: f64,
+        rsi_threshold: Decimal,
         macd_fast_period: usize,
         macd_slow_period: usize,
         macd_signal_period: usize,
         macd_requires_rising: bool,
-        macd_min_threshold: f64,
+        macd_min_threshold: Decimal,
         adx_period: usize,
-        adx_threshold: f64,
-        trend_divergence_threshold: f64,
-        trend_tolerance_pct: f64,
+        adx_threshold: Decimal,
+        trend_divergence_threshold: Decimal,
+        trend_tolerance_pct: Decimal,
         signal_confirmation_bars: usize,
         primary_timeframe: Timeframe,
         enabled_timeframes: Vec<Timeframe>,
@@ -152,8 +153,8 @@ impl StrategyConfig {
         Ok(())
     }
 
-    fn validate_threshold(&self, field: &str, value: f64) -> Result<(), StrategyConfigError> {
-        if value < 0.0 {
+    fn validate_threshold(&self, field: &str, value: Decimal) -> Result<(), StrategyConfigError> {
+        if value < Decimal::ZERO {
             return Err(StrategyConfigError::InvalidThreshold {
                 field: field.to_string(),
                 value,
@@ -165,22 +166,23 @@ impl StrategyConfig {
 
 impl Default for StrategyConfig {
     fn default() -> Self {
+        use rust_decimal_macros::dec;
         Self {
             strategy_mode: StrategyMode::Dynamic,
             fast_sma_period: 20,
             slow_sma_period: 60,
             trend_sma_period: 50,
             rsi_period: 14,
-            rsi_threshold: 75.0,
+            rsi_threshold: dec!(75.0),
             macd_fast_period: 12,
             macd_slow_period: 26,
             macd_signal_period: 9,
             macd_requires_rising: true,
-            macd_min_threshold: 0.0,
+            macd_min_threshold: dec!(0.0),
             adx_period: 14,
-            adx_threshold: 25.0,
-            trend_divergence_threshold: 0.005,
-            trend_tolerance_pct: 0.0,
+            adx_threshold: dec!(25.0),
+            trend_divergence_threshold: dec!(0.005),
+            trend_tolerance_pct: dec!(0.0),
             signal_confirmation_bars: 2,
             primary_timeframe: Timeframe::OneMin,
             enabled_timeframes: vec![
@@ -200,22 +202,23 @@ mod tests {
 
     #[test]
     fn test_valid_config() {
+        use rust_decimal_macros::dec;
         let config = StrategyConfig::new(
             StrategyMode::Dynamic,
             20,
             60,
             50,
             14,
-            75.0,
+            dec!(75.0),
             12,
             26,
             9,
             true,
-            0.0,
+            dec!(0.0),
             14,
-            25.0,
-            0.005,
-            0.0,
+            dec!(25.0),
+            dec!(0.005),
+            dec!(0.0),
             2,
             Timeframe::OneMin,
             vec![Timeframe::OneMin],
@@ -226,22 +229,23 @@ mod tests {
 
     #[test]
     fn test_invalid_period() {
+        use rust_decimal_macros::dec;
         let result = StrategyConfig::new(
             StrategyMode::Dynamic,
             0,
             60,
             50,
             14,
-            75.0, // fast_sma_period = 0
+            dec!(75.0), // fast_sma_period = 0
             12,
             26,
             9,
             true,
-            0.0,
+            dec!(0.0),
             14,
-            25.0,
-            0.005,
-            0.0,
+            dec!(25.0),
+            dec!(0.005),
+            dec!(0.0),
             2,
             Timeframe::OneMin,
             vec![Timeframe::OneMin],
@@ -252,22 +256,23 @@ mod tests {
 
     #[test]
     fn test_empty_timeframes() {
+        use rust_decimal_macros::dec;
         let result = StrategyConfig::new(
             StrategyMode::Dynamic,
             20,
             60,
             50,
             14,
-            75.0,
+            dec!(75.0),
             12,
             26,
             9,
             true,
-            0.0,
+            dec!(0.0),
             14,
-            25.0,
-            0.005,
-            0.0,
+            dec!(25.0),
+            dec!(0.005),
+            dec!(0.0),
             2,
             Timeframe::OneMin,
             vec![], // Empty

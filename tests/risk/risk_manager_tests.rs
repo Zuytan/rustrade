@@ -34,7 +34,7 @@ struct ConfigurableMockMarketData {
 impl ConfigurableMockMarketData {
     fn new() -> Self {
         Self {
-            prices: Arc::new(Mutex::new(HashMap::new())),
+            prices: Arc::new(Mutex::new(HashMap::new()),
         }
     }
     fn set_price(&self, symbol: &str, price: Decimal) {
@@ -93,7 +93,7 @@ impl SectorProvider for MockSectorProvider {
             .sectors
             .get(symbol)
             .cloned()
-            .unwrap_or_else(|| "Unknown".to_string()))
+            .unwrap_or_else(|| "Unknown".to_string())
     }
 }
 
@@ -118,7 +118,7 @@ async fn test_circuit_breaker_on_market_crash() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
 
     // Setup Market: TSLA @ $100 Initially
     let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -127,7 +127,7 @@ async fn test_circuit_breaker_on_market_crash() {
 
     // Config: Max Daily Loss 5%
     let config = RiskConfig {
-        max_daily_loss_pct: 0.10,
+        max_daily_loss_pct: dec!(0.10),
         valuation_interval_seconds: 1,
         correlation_config: CorrelationFilterConfig::default(),
         ..RiskConfig::default()
@@ -173,7 +173,7 @@ async fn test_circuit_breaker_on_market_crash() {
         quantity: Decimal::from(10),
         order_type: OrderType::Market,
         reason: "Buy the dip".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -202,7 +202,7 @@ async fn test_buy_approval() {
     let mut port = Portfolio::new();
     port.cash = Decimal::from(1000);
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
     let market_service = Arc::new(MockMarketDataService::new());
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
@@ -235,7 +235,7 @@ async fn test_buy_approval() {
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
         reason: "Test".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -250,7 +250,7 @@ async fn test_buy_rejection_insufficient_funds() {
     let mut port = Portfolio::new();
     port.cash = Decimal::from(50); // Less than 100
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
     let market_service = Arc::new(MockMarketDataService::new());
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
@@ -283,7 +283,7 @@ async fn test_buy_rejection_insufficient_funds() {
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
         reason: "Test".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -308,7 +308,7 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
 
     // Mock Market Data (Need AAPL price for Equity calc)
     let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -350,7 +350,7 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         quantity: Decimal::from(50), // $5,000
         order_type: OrderType::Market,
         reason: "Test Buying Power".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -378,7 +378,7 @@ async fn test_sell_approval() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
     let market_service = Arc::new(MockMarketDataService::new());
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
@@ -411,7 +411,7 @@ async fn test_sell_approval() {
         quantity: Decimal::from(5), // Sell 5
         order_type: OrderType::Market,
         reason: "Test".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -435,7 +435,7 @@ async fn test_pdt_protection_rejection() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
 
     // Simulate a BUY today
     exec_service
@@ -457,8 +457,8 @@ async fn test_pdt_protection_rejection() {
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let risk_config = RiskConfig {
-        max_daily_loss_pct: 0.5, // 50% max allowed
-        max_drawdown_pct: 0.5,   // 50%
+        max_daily_loss_pct: dec!(0.5), // 50% max allowed
+        max_drawdown_pct: dec!(0.5),   // 50%
         ..Default::default()
     };
 
@@ -525,7 +525,7 @@ async fn test_sector_exposure_limit() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
 
     // Setup Market
     let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -540,7 +540,7 @@ async fn test_sector_exposure_limit() {
     let sector_provider = Arc::new(MockSectorProvider { sectors });
 
     let config = RiskConfig {
-        max_sector_exposure_pct: 0.30,
+        max_sector_exposure_pct: dec!(0.30),
         sector_provider: Some(sector_provider),
         ..RiskConfig::default()
     };
@@ -572,14 +572,14 @@ async fn test_sector_exposure_limit() {
     // Proposal: Buy MSFT (Tech) $20,000
     // New Tech Exposure: $25,000 (AAPL) + $20,000 (MSFT) = $45,000
     // New Equity (approx): $125,000
-    // Pct: 45,000 / 125,000 = 36% > 30% -> REJECT
+    // Pct: dec!(45.0),000 / 125,000 = 36% > 30% -> REJECT
     let proposal = TradeProposal {
         symbol: "MSFT".to_string(),
         side: OrderSide::Buy,
         price: Decimal::from(200),
         quantity: Decimal::from(100), // 100 * 200 = 20,000
         reason: "Sector Test".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
         order_type: OrderType::Market,
     };
     proposal_tx.send(proposal).await.unwrap();
@@ -609,7 +609,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
 
     // Setup Market
     let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -618,7 +618,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
 
     // Config: Max Daily Loss 10% ($2,000)
     let config = RiskConfig {
-        max_daily_loss_pct: 0.10,
+        max_daily_loss_pct: dec!(0.10),
         ..RiskConfig::default()
     };
 
@@ -659,7 +659,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
         reason: "Trying to catch a falling knife".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -683,7 +683,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
         reason: "Safe trade".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal2).await.unwrap();
 
@@ -701,7 +701,7 @@ async fn test_crypto_daily_reset() {
     let mut port = Portfolio::new();
     port.cash = Decimal::from(10000);
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
     let market_service = Arc::new(MockMarketDataService::new());
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
@@ -760,13 +760,13 @@ async fn test_sentiment_risk_adjustment() {
     let mut port = Portfolio::new();
     port.cash = Decimal::from(10000);
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
     let market_service = Arc::new(MockMarketDataService::new());
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let risk_config = RiskConfig {
-        max_position_size_pct: 0.10, // 10% normally ($1000)
+        max_position_size_pct: dec!(0.10), // 10% normally ($1000)
         ..Default::default()
     };
 
@@ -793,7 +793,7 @@ async fn test_sentiment_risk_adjustment() {
 
     // 1. Inject Sentiment: Extreme Fear (20)
     let sentiment = Sentiment {
-        value: 20,
+        value: dec!(20.0),
         classification: SentimentClassification::from_score(20),
         timestamp: Utc::now(),
         source: "Test".to_string(),
@@ -814,7 +814,7 @@ async fn test_sentiment_risk_adjustment() {
         quantity: Decimal::from_f64(0.01).unwrap(), // $600
         order_type: OrderType::Market,
         reason: "Test Sentiment".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -827,7 +827,7 @@ async fn test_sentiment_risk_adjustment() {
 
     // 4. Inject Sentiment: Greed (60)
     let sentiment_greed = Sentiment {
-        value: 60,
+        value: dec!(60.0),
         classification: SentimentClassification::from_score(60),
         timestamp: Utc::now(),
         source: "Test".to_string(),
@@ -846,7 +846,7 @@ async fn test_sentiment_risk_adjustment() {
         quantity: Decimal::from_f64(0.01).unwrap(), // $600 < $1000
         order_type: OrderType::Market,
         reason: "Test Sentiment Greed".to_string(),
-        timestamp: 0,
+        timestamp: dec!(0.0),
     };
     proposal_tx.send(proposal2).await.unwrap();
 
@@ -864,7 +864,7 @@ async fn test_blind_liquidation_panic_mode() {
     let portfolio = Portfolio::new();
     let portfolio = Arc::new(RwLock::new(portfolio));
 
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
     let market_service = Arc::new(MockMarketDataService::new());
 
     let (_proposal_tx, proposal_rx) = mpsc::channel(1);
@@ -872,7 +872,7 @@ async fn test_blind_liquidation_panic_mode() {
     let (order_tx, mut order_rx) = mpsc::channel(1);
 
     let risk_config = RiskConfig {
-        max_daily_loss_pct: 0.5,
+        max_daily_loss_pct: dec!(0.5),
         ..Default::default()
     };
 

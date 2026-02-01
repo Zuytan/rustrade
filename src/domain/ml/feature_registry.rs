@@ -24,44 +24,54 @@ pub const FEATURE_NAMES: &[&str] = &[
 /// Converts returns features into a normalized vector (f32) for ONNX inference.
 /// Handles Option unwrapping with default fallbacks.
 pub fn features_to_vector(fs: &FeatureSet) -> Vec<f32> {
+    use rust_decimal::prelude::ToPrimitive;
+    let to_f32 = |opt: Option<rust_decimal::Decimal>, default: f64| {
+        opt.and_then(|d| d.to_f32()).unwrap_or(default as f32)
+    };
+
     vec![
-        fs.rsi.unwrap_or(50.0) as f32,
-        fs.macd_line.unwrap_or(0.0) as f32,
-        fs.macd_signal.unwrap_or(0.0) as f32,
-        fs.macd_hist.unwrap_or(0.0) as f32,
-        fs.bb_width.unwrap_or(0.0) as f32,
-        fs.bb_position.unwrap_or(0.5) as f32,
-        fs.atr_pct.unwrap_or(0.0) as f32,
-        fs.hurst_exponent.unwrap_or(0.5) as f32,
-        fs.skewness.unwrap_or(0.0) as f32,
-        fs.momentum_normalized.unwrap_or(0.0) as f32,
-        fs.realized_volatility.unwrap_or(0.0) as f32,
-        fs.ofi.unwrap_or(0.0) as f32,
-        fs.cumulative_delta.unwrap_or(0.0) as f32,
-        fs.spread_bps.unwrap_or(0.0) as f32,
-        fs.adx.unwrap_or(0.0) as f32,
+        to_f32(fs.rsi, 50.0),
+        to_f32(fs.macd_line, 0.0),
+        to_f32(fs.macd_signal, 0.0),
+        to_f32(fs.macd_hist, 0.0),
+        to_f32(fs.bb_width, 0.0),
+        to_f32(fs.bb_position, 0.5),
+        to_f32(fs.atr_pct, 0.0),
+        to_f32(fs.hurst_exponent, 0.5),
+        to_f32(fs.skewness, 0.0),
+        to_f32(fs.momentum_normalized, 0.0),
+        to_f32(fs.realized_volatility, 0.0),
+        to_f32(fs.ofi, 0.0),
+        to_f32(fs.cumulative_delta, 0.0),
+        to_f32(fs.spread_bps, 0.0),
+        to_f32(fs.adx, 0.0),
     ]
 }
 
 /// Converts features into a vector of f64 for Data Collection (CSV).
 /// Similar to `features_to_vector` but keeps f64 precision for training data.
 pub fn features_to_f64_vector(fs: &FeatureSet) -> Vec<f64> {
+    use rust_decimal::prelude::ToPrimitive;
+    let to_f64 = |opt: Option<rust_decimal::Decimal>, default: f64| {
+        opt.and_then(|d| d.to_f64()).unwrap_or(default)
+    };
+
     vec![
-        fs.rsi.unwrap_or(50.0),
-        fs.macd_line.unwrap_or(0.0),
-        fs.macd_signal.unwrap_or(0.0),
-        fs.macd_hist.unwrap_or(0.0),
-        fs.bb_width.unwrap_or(0.0),
-        fs.bb_position.unwrap_or(0.5),
-        fs.atr_pct.unwrap_or(0.0),
-        fs.hurst_exponent.unwrap_or(0.5),
-        fs.skewness.unwrap_or(0.0),
-        fs.momentum_normalized.unwrap_or(0.0),
-        fs.realized_volatility.unwrap_or(0.0),
-        fs.ofi.unwrap_or(0.0),
-        fs.cumulative_delta.unwrap_or(0.0),
-        fs.spread_bps.unwrap_or(0.0),
-        fs.adx.unwrap_or(0.0),
+        to_f64(fs.rsi, 50.0),
+        to_f64(fs.macd_line, 0.0),
+        to_f64(fs.macd_signal, 0.0),
+        to_f64(fs.macd_hist, 0.0),
+        to_f64(fs.bb_width, 0.0),
+        to_f64(fs.bb_position, 0.5),
+        to_f64(fs.atr_pct, 0.0),
+        to_f64(fs.hurst_exponent, 0.5),
+        to_f64(fs.skewness, 0.0),
+        to_f64(fs.momentum_normalized, 0.0),
+        to_f64(fs.realized_volatility, 0.0),
+        to_f64(fs.ofi, 0.0),
+        to_f64(fs.cumulative_delta, 0.0),
+        to_f64(fs.spread_bps, 0.0),
+        to_f64(fs.adx, 0.0),
     ]
 }
 
@@ -79,9 +89,10 @@ mod tests {
 
     #[test]
     fn test_feature_consistency() {
+        use rust_decimal_macros::dec;
         let fs = FeatureSet {
-            rsi: Some(70.0),
-            adx: Some(25.0),
+            rsi: Some(dec!(70.0)),
+            adx: Some(dec!(25.0)),
             ..Default::default()
         };
 

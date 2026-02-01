@@ -8,6 +8,7 @@ use crate::interfaces::components::card::Card;
 use crate::interfaces::design_system::DesignSystem;
 use crate::interfaces::ui_components::SettingsPanel;
 use eframe::egui;
+use rust_decimal::prelude::ToPrimitive;
 
 /// Renders the Simple Mode risk settings with score slider
 pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: &I18nService) {
@@ -93,7 +94,11 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
                                 "Risk per Trade",
                                 format!(
                                     "{:.1}%",
-                                    appetite.calculate_risk_per_trade_percent() * 100.0
+                                    appetite
+                                        .calculate_risk_per_trade_percent()
+                                        .to_f64()
+                                        .unwrap_or(0.0)
+                                        * 100.0
                                 ),
                             ),
                             (

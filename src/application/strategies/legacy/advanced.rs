@@ -1,6 +1,8 @@
 use crate::application::strategies::legacy::dual_sma::DualSMAStrategy;
 use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::trading::types::OrderSide;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
 /// Advanced Triple Filter Strategy
@@ -13,45 +15,46 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct AdvancedTripleFilterStrategy {
     sma_strategy: DualSMAStrategy,
-    rsi_threshold: f64,
+    rsi_threshold: Decimal,
     #[allow(dead_code)]
     trend_sma_period: usize,
     _signal_confirmation_bars: usize, // Phase 2: require N bars confirmation
     _last_signals: HashMap<String, (OrderSide, usize)>, // Phase 2: track (signal, count)
     // Risk-based adaptive filters
     macd_requires_rising: bool,
-    trend_tolerance_pct: f64,
-    pub macd_min_threshold: f64,
-    pub adx_threshold: f64,
+    trend_tolerance_pct: Decimal,
+    pub macd_min_threshold: Decimal,
+    pub adx_threshold: Decimal,
 }
 
 #[derive(Debug, Clone)]
 pub struct AdvancedTripleFilterConfig {
     pub fast_period: usize,
     pub slow_period: usize,
-    pub sma_threshold: f64,
+    pub sma_threshold: Decimal,
     pub trend_sma_period: usize,
-    pub rsi_threshold: f64,
+    pub rsi_threshold: Decimal,
     pub signal_confirmation_bars: usize,
     pub macd_requires_rising: bool,
-    pub trend_tolerance_pct: f64,
-    pub macd_min_threshold: f64,
-    pub adx_threshold: f64,
+    pub trend_tolerance_pct: Decimal,
+    pub macd_min_threshold: Decimal,
+    pub adx_threshold: Decimal,
 }
 
 impl Default for AdvancedTripleFilterConfig {
     fn default() -> Self {
+        use rust_decimal_macros::dec;
         Self {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
+            rsi_threshold: dec!(75.0),
             signal_confirmation_bars: 2,
             macd_requires_rising: true,
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            adx_threshold: 25.0,
+            trend_tolerance_pct: Decimal::ZERO,
+            macd_min_threshold: Decimal::ZERO,
+            adx_threshold: dec!(25.0),
         }
     }
 }
@@ -79,8 +82,8 @@ impl AdvancedTripleFilterStrategy {
         match side {
             OrderSide::Buy => {
                 // Apply tolerance: price > trend_sma * (1 - tolerance)
-                let adjusted_trend = ctx.trend_sma * (1.0 - self.trend_tolerance_pct);
-                ctx.price_f64 > adjusted_trend
+                let adjusted_trend = ctx.trend_sma * (Decimal::ONE - self.trend_tolerance_pct);
+                ctx.current_price > adjusted_trend
             }
             OrderSide::Sell => {
                 // For sell: allow if price breaks below trend (or always allow sells)
@@ -179,7 +182,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
             OrderSide::Buy => {
                 if !self.adx_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
-                        "AdvancedFilter [{}]: BUY BLOCKED - Weak Trend (ADX={:.2} <= threshold={:.2})",
+                        "AdvancedFilter [{}]: BUY BLOCKED - Weak Trend (ADX={} <= threshold={})",
                         ctx.symbol,
                         ctx.adx,
                         self.adx_threshold
@@ -199,9 +202,9 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                 // All filters must pass for buy signals
                 if !self.trend_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
-                        "AdvancedFilter [{}]: BUY BLOCKED - Trend Filter (price={:.2} <= trend_sma={:.2})",
+                        "AdvancedFilter [{}]: BUY BLOCKED - Trend Filter (price={} <= trend_sma={})",
                         ctx.symbol,
-                        ctx.price_f64,
+                        ctx.current_price,
                         ctx.trend_sma
                     );
                     return None;
@@ -209,7 +212,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
 
                 if !self.rsi_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
-                        "AdvancedFilter [{}]: BUY BLOCKED - RSI Filter (rsi={:.2} >= threshold={:.2})",
+                        "AdvancedFilter [{}]: BUY BLOCKED - RSI Filter (rsi={} >= threshold={})",
                         ctx.symbol,
                         ctx.rsi,
                         self.rsi_threshold
@@ -219,7 +222,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
 
                 if !self.macd_filter(ctx) {
                     tracing::info!(
-                        "AdvancedFilter [{}]: BUY BLOCKED - MACD Filter (hist={:.4}, rising={})",
+                        "AdvancedFilter [{}]: BUY BLOCKED - MACD Filter (hist={}, rising={})",
                         ctx.symbol,
                         ctx.macd_histogram,
                         ctx.last_macd_histogram
@@ -230,7 +233,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                 }
 
                 Some(Signal::buy(format!(
-                    "Advanced Buy: SMA Cross + Filters OK (RSI={:.1}, Trend={:.2}, MACD={:.4})",
+                    "Advanced Buy: SMA Cross + Filters OK (RSI={}, Trend={}, MACD={})",
                     ctx.rsi, ctx.trend_sma, ctx.macd_histogram
                 )))
             }
@@ -242,7 +245,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                 }
 
                 Some(Signal::sell(format!(
-                    "Advanced Sell: SMA Cross confirmed (RSI={:.1}, MACD={:.4})",
+                    "Advanced Sell: SMA Cross confirmed (RSI={}, MACD={})",
                     ctx.rsi, ctx.macd_histogram
                 )))
             }
@@ -266,27 +269,27 @@ mod tests {
             symbol: "TEST".to_string(),
             current_price: dec!(105.0),
             price_f64: 105.0,
-            fast_sma: 104.0,
-            slow_sma: 100.0,
-            trend_sma: 100.0,
-            rsi: 50.0,
-            macd_value: 0.5,
-            macd_signal: 0.3,
-            macd_histogram: 0.2,
-            last_macd_histogram: Some(0.1),
-            atr: 1.0,
-            bb_lower: 0.0,
-            bb_upper: 0.0,
-            bb_middle: 0.0,
-            adx: 26.0, // Strong trend by default
+            fast_sma: dec!(104.0),
+            slow_sma: dec!(100.0),
+            trend_sma: dec!(100.0),
+            rsi: dec!(50.0),
+            macd_value: dec!(0.5),
+            macd_signal: dec!(0.3),
+            macd_histogram: dec!(0.2),
+            last_macd_histogram: Some(dec!(0.1)),
+            atr: Decimal::ONE,
+            bb_lower: Decimal::ZERO,
+            bb_upper: Decimal::ZERO,
+            bb_middle: Decimal::ZERO,
+            adx: dec!(26.0), // Strong trend by default
             has_position: false,
             timestamp: 0,
             timeframe_features: None,
             candles: std::collections::VecDeque::new(),
             rsi_history: std::collections::VecDeque::new(),
             // OFI fields (defaults for tests)
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,
@@ -302,14 +305,14 @@ mod tests {
         let strategy = AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
+            rsi_threshold: dec!(75.0),
             signal_confirmation_bars: 1,
             macd_requires_rising: true,
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            adx_threshold: 25.0,
+            trend_tolerance_pct: dec!(0.0),
+            macd_min_threshold: dec!(0.0),
+            adx_threshold: dec!(25.0),
         });
         let ctx = create_test_context();
 
@@ -326,17 +329,17 @@ mod tests {
         let strategy = AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
+            rsi_threshold: dec!(75.0),
             signal_confirmation_bars: 1,
             macd_requires_rising: true,
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            adx_threshold: 25.0,
+            trend_tolerance_pct: dec!(0.0),
+            macd_min_threshold: dec!(0.0),
+            adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.rsi = 80.0; // Overbought
+        ctx.rsi = dec!(80.0); // Overbought
 
         let signal = strategy.analyze(&ctx);
 
@@ -348,17 +351,17 @@ mod tests {
         let strategy = AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
+            rsi_threshold: dec!(75.0),
             signal_confirmation_bars: 1,
             macd_requires_rising: true,
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            adx_threshold: 25.0,
+            trend_tolerance_pct: dec!(0.0),
+            macd_min_threshold: dec!(0.0),
+            adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.price_f64 = 95.0; // Below trend SMA of 100
+        ctx.current_price = dec!(95.0); // Below trend SMA of 100
 
         let signal = strategy.analyze(&ctx);
 
@@ -370,17 +373,17 @@ mod tests {
         let strategy = AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
+            rsi_threshold: dec!(75.0),
             signal_confirmation_bars: 1,
             macd_requires_rising: true,
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            adx_threshold: 25.0,
+            trend_tolerance_pct: Decimal::ZERO,
+            macd_min_threshold: Decimal::ZERO,
+            adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.macd_histogram = -0.1; // Negative
+        ctx.macd_histogram = dec!(-0.1); // Negative
 
         let signal = strategy.analyze(&ctx);
 
@@ -392,18 +395,18 @@ mod tests {
         let strategy = AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
+            rsi_threshold: dec!(75.0),
             signal_confirmation_bars: 1,
             macd_requires_rising: true,
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            adx_threshold: 25.0,
+            trend_tolerance_pct: Decimal::ZERO,
+            macd_min_threshold: Decimal::ZERO,
+            adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.fast_sma = 98.0; // Below slow SMA
-        ctx.slow_sma = 100.0;
+        ctx.fast_sma = dec!(98.0); // Below slow SMA
+        ctx.slow_sma = dec!(100.0);
         ctx.has_position = true;
 
         let signal = strategy.analyze(&ctx);
@@ -418,27 +421,27 @@ mod tests {
         let strategy = AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
             fast_period: 20,
             slow_period: 60,
-            sma_threshold: 0.001,
+            sma_threshold: dec!(0.001),
             trend_sma_period: 200,
-            rsi_threshold: 75.0,
+            rsi_threshold: dec!(75.0),
             signal_confirmation_bars: 1,
             macd_requires_rising: false,
-            trend_tolerance_pct: 0.0,
-            macd_min_threshold: 0.0,
-            adx_threshold: 25.0,
+            trend_tolerance_pct: Decimal::ZERO,
+            macd_min_threshold: Decimal::ZERO,
+            adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.adx = 20.0; // Weak trend (< 25.0)
+        ctx.adx = dec!(20.0); // Weak trend (< 25.0)
 
         // Ensure others pass
-        ctx.price_f64 = 105.0;
-        ctx.trend_sma = 100.0;
-        ctx.rsi = 50.0;
-        ctx.macd_histogram = 0.5;
+        ctx.current_price = dec!(105.0);
+        ctx.trend_sma = dec!(100.0);
+        ctx.rsi = dec!(50.0);
+        ctx.macd_histogram = dec!(0.5);
 
         // Force SMA cross signal
-        ctx.fast_sma = 101.0;
-        ctx.slow_sma = 100.0; // Golden cross
+        ctx.fast_sma = dec!(101.0);
+        ctx.slow_sma = dec!(100.0); // Golden cross
 
         let signal = strategy.analyze(&ctx);
 

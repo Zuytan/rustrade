@@ -8,6 +8,7 @@ use crate::infrastructure::binance::{BinanceExecutionService, BinanceMarketDataS
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use crate::infrastructure::oanda::{OandaExecutionService, OandaMarketDataService};
 use crate::infrastructure::observability::Metrics;
+use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -60,7 +61,7 @@ impl ServiceFactory {
                     .api_secret(config.alpaca_secret_key.clone())
                     .ws_url(config.alpaca_ws_url.clone())
                     .data_base_url(config.alpaca_data_url.clone())
-                    .min_volume_threshold(config.min_volume_threshold)
+                    .min_volume_threshold(config.min_volume_threshold.to_f64().unwrap_or(10000.0))
                     .asset_class(config.asset_class)
                     .candle_repository(candle_repo)
                     .build();

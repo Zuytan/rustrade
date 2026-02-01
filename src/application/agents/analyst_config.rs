@@ -1,5 +1,6 @@
 use crate::domain::trading::fee_model::{ConstantFeeModel, FeeModel};
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -13,51 +14,51 @@ pub struct AnalystConfig {
     pub slow_sma_period: usize,
     pub max_positions: usize,
     pub trade_quantity: Decimal,
-    pub sma_threshold: f64,
+    pub sma_threshold: Decimal,
     pub order_cooldown_seconds: u64,
-    pub risk_per_trade_percent: f64,
+    pub risk_per_trade_percent: Decimal,
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub trend_sma_period: usize,
     pub rsi_period: usize,
     pub macd_fast_period: usize,
     pub macd_slow_period: usize,
     pub macd_signal_period: usize,
-    pub trend_divergence_threshold: f64,
-    pub trailing_stop_atr_multiplier: f64,
+    pub trend_divergence_threshold: Decimal,
+    pub trailing_stop_atr_multiplier: Decimal,
     pub atr_period: usize,
-    pub rsi_threshold: f64,                // New Configurable Threshold
-    pub trend_riding_exit_buffer_pct: f64, // Trend Riding Strategy
-    pub mean_reversion_rsi_exit: f64,
+    pub rsi_threshold: Decimal, // New Configurable Threshold
+    pub trend_riding_exit_buffer_pct: Decimal, // Trend Riding Strategy
+    pub mean_reversion_rsi_exit: Decimal,
     pub mean_reversion_bb_period: usize,
     #[serde(skip, default = "default_fee_model")] // FeeModel is trait object
     pub fee_model: Arc<dyn FeeModel>,
-    pub max_position_size_pct: f64,
-    pub bb_std_dev: f64,
+    pub max_position_size_pct: Decimal,
+    pub bb_std_dev: Decimal,
     pub ema_fast_period: usize,
     pub ema_slow_period: usize,
-    pub take_profit_pct: f64,
+    pub take_profit_pct: Decimal,
     pub min_hold_time_minutes: i64,      // Phase 2: minimum hold time
     pub signal_confirmation_bars: usize, // Phase 2: signal confirmation
-    pub spread_bps: f64,                 // Cost-aware trading: spread in basis points
-    pub min_profit_ratio: f64,           // Cost-aware trading: minimum profit/cost ratio
-    pub profit_target_multiplier: f64,
+    pub spread_bps: Decimal,             // Cost-aware trading: spread in basis points
+    pub min_profit_ratio: Decimal,       // Cost-aware trading: minimum profit/cost ratio
+    pub profit_target_multiplier: Decimal,
     // Risk-based adaptive filters
     pub macd_requires_rising: bool, // Whether MACD must be rising for buy signals
-    pub trend_tolerance_pct: f64,   // Percentage tolerance for trend filter
-    pub macd_min_threshold: f64,    // Minimum MACD histogram threshold
+    pub trend_tolerance_pct: Decimal, // Percentage tolerance for trend filter
+    pub macd_min_threshold: Decimal, // Minimum MACD histogram threshold
     pub adx_period: usize,
-    pub adx_threshold: f64,
+    pub adx_threshold: Decimal,
     // SMC Strategy Configuration
     pub smc_ob_lookback: usize,          // Order Block lookback period
-    pub smc_min_fvg_size_pct: f64,       // Minimum Fair Value Gap size (e.g., 0.005 = 0.5%)
-    pub smc_volume_multiplier: f64, // Volume multiplier for OB confirmation (e.g. 1.5x average)
+    pub smc_min_fvg_size_pct: Decimal,   // Minimum Fair Value Gap size (e.g., 0.005 = 0.5%)
+    pub smc_volume_multiplier: Decimal, // Volume multiplier for OB confirmation (e.g. 1.5x average)
     pub risk_appetite_score: Option<u8>, // Base Risk Appetite Score (1-9) for dynamic scaling
     // Breakout Strategy Configuration
     pub breakout_lookback: usize,
-    pub breakout_threshold_pct: f64,
-    pub breakout_volume_mult: f64,
+    pub breakout_threshold_pct: Decimal,
+    pub breakout_volume_mult: Decimal,
     // Hard Stop Configuration
-    pub max_loss_per_trade_pct: f64, // Maximum loss per trade before forced exit (e.g., -0.05 = -5%)
+    pub max_loss_per_trade_pct: Decimal, // Maximum loss per trade before forced exit (e.g., -0.05 = -5%)
     // ML Configuration
     pub enable_ml_data_collection: bool,
 }
@@ -68,50 +69,47 @@ impl Default for AnalystConfig {
             fast_sma_period: 10,
             slow_sma_period: 20,
             max_positions: 5,
-            trade_quantity: rust_decimal::Decimal::ONE,
-            sma_threshold: 0.005, // Raised from 0.001 - after signal sensitivity, Risk-2 gets ~0.0025 (0.25%)
+            trade_quantity: Decimal::ONE,
+            sma_threshold: dec!(0.005), // Raised from 0.001 - after signal sensitivity, Risk-2 gets ~0.0025 (0.25%)
             order_cooldown_seconds: 60,
-            risk_per_trade_percent: 1.0,
+            risk_per_trade_percent: dec!(1.0),
             strategy_mode: Default::default(),
             trend_sma_period: 50,
             rsi_period: 14,
             macd_fast_period: 12,
             macd_slow_period: 26,
             macd_signal_period: 9,
-            trend_divergence_threshold: 0.05,
-            trailing_stop_atr_multiplier: 2.0,
+            trend_divergence_threshold: dec!(0.05),
+            trailing_stop_atr_multiplier: dec!(2.0),
             atr_period: 14,
-            rsi_threshold: 70.0,
-            trend_riding_exit_buffer_pct: 0.02,
-            mean_reversion_rsi_exit: 50.0,
+            rsi_threshold: dec!(70.0),
+            trend_riding_exit_buffer_pct: dec!(0.02),
+            mean_reversion_rsi_exit: dec!(50.0),
             mean_reversion_bb_period: 20,
-            fee_model: Arc::new(ConstantFeeModel::new(
-                rust_decimal::Decimal::ZERO,
-                rust_decimal::Decimal::ZERO,
-            )),
-            max_position_size_pct: 10.0,
-            bb_std_dev: 2.0,
+            fee_model: Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
+            max_position_size_pct: dec!(10.0),
+            bb_std_dev: dec!(2.0),
             ema_fast_period: 10,
             ema_slow_period: 20,
-            take_profit_pct: 0.1,
+            take_profit_pct: dec!(0.1),
             min_hold_time_minutes: 0,
             signal_confirmation_bars: 1,
-            spread_bps: 0.0,
-            min_profit_ratio: 1.5,
-            profit_target_multiplier: 2.0,
+            spread_bps: Decimal::ZERO,
+            min_profit_ratio: dec!(1.5),
+            profit_target_multiplier: dec!(2.0),
             macd_requires_rising: false,
-            trend_tolerance_pct: 0.02,
-            macd_min_threshold: 0.0,
+            trend_tolerance_pct: dec!(0.02),
+            macd_min_threshold: Decimal::ZERO,
             adx_period: 14,
-            adx_threshold: 25.0,
+            adx_threshold: dec!(25.0),
             smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: 0.005,
-            smc_volume_multiplier: 1.5,
+            smc_min_fvg_size_pct: dec!(0.005),
+            smc_volume_multiplier: dec!(1.5),
             risk_appetite_score: None,
             breakout_lookback: 10,
-            breakout_threshold_pct: 0.002,
-            breakout_volume_mult: 1.1,
-            max_loss_per_trade_pct: -0.05, // -5% max loss per trade
+            breakout_threshold_pct: dec!(0.002),
+            breakout_volume_mult: dec!(1.1),
+            max_loss_per_trade_pct: dec!(-0.05), // -5% max loss per trade
             enable_ml_data_collection: true,
         }
     }
@@ -142,7 +140,7 @@ impl From<crate::config::Config> for AnalystConfig {
             mean_reversion_bb_period: config.mean_reversion_bb_period,
             fee_model: config.create_fee_model(),
             max_position_size_pct: config.max_position_size_pct,
-            bb_std_dev: 2.0,
+            bb_std_dev: dec!(2.0),
             ema_fast_period: config.ema_fast_period,
             ema_slow_period: config.ema_slow_period,
             take_profit_pct: config.take_profit_pct,
@@ -158,12 +156,12 @@ impl From<crate::config::Config> for AnalystConfig {
             adx_threshold: config.adx_threshold,
             smc_ob_lookback: config.smc_ob_lookback,
             smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
-            smc_volume_multiplier: 1.5, // Default, not yet in base Config
+            smc_volume_multiplier: dec!(1.5), // Default, not yet in base Config
             risk_appetite_score: config.risk_appetite.map(|r| r.score()),
             breakout_lookback: 20, // Increased lookback for more significant levels
-            breakout_threshold_pct: 0.0005, // 0.05% threshold (sensitive)
-            breakout_volume_mult: 0.1, // 10% of average (effectively disable volume filter for now)
-            max_loss_per_trade_pct: -0.05,
+            breakout_threshold_pct: dec!(0.0005), // 0.05% threshold (sensitive)
+            breakout_volume_mult: dec!(0.1), // 10% of average (effectively disable volume filter for now)
+            max_loss_per_trade_pct: dec!(-0.05),
             enable_ml_data_collection: config.enable_ml_data_collection,
         }
     }
@@ -203,8 +201,8 @@ impl From<&AnalystConfig> for crate::application::risk_management::sizing_engine
             max_positions: config.max_positions,
             max_position_size_pct: config.max_position_size_pct,
             static_trade_quantity: config.trade_quantity,
-            enable_vol_targeting: false, // Disabled by default for now
-            target_volatility: 0.15,     // 15% target if enabled
+            enable_vol_targeting: false,   // Disabled by default for now
+            target_volatility: dec!(0.15), // 15% target if enabled
         }
     }
 }

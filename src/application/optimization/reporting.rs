@@ -4,6 +4,7 @@
 
 use crate::application::optimization::optimizer::{OptimizationResult, ParameterGrid};
 use anyhow::{Context, Result};
+use rust_decimal_macros::dec;
 use std::path::Path;
 
 /// Reporter for optimization results output.
@@ -88,7 +89,7 @@ impl OptimizeReporter {
         println!("  Total Return:     {:.2}%", best.total_return);
         println!("  Win Rate:         {:.1}%", best.win_rate);
         println!("  Max Drawdown:     {:.2}%", best.max_drawdown);
-        println!("  Alpha:            {:.4}%", best.alpha * 100.0);
+        println!("  Alpha:            {:.4}%", best.alpha * dec!(100.0));
         println!("  Beta:             {:.2}", best.beta);
         println!("{}\n", "=".repeat(80));
     }

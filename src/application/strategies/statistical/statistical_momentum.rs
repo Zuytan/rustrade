@@ -18,12 +18,16 @@ use rust_decimal::prelude::*;
 #[derive(Debug, Clone)]
 pub struct StatisticalMomentumStrategy {
     pub lookback_period: usize,
-    pub momentum_threshold: f64, // Minimum normalized momentum for signal
-    pub trend_confirmation: bool, // Require price > trend SMA
+    pub momentum_threshold: Decimal, // Minimum normalized momentum for signal
+    pub trend_confirmation: bool,    // Require price > trend SMA
 }
 
 impl StatisticalMomentumStrategy {
-    pub fn new(lookback_period: usize, momentum_threshold: f64, trend_confirmation: bool) -> Self {
+    pub fn new(
+        lookback_period: usize,
+        momentum_threshold: Decimal,
+        trend_confirmation: bool,
+    ) -> Self {
         Self {
             lookback_period,
             momentum_threshold,
@@ -33,21 +37,21 @@ impl StatisticalMomentumStrategy {
 
     /// Calculate ATR-normalized momentum
     /// Momentum = (Current Price - Price_N periods ago) / ATR
-    fn calculate_normalized_momentum(&self, ctx: &AnalysisContext) -> Option<f64> {
+    fn calculate_normalized_momentum(&self, ctx: &AnalysisContext) -> Option<Decimal> {
         if ctx.candles.len() < self.lookback_period {
             return None;
         }
 
-        if ctx.atr <= 0.0 {
+        if ctx.atr <= Decimal::ZERO {
             return None; // Invalid ATR
         }
 
         // Get price N periods ago
         let past_candle = ctx.candles.iter().rev().nth(self.lookback_period)?;
-        let past_price = past_candle.close.to_f64()?;
+        let past_price = past_candle.close;
 
         // Normalized Momentum = (Current - Past) / ATR
-        let raw_momentum = ctx.price_f64 - past_price;
+        let raw_momentum = ctx.current_price - past_price;
         let normalized_momentum = raw_momentum / ctx.atr;
 
         Some(normalized_momentum)
@@ -60,19 +64,20 @@ impl StatisticalMomentumStrategy {
         }
 
         if is_bullish {
-            ctx.price_f64 > ctx.trend_sma
+            ctx.current_price > ctx.trend_sma
         } else {
-            ctx.price_f64 < ctx.trend_sma
+            ctx.current_price < ctx.trend_sma
         }
     }
 }
 
 impl Default for StatisticalMomentumStrategy {
     fn default() -> Self {
+        use rust_decimal_macros::dec;
         Self::new(
-            10,   // 10-period lookback
-            1.5,  // 1.5 ATR minimum momentum
-            true, // Require trend confirmation
+            10,        // 10-period lookback
+            dec!(1.5), // 1.5 ATR minimum momentum
+            true,      // Require trend confirmation
         )
     }
 }
@@ -88,8 +93,8 @@ impl TradingStrategy for StatisticalMomentumStrategy {
         {
             return Some(
                 Signal::buy(format!(
-                    "StatMomentum: Strong upward momentum ({:.2} ATR), Price {:.2} > Trend {:.2}",
-                    momentum, ctx.price_f64, ctx.trend_sma
+                    "StatMomentum: Strong upward momentum ({} ATR), Price {} > Trend {}",
+                    momentum, ctx.current_price, ctx.trend_sma
                 ))
                 .with_confidence(0.80),
             );
@@ -101,7 +106,7 @@ impl TradingStrategy for StatisticalMomentumStrategy {
             if momentum < -self.momentum_threshold {
                 return Some(
                     Signal::sell(format!(
-                        "StatMomentum: Momentum reversed ({:.2} ATR)",
+                        "StatMomentum: Momentum reversed ({} ATR)",
                         momentum
                     ))
                     .with_confidence(0.75),
@@ -109,11 +114,11 @@ impl TradingStrategy for StatisticalMomentumStrategy {
             }
 
             // Exit if trend breaks (price below trend SMA)
-            if self.trend_confirmation && ctx.price_f64 < ctx.trend_sma {
+            if self.trend_confirmation && ctx.current_price < ctx.trend_sma {
                 return Some(
                     Signal::sell(format!(
-                        "StatMomentum: Trend break (Price {:.2} < Trend {:.2})",
-                        ctx.price_f64, ctx.trend_sma
+                        "StatMomentum: Trend break (Price {} < Trend {})",
+                        ctx.current_price, ctx.trend_sma
                     ))
                     .with_confidence(0.70),
                 );
@@ -139,10 +144,10 @@ mod tests {
     fn mock_candle(close: f64) -> Candle {
         Candle {
             symbol: "TEST".to_string(),
-            open: Decimal::from_f64(close).unwrap(),
-            high: Decimal::from_f64(close * 1.01).unwrap(),
-            low: Decimal::from_f64(close * 0.99).unwrap(),
-            close: Decimal::from_f64(close).unwrap(),
+            open: Decimal::from_f64_retain(close).unwrap(),
+            high: Decimal::from_f64_retain(close).unwrap() * dec!(1.01),
+            low: Decimal::from_f64_retain(close).unwrap() * dec!(0.99),
+            close: Decimal::from_f64_retain(close).unwrap(),
             volume: dec!(1000.0),
             timestamp: 0,
         }
@@ -155,30 +160,34 @@ mod tests {
         candles: VecDeque<Candle>,
         has_position: bool,
     ) -> AnalysisContext {
+        let d_price = Decimal::from_f64_retain(price).unwrap();
+        let d_trend_sma = Decimal::from_f64_retain(trend_sma).unwrap();
+        let d_atr = Decimal::from_f64_retain(atr).unwrap();
+
         AnalysisContext {
             symbol: "TEST".to_string(),
-            current_price: Decimal::from_f64(price).unwrap(),
+            current_price: d_price,
             price_f64: price,
-            fast_sma: 0.0,
-            slow_sma: 0.0,
-            trend_sma,
-            rsi: 50.0,
-            macd_value: 0.0,
-            macd_signal: 0.0,
-            macd_histogram: 0.0,
+            fast_sma: Decimal::ZERO,
+            slow_sma: Decimal::ZERO,
+            trend_sma: d_trend_sma,
+            rsi: dec!(50.0),
+            macd_value: Decimal::ZERO,
+            macd_signal: Decimal::ZERO,
+            macd_histogram: Decimal::ZERO,
             last_macd_histogram: None,
-            atr,
-            bb_lower: 0.0,
-            bb_middle: 0.0,
-            bb_upper: 0.0,
-            adx: 25.0,
+            atr: d_atr,
+            bb_lower: Decimal::ZERO,
+            bb_middle: Decimal::ZERO,
+            bb_upper: Decimal::ZERO,
+            adx: dec!(25.0),
             has_position,
             timestamp: 0,
             timeframe_features: None,
             candles,
             rsi_history: VecDeque::new(),
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,

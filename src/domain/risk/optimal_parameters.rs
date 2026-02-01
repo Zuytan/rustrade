@@ -6,6 +6,7 @@
 
 use super::risk_appetite::RiskProfile;
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -56,11 +57,11 @@ pub struct OptimalParameters {
     /// Slow SMA period for trend detection
     pub slow_sma_period: usize,
     /// RSI threshold for entry signals
-    pub rsi_threshold: f64,
+    pub rsi_threshold: Decimal,
     /// ATR multiplier for trailing stop
-    pub trailing_stop_atr_multiplier: f64,
+    pub trailing_stop_atr_multiplier: Decimal,
     /// Threshold for trend-price divergence filter
-    pub trend_divergence_threshold: f64,
+    pub trend_divergence_threshold: Decimal,
     /// Cooldown between orders in seconds
     pub order_cooldown_seconds: u64,
 
@@ -70,13 +71,13 @@ pub struct OptimalParameters {
     /// Symbol used for optimization
     pub symbol_used: String,
     /// Sharpe ratio achieved during optimization
-    pub sharpe_ratio: f64,
+    pub sharpe_ratio: Decimal,
     /// Total return percentage achieved
-    pub total_return: f64,
+    pub total_return: Decimal,
     /// Maximum drawdown percentage
-    pub max_drawdown: f64,
+    pub max_drawdown: Decimal,
     /// Win rate percentage
-    pub win_rate: f64,
+    pub win_rate: Decimal,
     /// Total number of trades in optimization
     pub total_trades: usize,
 }
@@ -89,15 +90,15 @@ impl OptimalParameters {
         risk_profile: RiskProfile,
         fast_sma_period: usize,
         slow_sma_period: usize,
-        rsi_threshold: f64,
-        trailing_stop_atr_multiplier: f64,
-        trend_divergence_threshold: f64,
+        rsi_threshold: Decimal,
+        trailing_stop_atr_multiplier: Decimal,
+        trend_divergence_threshold: Decimal,
         order_cooldown_seconds: u64,
         symbol_used: String,
-        sharpe_ratio: f64,
-        total_return: f64,
-        max_drawdown: f64,
-        win_rate: f64,
+        sharpe_ratio: Decimal,
+        total_return: Decimal,
+        max_drawdown: Decimal,
+        win_rate: Decimal,
         total_trades: usize,
     ) -> Self {
         Self {
@@ -163,6 +164,7 @@ impl OptimalParametersSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_optimal_parameters_creation() {
@@ -171,15 +173,15 @@ mod tests {
             RiskProfile::Balanced,
             20,
             60,
-            65.0,
-            3.0,
-            0.005,
+            dec!(65.0),
+            dec!(3.0),
+            dec!(0.005),
             300,
             "AAPL".to_string(),
-            1.5,
-            15.0,
-            5.0,
-            60.0,
+            dec!(1.5),
+            dec!(15.0),
+            dec!(5.0),
+            dec!(60.0),
             50,
         );
 
@@ -187,7 +189,7 @@ mod tests {
         assert_eq!(params.risk_profile, RiskProfile::Balanced);
         assert_eq!(params.fast_sma_period, 20);
         assert_eq!(params.slow_sma_period, 60);
-        assert_eq!(params.rsi_threshold, 65.0);
+        assert_eq!(params.rsi_threshold, dec!(65.0));
         assert_eq!(params.symbol_used, "AAPL");
     }
 
@@ -200,15 +202,15 @@ mod tests {
             RiskProfile::Conservative,
             10,
             50,
-            60.0,
-            2.0,
-            0.003,
+            dec!(60.0),
+            dec!(2.0),
+            dec!(0.003),
             600,
             "TSLA".to_string(),
-            1.2,
-            10.0,
-            3.0,
-            55.0,
+            dec!(1.2),
+            dec!(10.0),
+            dec!(3.0),
+            dec!(55.0),
             30,
         );
 
@@ -217,15 +219,15 @@ mod tests {
             RiskProfile::Conservative,
             15,
             55,
-            62.0,
-            2.5,
-            0.004,
+            dec!(62.0),
+            dec!(2.5),
+            dec!(0.004),
             500,
             "AAPL".to_string(),
-            1.8,
-            18.0,
-            4.0,
-            62.0,
+            dec!(1.8),
+            dec!(18.0),
+            dec!(4.0),
+            dec!(62.0),
             40,
         );
 
@@ -250,15 +252,15 @@ mod tests {
             RiskProfile::Conservative,
             10,
             50,
-            60.0,
-            2.0,
-            0.003,
+            dec!(60.0),
+            dec!(2.0),
+            dec!(0.003),
             600,
             "TSLA".to_string(),
-            1.2,
-            10.0,
-            3.0,
-            55.0,
+            dec!(1.2),
+            dec!(10.0),
+            dec!(3.0),
+            dec!(55.0),
             30,
         );
 
@@ -267,15 +269,15 @@ mod tests {
             RiskProfile::Aggressive,
             30,
             100,
-            70.0,
-            4.0,
-            0.01,
+            dec!(70.0),
+            dec!(4.0),
+            dec!(0.01),
             0,
             "BTCUSD".to_string(),
-            2.0,
-            25.0,
-            8.0,
-            65.0,
+            dec!(2.0),
+            dec!(25.0),
+            dec!(8.0),
+            dec!(65.0),
             80,
         );
 

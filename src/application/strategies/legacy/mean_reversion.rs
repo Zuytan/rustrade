@@ -1,4 +1,5 @@
 use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStrategy};
+use rust_decimal::Decimal;
 
 /// Mean Reversion Strategy
 ///
@@ -9,11 +10,11 @@ use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStr
 pub struct MeanReversionStrategy {
     #[allow(dead_code)]
     bb_period: usize,
-    rsi_exit_threshold: f64,
+    rsi_exit_threshold: Decimal,
 }
 
 impl MeanReversionStrategy {
-    pub fn new(bb_period: usize, rsi_exit_threshold: f64) -> Self {
+    pub fn new(bb_period: usize, rsi_exit_threshold: Decimal) -> Self {
         Self {
             bb_period,
             rsi_exit_threshold,
@@ -24,33 +25,34 @@ impl MeanReversionStrategy {
 impl TradingStrategy for MeanReversionStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
         // Ensure we have valid data (bands are not 0.0)
-        if ctx.bb_upper == 0.0 || ctx.bb_lower == 0.0 {
+        if ctx.bb_upper == Decimal::ZERO || ctx.bb_lower == Decimal::ZERO {
             return None;
         }
 
         // Buy Condition: Oversold Deep Value
         // Price below lower band AND RSI < 30
-        if ctx.price_f64 < ctx.bb_lower && ctx.rsi < 30.0 {
+        use rust_decimal_macros::dec;
+        if ctx.current_price < ctx.bb_lower && ctx.rsi < dec!(30.0) {
             return Some(Signal::buy(format!(
-                "MeanReversion: Price {:.2} < LowerBB {:.2} & RSI {:.2} < 30",
-                ctx.price_f64, ctx.bb_lower, ctx.rsi
+                "MeanReversion: Price {} < LowerBB {} & RSI {} < 30",
+                ctx.current_price, ctx.bb_lower, ctx.rsi
             )));
         }
 
         // Sell Condition: Reverted to Mean OR Overbought
         if ctx.has_position {
             // 1. Reverted to Mean (Middle Band)
-            if ctx.price_f64 > ctx.bb_middle {
+            if ctx.current_price > ctx.bb_middle {
                 return Some(Signal::sell(format!(
-                    "MeanReversion: Reverted to Mean (Price {:.2} > MiddleBB {:.2})",
-                    ctx.price_f64, ctx.bb_middle
+                    "MeanReversion: Reverted to Mean (Price {} > MiddleBB {})",
+                    ctx.current_price, ctx.bb_middle
                 )));
             }
 
             // 2. RSI Overbought Protection (in case it blasts through mean without closing)
             if ctx.rsi > self.rsi_exit_threshold {
                 return Some(Signal::sell(format!(
-                    "MeanReversion: RSI Overbought (RSI {:.2} > {:.2})",
+                    "MeanReversion: RSI Overbought (RSI {} > {})",
                     ctx.rsi, self.rsi_exit_threshold
                 )));
             }
@@ -68,6 +70,7 @@ impl TradingStrategy for MeanReversionStrategy {
 mod tests {
     use super::*;
     use crate::domain::trading::types::OrderSide;
+    use rust_decimal::prelude::FromPrimitive;
     use rust_decimal_macros::dec;
     use std::collections::VecDeque;
 
@@ -81,28 +84,28 @@ mod tests {
     ) -> AnalysisContext {
         AnalysisContext {
             symbol: "TEST".to_string(),
-            current_price: dec!(100.0), // Irrelevant for this logic
+            current_price: Decimal::from_f64(price).unwrap(),
             price_f64: price,
-            fast_sma: 0.0,
-            slow_sma: 0.0,
-            trend_sma: 0.0,
-            rsi,
-            macd_value: 0.0,
-            macd_signal: 0.0,
-            macd_histogram: 0.0,
+            fast_sma: Decimal::ZERO,
+            slow_sma: Decimal::ZERO,
+            trend_sma: Decimal::ZERO,
+            rsi: Decimal::from_f64(rsi).unwrap(),
+            macd_value: Decimal::ZERO,
+            macd_signal: Decimal::ZERO,
+            macd_histogram: Decimal::ZERO,
             last_macd_histogram: None,
-            atr: 1.0,
-            bb_lower: lower,
-            bb_middle: middle,
-            bb_upper: upper,
-            adx: 0.0,
+            atr: Decimal::ONE,
+            bb_lower: Decimal::from_f64(lower).unwrap(),
+            bb_middle: Decimal::from_f64(middle).unwrap(),
+            bb_upper: Decimal::from_f64(upper).unwrap(),
+            adx: Decimal::ZERO,
             has_position: has_pos,
             timestamp: 0,
             candles: VecDeque::new(),
             rsi_history: VecDeque::new(),
             // OFI fields (defaults for tests)
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,
@@ -116,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_mean_reversion_buy() {
-        let strategy = MeanReversionStrategy::new(20, 70.0);
+        let strategy = MeanReversionStrategy::new(20, dec!(70.0));
         // Price 95, Lower 96 -> Below Band. RSI 25 -> Oversold. -> BUY
         let ctx = create_context(95.0, 25.0, 96.0, 100.0, 104.0, false);
 
@@ -127,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_mean_reversion_no_buy_if_rsi_high() {
-        let strategy = MeanReversionStrategy::new(20, 70.0);
+        let strategy = MeanReversionStrategy::new(20, dec!(70.0));
         // Price 95, Lower 96 -> Below Band. RSI 40 -> Not Oversold. -> NO BUY
         let ctx = create_context(95.0, 40.0, 96.0, 100.0, 104.0, false);
 
@@ -137,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_mean_reversion_sell_on_mean() {
-        let strategy = MeanReversionStrategy::new(20, 70.0);
+        let strategy = MeanReversionStrategy::new(20, dec!(70.0));
         // Price 101, Middle 100 -> Above Mean. -> SELL
         let ctx = create_context(101.0, 50.0, 96.0, 100.0, 104.0, true);
 

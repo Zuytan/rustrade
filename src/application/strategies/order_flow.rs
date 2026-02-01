@@ -1,5 +1,7 @@
-use super::traits::{AnalysisContext, Signal, TradingStrategy};
+use super::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::market::order_flow::detect_stacked_imbalances;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 /// Order Flow Imbalance (OFI) Strategy
 ///
@@ -12,7 +14,7 @@ use crate::domain::market::order_flow::detect_stacked_imbalances;
 #[derive(Debug, Clone)]
 pub struct OrderFlowStrategy {
     /// Minimum OFI value to consider significant (default: 0.3)
-    pub ofi_threshold: f64,
+    pub ofi_threshold: Decimal,
     /// Number of consecutive OFI values required for stacked imbalance (default: 3)
     pub stacked_count: usize,
     /// Lookback period for volume profile analysis (default: 100)
@@ -20,7 +22,11 @@ pub struct OrderFlowStrategy {
 }
 
 impl OrderFlowStrategy {
-    pub fn new(ofi_threshold: f64, stacked_count: usize, volume_profile_lookback: usize) -> Self {
+    pub fn new(
+        ofi_threshold: Decimal,
+        stacked_count: usize,
+        volume_profile_lookback: usize,
+    ) -> Self {
         Self {
             ofi_threshold,
             stacked_count,
@@ -31,7 +37,8 @@ impl OrderFlowStrategy {
 
 impl Default for OrderFlowStrategy {
     fn default() -> Self {
-        Self::new(0.3, 3, 100)
+        use rust_decimal_macros::dec;
+        Self::new(dec!(0.3), 3, 100)
     }
 }
 
@@ -49,7 +56,14 @@ impl TradingStrategy for OrderFlowStrategy {
         if direction == 1 {
             // Additional confirmation: Cumulative Delta rising
             let delta_rising = if ctx.ofi_history.len() >= 5 {
-                let recent_avg: f64 = ctx.ofi_history.iter().rev().take(5).sum::<f64>() / 5.0;
+                let recent_avg: Decimal = ctx
+                    .ofi_history
+                    .iter()
+                    .rev()
+                    .take(5)
+                    .copied()
+                    .sum::<Decimal>()
+                    / Decimal::from(5);
                 ctx.cumulative_delta > recent_avg
             } else {
                 true // Not enough history, allow signal
@@ -57,10 +71,13 @@ impl TradingStrategy for OrderFlowStrategy {
 
             // Check if price is near a High Volume Node (support)
             let near_hvn = if let Some(ref profile) = ctx.volume_profile {
-                profile
-                    .high_volume_nodes
-                    .iter()
-                    .any(|&hvn| (ctx.price_f64 - hvn).abs() / ctx.price_f64 < 0.02) // Within 2%
+                profile.high_volume_nodes.iter().any(|&hvn| {
+                    if ctx.current_price > Decimal::ZERO {
+                        (ctx.current_price - hvn).abs() / ctx.current_price < dec!(0.02)
+                    } else {
+                        false
+                    }
+                }) // Within 2%
             } else {
                 true // No volume profile, allow signal
             };
@@ -69,7 +86,7 @@ impl TradingStrategy for OrderFlowStrategy {
                 let confidence = if near_hvn { 0.9 } else { 0.7 };
                 return Some(
                     Signal::buy(format!(
-                        "Stacked Bullish OFI (OFI={:.2}, Delta={:.2}, HVN={})",
+                        "Stacked Bullish OFI (OFI={}, Delta={}, HVN={})",
                         ctx.ofi_value,
                         ctx.cumulative_delta,
                         if near_hvn { "Yes" } else { "No" }
@@ -83,7 +100,14 @@ impl TradingStrategy for OrderFlowStrategy {
         if direction == -1 && ctx.has_position {
             // Additional confirmation: Cumulative Delta falling
             let delta_falling = if ctx.ofi_history.len() >= 5 {
-                let recent_avg: f64 = ctx.ofi_history.iter().rev().take(5).sum::<f64>() / 5.0;
+                let recent_avg: Decimal = ctx
+                    .ofi_history
+                    .iter()
+                    .rev()
+                    .take(5)
+                    .copied()
+                    .sum::<Decimal>()
+                    / Decimal::from(5);
                 ctx.cumulative_delta < recent_avg
             } else {
                 true // Not enough history, allow signal
@@ -91,10 +115,13 @@ impl TradingStrategy for OrderFlowStrategy {
 
             // Check if price is near a High Volume Node (resistance)
             let near_hvn = if let Some(ref profile) = ctx.volume_profile {
-                profile
-                    .high_volume_nodes
-                    .iter()
-                    .any(|&hvn| (ctx.price_f64 - hvn).abs() / ctx.price_f64 < 0.02) // Within 2%
+                profile.high_volume_nodes.iter().any(|&hvn| {
+                    if ctx.current_price > Decimal::ZERO {
+                        (ctx.current_price - hvn).abs() / ctx.current_price < dec!(0.02)
+                    } else {
+                        false
+                    }
+                }) // Within 2%
             } else {
                 true // No volume profile, allow signal
             };
@@ -103,7 +130,7 @@ impl TradingStrategy for OrderFlowStrategy {
                 let confidence = if near_hvn { 0.9 } else { 0.7 };
                 return Some(
                     Signal::sell(format!(
-                        "Stacked Bearish OFI (OFI={:.2}, Delta={:.2}, HVN={})",
+                        "Stacked Bearish OFI (OFI={}, Delta={}, HVN={})",
                         ctx.ofi_value,
                         ctx.cumulative_delta,
                         if near_hvn { "Yes" } else { "No" }
@@ -126,6 +153,7 @@ mod tests {
     use super::*;
     use crate::domain::market::order_flow::VolumeProfile;
     use crate::domain::trading::types::OrderSide;
+    use rust_decimal::prelude::FromPrimitive;
     use rust_decimal_macros::dec;
     use std::collections::{HashMap, VecDeque};
 
@@ -141,36 +169,42 @@ mod tests {
             let poc = nodes.first().copied().unwrap_or(0.0);
             VolumeProfile {
                 levels: HashMap::new(),
-                high_volume_nodes: nodes,
-                point_of_control: poc,
+                high_volume_nodes: nodes
+                    .into_iter()
+                    .map(|n| Decimal::from_f64(n).unwrap())
+                    .collect(),
+                point_of_control: Decimal::from_f64(poc).unwrap(),
             }
         });
 
         AnalysisContext {
             symbol: "TEST".to_string(),
-            current_price: dec!(100.0),
+            current_price: Decimal::from_f64(price).unwrap(),
             price_f64: price,
-            fast_sma: 0.0,
-            slow_sma: 0.0,
-            trend_sma: 0.0,
-            rsi: 50.0,
-            macd_value: 0.0,
-            macd_signal: 0.0,
-            macd_histogram: 0.0,
+            fast_sma: Decimal::ZERO,
+            slow_sma: Decimal::ZERO,
+            trend_sma: Decimal::ZERO,
+            rsi: dec!(50.0),
+            macd_value: Decimal::ZERO,
+            macd_signal: Decimal::ZERO,
+            macd_histogram: Decimal::ZERO,
             last_macd_histogram: None,
-            atr: 1.0,
-            bb_lower: 0.0,
-            bb_middle: 0.0,
-            bb_upper: 0.0,
-            adx: 0.0,
+            atr: Decimal::ONE,
+            bb_lower: Decimal::ZERO,
+            bb_middle: Decimal::ZERO,
+            bb_upper: Decimal::ZERO,
+            adx: Decimal::ZERO,
             has_position,
             timestamp: 0,
             candles: VecDeque::new(),
             rsi_history: VecDeque::new(),
-            ofi_value,
-            cumulative_delta,
+            ofi_value: Decimal::from_f64(ofi_value).unwrap(),
+            cumulative_delta: Decimal::from_f64(cumulative_delta).unwrap(),
             volume_profile,
-            ofi_history: ofi_history.into_iter().collect(),
+            ofi_history: ofi_history
+                .into_iter()
+                .map(|o| Decimal::from_f64(o).unwrap())
+                .collect(),
             hurst_exponent: None,
             skewness: None,
             momentum_normalized: None,
@@ -306,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_custom_parameters() {
-        let strategy = OrderFlowStrategy::new(0.2, 2, 50); // Lower threshold, 2 stacked
+        let strategy = OrderFlowStrategy::new(dec!(0.2), 2, 50); // Lower threshold, 2 stacked
 
         // 2 consecutive OFI > 0.2
         let ofi_history = vec![0.25, 0.3];

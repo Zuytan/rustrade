@@ -11,8 +11,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct TrainingRecord {
-    timestamp: i64,
-    symbol: String,
+    _timestamp: i64,
+    _symbol: String,
     rsi: f64,
     macd: f64,
     macd_signal: f64,

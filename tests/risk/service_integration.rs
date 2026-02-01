@@ -1,4 +1,3 @@
-//! Integration tests for RiskManager extracted services
 //!
 //! Tests the composition and interaction of:
 //! - SessionManager
@@ -7,6 +6,7 @@
 //! - RiskManager orchestration
 
 use anyhow::Result;
+
 use rust_decimal::Decimal;
 use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;

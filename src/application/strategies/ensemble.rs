@@ -1,4 +1,5 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 
 /// Ensemble Strategy
@@ -39,22 +40,22 @@ impl EnsembleStrategy {
         };
 
         let strategies: Vec<Arc<dyn TradingStrategy>> = vec![
-            Arc::new(DualSMAStrategy::new(20, 60, 0.001)),
+            Arc::new(DualSMAStrategy::new(20, 60, dec!(0.001))),
             Arc::new(AdvancedTripleFilterStrategy::new(
                 AdvancedTripleFilterConfig {
                     fast_period: 20,
                     slow_period: 60,
-                    sma_threshold: 0.001,
+                    sma_threshold: dec!(0.001),
                     trend_sma_period: 50,
-                    rsi_threshold: 75.0,
+                    rsi_threshold: dec!(75.0),
                     signal_confirmation_bars: 1,
                     macd_requires_rising: true,
-                    trend_tolerance_pct: 0.0,
-                    macd_min_threshold: 0.0,
-                    adx_threshold: 25.0,
+                    trend_tolerance_pct: dec!(0.0),
+                    macd_min_threshold: dec!(0.0),
+                    adx_threshold: dec!(25.0),
                 },
             )),
-            Arc::new(MeanReversionStrategy::new(20, 50.0)),
+            Arc::new(MeanReversionStrategy::new(20, dec!(50.0))),
         ];
 
         Self::majority(strategies)
@@ -145,6 +146,7 @@ mod tests {
     use super::*;
     use crate::application::strategies::legacy::{DualSMAStrategy, MeanReversionStrategy};
     use crate::domain::trading::types::OrderSide;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use std::collections::VecDeque;
 
@@ -160,27 +162,27 @@ mod tests {
             symbol: "TEST".to_string(),
             current_price: dec!(100.0),
             price_f64: price,
-            fast_sma,
-            slow_sma,
-            trend_sma: 99.0, // Below price to allow buy signals
-            rsi,
-            macd_value: 0.5,
-            macd_signal: 0.3,
-            macd_histogram: 0.2,
-            last_macd_histogram: Some(0.1),
-            atr: 1.0,
-            bb_lower,
-            bb_middle: 100.0,
-            bb_upper: 105.0,
-            adx: 30.0,
+            fast_sma: Decimal::from_f64_retain(fast_sma).unwrap_or(Decimal::ZERO),
+            slow_sma: Decimal::from_f64_retain(slow_sma).unwrap_or(Decimal::ZERO),
+            trend_sma: dec!(99.0), // Below price to allow buy signals
+            rsi: Decimal::from_f64_retain(rsi).unwrap_or(Decimal::ZERO),
+            macd_value: dec!(0.5),
+            macd_signal: dec!(0.3),
+            macd_histogram: dec!(0.2),
+            last_macd_histogram: Some(dec!(0.1)),
+            atr: dec!(1.0),
+            bb_lower: Decimal::from_f64_retain(bb_lower).unwrap_or(Decimal::ZERO),
+            bb_middle: dec!(100.0),
+            bb_upper: dec!(105.0),
+            adx: dec!(30.0),
             has_position,
             timestamp: 0,
             timeframe_features: None,
             candles: VecDeque::new(),
             rsi_history: VecDeque::new(),
             // OFI fields (defaults for tests)
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,
@@ -195,7 +197,7 @@ mod tests {
     fn test_majority_vote_buy() {
         // Create strategies that will both signal buy
         let strategies: Vec<Arc<dyn TradingStrategy>> = vec![
-            Arc::new(DualSMAStrategy::new(20, 60, 0.001)), // Will signal buy if fast > slow
+            Arc::new(DualSMAStrategy::new(20, 60, dec!(0.001))), // Will signal buy if fast > slow
         ];
 
         let ensemble = EnsembleStrategy::majority(strategies);
@@ -214,8 +216,8 @@ mod tests {
     fn test_no_signal_when_threshold_not_met() {
         // Create two strategies with different triggers
         let strategies: Vec<Arc<dyn TradingStrategy>> = vec![
-            Arc::new(DualSMAStrategy::new(20, 60, 0.001)), // Golden cross buy
-            Arc::new(MeanReversionStrategy::new(20, 50.0)), // Needs price < BB lower and RSI < 30
+            Arc::new(DualSMAStrategy::new(20, 60, dec!(0.001))), // Golden cross buy
+            Arc::new(MeanReversionStrategy::new(20, dec!(50.0))), // Needs price < BB lower and RSI < 30
         ];
 
         let ensemble = EnsembleStrategy::unanimous(strategies); // Requires both
@@ -234,14 +236,14 @@ mod tests {
     fn test_unanimous_vote() {
         // Create strategies that will all signal buy under certain conditions
         let strategies: Vec<Arc<dyn TradingStrategy>> = vec![
-            Arc::new(DualSMAStrategy::new(20, 60, 0.001)),
-            Arc::new(MeanReversionStrategy::new(20, 50.0)),
+            Arc::new(DualSMAStrategy::new(20, 60, dec!(0.001))),
+            Arc::new(MeanReversionStrategy::new(20, dec!(50.0))),
         ];
 
         let ensemble = EnsembleStrategy::unanimous(strategies);
 
         // Conditions for both: Golden cross AND price < BB lower with RSI < 30
-        // DualSMA: fast > slow * 1.001 AND price > trend_sma -> buy
+        // DualSMA: fast > slow * (Decimal::ONE + dec!(0.001)) AND price > trend_sma -> buy
         // MeanReversion: price < bb_lower AND rsi < 30 -> buy
         let ctx = create_context(
             105.0, // fast_sma > slow_sma

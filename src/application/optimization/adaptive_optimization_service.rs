@@ -10,6 +10,7 @@ use crate::domain::repositories::{
 };
 use anyhow::Result;
 use chrono::{Duration, Utc};
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
@@ -46,7 +47,7 @@ impl AdaptiveOptimizationService {
             strategy_repo,
             candle_repo,
             evaluator,
-            regime_detector: MarketRegimeDetector::new(regime_window, 25.0, 2.0), // TODO: Config
+            regime_detector: MarketRegimeDetector::new(regime_window, dec!(25.0), dec!(2.0)), // TODO: Config
             enabled,
         }
     }
@@ -90,7 +91,7 @@ impl AdaptiveOptimizationService {
                 if let Some(last) = last_opt {
                     if last.market_regime != current_regime.regime_type
                         && current_regime.regime_type != MarketRegimeType::Unknown
-                        && current_regime.confidence > 0.7
+                        && current_regime.confidence > dec!(0.7)
                     {
                         warn!(
                             "Triggering re-optimization for {} due to Regime Change: {} -> {}",

@@ -1,3 +1,5 @@
+use rust_decimal_macros::dec;
+
 use rustrade::application::agents::analyst::AnalystConfig;
 use rustrade::application::strategies::strategy_selector::StrategySelector;
 use rustrade::domain::market::market_regime::{MarketRegime, MarketRegimeType};
@@ -12,9 +14,9 @@ fn test_strategy_selector_ranging_to_vwap() {
     // This triggers VWAP instead of MeanReversion
     let ranging_regime = MarketRegime::new(
         MarketRegimeType::Ranging,
-        0.8,  // High confidence
-        2.0,  // High volatility -> VWAP
-        10.0, // Low trend strength
+        dec!(0.8),  // High confidence
+        dec!(2.0),  // High volatility -> VWAP
+        dec!(10.0), // Low trend strength
     );
 
     // Start with Standard strategy
@@ -39,9 +41,9 @@ fn test_strategy_selector_ranging_low_vol_to_mean_reversion() {
     // Create a Ranging regime with LOW volatility (< 1.5)
     let ranging_regime = MarketRegime::new(
         MarketRegimeType::Ranging,
-        0.8,  // High confidence
-        1.0,  // Low volatility -> MeanReversion
-        10.0, // Low trend strength
+        dec!(0.8),  // High confidence
+        dec!(1.0),  // Low volatility -> MeanReversion
+        dec!(10.0), // Low trend strength
     );
 
     let current_mode = StrategyMode::Standard;
@@ -64,9 +66,9 @@ fn test_strategy_selector_trending_up_to_trend_riding() {
     // Create a TrendingUp regime
     let trending_regime = MarketRegime::new(
         MarketRegimeType::TrendingUp,
-        0.9,  // High confidence
-        1.5,  // Moderate volatility
-        35.0, // High trend strength
+        dec!(0.9),  // High confidence
+        dec!(1.5),  // Moderate volatility
+        dec!(35.0), // High trend strength
     );
 
     let current_mode = StrategyMode::Standard;
@@ -86,7 +88,12 @@ fn test_strategy_selector_trending_up_to_trend_riding() {
 fn test_strategy_selector_trending_down_to_trend_riding() {
     let config = AnalystConfig::default();
 
-    let trending_regime = MarketRegime::new(MarketRegimeType::TrendingDown, 0.85, 2.0, 40.0);
+    let trending_regime = MarketRegime::new(
+        MarketRegimeType::TrendingDown,
+        dec!(0.85),
+        dec!(2.0),
+        dec!(40.0),
+    );
 
     let current_mode = StrategyMode::Standard;
 
@@ -106,9 +113,9 @@ fn test_strategy_selector_volatile_to_momentum() {
 
     let volatile_regime = MarketRegime::new(
         MarketRegimeType::Volatile,
-        0.7,
-        5.0, // High volatility
-        15.0,
+        dec!(0.7),
+        dec!(5.0), // High volatility
+        dec!(15.0),
     );
 
     let current_mode = StrategyMode::Standard;
@@ -150,7 +157,8 @@ fn test_strategy_selector_no_change_when_same() {
     let config = AnalystConfig::default();
 
     // Low volatility ranging -> ZScoreMR
-    let ranging_regime = MarketRegime::new(MarketRegimeType::Ranging, 0.8, 1.0, 10.0);
+    let ranging_regime =
+        MarketRegime::new(MarketRegimeType::Ranging, dec!(0.8), dec!(1.0), dec!(10.0));
 
     // Already using ZScoreMR
     let current_mode = StrategyMode::ZScoreMR;

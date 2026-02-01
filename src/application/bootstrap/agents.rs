@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::Timelike;
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{error, info, warn};
@@ -146,7 +147,7 @@ impl AgentsBootstrap {
             allow_pdt_risk: false,
             correlation_config:
                 crate::domain::risk::filters::correlation_filter::CorrelationFilterConfig {
-                    max_correlation_threshold: 0.85,
+                    max_correlation_threshold: dec!(0.85),
                 },
             volatility_config: crate::domain::risk::volatility_manager::VolatilityConfig::default(),
         };
@@ -236,6 +237,8 @@ impl AgentsBootstrap {
 // Helper functions to keep init clean
 
 fn create_analyst_config(config: &Config) -> AnalystConfig {
+    use rust_decimal_macros::dec;
+
     AnalystConfig {
         fast_sma_period: config.fast_sma_period,
         slow_sma_period: config.slow_sma_period,
@@ -254,12 +257,12 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
         trailing_stop_atr_multiplier: config.trailing_stop_atr_multiplier,
         atr_period: config.atr_period,
         rsi_threshold: config.rsi_threshold,
-        trend_riding_exit_buffer_pct: 0.03,
+        trend_riding_exit_buffer_pct: dec!(0.03),
         mean_reversion_rsi_exit: config.mean_reversion_rsi_exit,
         mean_reversion_bb_period: config.mean_reversion_bb_period,
         fee_model: config.create_fee_model(),
         max_position_size_pct: config.max_position_size_pct,
-        bb_std_dev: 2.0,
+        bb_std_dev: dec!(2.0),
         ema_fast_period: config.ema_fast_period,
         ema_slow_period: config.ema_slow_period,
         take_profit_pct: config.take_profit_pct,
@@ -267,20 +270,20 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
         signal_confirmation_bars: config.signal_confirmation_bars,
         spread_bps: config.spread_bps,
         min_profit_ratio: config.min_profit_ratio,
+        profit_target_multiplier: config.profit_target_multiplier,
         macd_requires_rising: config.macd_requires_rising,
         trend_tolerance_pct: config.trend_tolerance_pct,
         macd_min_threshold: config.macd_min_threshold,
-        profit_target_multiplier: config.profit_target_multiplier,
         adx_period: config.adx_period,
         adx_threshold: config.adx_threshold,
         smc_ob_lookback: config.smc_ob_lookback,
         smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
-        smc_volume_multiplier: 1.5,
+        smc_volume_multiplier: dec!(1.5),
         risk_appetite_score: config.risk_appetite.map(|r| r.score()),
         breakout_lookback: 10,
-        breakout_threshold_pct: 0.002,
-        breakout_volume_mult: 1.1,
-        max_loss_per_trade_pct: -0.05,
+        breakout_threshold_pct: dec!(0.002),
+        breakout_volume_mult: dec!(1.1),
+        max_loss_per_trade_pct: dec!(-0.05),
         enable_ml_data_collection: false,
     }
 }

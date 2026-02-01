@@ -1,6 +1,6 @@
 use crate::domain::trading::types::Candle;
 use anyhow::Result;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -30,21 +30,22 @@ impl fmt::Display for MarketRegimeType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketRegime {
     pub regime_type: MarketRegimeType,
-    pub confidence: f64, // 0.0 to 1.0
-    pub volatility_score: f64,
-    pub trend_strength: f64,
+    pub confidence: Decimal, // 0.0 to 1.0
+    pub volatility_score: Decimal,
+    pub trend_strength: Decimal,
 }
 
 impl MarketRegime {
     pub fn new(
         regime_type: MarketRegimeType,
-        confidence: f64,
-        volatility_score: f64,
-        trend_strength: f64,
+        confidence: Decimal,
+        volatility_score: Decimal,
+        trend_strength: Decimal,
     ) -> Self {
+        use rust_decimal_macros::dec;
         Self {
             regime_type,
-            confidence: confidence.clamp(0.0, 1.0),
+            confidence: confidence.clamp(dec!(0.0), dec!(1.0)),
             volatility_score,
             trend_strength,
         }
@@ -53,9 +54,9 @@ impl MarketRegime {
     pub fn unknown() -> Self {
         Self {
             regime_type: MarketRegimeType::Unknown,
-            confidence: 0.0,
-            volatility_score: 0.0,
-            trend_strength: 0.0,
+            confidence: Decimal::ZERO,
+            volatility_score: Decimal::ZERO,
+            trend_strength: Decimal::ZERO,
         }
     }
 }
@@ -63,12 +64,12 @@ impl MarketRegime {
 /// Service for detecting market regime from price action
 pub struct MarketRegimeDetector {
     window_size: usize,
-    adx_threshold: f64,
-    volatility_threshold: f64,
+    adx_threshold: Decimal,
+    volatility_threshold: Decimal,
 }
 
 impl MarketRegimeDetector {
-    pub fn new(window_size: usize, adx_threshold: f64, volatility_threshold: f64) -> Self {
+    pub fn new(window_size: usize, adx_threshold: Decimal, volatility_threshold: Decimal) -> Self {
         Self {
             window_size,
             adx_threshold,
@@ -78,11 +79,12 @@ impl MarketRegimeDetector {
 
     pub fn detect_from_features(
         &self,
-        hurst: Option<f64>,
-        volatility: Option<f64>,
-        _skewness: Option<f64>,
+        hurst: Option<Decimal>,
+        volatility: Option<Decimal>,
+        _skewness: Option<Decimal>,
     ) -> Result<MarketRegime> {
         // Enhanced Detection using Statistical Features
+        use rust_decimal_macros::dec;
 
         // 1. Volatility Check
         let is_volatile = volatility
@@ -91,15 +93,15 @@ impl MarketRegimeDetector {
         if is_volatile {
             return Ok(MarketRegime::new(
                 MarketRegimeType::Volatile,
-                0.8, // High confidence if directly measured
-                volatility.unwrap_or(0.0) * 100.0,
-                0.0,
+                dec!(0.8), // High confidence if directly measured
+                volatility.unwrap_or(Decimal::ZERO) * dec!(100.0),
+                Decimal::ZERO,
             ));
         }
 
         // 2. Trend vs Mean Reversion using Hurst
         if let Some(h) = hurst {
-            if h > 0.6 {
+            if h > dec!(0.6) {
                 // Strong Trending Behavior
                 return Ok(MarketRegime::new(
                     MarketRegimeType::TrendingUp, // Direction needs price action, defaulting to Generic Trend or need direction input
@@ -107,17 +109,17 @@ impl MarketRegimeDetector {
                     // For now, let's say TrendingUp/Down is ambiguous from Hurst alone (it just says "Trending").
                     // We need slope or momentum for direction.
                     // Let's assume we use this in conjunction with simple slope check.
-                    (h - 0.5) * 2.0, // Confidence scales with Hurst
-                    0.0,
-                    h * 100.0,
+                    (h - dec!(0.5)) * dec!(2.0), // Confidence scales with Hurst
+                    Decimal::ZERO,
+                    h * dec!(100.0),
                 ));
-            } else if h < 0.4 {
+            } else if h < dec!(0.4) {
                 // Mean Reverting
                 return Ok(MarketRegime::new(
                     MarketRegimeType::Ranging,
-                    (0.5 - h) * 2.0,
-                    0.0,
-                    0.0,
+                    (dec!(0.5) - h) * dec!(2.0),
+                    Decimal::ZERO,
+                    Decimal::ZERO,
                 ));
             }
         }
@@ -138,13 +140,12 @@ impl MarketRegimeDetector {
         let current_price = recent_candles
             .last()
             .expect("recent_candles slice guaranteed non-empty by window_size check")
-            .close
-            .to_f64()
-            .unwrap_or(0.0);
-        let volatility_score = if current_price > 0.0 {
-            (atr / current_price) * 100.0
+            .close;
+        let volatility_score = if current_price > Decimal::ZERO {
+            use rust_decimal_macros::dec;
+            (atr / current_price) * dec!(100.0)
         } else {
-            0.0
+            Decimal::ZERO
         };
 
         // 2. Calculate Trend Strength (ADX equivalent approximation)
@@ -165,17 +166,26 @@ impl MarketRegimeDetector {
         };
 
         // 4. Calculate Confidence (simplified)
+        use rust_decimal_macros::dec;
         let confidence = match regime_type {
             MarketRegimeType::TrendingUp | MarketRegimeType::TrendingDown => {
-                let strength_excess = (trend_strength - self.adx_threshold).max(0.0);
-                (0.5 + strength_excess * 0.02).min(1.0)
+                let strength_excess = if trend_strength > self.adx_threshold {
+                    trend_strength - self.adx_threshold
+                } else {
+                    Decimal::ZERO
+                };
+                (dec!(0.5) + strength_excess * dec!(0.02)).min(Decimal::ONE)
             }
             MarketRegimeType::Volatile => {
-                let vol_excess = (volatility_score - self.volatility_threshold).max(0.0);
-                (0.5 + vol_excess * 0.1).min(1.0)
+                let vol_excess = if volatility_score > self.volatility_threshold {
+                    volatility_score - self.volatility_threshold
+                } else {
+                    Decimal::ZERO
+                };
+                (dec!(0.5) + vol_excess * dec!(0.1)).min(Decimal::ONE)
             }
-            MarketRegimeType::Ranging => 0.6, // Default confidence for ranging
-            MarketRegimeType::Unknown => 0.0,
+            MarketRegimeType::Ranging => dec!(0.6), // Default confidence for ranging
+            MarketRegimeType::Unknown => Decimal::ZERO,
         };
 
         Ok(MarketRegime::new(
@@ -186,17 +196,16 @@ impl MarketRegimeDetector {
         ))
     }
 
-    fn calculate_atr(&self, candles: &[Candle], period: usize) -> f64 {
-        use rust_decimal::prelude::ToPrimitive;
+    fn calculate_atr(&self, candles: &[Candle], period: usize) -> Decimal {
         if candles.len() < period + 1 {
-            return 0.0;
+            return Decimal::ZERO;
         }
 
-        let mut tr_sum = 0.0;
+        let mut tr_sum = Decimal::ZERO;
         for i in 1..candles.len() {
-            let high = candles[i].high.to_f64().unwrap_or(0.0);
-            let low = candles[i].low.to_f64().unwrap_or(0.0);
-            let close_prev = candles[i - 1].close.to_f64().unwrap_or(0.0);
+            let high = candles[i].high;
+            let low = candles[i].low;
+            let close_prev = candles[i - 1].close;
 
             let tr = (high - low)
                 .max((high - close_prev).abs())
@@ -208,50 +217,46 @@ impl MarketRegimeDetector {
             }
         }
 
-        tr_sum / period as f64
+        tr_sum / Decimal::from(period)
     }
 
-    fn calculate_trend_strength(&self, candles: &[Candle]) -> f64 {
-        use rust_decimal::prelude::ToPrimitive;
+    fn calculate_trend_strength(&self, candles: &[Candle]) -> Decimal {
         let n = candles.len();
         if n < 2 {
-            return 0.0;
+            return Decimal::ZERO;
         }
 
-        let prices: Vec<f64> = candles
-            .iter()
-            .map(|c| c.close.to_f64().unwrap_or(0.0))
-            .collect();
+        let prices: Vec<Decimal> = candles.iter().map(|c| c.close).collect();
 
         // Linear regression: y = mx + c
-        let x_sum: f64 = (0..n).map(|i| i as f64).sum();
-        let y_sum: f64 = prices.iter().sum();
-        let xy_sum: f64 = prices.iter().enumerate().map(|(i, &p)| i as f64 * p).sum();
-        let x2_sum: f64 = (0..n).map(|i| (i * i) as f64).sum();
+        let n_dec = Decimal::from(n);
+        let x_sum: Decimal = (0..n).map(Decimal::from).sum();
+        let y_sum: Decimal = prices.iter().sum();
+        let xy_sum: Decimal = prices
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| Decimal::from(i) * p)
+            .sum();
+        let x2_sum: Decimal = (0..n).map(|i| Decimal::from(i * i)).sum();
 
-        let slope = (n as f64 * xy_sum - x_sum * y_sum) / (n as f64 * x2_sum - x_sum * x_sum);
-        let first_price = prices[0].max(0.0001);
+        let denominator = n_dec * x2_sum - x_sum * x_sum;
+        if denominator == Decimal::ZERO {
+            return Decimal::ZERO;
+        }
 
-        (slope / first_price).abs() * 1000.0
+        let slope = (n_dec * xy_sum - x_sum * y_sum) / denominator;
+        use rust_decimal_macros::dec;
+        let first_price = prices[0].max(dec!(0.0001));
+
+        (slope / first_price).abs() * dec!(1000.0)
     }
 
     fn is_uptrend(&self, candles: &[Candle]) -> bool {
-        use rust_decimal::prelude::ToPrimitive;
         if candles.len() < 2 {
             return false;
         }
-        let first = candles
-            .first()
-            .expect("candles verified len >= 2")
-            .close
-            .to_f64()
-            .unwrap_or(0.0);
-        let last = candles
-            .last()
-            .expect("candles verified len >= 2")
-            .close
-            .to_f64()
-            .unwrap_or(0.0);
+        let first = candles.first().expect("candles verified len >= 2").close;
+        let last = candles.last().expect("candles verified len >= 2").close;
         last > first
     }
 }
@@ -262,7 +267,6 @@ mod tests {
     use crate::domain::trading::types::Candle;
     use chrono::Utc;
     use rust_decimal::Decimal;
-    use rust_decimal::prelude::FromPrimitive;
 
     fn create_candle(price: f64) -> Candle {
         Candle {
@@ -272,13 +276,14 @@ mod tests {
             high: Decimal::from_f64_retain(price + 1.0).unwrap(),
             low: Decimal::from_f64_retain(price - 1.0).unwrap(),
             close: Decimal::from_f64_retain(price).unwrap(),
-            volume: Decimal::from_f64(1000.0).unwrap(),
+            volume: Decimal::from_f64_retain(1000.0).unwrap(),
         }
     }
 
     #[test]
     fn test_regime_detection_uptrend() {
-        let detector = MarketRegimeDetector::new(10, 25.0, 2.0);
+        use rust_decimal_macros::dec;
+        let detector = MarketRegimeDetector::new(10, dec!(25.0), dec!(2.0));
         let mut candles = Vec::new();
         // Generate strong uptrend
         for i in 0..20 {
@@ -294,28 +299,30 @@ mod tests {
 
     #[test]
     fn test_detect_from_features_hurst() {
-        let detector = MarketRegimeDetector::new(10, 25.0, 2.0);
+        use rust_decimal_macros::dec;
+        let detector = MarketRegimeDetector::new(10, dec!(25.0), dec!(2.0));
         // Hurst > 0.6 -> Trending
         let regime = detector
-            .detect_from_features(Some(0.7), Some(0.0), None)
+            .detect_from_features(Some(dec!(0.7)), Some(Decimal::ZERO), None)
             .unwrap();
         // Without direction, we define it maps to TrendingUp as placeholder for "Trend"
         assert_eq!(regime.regime_type, MarketRegimeType::TrendingUp);
-        assert!(regime.confidence > 0.0);
+        assert!(regime.confidence > dec!(0.0));
 
         // Hurst < 0.4 -> Mean Reversion (Ranging)
         let regime_mr = detector
-            .detect_from_features(Some(0.3), Some(0.0), None)
+            .detect_from_features(Some(dec!(0.3)), Some(dec!(0.0)), None)
             .unwrap();
         assert_eq!(regime_mr.regime_type, MarketRegimeType::Ranging);
     }
 
     #[test]
     fn test_detect_from_features_volatility() {
-        let detector = MarketRegimeDetector::new(10, 25.0, 2.0); // Vol thresh 2.0
+        use rust_decimal_macros::dec;
+        let detector = MarketRegimeDetector::new(10, dec!(25.0), dec!(2.0)); // Vol thresh 2.0
         // Volatility 3.0 > 2.0 -> Volatile
         let regime = detector
-            .detect_from_features(None, Some(3.0), None)
+            .detect_from_features(None, Some(dec!(3.0)), None)
             .unwrap();
         assert_eq!(regime.regime_type, MarketRegimeType::Volatile);
     }

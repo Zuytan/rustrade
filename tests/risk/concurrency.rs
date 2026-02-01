@@ -1,3 +1,5 @@
+use rust_decimal_macros::dec;
+
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::risk_manager::{RiskConfig, RiskManager};
 use rustrade::config::AssetClass;
@@ -30,12 +32,12 @@ async fn test_concurrent_proposals_respect_limits() {
     let (order_tx, mut order_rx) = mpsc::channel(50);
 
     let risk_config = RiskConfig {
-        max_position_size_pct: 0.10, // 10% max position size
-        max_daily_loss_pct: 0.05,
-        max_drawdown_pct: 0.10,
+        max_position_size_pct: dec!(0.10), // 10% max position size
+        max_daily_loss_pct: dec!(0.05),
+        max_drawdown_pct: dec!(0.10),
         consecutive_loss_limit: 3,
         valuation_interval_seconds: 60,
-        max_sector_exposure_pct: 0.30,
+        max_sector_exposure_pct: dec!(0.30),
         sector_provider: None,
         allow_pdt_risk: false,
         pending_order_ttl_ms: None,

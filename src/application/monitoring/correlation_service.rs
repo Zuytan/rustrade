@@ -9,6 +9,8 @@ pub struct CorrelationService {
     candle_repository: Arc<dyn CandleRepository>,
 }
 
+use rust_decimal::Decimal;
+
 impl CorrelationService {
     pub fn new(candle_repository: Arc<dyn CandleRepository>) -> Self {
         Self { candle_repository }
@@ -19,7 +21,7 @@ impl CorrelationService {
     pub async fn calculate_correlation_matrix(
         &self,
         symbols: &[String],
-    ) -> Result<HashMap<(String, String), f64>> {
+    ) -> Result<HashMap<(String, String), Decimal>> {
         let end_ts = chrono::Utc::now().timestamp();
         let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
 
@@ -48,7 +50,8 @@ impl CorrelationService {
                 let s1 = &active_symbols[i];
                 let s2 = &active_symbols[j];
 
-                let corr = self.calculate_pearson_correlation(&returns[s1], &returns[s2]);
+                let corr_f64 = self.calculate_pearson_correlation(&returns[s1], &returns[s2]);
+                let corr = Decimal::from_f64_retain(corr_f64).unwrap_or(Decimal::ZERO);
                 matrix.insert((s1.clone(), s2.clone()), corr);
                 if s1 != s2 {
                     matrix.insert((s2.clone(), s1.clone()), corr);

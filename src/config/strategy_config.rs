@@ -6,6 +6,8 @@ use crate::domain::market::strategy_config::StrategyMode;
 use crate::domain::market::timeframe::Timeframe;
 use crate::domain::risk::risk_appetite::RiskAppetite;
 use anyhow::{Context, Result};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::env;
 use std::str::FromStr;
 
@@ -16,18 +18,18 @@ pub struct StrategyEnvConfig {
     pub fast_sma_period: usize,
     pub slow_sma_period: usize,
     pub trend_sma_period: usize,
-    pub sma_threshold: f64,
+    pub sma_threshold: Decimal,
 
     // RSI
     pub rsi_period: usize,
-    pub rsi_threshold: f64,
+    pub rsi_threshold: Decimal,
 
     // MACD
     pub macd_fast_period: usize,
     pub macd_slow_period: usize,
     pub macd_signal_period: usize,
     pub macd_requires_rising: bool,
-    pub macd_min_threshold: f64,
+    pub macd_min_threshold: Decimal,
 
     // EMA
     pub ema_fast_period: usize,
@@ -35,25 +37,25 @@ pub struct StrategyEnvConfig {
 
     // ADX
     pub adx_period: usize,
-    pub adx_threshold: f64,
+    pub adx_threshold: Decimal,
 
     // ATR
     pub atr_period: usize,
-    pub trailing_stop_atr_multiplier: f64,
+    pub trailing_stop_atr_multiplier: Decimal,
 
     // Strategy mode
     pub strategy_mode: StrategyMode,
-    pub trend_divergence_threshold: f64,
-    pub trend_tolerance_pct: f64,
+    pub trend_divergence_threshold: Decimal,
+    pub trend_tolerance_pct: Decimal,
 
     // Mean Reversion
-    pub mean_reversion_rsi_exit: f64,
+    pub mean_reversion_rsi_exit: Decimal,
     pub mean_reversion_bb_period: usize,
-    pub trend_riding_exit_buffer_pct: f64,
+    pub trend_riding_exit_buffer_pct: Decimal,
 
     // SMC (Smart Money Concepts)
     pub smc_ob_lookback: usize,
-    pub smc_min_fvg_size_pct: f64,
+    pub smc_min_fvg_size_pct: Decimal,
 
     // Timeframes
     pub primary_timeframe: Timeframe,
@@ -62,8 +64,8 @@ pub struct StrategyEnvConfig {
 
     // Signal Parameters
     pub signal_confirmation_bars: usize,
-    pub take_profit_pct: f64,
-    pub profit_target_multiplier: f64,
+    pub take_profit_pct: Decimal,
+    pub profit_target_multiplier: Decimal,
 
     // Risk Appetite Override
     pub risk_appetite: Option<RiskAppetite>,
@@ -89,12 +91,12 @@ impl StrategyEnvConfig {
         };
 
         // Base values from env
-        let rsi_threshold_base = Self::parse_f64("RSI_THRESHOLD", 75.0)?;
-        let trailing_stop_base = Self::parse_f64("TRAILING_STOP_ATR_MULTIPLIER", 5.0)?;
+        let rsi_threshold_base = Self::parse_decimal("RSI_THRESHOLD", dec!(75.0))?;
+        let trailing_stop_base = Self::parse_decimal("TRAILING_STOP_ATR_MULTIPLIER", dec!(5.0))?;
         let macd_requires_rising_base = true;
-        let trend_tolerance_base = 0.0;
-        let macd_min_threshold_base = 0.0;
-        let profit_target_base = 1.5;
+        let trend_tolerance_base = Decimal::ZERO;
+        let macd_min_threshold_base = Decimal::ZERO;
+        let profit_target_base = dec!(1.5);
 
         // Apply risk appetite overrides if set
         let (
@@ -147,7 +149,7 @@ impl StrategyEnvConfig {
             fast_sma_period: Self::parse_usize("FAST_SMA_PERIOD", 20)?,
             slow_sma_period: Self::parse_usize("SLOW_SMA_PERIOD", 60)?,
             trend_sma_period: Self::parse_usize("TREND_SMA_PERIOD", 200)?,
-            sma_threshold: Self::parse_f64("SMA_THRESHOLD", 0.001)?,
+            sma_threshold: Self::parse_decimal("SMA_THRESHOLD", dec!(0.001))?,
             rsi_period: Self::parse_usize("RSI_PERIOD", 14)?,
             rsi_threshold,
             macd_fast_period: Self::parse_usize("MACD_FAST_PERIOD", 12)?,
@@ -158,22 +160,30 @@ impl StrategyEnvConfig {
             ema_fast_period: Self::parse_usize("EMA_FAST_PERIOD", 50).unwrap_or(50),
             ema_slow_period: Self::parse_usize("EMA_SLOW_PERIOD", 150).unwrap_or(150),
             adx_period: Self::parse_usize("ADX_PERIOD", 14).unwrap_or(14),
-            adx_threshold: Self::parse_f64("ADX_THRESHOLD", 25.0).unwrap_or(25.0),
+            adx_threshold: Self::parse_decimal("ADX_THRESHOLD", dec!(25.0)).unwrap_or(dec!(25.0)),
             atr_period: Self::parse_usize("ATR_PERIOD", 14)?,
             trailing_stop_atr_multiplier,
             strategy_mode,
-            trend_divergence_threshold: Self::parse_f64("TREND_DIVERGENCE_THRESHOLD", 0.005)?,
+            trend_divergence_threshold: Self::parse_decimal(
+                "TREND_DIVERGENCE_THRESHOLD",
+                dec!(0.005),
+            )?,
             trend_tolerance_pct,
-            mean_reversion_rsi_exit: Self::parse_f64("MEAN_REVERSION_RSI_EXIT", 50.0)?,
+            mean_reversion_rsi_exit: Self::parse_decimal("MEAN_REVERSION_RSI_EXIT", dec!(50.0))?,
             mean_reversion_bb_period: Self::parse_usize("MEAN_REVERSION_BB_PERIOD", 20)?,
-            trend_riding_exit_buffer_pct: Self::parse_f64("TREND_RIDING_EXIT_BUFFER_PCT", 0.03)?,
+            trend_riding_exit_buffer_pct: Self::parse_decimal(
+                "TREND_RIDING_EXIT_BUFFER_PCT",
+                dec!(0.03),
+            )?,
             smc_ob_lookback: Self::parse_usize("SMC_OB_LOOKBACK", 20).unwrap_or(20),
-            smc_min_fvg_size_pct: Self::parse_f64("SMC_MIN_FVG_SIZE_PCT", 0.005).unwrap_or(0.005),
+            smc_min_fvg_size_pct: Self::parse_decimal("SMC_MIN_FVG_SIZE_PCT", dec!(0.005))
+                .unwrap_or(dec!(0.005)),
             primary_timeframe,
             enabled_timeframes,
             trend_timeframe,
             signal_confirmation_bars: Self::parse_usize("SIGNAL_CONFIRMATION_BARS", 2)?,
-            take_profit_pct: Self::parse_f64("TAKE_PROFIT_PCT", 0.05).unwrap_or(0.05),
+            take_profit_pct: Self::parse_decimal("TAKE_PROFIT_PCT", dec!(0.05))
+                .unwrap_or(dec!(0.05)),
             profit_target_multiplier,
             risk_appetite,
             enable_ml_data_collection: env::var("ENABLE_ML_DATA_COLLECTION")
@@ -190,11 +200,13 @@ impl StrategyEnvConfig {
             .context(format!("Failed to parse {}", key))
     }
 
-    fn parse_f64(key: &str, default: f64) -> Result<f64> {
-        env::var(key)
-            .unwrap_or_else(|_| default.to_string())
-            .parse::<f64>()
-            .context(format!("Failed to parse {}", key))
+    fn parse_decimal(key: &str, default: Decimal) -> Result<Decimal> {
+        match env::var(key) {
+            Ok(val) => val
+                .parse::<Decimal>()
+                .context(format!("Failed to parse {} as Decimal", key)),
+            Err(_) => Ok(default),
+        }
     }
 }
 

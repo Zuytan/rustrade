@@ -11,6 +11,7 @@ use crate::infrastructure::settings_persistence::{
 use crate::interfaces::design_system::DesignSystem;
 use crate::interfaces::settings_components;
 use eframe::egui;
+use rust_decimal::Decimal;
 use tracing::{error, info};
 
 /// Settings tab enumeration
@@ -245,10 +246,11 @@ impl SettingsPanel {
 
     /// Converts current UI state to RiskConfig
     pub fn to_risk_config(&self) -> RiskConfig {
+        use rust_decimal_macros::dec;
         RiskConfig {
-            max_position_size_pct: self.max_position_size_pct.parse().unwrap_or(0.10),
-            max_daily_loss_pct: self.max_daily_loss_pct.parse().unwrap_or(0.02),
-            max_drawdown_pct: self.max_drawdown_pct.parse().unwrap_or(0.05),
+            max_position_size_pct: self.max_position_size_pct.parse().unwrap_or(dec!(0.10)),
+            max_daily_loss_pct: self.max_daily_loss_pct.parse().unwrap_or(dec!(0.02)),
+            max_drawdown_pct: self.max_drawdown_pct.parse().unwrap_or(dec!(0.05)),
             consecutive_loss_limit: self.consecutive_loss_limit.parse().unwrap_or(3),
             ..RiskConfig::default()
         }
@@ -256,17 +258,18 @@ impl SettingsPanel {
 
     /// Converts current UI state to AnalystConfig
     pub fn to_analyst_config(&self) -> AnalystConfig {
+        use rust_decimal_macros::dec;
         AnalystConfig {
             strategy_mode: self.selected_strategy, // Include selected strategy
             fast_sma_period: self.fast_sma_period.parse().unwrap_or(10),
             slow_sma_period: self.slow_sma_period.parse().unwrap_or(20),
-            sma_threshold: self.sma_threshold.parse().unwrap_or(0.001),
+            sma_threshold: self.sma_threshold.parse().unwrap_or(dec!(0.001)),
             rsi_period: self.rsi_period.parse().unwrap_or(14),
-            rsi_threshold: self.rsi_threshold.parse().unwrap_or(70.0),
-            macd_min_threshold: self.macd_min_threshold.parse().unwrap_or(0.0),
-            adx_threshold: self.adx_threshold.parse().unwrap_or(25.0),
-            min_profit_ratio: self.min_profit_ratio.parse().unwrap_or(1.5),
-            profit_target_multiplier: self.profit_target_multiplier.parse().unwrap_or(2.0),
+            rsi_threshold: self.rsi_threshold.parse().unwrap_or(dec!(70.0)),
+            macd_min_threshold: self.macd_min_threshold.parse().unwrap_or(Decimal::ZERO),
+            adx_threshold: self.adx_threshold.parse().unwrap_or(dec!(25.0)),
+            min_profit_ratio: self.min_profit_ratio.parse().unwrap_or(dec!(1.5)),
+            profit_target_multiplier: self.profit_target_multiplier.parse().unwrap_or(dec!(2.0)),
             ..AnalystConfig::default()
         }
     }

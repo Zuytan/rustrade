@@ -1,7 +1,6 @@
 use crate::domain::trading::types::OrderSide;
 use rand::Rng;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::prelude::ToPrimitive;
 
 /// Trait defining a slippage simulation model.
@@ -22,11 +21,11 @@ pub trait SlippageModel: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct VolatilitySlippage {
     /// Slippage volatility factor (e.g. 0.0005 for 5bps)
-    volatility_factor: f64,
+    volatility_factor: Decimal,
 }
 
 impl VolatilitySlippage {
-    pub fn new(volatility_factor: f64) -> Self {
+    pub fn new(volatility_factor: Decimal) -> Self {
         Self { volatility_factor }
     }
 }
@@ -48,25 +47,27 @@ impl SlippageModel for VolatilitySlippage {
         // But 'Slippage' strictly speaking implies worse price. Market impact is always against you.
         // Let's assume 80% chance of worse price, 20% chance of better or equal.
 
-        let noise = rng.random_range(-self.volatility_factor..=self.volatility_factor);
+        use rust_decimal_macros::dec;
+        let volatility_f64 = self.volatility_factor.to_f64().unwrap_or(0.0);
+        let noise = rng.random_range(-volatility_f64..=volatility_f64);
 
         // Apply bias: shift noise to be mostly unfavorable
         // E.g. add an "impact cost"
-        let impact = self.volatility_factor * 0.2; // Fixed cost
+        let impact = self.volatility_factor * dec!(0.2); // Fixed cost
 
         // Effective change pct
         // Buy: Price increases (Bad) -> +impact
         // Sell: Price decreases (Bad) -> -impact
 
         let pct_change = match side {
-            OrderSide::Buy => impact + noise,
-            OrderSide::Sell => -(impact + noise),
+            OrderSide::Buy => impact + Decimal::from_f64_retain(noise).unwrap_or(Decimal::ZERO),
+            OrderSide::Sell => -(impact + Decimal::from_f64_retain(noise).unwrap_or(Decimal::ZERO)),
         };
 
         // Ensure price doesn't go below zero
-        let new_price_f64 = price.to_f64().unwrap_or(0.0) * (1.0 + pct_change);
+        let new_price = price * (Decimal::ONE + pct_change);
 
-        Decimal::from_f64(new_price_f64).unwrap_or(price)
+        new_price.max(Decimal::ZERO)
     }
 }
 
@@ -87,10 +88,11 @@ impl SlippageModel for ZeroSlippage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_volatility_slippage() {
-        let model = VolatilitySlippage::new(0.01); // 1% volatility
+        let model = VolatilitySlippage::new(dec!(0.01)); // 1% volatility
         let price = Decimal::from(100);
         let qty = Decimal::from(1);
 

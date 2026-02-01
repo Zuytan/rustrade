@@ -4,6 +4,8 @@ use crate::domain::repositories::OptimizationHistoryRepository;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use sqlx::{Row, SqlitePool};
 
 /// Safely parse a Unix timestamp into a DateTime, handling invalid values
@@ -38,9 +40,9 @@ impl OptimizationHistoryRepository for SqliteOptimizationHistoryRepository {
         .bind(&history.parameters_json)
         .bind(&history.performance_metrics_json)
         .bind(history.market_regime.to_string()) // Assuming Display impl is compatible or convert manually
-        .bind(history.sharpe_ratio)
-        .bind(history.total_return)
-        .bind(history.win_rate)
+        .bind(history.sharpe_ratio.to_f64().unwrap_or(0.0))
+        .bind(history.total_return.to_f64().unwrap_or(0.0))
+        .bind(history.win_rate.to_f64().unwrap_or(0.0))
         .bind(history.is_active)
         .execute(&self.pool)
         .await
@@ -74,9 +76,12 @@ impl OptimizationHistoryRepository for SqliteOptimizationHistoryRepository {
                 parameters_json: row.try_get("parameters_json")?,
                 performance_metrics_json: row.try_get("performance_metrics_json")?,
                 market_regime,
-                sharpe_ratio: row.try_get("sharpe_ratio")?,
-                total_return: row.try_get("total_return")?,
-                win_rate: row.try_get("win_rate")?,
+                sharpe_ratio: Decimal::from_f64_retain(row.try_get::<f64, _>("sharpe_ratio")?)
+                    .unwrap_or(Decimal::ZERO),
+                total_return: Decimal::from_f64_retain(row.try_get::<f64, _>("total_return")?)
+                    .unwrap_or(Decimal::ZERO),
+                win_rate: Decimal::from_f64_retain(row.try_get::<f64, _>("win_rate")?)
+                    .unwrap_or(Decimal::ZERO),
                 is_active: row.try_get("is_active")?,
             }))
         } else {
@@ -111,9 +116,12 @@ impl OptimizationHistoryRepository for SqliteOptimizationHistoryRepository {
                 parameters_json: row.try_get("parameters_json")?,
                 performance_metrics_json: row.try_get("performance_metrics_json")?,
                 market_regime,
-                sharpe_ratio: row.try_get("sharpe_ratio")?,
-                total_return: row.try_get("total_return")?,
-                win_rate: row.try_get("win_rate")?,
+                sharpe_ratio: Decimal::from_f64_retain(row.try_get::<f64, _>("sharpe_ratio")?)
+                    .unwrap_or(Decimal::ZERO),
+                total_return: Decimal::from_f64_retain(row.try_get::<f64, _>("total_return")?)
+                    .unwrap_or(Decimal::ZERO),
+                win_rate: Decimal::from_f64_retain(row.try_get::<f64, _>("win_rate")?)
+                    .unwrap_or(Decimal::ZERO),
                 is_active: row.try_get("is_active")?,
             });
         }

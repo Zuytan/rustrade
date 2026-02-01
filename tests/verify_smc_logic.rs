@@ -1,5 +1,7 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
+
 use rustrade::application::strategies::AnalysisContext;
 use rustrade::application::strategies::SMCStrategy;
 use rustrade::application::strategies::TradingStrategy;
@@ -24,27 +26,27 @@ fn create_context(candles: VecDeque<Candle>) -> AnalysisContext {
         symbol: "TEST".to_string(),
         current_price: candles.back().unwrap().close,
         price_f64: price,
-        fast_sma: 0.0,
-        slow_sma: 0.0,
-        trend_sma: 0.0,
-        rsi: 50.0,
-        macd_value: 0.0,
-        macd_signal: 0.0,
-        macd_histogram: 0.0,
+        fast_sma: dec!(0.0),
+        slow_sma: dec!(0.0),
+        trend_sma: dec!(0.0),
+        rsi: dec!(50.0),
+        macd_value: dec!(0.0),
+        macd_signal: dec!(0.0),
+        macd_histogram: dec!(0.0),
         last_macd_histogram: None,
-        atr: 1.0,
-        bb_upper: 0.0,
-        bb_middle: 0.0,
-        bb_lower: 0.0,
-        adx: 0.0,
+        atr: dec!(1.0),
+        bb_upper: dec!(0.0),
+        bb_middle: dec!(0.0),
+        bb_lower: dec!(0.0),
+        adx: dec!(0.0),
         has_position: false,
         timestamp: 1000,
         candles,
         rsi_history: VecDeque::new(),
-        ofi_value: 0.5, // Strong OFI to pass filter
-        cumulative_delta: 100.0,
+        ofi_value: dec!(0.5), // Strong OFI to pass filter
+        cumulative_delta: dec!(100.0),
         volume_profile: None,
-        ofi_history: vec![0.5, 0.5, 0.5].into_iter().collect(),
+        ofi_history: vec![dec!(0.5), dec!(0.5), dec!(0.5)].into_iter().collect(),
         timeframe_features: None,
         hurst_exponent: None,
         skewness: None,
@@ -56,7 +58,7 @@ fn create_context(candles: VecDeque<Candle>) -> AnalysisContext {
 
 #[test]
 fn test_smc_signals_fresh_fvg_without_retracement() {
-    let strategy = SMCStrategy::new(20, 0.001, 1.0);
+    let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.0));
     let mut candles = VecDeque::new();
 
     // Context

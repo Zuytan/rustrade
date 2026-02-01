@@ -1,6 +1,8 @@
-use super::{AnalysisContext, Signal, TradingStrategy};
 use crate::application::ml::predictor::MLPredictor;
+use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::trading::types::FeatureSet;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::sync::Arc;
 
 pub struct MLStrategy {
@@ -33,6 +35,8 @@ impl MLStrategy {
                 skewness: ctx.skewness,
                 momentum_normalized: ctx.momentum_normalized,
                 realized_volatility: ctx.realized_volatility,
+                ofi: Some(ctx.ofi_value),
+                cumulative_delta: Some(ctx.cumulative_delta),
                 ..Default::default()
             }
         }
@@ -78,21 +82,25 @@ impl TradingStrategy for MLStrategy {
                     }
                 } else {
                     // Regression Mode (Return Prediction)
-                    if score > self.threshold {
+                    let score_dec = Decimal::from_f64_retain(score).unwrap_or(Decimal::ZERO);
+                    let threshold_dec =
+                        Decimal::from_f64_retain(self.threshold).unwrap_or(Decimal::ZERO);
+
+                    if score_dec > threshold_dec {
                         Some(
                             Signal::buy(format!(
-                                "ML Pred Return {:.4}% > {:.4}%",
-                                score * 100.0,
-                                self.threshold * 100.0
+                                "ML Pred Return {}% > {}%",
+                                score_dec * dec!(100.0),
+                                threshold_dec * dec!(100.0)
                             ))
                             .with_confidence(0.8), // Fixed confidence for now, or scale by magnitude
                         )
-                    } else if score < -self.threshold {
+                    } else if score_dec < -threshold_dec {
                         Some(
                             Signal::sell(format!(
-                                "ML Pred Return {:.4}% < -{:.4}%",
-                                score * 100.0,
-                                self.threshold * 100.0
+                                "ML Pred Return {}% < -{}%",
+                                score_dec * dec!(100.0),
+                                threshold_dec * dec!(100.0)
                             ))
                             .with_confidence(0.8),
                         )

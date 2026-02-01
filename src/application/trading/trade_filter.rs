@@ -1,5 +1,4 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use tracing::{info, warn};
 
 use crate::application::monitoring::cost_evaluator::CostEvaluator;
@@ -80,10 +79,11 @@ impl TradeFilter {
         true
     }
 
-    pub fn validate_expectancy(&self, symbol: &str, reward_risk_ratio: f64) -> bool {
-        if reward_risk_ratio < 0.5 {
+    pub fn validate_expectancy(&self, symbol: &str, reward_risk_ratio: Decimal) -> bool {
+        use rust_decimal_macros::dec;
+        if reward_risk_ratio < dec!(0.5) {
             info!(
-                "TradeFilter: Signal IGNORED for {} - Low Reward/Risk Ratio: {:.2}",
+                "TradeFilter: Signal IGNORED for {} - Low Reward/Risk Ratio: {}",
                 symbol, reward_risk_ratio
             );
             return false;
@@ -96,16 +96,14 @@ impl TradeFilter {
         proposal: &TradeProposal,
         expected_profit: Decimal,
         estimated_cost: Decimal,
-        min_profit_ratio: f64,
+        min_profit_ratio: Decimal,
         symbol: &str,
     ) -> bool {
         // Basic static cost check (Total Profit > Total Cost)
         if expected_profit < estimated_cost {
             info!(
-                "TradeFilter: Signal IGNORED for {} - Negative Expectancy after costs (Expected Profit: ${:.2} < Costs: ${:.2})",
-                symbol,
-                expected_profit.to_f64().unwrap_or(0.0),
-                estimated_cost.to_f64().unwrap_or(0.0)
+                "TradeFilter: Signal IGNORED for {} - Negative Expectancy after costs (Expected Profit: ${} < Costs: ${})",
+                symbol, expected_profit, estimated_cost
             );
             return false;
         }
@@ -120,7 +118,7 @@ impl TradeFilter {
                 .get_profit_cost_ratio(proposal, expected_profit);
             let costs = self.cost_evaluator.evaluate(proposal);
             warn!(
-                "TradeFilter [{}]: Trade REJECTED by cost filter - Profit/Cost ratio {:.2} < {:.2} threshold (Expected Profit: ${:.2}, Total Costs: ${:.2})",
+                "TradeFilter [{}]: Trade REJECTED by cost filter - Profit/Cost ratio {} < {} threshold (Expected Profit: ${}, Total Costs: ${})",
                 symbol, ratio, min_profit_ratio, expected_profit, costs.total_cost
             );
             return false;
@@ -131,7 +129,7 @@ impl TradeFilter {
             .get_profit_cost_ratio(proposal, expected_profit);
         let costs = self.cost_evaluator.evaluate(proposal);
         info!(
-            "TradeFilter [{}]: Cost Filter PASSED - Profit/Cost ratio {:.2}x (Expected: ${:.2}, Costs: ${:.2}, Net: ${:.2})",
+            "TradeFilter [{}]: Cost Filter PASSED - Profit/Cost ratio {}x (Expected: ${}, Costs: ${}, Net: ${})",
             symbol,
             ratio,
             expected_profit,
@@ -146,8 +144,8 @@ impl TradeFilter {
     pub fn calculate_expected_profit(
         &self,
         proposal: &TradeProposal,
-        atr: f64,
-        multiplier: f64,
+        atr: Decimal,
+        multiplier: Decimal,
     ) -> Decimal {
         self.cost_evaluator
             .calculate_expected_profit(proposal, atr, multiplier)

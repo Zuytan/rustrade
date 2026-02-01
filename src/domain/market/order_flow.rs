@@ -1,4 +1,5 @@
 use crate::domain::trading::types::Candle;
+use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use std::collections::{HashMap, VecDeque};
 
@@ -9,11 +10,11 @@ use std::collections::{HashMap, VecDeque};
 #[derive(Debug, Clone)]
 pub struct OrderFlowImbalance {
     /// Net imbalance value (-1.0 to +1.0)
-    pub value: f64,
+    pub value: Decimal,
     /// Aggressive buy volume
-    pub buy_volume: f64,
+    pub buy_volume: Decimal,
     /// Aggressive sell volume
-    pub sell_volume: f64,
+    pub sell_volume: Decimal,
     /// Timestamp of the measurement
     pub timestamp: i64,
 }
@@ -25,15 +26,15 @@ pub struct OrderFlowImbalance {
 #[derive(Debug, Clone)]
 pub struct CumulativeDelta {
     /// Current cumulative delta value
-    pub value: f64,
+    pub value: Decimal,
     /// Historical delta values for divergence detection
-    pub history: VecDeque<f64>,
+    pub history: VecDeque<Decimal>,
 }
 
 impl CumulativeDelta {
     pub fn new() -> Self {
         Self {
-            value: 0.0,
+            value: Decimal::ZERO,
             history: VecDeque::with_capacity(20),
         }
     }
@@ -51,11 +52,11 @@ impl Default for CumulativeDelta {
 #[derive(Debug, Clone)]
 pub struct VolumeProfile {
     /// Price level (rounded to nearest integer) -> Total volume at that level
-    pub levels: HashMap<i64, f64>,
+    pub levels: HashMap<i64, Decimal>,
     /// High Volume Nodes - prices with significant volume (support/resistance)
-    pub high_volume_nodes: Vec<f64>,
+    pub high_volume_nodes: Vec<Decimal>,
     /// Point of Control - price level with the highest volume
-    pub point_of_control: f64,
+    pub point_of_control: Decimal,
 }
 
 /// Calculate Order Flow Imbalance from recent candles
@@ -73,24 +74,24 @@ pub struct VolumeProfile {
 pub fn calculate_ofi(candles: &VecDeque<Candle>) -> OrderFlowImbalance {
     if candles.is_empty() {
         return OrderFlowImbalance {
-            value: 0.0,
-            buy_volume: 0.0,
-            sell_volume: 0.0,
+            value: Decimal::ZERO,
+            buy_volume: Decimal::ZERO,
+            sell_volume: Decimal::ZERO,
             timestamp: 0,
         };
     }
 
-    let mut buy_volume = 0.0;
-    let mut sell_volume = 0.0;
+    let mut buy_volume = Decimal::ZERO;
+    let mut sell_volume = Decimal::ZERO;
 
     // Analyze recent candles (last 5 for short-term OFI)
     let lookback = candles.len().min(5);
     let start_idx = candles.len().saturating_sub(lookback);
 
     for candle in candles.iter().skip(start_idx) {
-        let close = candle.close.to_f64().unwrap_or(0.0);
-        let open = candle.open.to_f64().unwrap_or(0.0);
-        let volume = candle.volume.to_f64().unwrap_or(0.0);
+        let close = candle.close;
+        let open = candle.open;
+        let volume = candle.volume;
 
         if close > open {
             // Bullish candle - aggressive buying
@@ -100,24 +101,26 @@ pub fn calculate_ofi(candles: &VecDeque<Candle>) -> OrderFlowImbalance {
             sell_volume += volume;
         } else {
             // Doji - split volume
-            buy_volume += volume / 2.0;
-            sell_volume += volume / 2.0;
+            use rust_decimal_macros::dec;
+            buy_volume += volume / dec!(2.0);
+            sell_volume += volume / dec!(2.0);
         }
     }
 
     let total_volume = buy_volume + sell_volume;
-    let ofi_value = if total_volume > 0.0 {
+    let ofi_value = if total_volume > Decimal::ZERO {
         (buy_volume - sell_volume) / total_volume
     } else {
-        0.0
+        Decimal::ZERO
     };
 
     let last_candle = candles
         .back()
         .expect("candles verified non-empty at function start");
 
+    use rust_decimal_macros::dec;
     OrderFlowImbalance {
-        value: ofi_value.clamp(-1.0, 1.0),
+        value: ofi_value.clamp(dec!(-1.0), Decimal::ONE),
         buy_volume,
         sell_volume,
         timestamp: last_candle.timestamp,
@@ -129,7 +132,7 @@ pub fn calculate_ofi(candles: &VecDeque<Candle>) -> OrderFlowImbalance {
 /// # Arguments
 /// * `delta` - Mutable reference to CumulativeDelta state
 /// * `ofi_value` - New OFI value to add to cumulative sum
-pub fn update_cumulative_delta(delta: &mut CumulativeDelta, ofi_value: f64) {
+pub fn update_cumulative_delta(delta: &mut CumulativeDelta, ofi_value: Decimal) {
     delta.value += ofi_value;
     delta.history.push_back(delta.value);
 
@@ -151,35 +154,35 @@ pub fn update_cumulative_delta(delta: &mut CumulativeDelta, ofi_value: f64) {
 /// # Returns
 /// VolumeProfile with levels, HVNs, and point of control
 pub fn build_volume_profile(candles: &VecDeque<Candle>, lookback: usize) -> VolumeProfile {
-    let mut levels: HashMap<i64, f64> = HashMap::new();
+    let mut levels: HashMap<i64, Decimal> = HashMap::new();
 
     let start_idx = candles.len().saturating_sub(lookback);
 
     for candle in candles.iter().skip(start_idx) {
         // Use close price as representative price level
-        let price = candle.close.to_string().parse::<f64>().unwrap_or(0.0);
-        let price_level = price.round() as i64; // Round to nearest integer
+        let price = candle.close;
+        let price_level = price.round_dp(0).to_i64().unwrap_or(0); // Round to nearest integer
         let volume = candle.volume;
 
-        *levels.entry(price_level).or_insert(0.0) += volume.to_f64().unwrap_or(0.0);
+        *levels.entry(price_level).or_insert(Decimal::ZERO) += volume;
     }
 
     // Find point of control (highest volume level)
     let poc = levels
         .iter()
         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(price, _)| *price as f64)
-        .unwrap_or(0.0);
+        .map(|(price, _)| Decimal::from(*price))
+        .unwrap_or(Decimal::ZERO);
 
     // Identify high volume nodes (top 20% of volume levels)
-    let mut volume_vec: Vec<(i64, f64)> = levels.iter().map(|(k, v)| (*k, *v)).collect();
+    let mut volume_vec: Vec<(i64, Decimal)> = levels.iter().map(|(k, v)| (*k, *v)).collect();
     volume_vec.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let hvn_count = (volume_vec.len() as f64 * 0.2).ceil() as usize;
-    let high_volume_nodes: Vec<f64> = volume_vec
+    let high_volume_nodes: Vec<Decimal> = volume_vec
         .iter()
         .take(hvn_count)
-        .map(|(price, _)| *price as f64)
+        .map(|(price, _)| Decimal::from(*price))
         .collect();
 
     VolumeProfile {
@@ -201,8 +204,8 @@ pub fn build_volume_profile(candles: &VecDeque<Candle>, lookback: usize) -> Volu
 /// # Returns
 /// (is_stacked, direction) where direction is 1 for bullish, -1 for bearish
 pub fn detect_stacked_imbalances(
-    ofi_history: &VecDeque<f64>,
-    threshold: f64,
+    ofi_history: &VecDeque<Decimal>,
+    threshold: Decimal,
     min_count: usize,
 ) -> (bool, i8) {
     if ofi_history.len() < min_count {
@@ -210,7 +213,7 @@ pub fn detect_stacked_imbalances(
     }
 
     // Check last N values
-    let recent: Vec<f64> = ofi_history.iter().rev().take(min_count).copied().collect();
+    let recent: Vec<Decimal> = ofi_history.iter().rev().take(min_count).copied().collect();
 
     // Check for bullish stack
     let bullish_stack = recent.iter().all(|&ofi| ofi > threshold);
@@ -231,7 +234,8 @@ pub fn detect_stacked_imbalances(
 mod tests {
     use super::*;
     use rust_decimal::Decimal;
-    use rust_decimal::prelude::FromPrimitive;
+
+    use rust_decimal_macros::dec;
 
     fn create_candle(open: f64, close: f64, volume: f64, timestamp: i64) -> Candle {
         Candle {
@@ -240,7 +244,7 @@ mod tests {
             high: Decimal::from_f64_retain(close.max(open)).unwrap(),
             low: Decimal::from_f64_retain(close.min(open)).unwrap(),
             close: Decimal::from_f64_retain(close).unwrap(),
-            volume: Decimal::from_f64(volume).unwrap(),
+            volume: Decimal::from_f64_retain(volume).unwrap(),
             timestamp,
         }
     }
@@ -256,12 +260,17 @@ mod tests {
         let ofi = calculate_ofi(&candles);
 
         assert!(
-            ofi.value > 0.0,
+            ofi.value > Decimal::ZERO,
             "OFI should be positive for bullish candles"
         );
-        assert_eq!(ofi.value, 1.0, "OFI should be 1.0 for all bullish candles");
-        assert_eq!(ofi.buy_volume, 5000.0);
-        assert_eq!(ofi.sell_volume, 0.0);
+        use rust_decimal_macros::dec;
+        assert_eq!(
+            ofi.value,
+            Decimal::ONE,
+            "OFI should be 1.0 for all bullish candles"
+        );
+        assert_eq!(ofi.buy_volume, dec!(5000.0));
+        assert_eq!(ofi.sell_volume, Decimal::ZERO);
     }
 
     #[test]
@@ -275,15 +284,17 @@ mod tests {
         let ofi = calculate_ofi(&candles);
 
         assert!(
-            ofi.value < 0.0,
+            ofi.value < Decimal::ZERO,
             "OFI should be negative for bearish candles"
         );
+        use rust_decimal_macros::dec;
         assert_eq!(
-            ofi.value, -1.0,
+            ofi.value,
+            dec!(-1.0),
             "OFI should be -1.0 for all bearish candles"
         );
-        assert_eq!(ofi.buy_volume, 0.0);
-        assert_eq!(ofi.sell_volume, 5000.0);
+        assert_eq!(ofi.buy_volume, Decimal::ZERO);
+        assert_eq!(ofi.sell_volume, dec!(5000.0));
     }
 
     #[test]
@@ -299,9 +310,10 @@ mod tests {
         let ofi = calculate_ofi(&candles);
 
         // Net: 3000 buy - 2000 sell = 1000 / 5000 = 0.2
-        assert_eq!(ofi.value, 0.2);
-        assert_eq!(ofi.buy_volume, 3000.0);
-        assert_eq!(ofi.sell_volume, 2000.0);
+        use rust_decimal_macros::dec;
+        assert_eq!(ofi.value, dec!(0.2));
+        assert_eq!(ofi.buy_volume, dec!(3000.0));
+        assert_eq!(ofi.sell_volume, dec!(2000.0));
     }
 
     #[test]
@@ -309,25 +321,26 @@ mod tests {
         let candles = VecDeque::new();
         let ofi = calculate_ofi(&candles);
 
-        assert_eq!(ofi.value, 0.0);
-        assert_eq!(ofi.buy_volume, 0.0);
-        assert_eq!(ofi.sell_volume, 0.0);
+        assert_eq!(ofi.value, Decimal::ZERO);
+        assert_eq!(ofi.buy_volume, Decimal::ZERO);
+        assert_eq!(ofi.sell_volume, Decimal::ZERO);
     }
 
     #[test]
     fn test_cumulative_delta_accumulation() {
         let mut delta = CumulativeDelta::new();
 
-        update_cumulative_delta(&mut delta, 0.5);
-        assert!((delta.value - 0.5).abs() < 1e-10);
+        use rust_decimal_macros::dec;
+        update_cumulative_delta(&mut delta, dec!(0.5));
+        assert!((delta.value - dec!(0.5)).abs() < dec!(1e-10));
         assert_eq!(delta.history.len(), 1);
 
-        update_cumulative_delta(&mut delta, 0.3);
-        assert!((delta.value - 0.8).abs() < 1e-10);
+        update_cumulative_delta(&mut delta, dec!(0.3));
+        assert!((delta.value - dec!(0.8)).abs() < dec!(1e-10));
         assert_eq!(delta.history.len(), 2);
 
-        update_cumulative_delta(&mut delta, -0.2);
-        assert!((delta.value - 0.6).abs() < 1e-10);
+        update_cumulative_delta(&mut delta, dec!(-0.2));
+        assert!((delta.value - dec!(0.6)).abs() < dec!(1e-10));
         assert_eq!(delta.history.len(), 3);
     }
 
@@ -335,14 +348,15 @@ mod tests {
     fn test_cumulative_delta_history_limit() {
         let mut delta = CumulativeDelta::new();
 
+        use rust_decimal_macros::dec;
         // Add 25 values (should keep only last 20)
         for i in 0..25 {
-            update_cumulative_delta(&mut delta, 0.1 * i as f64);
+            update_cumulative_delta(&mut delta, dec!(0.1) * Decimal::from(i));
         }
 
         assert_eq!(delta.history.len(), 20);
         // First value should be cumulative sum from 0 to 5: 0+0.1+0.2+0.3+0.4+0.5 = 1.5
-        assert!((delta.history[0] - 1.5).abs() < 1e-10);
+        assert!((delta.history[0] - dec!(1.5)).abs() < dec!(1e-10));
     }
 
     #[test]
@@ -363,21 +377,23 @@ mod tests {
         let profile = build_volume_profile(&candles, 20);
 
         // Point of control should be at 100 (highest volume)
-        assert_eq!(profile.point_of_control, 100.0);
+        use rust_decimal_macros::dec;
+        assert_eq!(profile.point_of_control, dec!(100.0));
 
         // Should have HVNs
         assert!(!profile.high_volume_nodes.is_empty());
-        assert!(profile.high_volume_nodes.contains(&100.0));
+        assert!(profile.high_volume_nodes.contains(&dec!(100.0)));
     }
 
     #[test]
     fn test_detect_stacked_imbalances_bullish() {
         let mut ofi_history = VecDeque::new();
-        ofi_history.push_back(0.3);
-        ofi_history.push_back(0.4);
-        ofi_history.push_back(0.5);
+        use rust_decimal_macros::dec;
+        ofi_history.push_back(dec!(0.3));
+        ofi_history.push_back(dec!(0.4));
+        ofi_history.push_back(dec!(0.5));
 
-        let (is_stacked, direction) = detect_stacked_imbalances(&ofi_history, 0.2, 3);
+        let (is_stacked, direction) = detect_stacked_imbalances(&ofi_history, dec!(0.2), 3);
 
         assert!(is_stacked);
         assert_eq!(direction, 1);
@@ -386,11 +402,12 @@ mod tests {
     #[test]
     fn test_detect_stacked_imbalances_bearish() {
         let mut ofi_history = VecDeque::new();
-        ofi_history.push_back(-0.3);
-        ofi_history.push_back(-0.4);
-        ofi_history.push_back(-0.5);
+        use rust_decimal_macros::dec;
+        ofi_history.push_back(dec!(-0.3));
+        ofi_history.push_back(dec!(-0.4));
+        ofi_history.push_back(dec!(-0.5));
 
-        let (is_stacked, direction) = detect_stacked_imbalances(&ofi_history, 0.2, 3);
+        let (is_stacked, direction) = detect_stacked_imbalances(&ofi_history, dec!(0.2), 3);
 
         assert!(is_stacked);
         assert_eq!(direction, -1);
@@ -399,11 +416,12 @@ mod tests {
     #[test]
     fn test_detect_stacked_imbalances_no_stack() {
         let mut ofi_history = VecDeque::new();
-        ofi_history.push_back(0.3);
-        ofi_history.push_back(-0.2);
-        ofi_history.push_back(0.4);
+        use rust_decimal_macros::dec;
+        ofi_history.push_back(dec!(0.3));
+        ofi_history.push_back(dec!(-0.2));
+        ofi_history.push_back(dec!(0.4));
 
-        let (is_stacked, _direction) = detect_stacked_imbalances(&ofi_history, 0.2, 3);
+        let (is_stacked, _direction) = detect_stacked_imbalances(&ofi_history, dec!(0.2), 3);
 
         assert!(!is_stacked);
     }
@@ -411,10 +429,10 @@ mod tests {
     #[test]
     fn test_detect_stacked_imbalances_insufficient_data() {
         let mut ofi_history = VecDeque::new();
-        ofi_history.push_back(0.3);
-        ofi_history.push_back(0.4);
+        ofi_history.push_back(dec!(0.3));
+        ofi_history.push_back(dec!(0.4));
 
-        let (is_stacked, _direction) = detect_stacked_imbalances(&ofi_history, 0.2, 3);
+        let (is_stacked, _direction) = detect_stacked_imbalances(&ofi_history, dec!(0.2), 3);
 
         assert!(!is_stacked);
     }

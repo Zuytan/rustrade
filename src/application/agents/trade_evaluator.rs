@@ -67,7 +67,7 @@ impl TradeEvaluator {
             .evaluate(input.symbol, input.price, input.regime)
             .await;
 
-        let risk_ratio = if expectancy.reward_risk_ratio > 0.0 {
+        let risk_ratio = if expectancy.reward_risk_ratio > Decimal::ZERO {
             expectancy.reward_risk_ratio
         } else {
             context.cached_reward_risk_ratio
@@ -123,17 +123,16 @@ impl TradeEvaluator {
         proposal.order_type = order_type;
 
         // 4. Cost-Aware Trading Filter
-        let atr = context.last_features.atr.unwrap_or(0.0);
+        let atr = context.last_features.atr.unwrap_or(Decimal::ZERO);
 
         info!(
-            "Analyst [{}]: Calculating Profit Expectancy - ATR=${:.4}, Multiplier={:.2}, Quantity={}",
+            "Analyst [{}]: Calculating Profit Expectancy - ATR={}, Multiplier={}, Quantity={}",
             input.symbol, atr, context.config.profit_target_multiplier, proposal.quantity
         );
 
         // Use fresh expectancy value if available
-        let expected_profit = if expectancy.expected_value > 0.0 {
-            Decimal::from_f64_retain(expectancy.expected_value).unwrap_or(Decimal::ZERO)
-                * proposal.quantity
+        let expected_profit = if expectancy.expected_value > Decimal::ZERO {
+            expectancy.expected_value * proposal.quantity
         } else {
             self.trade_filter.calculate_expected_profit(
                 &proposal,

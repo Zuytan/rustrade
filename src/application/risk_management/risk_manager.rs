@@ -421,11 +421,12 @@ impl RiskManager {
 
                 if range > 0.0 {
                     let mut vm = self.volatility_manager.write().await;
-                    vm.update(range);
+                    let range_dec = Decimal::from_f64_retain(range).unwrap_or(Decimal::ZERO);
+                    vm.update(range_dec);
                     debug!(
-                        "RiskManager: Volatility updated for {}. Latest range: {:.2}, Avg: {:.2}",
+                        "RiskManager: Volatility updated for {}. Latest range: {}, Avg: {}",
                         benchmark,
-                        range,
+                        range_dec,
                         vm.get_average_volatility()
                     );
                 }

@@ -1,5 +1,6 @@
 use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStrategy};
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 /// Momentum/Divergence Strategy
 ///
@@ -9,11 +10,11 @@ use rust_decimal::prelude::ToPrimitive;
 #[derive(Debug, Clone)]
 pub struct MomentumDivergenceStrategy {
     pub divergence_lookback: usize, // Number of candles to look back for divergence
-    pub min_divergence_pct: f64,    // Minimum price movement to consider (e.g., 0.02 = 2%)
+    pub min_divergence_pct: Decimal, // Minimum price movement to consider (e.g., 0.02 = 2%)
 }
 
 impl MomentumDivergenceStrategy {
-    pub fn new(divergence_lookback: usize, min_divergence_pct: f64) -> Self {
+    pub fn new(divergence_lookback: usize, min_divergence_pct: Decimal) -> Self {
         Self {
             divergence_lookback,
             min_divergence_pct,
@@ -32,21 +33,19 @@ impl MomentumDivergenceStrategy {
         }
 
         // Align RSI history with candles
-        // RSI history might be shorter if RSI wasn't available for early candles
         let rsi_offset = ctx.candles.len().saturating_sub(ctx.rsi_history.len());
-
         let start_idx = ctx.candles.len().saturating_sub(self.divergence_lookback);
 
         // Find the lowest low and its position in first half
         let mid_point = start_idx + (ctx.candles.len() - start_idx) / 2;
 
-        let mut first_low = f64::MAX;
+        let mut first_low = Decimal::MAX;
         let mut first_low_idx = 0;
-        let mut second_low = f64::MAX;
+        let mut second_low = Decimal::MAX;
 
-        let mut first_high = f64::MIN;
+        let mut first_high = Decimal::MIN;
         let mut first_high_idx = 0;
-        let mut second_high = f64::MIN;
+        let mut second_high = Decimal::MIN;
 
         // Analyze first half for initial extreme
         for (i, candle) in ctx
@@ -56,8 +55,8 @@ impl MomentumDivergenceStrategy {
             .skip(start_idx)
             .take(mid_point - start_idx)
         {
-            let low = candle.low.to_f64().unwrap_or(f64::MAX);
-            let high = candle.high.to_f64().unwrap_or(f64::MIN);
+            let low = candle.low;
+            let high = candle.high;
 
             if low < first_low {
                 first_low = low;
@@ -71,8 +70,8 @@ impl MomentumDivergenceStrategy {
 
         // Analyze second half for second extreme (current extreme)
         for candle in ctx.candles.iter().skip(mid_point) {
-            let low = candle.low.to_f64().unwrap_or(f64::MAX);
-            let high = candle.high.to_f64().unwrap_or(f64::MIN);
+            let low = candle.low;
+            let high = candle.high;
 
             if low < second_low {
                 second_low = low;
@@ -85,13 +84,8 @@ impl MomentumDivergenceStrategy {
         // Current RSI represents the "end" state
         let current_rsi = ctx.rsi;
 
-        // Get past RSI at the extreme point
-        // Check if we have RSI data for that index
-        // Index in rsi_history = candle_index - rsi_offset
-        // If candle_index < rsi_offset, we don't have RSI for that candle
-
         // Helper to safely get RSI
-        let get_rsi_at = |idx: usize| -> Option<f64> {
+        let get_rsi_at = |idx: usize| -> Option<Decimal> {
             if idx >= rsi_offset {
                 ctx.rsi_history.get(idx - rsi_offset).copied()
             } else {
@@ -100,11 +94,11 @@ impl MomentumDivergenceStrategy {
         };
 
         // Check for bullish divergence: lower low in price, higher low in RSI
-        let price_lower_low = second_low < first_low * (1.0 - self.min_divergence_pct);
+        let price_lower_low = second_low < first_low * (Decimal::ONE - self.min_divergence_pct);
 
         if !ctx.has_position
             && price_lower_low
-            && current_rsi < 40.0
+            && current_rsi < dec!(40.0)
             && let Some(past_rsi) = get_rsi_at(first_low_idx)
             && current_rsi > past_rsi
         {
@@ -116,11 +110,11 @@ impl MomentumDivergenceStrategy {
         }
 
         // Check for bearish divergence: higher high in price, lower high in RSI
-        let price_higher_high = second_high > first_high * (1.0 + self.min_divergence_pct);
+        let price_higher_high = second_high > first_high * (Decimal::ONE + self.min_divergence_pct);
 
         if ctx.has_position
             && price_higher_high
-            && current_rsi > 60.0
+            && current_rsi > dec!(60.0)
             && let Some(past_rsi) = get_rsi_at(first_high_idx)
             && current_rsi < past_rsi
         {
@@ -138,22 +132,23 @@ impl MomentumDivergenceStrategy {
 #[derive(Debug)]
 enum DivergenceType {
     Bullish {
-        price_low1: f64,
-        price_low2: f64,
-        rsi_now: f64,
+        price_low1: Decimal,
+        price_low2: Decimal,
+        rsi_now: Decimal,
     },
     Bearish {
-        price_high1: f64,
-        price_high2: f64,
-        rsi_now: f64,
+        price_high1: Decimal,
+        price_high2: Decimal,
+        rsi_now: Decimal,
     },
 }
 
 impl Default for MomentumDivergenceStrategy {
     fn default() -> Self {
+        use rust_decimal_macros::dec;
         Self {
             divergence_lookback: 14,
-            min_divergence_pct: 0.02, // 2% price movement
+            min_divergence_pct: dec!(0.02), // 2% price movement
         }
     }
 }
@@ -163,18 +158,28 @@ impl TradingStrategy for MomentumDivergenceStrategy {
         let divergence = self.find_divergence(ctx)?;
 
         match divergence {
-            DivergenceType::Bullish { price_low1, price_low2, rsi_now } => {
-                Some(Signal::buy(format!(
-                    "Momentum: Bullish Divergence - Price LL ({:.2} → {:.2}) but RSI rising ({:.1})",
+            DivergenceType::Bullish {
+                price_low1,
+                price_low2,
+                rsi_now,
+            } => Some(
+                Signal::buy(format!(
+                    "Momentum: Bullish Divergence - Price LL ({} → {}) but RSI rising ({})",
                     price_low1, price_low2, rsi_now
-                )).with_confidence(0.75))
-            }
-            DivergenceType::Bearish { price_high1, price_high2, rsi_now } => {
-                Some(Signal::sell(format!(
-                    "Momentum: Bearish Divergence - Price HH ({:.2} → {:.2}) but RSI falling ({:.1})",
+                ))
+                .with_confidence(0.75),
+            ),
+            DivergenceType::Bearish {
+                price_high1,
+                price_high2,
+                rsi_now,
+            } => Some(
+                Signal::sell(format!(
+                    "Momentum: Bearish Divergence - Price HH ({} → {}) but RSI falling ({})",
                     price_high1, price_high2, rsi_now
-                )).with_confidence(0.75))
-            }
+                ))
+                .with_confidence(0.75),
+            ),
         }
     }
 
@@ -208,33 +213,35 @@ mod tests {
         price: f64,
         rsi: f64,
         candles: VecDeque<Candle>,
-        rsi_history: VecDeque<f64>,
+        rsi_history: VecDeque<Decimal>,
         has_position: bool,
     ) -> AnalysisContext {
+        let d_price = Decimal::from_f64(price).unwrap();
+        let d_rsi = Decimal::from_f64(rsi).unwrap();
         AnalysisContext {
             symbol: "TEST".to_string(),
-            current_price: dec!(100.0),
+            current_price: d_price,
             price_f64: price,
-            fast_sma: 0.0,
-            slow_sma: 0.0,
-            trend_sma: 0.0,
-            rsi,
-            macd_value: 0.0,
-            macd_signal: 0.0,
-            macd_histogram: 0.0,
+            fast_sma: Decimal::ZERO,
+            slow_sma: Decimal::ZERO,
+            trend_sma: Decimal::ZERO,
+            rsi: d_rsi,
+            macd_value: Decimal::ZERO,
+            macd_signal: Decimal::ZERO,
+            macd_histogram: Decimal::ZERO,
             last_macd_histogram: None,
-            atr: 1.0,
-            bb_lower: 0.0,
-            bb_middle: 0.0,
-            bb_upper: 0.0,
-            adx: 0.0,
+            atr: Decimal::ONE,
+            bb_lower: Decimal::ZERO,
+            bb_middle: Decimal::ZERO,
+            bb_upper: Decimal::ZERO,
+            adx: Decimal::ZERO,
             has_position,
             timestamp: 0,
             candles,
             rsi_history,
             // OFI fields (defaults for tests)
-            ofi_value: 0.0,
-            cumulative_delta: 0.0,
+            ofi_value: Decimal::ZERO,
+            cumulative_delta: Decimal::ZERO,
             volume_profile: None,
             ofi_history: VecDeque::new(),
             hurst_exponent: None,
@@ -261,12 +268,9 @@ mod tests {
         }
 
         // Create RSI history showing Bullish Divergence
-        // Price made Lower Low (105 -> 90), but RSI needs to make Higher Low (e.g. 20 -> 30)
         let mut rsi_history = VecDeque::new();
         for i in 0..15 {
-            // RSI starting low and rising slightly despite price drop
-            // This is a crude simulation but sufficient for the test which looks at specific points
-            rsi_history.push_back(20.0 + i as f64);
+            rsi_history.push_back(dec!(20.0) + Decimal::from(i));
         }
 
         let ctx = create_context(80.0, 25.0, candles, rsi_history, false);
@@ -289,10 +293,9 @@ mod tests {
         }
 
         // Create RSI history showing Bearish Divergence
-        // Price made Higher High (100 -> 115), but RSI needs to make Lower High (e.g. 80 -> 70)
         let mut rsi_history = VecDeque::new();
         for i in 0..15 {
-            rsi_history.push_back(80.0 - i as f64);
+            rsi_history.push_back(dec!(80.0) - Decimal::from(i));
         }
 
         let ctx = create_context(120.0, 75.0, candles, rsi_history, true);
@@ -302,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_no_divergence_insufficient_data() {
-        let strategy = MomentumDivergenceStrategy::new(20, 0.02);
+        let strategy = MomentumDivergenceStrategy::new(20, dec!(0.02));
 
         let mut candles = VecDeque::new();
         // Only 5 candles, but strategy needs 20 lookback
@@ -321,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_no_divergence_normal_trend() {
-        let strategy = MomentumDivergenceStrategy::new(10, 0.02);
+        let strategy = MomentumDivergenceStrategy::new(10, dec!(0.02));
 
         let mut candles = VecDeque::new();
         // Normal uptrend: both price and momentum rising
@@ -336,7 +339,7 @@ mod tests {
         // RSI neutral, price trending
         let mut rsi_history = VecDeque::new();
         for _ in 0..10 {
-            rsi_history.push_back(55.0);
+            rsi_history.push_back(dec!(55.0));
         }
         let ctx = create_context(108.0, 55.0, candles, rsi_history, false);
 

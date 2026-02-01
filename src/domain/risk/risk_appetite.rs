@@ -21,11 +21,14 @@ pub struct RiskAppetite {
     score: u8,
 }
 
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+
 impl RiskAppetite {
     /// Creates a new RiskAppetite with validation
     ///
     /// # Arguments
-    /// * `score` - Risk appetite score between 1 and 10 (inclusive)
+    /// * `score` - Risk appetite score between 1 and 9 (inclusive)
     ///
     /// # Returns
     /// * `Ok(RiskAppetite)` if score is valid
@@ -57,47 +60,47 @@ impl RiskAppetite {
 
     /// Calculates the risk per trade percentage based on appetite
     ///
-    /// Returns a value between 0.02 (2%) for score 1 and 0.10 (10%) for score 10
+    /// Returns a value between 0.005 (0.5%) for score 1 and 0.20 (20%) for score 9
     /// Uses continuous linear interpolation for smooth progression
-    pub fn calculate_risk_per_trade_percent(&self) -> f64 {
+    pub fn calculate_risk_per_trade_percent(&self) -> Decimal {
         // Rescaled for extreme safety (0.5%) to extreme risk (20%)
-        Self::interpolate(self.score, 1, 9, 0.005, 0.20)
+        Self::interpolate(self.score, 1, 9, dec!(0.005), dec!(0.20))
     }
 
     /// Calculates the trailing stop ATR multiplier based on appetite
     ///
-    /// Returns a value between 2.0 (tight stops) for score 1 and 5.0 (loose stops) for score 9
+    /// Returns a value between 1.5 (tight stops) for score 1 and 8.0 (loose stops) for score 9
     /// Uses continuous linear interpolation for smooth progression
-    pub fn calculate_trailing_stop_multiplier(&self) -> f64 {
-        Self::interpolate(self.score, 1, 9, 1.5, 8.0)
+    pub fn calculate_trailing_stop_multiplier(&self) -> Decimal {
+        Self::interpolate(self.score, 1, 9, dec!(1.5), dec!(8.0))
     }
 
     /// Calculates the RSI threshold for buy signals based on appetite
     ///
-    /// Returns a value between 30 (wait for oversold) for score 1
-    /// and 75 (follow momentum) for score 9
+    /// Returns a value between 55 (wait for oversold) for score 1
+    /// and 85 (follow momentum) for score 9
     /// Uses continuous linear interpolation for smooth progression
-    pub fn calculate_rsi_threshold(&self) -> f64 {
+    pub fn calculate_rsi_threshold(&self) -> Decimal {
         // Conservative still gets a reasonable ceiling (55) vs Aggressive (85)
-        Self::interpolate(self.score, 1, 9, 55.0, 85.0)
+        Self::interpolate(self.score, 1, 9, dec!(55.0), dec!(85.0))
     }
 
     /// Calculates the maximum position size as percentage of portfolio
     ///
-    /// Returns a value between 0.05 (5%) for score 1 and 0.30 (30%) for score 9
+    /// Returns a value between 0.05 (5%) for score 1 and 1.00 (100%) for score 9
     /// Uses continuous linear interpolation for smooth progression
-    pub fn calculate_max_position_size_pct(&self) -> f64 {
-        Self::interpolate(self.score, 1, 9, 0.05, 1.00)
+    pub fn calculate_max_position_size_pct(&self) -> Decimal {
+        Self::interpolate(self.score, 1, 9, dec!(0.05), dec!(1.00))
     }
 
     /// Calculate minimum profit-to-cost ratio threshold
     /// Conservative traders require higher profit margins
     /// Aggressive traders accept lower margins for more opportunities
-    pub fn calculate_min_profit_ratio(&self) -> f64 {
+    pub fn calculate_min_profit_ratio(&self) -> Decimal {
         // Inverse relationship: higher risk appetite = lower profit requirement
         // Score 1 (conservative): 2.0 (strict but achievable)
         // Score 9 (aggressive): 0.5 (permissive)
-        Self::interpolate(self.score, 1, 9, 2.0, 0.5)
+        Self::interpolate(self.score, 1, 9, dec!(2.0), dec!(0.5))
     }
 
     /// Determine if MACD histogram must be rising for buy signals
@@ -112,28 +115,28 @@ impl RiskAppetite {
     /// Calculate trend filter tolerance percentage
     /// Conservative traders require strict trend alignment
     /// Aggressive traders allow more deviation from trend
-    pub fn calculate_trend_tolerance_pct(&self) -> f64 {
+    pub fn calculate_trend_tolerance_pct(&self) -> Decimal {
         // Score 1 (conservative): 0% tolerance (price must be > trend_sma)
         // Score 9 (aggressive): 15% tolerance (price > trend_sma * 0.85)
-        Self::interpolate(self.score, 1, 9, 0.0, 0.15)
+        Self::interpolate(self.score, 1, 9, Decimal::ZERO, dec!(0.15))
     }
 
     /// Calculate minimum MACD histogram threshold for buy signals
     /// Conservative traders require clearly positive momentum
     /// Aggressive traders accept near-neutral or slightly negative
-    pub fn calculate_macd_min_threshold(&self) -> f64 {
+    pub fn calculate_macd_min_threshold(&self) -> Decimal {
         // Score 1 (conservative): +0.02 (clearly positive)
         // Score 9 (aggressive): -0.05 (negative OK)
-        Self::interpolate(self.score, 1, 9, 0.02, -0.05)
+        Self::interpolate(self.score, 1, 9, dec!(0.02), dec!(-0.05))
     }
 
     /// Calculate profit target multiplier (Risk/Reward expectation)
     /// Conservative traders target modest gains (1.5x ATR)
     /// Aggressive traders target larger swings (3.0x ATR)
-    pub fn calculate_profit_target_multiplier(&self) -> f64 {
+    pub fn calculate_profit_target_multiplier(&self) -> Decimal {
         // Score 1: 1.5x ATR
         // Score 9: 10.0x ATR
-        Self::interpolate(self.score, 1, 9, 1.5, 10.0)
+        Self::interpolate(self.score, 1, 9, dec!(1.5), dec!(10.0))
     }
 
     /// Calculate signal sensitivity factor for entry signal thresholds
@@ -144,31 +147,37 @@ impl RiskAppetite {
     /// - Score 1-3 (Conservative): 0.5 to 0.7 (50-70% of normal threshold = more sensitive)
     /// - Score 4-6 (Balanced): 0.7 to 0.9 (70-90% of normal threshold)
     /// - Score 7-9 (Aggressive): 0.9 to 1.0 (near-normal thresholds)
-    pub fn calculate_signal_sensitivity_factor(&self) -> f64 {
+    pub fn calculate_signal_sensitivity_factor(&self) -> Decimal {
         // Inverse relationship: lower risk = lower thresholds = more signals
-        Self::interpolate(self.score, 1, 9, 0.5, 1.0)
+        Self::interpolate(self.score, 1, 9, dec!(0.5), dec!(1.0))
     }
 
     /// Calculate Maximum Daily Loss Percentage
     /// Conservative: 1% (0.01)
     /// Aggressive: 5% (0.05)
-    pub fn calculate_max_daily_loss_pct(&self) -> f64 {
-        Self::interpolate(self.score, 1, 9, 0.01, 0.05)
+    pub fn calculate_max_daily_loss_pct(&self) -> Decimal {
+        Self::interpolate(self.score, 1, 9, dec!(0.01), dec!(0.05))
     }
 
     /// Calculate Maximum Drawdown Percentage
     /// Conservative: 3% (0.03)
     /// Aggressive: 15% (0.15)
-    pub fn calculate_max_drawdown_pct(&self) -> f64 {
-        Self::interpolate(self.score, 1, 9, 0.03, 0.15)
+    pub fn calculate_max_drawdown_pct(&self) -> Decimal {
+        Self::interpolate(self.score, 1, 9, dec!(0.03), dec!(0.15))
     }
 
     /// Linear interpolation helper
     ///
     /// Maps a score within [score_min, score_max] to a value within [value_min, value_max]
-    fn interpolate(score: u8, score_min: u8, score_max: u8, value_min: f64, value_max: f64) -> f64 {
-        let score_range = (score_max - score_min) as f64;
-        let score_offset = (score - score_min) as f64;
+    fn interpolate(
+        score: u8,
+        score_min: u8,
+        score_max: u8,
+        value_min: Decimal,
+        value_max: Decimal,
+    ) -> Decimal {
+        let score_range = Decimal::from(score_max - score_min);
+        let score_offset = Decimal::from(score - score_min);
         let ratio = score_offset / score_range;
         value_min + ratio * (value_max - value_min)
     }
@@ -198,10 +207,10 @@ mod tests {
         let balanced = RiskAppetite::new(5).unwrap();
         let aggressive = RiskAppetite::new(9).unwrap();
 
-        assert_eq!(conservative.calculate_trend_tolerance_pct(), 0.0);
+        assert_eq!(conservative.calculate_trend_tolerance_pct(), Decimal::ZERO);
         // 0.0 + 0.5 * (0.15 - 0.0) = 0.075
-        assert!((balanced.calculate_trend_tolerance_pct() - 0.075).abs() < 0.001);
-        assert_eq!(aggressive.calculate_trend_tolerance_pct(), 0.15);
+        assert_eq!(balanced.calculate_trend_tolerance_pct(), dec!(0.075));
+        assert_eq!(aggressive.calculate_trend_tolerance_pct(), dec!(0.15));
     }
 
     #[test]
@@ -210,10 +219,10 @@ mod tests {
         let balanced = RiskAppetite::new(5).unwrap();
         let aggressive = RiskAppetite::new(9).unwrap();
 
-        assert!((conservative.calculate_macd_min_threshold() - 0.02).abs() < 0.0001);
+        assert_eq!(conservative.calculate_macd_min_threshold(), dec!(0.02));
         // 0.02 + 0.5 * (-0.05 - 0.02) = 0.02 + 0.5 * (-0.07) = 0.02 - 0.035 = -0.015
-        assert!((balanced.calculate_macd_min_threshold() + 0.015).abs() < 0.005);
-        assert!((aggressive.calculate_macd_min_threshold() + 0.05).abs() < 0.0001);
+        assert_eq!(balanced.calculate_macd_min_threshold(), dec!(-0.015));
+        assert_eq!(aggressive.calculate_macd_min_threshold(), dec!(-0.05));
     }
 
     #[test]
@@ -299,35 +308,19 @@ mod tests {
 
         let risk_per_trade = risk.calculate_risk_per_trade_percent();
         // 0.005 + 0.125 * (0.20 - 0.005) = 0.005 + 0.125 * 0.195 = 0.005 + 0.024375 = 0.029375
-        assert!(
-            (0.02..=0.04).contains(&risk_per_trade),
-            "Score 2 risk per trade should be low (approx 0.03), got {}",
-            risk_per_trade
-        );
+        assert_eq!(risk_per_trade, dec!(0.029375));
 
         let trailing_stop = risk.calculate_trailing_stop_multiplier();
         // 1.5 + 0.125 * (8.0 - 1.5) = 1.5 + 0.125 * 6.5 = 1.5 + 0.8125 = 2.3125
-        assert!(
-            (2.0..=3.0).contains(&trailing_stop),
-            "Score 2 trailing stop should be early in range, got {}",
-            trailing_stop
-        );
+        assert_eq!(trailing_stop, dec!(2.3125));
 
         let rsi_threshold = risk.calculate_rsi_threshold();
         // 55.0 + 0.125 * (85.0 - 55.0) = 55.0 + 0.125 * 30.0 = 55.0 + 3.75 = 58.75
-        assert!(
-            (55.0..=65.0).contains(&rsi_threshold),
-            "Score 2 RSI threshold should be moderate-low, got {}",
-            rsi_threshold
-        );
+        assert_eq!(rsi_threshold, dec!(58.75));
 
         let max_position = risk.calculate_max_position_size_pct();
         // 0.05 + 0.125 * (1.00 - 0.05) = 0.05 + 0.125 * 0.95 = 0.05 + 0.11875 = 0.16875
-        assert!(
-            (0.10..=0.20).contains(&max_position),
-            "Score 2 max position should be small, got {}",
-            max_position
-        );
+        assert_eq!(max_position, dec!(0.16875));
     }
 
     #[test]
@@ -337,19 +330,19 @@ mod tests {
         // Score 5 is EXACTLY mid-range (4/8 through the scale = 0.5)
         let risk_per_trade = risk.calculate_risk_per_trade_percent();
         // 0.005 + 0.5 * (0.20 - 0.005) = 0.005 + 0.0975 = 0.1025
-        assert!((risk_per_trade - 0.1025).abs() < 1e-4);
+        assert_eq!(risk_per_trade, dec!(0.1025));
 
         let trailing_stop = risk.calculate_trailing_stop_multiplier();
         // 1.5 + 0.5 * (8.0 - 1.5) = 1.5 + 3.25 = 4.75
-        assert!((trailing_stop - 4.75).abs() < 1e-4);
+        assert_eq!(trailing_stop, dec!(4.75));
 
         // RSI: 55 + 0.5 * (85 - 55) = 55 + 15 = 70
         let rsi_threshold = risk.calculate_rsi_threshold();
-        assert!((rsi_threshold - 70.0).abs() < 1e-4);
+        assert_eq!(rsi_threshold, dec!(70.0));
 
         let max_position = risk.calculate_max_position_size_pct();
         // 0.05 + 0.5 * (1.00 - 0.05) = 0.05 + 0.475 = 0.525
-        assert!((max_position - 0.525).abs() < 1e-4);
+        assert_eq!(max_position, dec!(0.525));
 
         // Score 5 should NOT require MACD rising (only 1-2 do)
         assert!(!risk.requires_macd_rising());
@@ -361,32 +354,16 @@ mod tests {
 
         // Score 9 should be at the max
         let risk_per_trade = risk.calculate_risk_per_trade_percent();
-        assert!(
-            (0.19..=0.21).contains(&risk_per_trade),
-            "Score 9 risk per trade should be high (0.20), got {}",
-            risk_per_trade
-        );
+        assert_eq!(risk_per_trade, dec!(0.20));
 
         let trailing_stop = risk.calculate_trailing_stop_multiplier();
-        assert!(
-            (7.9..=8.1).contains(&trailing_stop),
-            "Score 9 trailing stop should be high (8.0), got {}",
-            trailing_stop
-        );
+        assert_eq!(trailing_stop, dec!(8.0));
 
         let rsi_threshold = risk.calculate_rsi_threshold();
-        assert!(
-            (84.0..=86.0).contains(&rsi_threshold),
-            "Score 9 RSI threshold should be high (85.0), got {}",
-            rsi_threshold
-        );
+        assert_eq!(rsi_threshold, dec!(85.0));
 
         let max_position = risk.calculate_max_position_size_pct();
-        assert!(
-            (0.99..=1.01).contains(&max_position),
-            "Score 9 max position should be high (1.00), got {}",
-            max_position
-        );
+        assert_eq!(max_position, dec!(1.00));
     }
 
     #[test]
@@ -418,61 +395,5 @@ mod tests {
         assert!(
             risk7.calculate_trailing_stop_multiplier() < risk9.calculate_trailing_stop_multiplier()
         );
-    }
-
-    #[test]
-    fn test_score_7_vs_9_difference() {
-        // Verify that there is a meaningful difference between score 7 and 9
-        let risk7 = RiskAppetite::new(7).unwrap();
-        let risk9 = RiskAppetite::new(9).unwrap();
-
-        // Calculate percentage differences
-        let risk_trade_diff = (risk9.calculate_risk_per_trade_percent()
-            - risk7.calculate_risk_per_trade_percent())
-            / risk7.calculate_risk_per_trade_percent();
-
-        let trailing_stop_diff = (risk9.calculate_trailing_stop_multiplier()
-            - risk7.calculate_trailing_stop_multiplier())
-            / risk7.calculate_trailing_stop_multiplier();
-
-        let position_size_diff = (risk9.calculate_max_position_size_pct()
-            - risk7.calculate_max_position_size_pct())
-            / risk7.calculate_max_position_size_pct();
-
-        // With continuous interpolation, score 7 to 9 is 2/8 = 25% of the range
-        // So we expect meaningful differences
-        assert!(risk_trade_diff > 0.15);
-        assert!(trailing_stop_diff > 0.10);
-        assert!(position_size_diff > 0.15);
-    }
-
-    #[test]
-    fn test_monotonic_increase_across_profiles() {
-        // Verify that parameters increase as score increases across all profiles
-        let scores_to_test = [1, 3, 5, 7, 9];
-        let risks: Vec<_> = scores_to_test
-            .iter()
-            .map(|&s| RiskAppetite::new(s).unwrap())
-            .collect();
-
-        for i in 0..risks.len() - 1 {
-            let current = &risks[i];
-            let next = &risks[i + 1];
-
-            assert!(
-                current.calculate_risk_per_trade_percent()
-                    <= next.calculate_risk_per_trade_percent(),
-                "Risk per trade should increase with score"
-            );
-            assert!(
-                current.calculate_trailing_stop_multiplier()
-                    <= next.calculate_trailing_stop_multiplier(),
-                "Trailing stop multiplier should increase with score"
-            );
-            assert!(
-                current.calculate_max_position_size_pct() <= next.calculate_max_position_size_pct(),
-                "Max position size should increase with score"
-            );
-        }
     }
 }

@@ -130,7 +130,7 @@ async fn test_max_daily_loss_prevents_trading() {
     let (_, dummy_cmd_rx) = mpsc::channel(1);
 
     let risk_config = RiskConfig {
-        max_daily_loss_pct: 0.05,
+        max_daily_loss_pct: dec!(0.05),
         valuation_interval_seconds: 1,
         ..RiskConfig::default()
     };
@@ -213,7 +213,7 @@ async fn test_circuit_breaker_on_drawdown() {
     let (_, dummy_cmd_rx) = mpsc::channel(10);
 
     let risk_config = RiskConfig {
-        max_drawdown_pct: 0.15,
+        max_drawdown_pct: dec!(0.15),
         valuation_interval_seconds: 1,
         ..RiskConfig::default()
     };

@@ -9,7 +9,6 @@ use crate::infrastructure::alpaca::AlpacaMarketDataService;
 use crate::infrastructure::mock::MockExecutionService;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -127,8 +126,8 @@ impl BenchmarkEngine {
         let portfolio_lock = Arc::new(RwLock::new(portfolio));
 
         // Use standard benchmark costs
-        let slippage = Decimal::from_f64(0.001).expect("0.001 is a valid f64 for Decimal");
-        let commission = Decimal::from_f64(0.001).expect("0.001 is a valid f64 for Decimal");
+        let slippage = Decimal::from_f64_retain(0.001).expect("0.001 is a valid f64 for Decimal");
+        let commission = Decimal::from_f64_retain(0.001).expect("0.001 is a valid f64 for Decimal");
         let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
 
         // Check for simulation mode (Step 2: High-Fidelity Simulation)

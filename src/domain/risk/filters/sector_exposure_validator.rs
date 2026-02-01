@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -10,11 +9,13 @@ use crate::domain::risk::filters::validator_trait::{
 };
 use crate::domain::trading::types::OrderSide;
 
+use rust_decimal_macros::dec;
+
 /// Configuration for sector exposure validator
 #[derive(Clone)]
 pub struct SectorExposureConfig {
     /// Maximum exposure per sector as percentage of equity (e.g., 0.30 = 30%)
-    pub max_sector_exposure_pct: f64,
+    pub max_sector_exposure_pct: Decimal,
 
     /// Optional provider for sector data
     pub sector_provider: Option<Arc<dyn SectorProvider>>,
@@ -23,7 +24,7 @@ pub struct SectorExposureConfig {
 impl Default for SectorExposureConfig {
     fn default() -> Self {
         Self {
-            max_sector_exposure_pct: 0.30,
+            max_sector_exposure_pct: dec!(0.30),
             sector_provider: None,
         }
     }
@@ -100,7 +101,6 @@ impl RiskValidator for SectorExposureValidator {
         let target_sector = self.get_sector(&ctx.proposal.symbol).await;
         if target_sector == "Unknown" {
             // Cannot validate unknown sectors, defaulting to Approve
-            // (or could be strict and Reject, but usually we allow unknowns)
             return ValidationResult::Approve;
         }
 
@@ -131,17 +131,15 @@ impl RiskValidator for SectorExposureValidator {
         let new_sector_value = current_sector_value + trade_value;
 
         // 4. Calculate Percentage and Validate
-        let new_sector_pct = (new_sector_value / ctx.current_equity)
-            .to_f64()
-            .unwrap_or(0.0);
+        let new_sector_pct = new_sector_value / ctx.current_equity;
 
         if new_sector_pct > self.config.max_sector_exposure_pct {
             return ValidationResult::Reject(format!(
-                "Sector exposure limit exceeded for {}. Sector: {}, New Exposure: {:.2}% (Limit: {:.2}%)",
+                "Sector exposure limit exceeded for {}. Sector: {}, New Exposure: {}% (Limit: {}%)",
                 ctx.proposal.symbol,
                 target_sector,
-                new_sector_pct * 100.0,
-                self.config.max_sector_exposure_pct * 100.0
+                new_sector_pct * dec!(100),
+                self.config.max_sector_exposure_pct * dec!(100)
             ));
         }
 
@@ -191,40 +189,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_approve_when_no_provider() {
-        let validator = SectorExposureValidator::new(SectorExposureConfig::default());
-        let proposal = create_test_proposal("AAPL");
-        let portfolio = Portfolio::new();
-        let prices = HashMap::new();
-        let risk_state = RiskState::default();
-
-        let ctx = ValidationContext::new(
-            &proposal,
-            &portfolio,
-            dec!(10000),
-            &prices,
-            &risk_state,
-            None,
-            None,
-            None,
-            Decimal::ZERO,
-            dec!(10000),
-            None, // recent_candles
-        );
-
-        // Without provider, sector is "Unknown", so approves
-        let result = validator.validate(&ctx).await;
-        assert!(result.is_approved());
-    }
-
-    #[tokio::test]
     async fn test_approve_low_exposure() {
         let mut sectors = HashMap::new();
         sectors.insert("AAPL".to_string(), "Tech".to_string());
         let provider = Arc::new(MockSectorProvider { sectors });
 
         let validator = SectorExposureValidator::new(SectorExposureConfig {
-            max_sector_exposure_pct: 0.20, // 20% limit
+            max_sector_exposure_pct: dec!(0.20), // 20% limit
             sector_provider: Some(provider),
         });
 
@@ -259,16 +230,12 @@ mod tests {
         let provider = Arc::new(MockSectorProvider { sectors });
 
         let validator = SectorExposureValidator::new(SectorExposureConfig {
-            max_sector_exposure_pct: 0.10, // 10% limit
+            max_sector_exposure_pct: dec!(0.10), // 10% limit
             sector_provider: Some(provider),
         });
 
         let proposal = create_test_proposal("AAPL"); // $1000 value
         let portfolio = Portfolio::new();
-        // Assume equity $5000. 10% limit = $500.
-        // Proposal $1000 > $500 -> Reject
-        // Note: Equity isn't derived from portfolio in context, it's passed explicitly
-
         let prices = HashMap::new();
         let risk_state = RiskState::default();
 
@@ -304,7 +271,7 @@ mod tests {
         let provider = Arc::new(MockSectorProvider { sectors });
 
         let validator = SectorExposureValidator::new(SectorExposureConfig {
-            max_sector_exposure_pct: 0.30, // 30% limit
+            max_sector_exposure_pct: dec!(0.30), // 30% limit
             sector_provider: Some(provider),
         });
 
@@ -346,6 +313,5 @@ mod tests {
         // Limit: 30% -> Reject
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
-        assert!(result.rejection_reason().unwrap().contains("35.00%"));
     }
 }

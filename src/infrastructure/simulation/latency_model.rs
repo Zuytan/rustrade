@@ -51,7 +51,7 @@ mod tests {
         for _ in 0..100 {
             let lat = model.next_latency().as_millis() as u64;
             assert!(
-                lat >= 40 && lat <= 60,
+                (40..=60).contains(&lat),
                 "Latency {} out of bounds [40, 60]",
                 lat
             );

@@ -1,3 +1,5 @@
+use rust_decimal_macros::dec;
+
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use rustrade::application::system::Application;
@@ -40,9 +42,9 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         fast_sma_period: 2,
         slow_sma_period: 5,
         // sma_threshold: Decimal::from_f64(0.001).unwrap(), // Actual config uses f64? Checking file.
-        sma_threshold: 0.001,
+        sma_threshold: dec!(0.001),
         order_cooldown_seconds: 0,
-        risk_per_trade_percent: 0.01,
+        risk_per_trade_percent: dec!(0.01),
         max_orders_per_minute: 100,
         non_pdt_mode: false,
         dynamic_symbol_mode: false,
@@ -53,22 +55,22 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         macd_fast_period: 12,
         macd_slow_period: 26,
         macd_signal_period: 9,
-        trend_divergence_threshold: 0.005,
-        rsi_threshold: 99.0,
-        trailing_stop_atr_multiplier: 3.0,
+        trend_divergence_threshold: dec!(0.005),
+        rsi_threshold: dec!(99.0),
+        trailing_stop_atr_multiplier: dec!(3.0),
         atr_period: 14,
-        max_position_size_pct: 0.25,
-        max_daily_loss_pct: 0.02,
-        max_drawdown_pct: 0.10,
+        max_position_size_pct: dec!(0.25),
+        max_daily_loss_pct: dec!(0.02),
+        max_drawdown_pct: dec!(0.10),
         consecutive_loss_limit: 3,
         pending_order_ttl_ms: None,
-        slippage_pct: 0.001,
-        commission_per_share: 0.001,
-        trend_riding_exit_buffer_pct: 0.03,
-        mean_reversion_rsi_exit: 50.0,
+        slippage_pct: dec!(0.001),
+        commission_per_share: dec!(0.001),
+        trend_riding_exit_buffer_pct: dec!(0.03),
+        mean_reversion_rsi_exit: dec!(50.0),
         mean_reversion_bb_period: 20,
         risk_appetite: None,
-        max_sector_exposure_pct: 0.3,
+        max_sector_exposure_pct: dec!(0.3),
         sector_map: std::collections::HashMap::new(),
         adaptive_optimization_enabled: false,
         regime_detection_window: 20,
@@ -78,25 +80,25 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         oanda_account_id: "".to_string(),
         oanda_api_base_url: "".to_string(),
         oanda_stream_base_url: "".to_string(),
-        min_volume_threshold: 10000.0,
+        min_volume_threshold: dec!(10000.0),
         ema_fast_period: 50,
         ema_slow_period: 150,
-        take_profit_pct: 0.05,
-        max_position_value_usd: 5000.0,
+        take_profit_pct: dec!(0.05),
+        max_position_value_usd: dec!(5000.0),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: 5.0,
-        min_profit_ratio: 2.0,
+        spread_bps: dec!(5.0),
+        min_profit_ratio: dec!(2.0),
         portfolio_staleness_ms: 3000,
         portfolio_refresh_interval_ms: 60000,
         macd_requires_rising: true,
-        trend_tolerance_pct: 0.0,
-        macd_min_threshold: 0.0,
-        profit_target_multiplier: 1.5,
+        trend_tolerance_pct: dec!(0.0),
+        macd_min_threshold: dec!(0.0),
+        profit_target_multiplier: dec!(1.5),
         adx_period: 14,
-        adx_threshold: 25.0,
+        adx_threshold: dec!(25.0),
         smc_ob_lookback: 20,
-        smc_min_fvg_size_pct: 0.005,
+        smc_min_fvg_size_pct: dec!(0.005),
         binance_api_key: "".to_string(),
         binance_secret_key: "".to_string(),
         binance_base_url: "".to_string(),
@@ -111,7 +113,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         simulation_enabled: false,
         simulation_latency_base_ms: 0,
         simulation_latency_jitter_ms: 0,
-        simulation_slippage_volatility: 0.0,
+        simulation_slippage_volatility: dec!(0.0),
     });
 
     config.mode = Mode::Mock;
@@ -119,7 +121,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     config.fast_sma_period = 2;
     config.slow_sma_period = 5;
     config.order_cooldown_seconds = 0; // Immediate execution
-    config.rsi_threshold = 99.0; // Ensure signal isn't blocked by RSI
+    config.rsi_threshold = dec!(99.0); // Ensure signal isn't blocked by RSI
 
     // 2. Build Application
     let _app = Application::build(config.clone()).await?;
@@ -267,7 +269,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         // `AgentsBootstrap` uses `services.execution_service`. We populated that with `mock_execution`. Good.
         // `AgentsBootstrap` uses `persistence.order_repository` for `Executor`?
         // Let's check `bootstrap/agents.rs`.
-        // `let mut executor = Executor::new(..., Some(persistence.order_repository.clone()))`.
+        // `let mut executor = Executor::new(..., Some(persistence.order_repository.clone())`.
         // So `Executor` will use the Real Sqlite Repo (In-Memory).
         // This is fine! It's actually better than Null.
         candle_repository: None,

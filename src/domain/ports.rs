@@ -61,9 +61,9 @@ pub trait SectorProvider: Send + Sync {
 }
 
 pub struct Expectancy {
-    pub reward_risk_ratio: f64,
-    pub win_prob: f64,
-    pub expected_value: f64,
+    pub reward_risk_ratio: Decimal,
+    pub win_prob: Decimal,
+    pub expected_value: Decimal,
 }
 
 #[async_trait]

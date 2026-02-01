@@ -157,10 +157,12 @@ mod tests {
     use crate::application::optimization::win_rate_provider::StaticWinRateProvider;
     use crate::application::strategies::DualSMAStrategy;
     use crate::domain::market::market_regime::MarketRegimeType;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     fn create_test_context() -> SymbolContext {
         let config = AnalystConfig::default();
-        let strategy = Arc::new(DualSMAStrategy::new(20, 60, 0.0));
+        let strategy = Arc::new(DualSMAStrategy::new(20, 60, Decimal::ZERO));
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
     }
@@ -170,7 +172,8 @@ mod tests {
         let mut context = create_test_context();
         context.config.risk_appetite_score = Some(7);
 
-        let regime = MarketRegime::new(MarketRegimeType::Volatile, 0.8, 3.0, 15.0);
+        let regime =
+            MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(15.0));
 
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
@@ -183,7 +186,12 @@ mod tests {
         let mut context = create_test_context();
         context.config.risk_appetite_score = Some(5);
 
-        let regime = MarketRegime::new(MarketRegimeType::TrendingDown, 0.7, 1.5, 25.0);
+        let regime = MarketRegime::new(
+            MarketRegimeType::TrendingDown,
+            dec!(0.7),
+            dec!(1.5),
+            dec!(25.0),
+        );
 
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
@@ -196,7 +204,12 @@ mod tests {
         let mut context = create_test_context();
         context.config.risk_appetite_score = Some(5);
 
-        let regime = MarketRegime::new(MarketRegimeType::TrendingUp, 0.8, 1.0, 30.0);
+        let regime = MarketRegime::new(
+            MarketRegimeType::TrendingUp,
+            dec!(0.8),
+            dec!(1.0),
+            dec!(30.0),
+        );
 
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
@@ -209,7 +222,8 @@ mod tests {
         let mut context = create_test_context();
         context.config.risk_appetite_score = Some(2);
 
-        let regime = MarketRegime::new(MarketRegimeType::Volatile, 0.9, 4.0, 10.0);
+        let regime =
+            MarketRegime::new(MarketRegimeType::Volatile, dec!(0.9), dec!(4.0), dec!(10.0));
 
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 

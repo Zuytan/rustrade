@@ -81,6 +81,7 @@ impl OptimalParametersPersistence {
 mod tests {
     use super::*;
     use crate::domain::risk::optimal_parameters::AssetType;
+    use rust_decimal_macros::dec;
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -128,15 +129,15 @@ mod tests {
             RiskProfile::Balanced,
             20,
             60,
-            65.0,
-            3.0,
-            0.005,
+            dec!(65.0),
+            dec!(3.0),
+            dec!(0.005),
             300,
             "AAPL".to_string(),
-            1.5,
-            15.0,
-            5.0,
-            60.0,
+            dec!(1.5),
+            dec!(15.0),
+            dec!(5.0),
+            dec!(60.0),
             50,
         );
 
@@ -150,7 +151,7 @@ mod tests {
 
         assert_eq!(loaded_params.fast_sma_period, 20);
         assert_eq!(loaded_params.slow_sma_period, 60);
-        assert_eq!(loaded_params.rsi_threshold, 65.0);
+        assert_eq!(loaded_params.rsi_threshold, dec!(65.0));
         cleanup_test_dir(temp_dir);
     }
 
@@ -163,15 +164,15 @@ mod tests {
             RiskProfile::Aggressive,
             30,
             100,
-            70.0,
-            4.0,
-            0.01,
+            dec!(70.0),
+            dec!(4.0),
+            dec!(0.01),
             0,
             "NVDA".to_string(),
-            2.0,
-            25.0,
-            8.0,
-            65.0,
+            dec!(2.0),
+            dec!(25.0),
+            dec!(8.0),
+            dec!(65.0),
             80,
         );
 
@@ -201,15 +202,15 @@ mod tests {
             RiskProfile::Conservative,
             10,
             50,
-            60.0,
-            2.0,
-            0.003,
+            dec!(60.0),
+            dec!(2.0),
+            dec!(0.003),
             600,
             "TSLA".to_string(),
-            1.2,
-            10.0,
-            3.0,
-            55.0,
+            dec!(1.2),
+            dec!(10.0),
+            dec!(3.0),
+            dec!(55.0),
             30,
         );
 
@@ -220,15 +221,15 @@ mod tests {
             RiskProfile::Conservative,
             15,
             55,
-            62.0,
-            2.5,
-            0.004,
+            dec!(62.0),
+            dec!(2.5),
+            dec!(0.004),
             500,
             "AAPL".to_string(),
-            1.8,
-            18.0,
-            4.0,
-            62.0,
+            dec!(1.8),
+            dec!(18.0),
+            dec!(4.0),
+            dec!(62.0),
             40,
         );
 
