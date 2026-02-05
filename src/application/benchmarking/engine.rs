@@ -21,8 +21,8 @@ pub struct BenchmarkEngine {
 impl BenchmarkEngine {
     pub async fn new() -> Self {
         // Load env
-        if dotenv::from_filename(".env.benchmark").is_err() {
-            dotenv::dotenv().ok();
+        if dotenvy::from_filename(".env.benchmark").is_err() {
+            dotenvy::dotenv().ok();
         }
 
         let api_key = env::var("ALPACA_API_KEY").expect("ALPACA_API_KEY must be set");

@@ -1,5 +1,27 @@
 # Rustrade - Historique des Versions
 
+## Version 0.94.0 - Audit Remediation, CI/CD & Observability (February 2026)
+
+### Audit & Code Quality
+- **Global Audit**: Achieved 92% maturity score. Zero `.unwrap()` policy enforced.
+- **Dependency Clean**: Verified `ort` (2.0.0-rc.11) and `egui` compatibility.
+- **Config Consolidation**: Unified `.env` templates for easier deployment.
+
+### Observability Infrastructure
+- **Prometheus/Grafana**: Added full monitoring stack (`monitoring/`).
+- **Alerting**: Configured rules for Drawdown and Circuit Breakers.
+
+### Automation
+- **CI Enhancements**: Added Coverage (`tarpaulin`), Security Audit (`cargo-audit`), and Benchmark checks.
+- **ML Pipeline**: Automated `train_and_deploy.sh` script for end-to-end model lifecycle.
+
+### Security
+- **Policy**: Established `SECURITY.md` guidelines for API keys and vulnerabilities.
+
+### Quality Assurance
+- **Stress Tests**: Drafted scenarios for Flash Crash resilience.
+- **Stability**: 100% test pass rate with strict linting.
+
 ## Version 0.93.0 - High-Fidelity Simulation & DL Infrastructure (January 2026)
 
 ### High-Fidelity Simulation

@@ -43,7 +43,7 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ChannelWriterFactory {
 
 fn main() -> anyhow::Result<()> {
     // 0. Load Env (before starting anything)
-    dotenv::dotenv().ok(); // Load .env file
+    dotenvy::dotenv().ok(); // Load .env file
 
     // 1. Create Log Channel
     let (log_tx, log_rx) = crossbeam_channel::unbounded();

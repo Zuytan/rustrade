@@ -26,7 +26,7 @@ async fn test_backtest_strategy_on_historical_data() {
     let _ = tracing::subscriber::set_global_default(subscriber);
 
     // 2. Load Config / Env
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
     let api_key = match std::env::var("ALPACA_API_KEY") {
         Ok(k) => k,
         Err(_) => {

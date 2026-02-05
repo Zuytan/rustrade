@@ -32,7 +32,7 @@ impl OptimizeEngine {
     /// Creates a new OptimizeEngine, loading configuration from environment.
     pub fn new() -> Result<Self> {
         // Load env
-        dotenv::dotenv().ok();
+        dotenvy::dotenv().ok();
 
         let api_key = env::var("ALPACA_API_KEY").context("ALPACA_API_KEY must be set")?;
         let api_secret = env::var("ALPACA_SECRET_KEY").context("ALPACA_SECRET_KEY must be set")?;

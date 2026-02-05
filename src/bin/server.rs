@@ -32,7 +32,7 @@ use tracing_subscriber::prelude::*;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
 
     // Setup logging (stdout only, no UI channel needed)
     let stdout_layer = tracing_subscriber::fmt::layer().with_target(false).pretty();
