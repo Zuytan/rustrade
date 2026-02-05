@@ -2,7 +2,7 @@ use crate::application::strategies::legacy::dual_sma::DualSMAStrategy;
 use crate::application::strategies::traits::{AnalysisContext, Signal, TradingStrategy};
 use crate::domain::trading::types::OrderSide;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
+
 use std::collections::HashMap;
 
 /// Advanced Triple Filter Strategy

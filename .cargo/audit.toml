@@ -1,0 +1,10 @@
+[advisories]
+ignore = [
+    # RSA vulnerability in sqlx-mysql (unused driver, we use SQLite)
+    # https://rustsec.org/advisories/RUSTSEC-2023-0071
+    "RUSTSEC-2023-0071",
+    
+    # Paste crate unmaintained (transitive dep of wgpu/egui, unfixable upstream)
+    # https://rustsec.org/advisories/RUSTSEC-2024-0436
+    "RUSTSEC-2024-0436"
+]

@@ -39,9 +39,8 @@ impl SmartCorePredictor {
                     return;
                 }
 
-                // Smartcore deserialization (using bincode usually)
-                // Assuming model was saved with bincode::serialize
-                match bincode::deserialize(&buffer) {
+                // Smartcore deserialization (using serde_json now)
+                match serde_json::from_reader(std::io::Cursor::new(&buffer)) {
                     Ok(model) => {
                         info!("Successfully loaded ML model from {:?}", self.model_path);
                         self.model = Some(model);

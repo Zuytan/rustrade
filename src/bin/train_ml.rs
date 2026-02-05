@@ -136,7 +136,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut file = File::create(model_path)?;
-    bincode::serialize_into(&mut file, &model)?;
+    serde_json::to_writer(&mut file, &model)?;
 
     println!("Done. Model saved successfully.");
     Ok(())
