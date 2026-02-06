@@ -36,6 +36,7 @@ async fn test_crypto_scanner_integration() {
         secret_key.clone(),
         ws_url,
         data_url,
+        base_url.clone(),
         50000.0, // min volume threshold
         AssetClass::Crypto,
         None,
@@ -124,6 +125,7 @@ async fn test_crypto_movers_api_call() {
         secret_key,
         ws_url,
         data_url,
+        "https://paper-api.alpaca.markets".to_string(),
         50000.0,
         AssetClass::Crypto,
         None,

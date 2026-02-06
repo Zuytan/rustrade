@@ -1,5 +1,16 @@
 # Rustrade - Historique des Versions
 
+## Version 0.94.1 - Dynamic Crypto UI & Async Loading (February 2026)
+
+### User Experience
+- **Dynamic Symbol Selector**: Added a searchable, multi-select UI component settings for Crypto trading.
+- **Async Asset Discovery**: Automatically fetches all tradable crypto pairs from the broker API on startup, eliminating the need to hardcode `SYMBOLS` in `.env`.
+- **Search & Filter**: Real-time filtering of thousands of crypto pairs with "Select All" and "Top 10" shortcuts.
+
+### Architecture
+- **Async Initialization**: Enhanced `UserAgent` startup sequence to load broker assets in a non-blocking background task.
+- **Command Pattern**: Introduced `SentinelCommand::LoadAvailableSymbols` with oneshot channel response to bridge UI and Market Data service.
+
 ## Version 0.94.0 - Audit Remediation, CI/CD & Observability (February 2026)
 
 ### Audit & Code Quality

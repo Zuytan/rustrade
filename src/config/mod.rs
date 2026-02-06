@@ -163,6 +163,7 @@ pub struct Config {
     pub simulation_latency_base_ms: u64,
     pub simulation_latency_jitter_ms: u64,
     pub simulation_slippage_volatility: Decimal,
+    pub use_real_market_data: bool,
 
     // ... (Observability fields)
     pub observability_enabled: bool,
@@ -275,6 +276,10 @@ impl Config {
             simulation_latency_base_ms: simulation.simulation_latency_base_ms,
             simulation_latency_jitter_ms: simulation.simulation_latency_jitter_ms,
             simulation_slippage_volatility: simulation.simulation_slippage_volatility,
+            use_real_market_data: std::env::var("USE_REAL_MARKET_DATA")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse()
+                .unwrap_or(false),
 
             // ... (Observability mappings)
             observability_enabled: observability.enabled,

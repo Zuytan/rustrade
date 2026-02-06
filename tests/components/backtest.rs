@@ -45,6 +45,8 @@ async fn test_backtest_strategy_on_historical_data() {
         .unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
     let data_url =
         std::env::var("ALPACA_DATA_URL").unwrap_or("https://data.alpaca.markets".to_string());
+    let api_base_url =
+        std::env::var("ALPACA_BASE_URL").unwrap_or("https://paper-api.alpaca.markets".to_string());
 
     // 3. Initialize Services
     let market_service = Arc::new(AlpacaMarketDataService::new(
@@ -52,6 +54,7 @@ async fn test_backtest_strategy_on_historical_data() {
         api_secret,
         ws_url,
         data_url,
+        api_base_url,
         10000.0,
         AssetClass::Stock,
         None,

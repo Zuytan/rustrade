@@ -175,7 +175,17 @@
         "settings_mode_simple": "Start (Simple)",
         "settings_mode_advanced": "Expert (Advanced)",
         "settings_risk_score_label": "Risk Appetite Score (1-10):",
-        "settings_risk_score_hint": "Global setting that scales all risk and strategy parameters. 1 = Conservative, 10 = Aggressive."
+        "settings_risk_score_hint": "Global setting that scales all risk and strategy parameters. 1 = Conservative, 10 = Aggressive.",
+        "settings_symbol_selector_title": "🎯 Crypto Symbol Selection",
+        "loading_symbols": "Loading available symbols...",
+        "selected": "selected",
+        "available": "available",
+        "clear_all": "Clear",
+        "select_top_10": "Top 10",
+        "search_symbols_hint": "Search for a symbol...",
+        "no_symbols_found": "No symbols found",
+        "apply_symbols": "Apply selection",
+        "reset": "Reset"
     },
     "help_categories": {
         "abbreviations": "Abbreviations",

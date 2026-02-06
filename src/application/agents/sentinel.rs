@@ -10,10 +10,14 @@ use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info, warn};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum SentinelCommand {
     Shutdown,
     UpdateSymbols(Vec<String>),
+    /// Request available tradable symbols from the market data service
+    LoadAvailableSymbols(tokio::sync::oneshot::Sender<Vec<String>>),
+    /// Request top movers (by volume)
+    LoadTopMovers(tokio::sync::oneshot::Sender<Vec<String>>),
 }
 
 pub struct Sentinel {
@@ -177,6 +181,36 @@ impl Sentinel {
                                         }
                                         Err(e) => {
                                             error!("Sentinel: Failed to update subscription: {}", e);
+                                        }
+                                    }
+                                }
+                                SentinelCommand::LoadAvailableSymbols(response_tx) => {
+                                    info!("Sentinel: Loading available symbols from market data service");
+                                    match self.market_service.get_tradable_assets().await {
+                                        Ok(symbols) => {
+                                            info!("Sentinel: Loaded {} available symbols", symbols.len());
+                                            if response_tx.send(symbols).is_err() {
+                                                error!("Sentinel: Failed to send symbols - receiver dropped");
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Sentinel: Failed to load symbols: {}", e);
+                                            let _ = response_tx.send(Vec::new());
+                                        }
+                                    }
+                                }
+                                SentinelCommand::LoadTopMovers(response_tx) => {
+                                    info!("Sentinel: Loading Top Movers from market data service");
+                                    match self.market_service.get_top_movers().await {
+                                        Ok(symbols) => {
+                                            info!("Sentinel: Loaded {} top movers", symbols.len());
+                                            if response_tx.send(symbols).is_err() {
+                                                error!("Sentinel: Failed to send top movers - receiver dropped");
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("Sentinel: Failed to load top movers: {}", e);
+                                            let _ = response_tx.send(Vec::new());
                                         }
                                     }
                                 }

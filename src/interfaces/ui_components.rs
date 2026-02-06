@@ -332,11 +332,21 @@ pub fn render_sidebar(
     });
 }
 
+/// Data required for symbol selector in settings
+pub struct SymbolSelectorRefs<'a> {
+    pub available_symbols: &'a [String],
+    pub active_symbols: &'a mut Vec<String>,
+    pub symbols_loading: bool,
+    pub client: &'a crate::application::client::SystemClient,
+    pub state: &'a mut settings_components::SymbolSelectorState,
+}
+
 pub fn render_settings_view(
     ui: &mut egui::Ui,
     panel: &mut SettingsPanel,
     i18n: &mut I18nService,
-    client: &SystemClient,
+    client: &crate::application::client::SystemClient,
+    symbol_refs: Option<SymbolSelectorRefs<'_>>,
 ) {
     let total_height = ui.available_height();
 
@@ -393,7 +403,7 @@ pub fn render_settings_view(
                     .max_height(scroll_height)
                     .show(ui, |ui| match panel.active_tab {
                         SettingsTab::TradingEngine => {
-                            render_trading_engine_tab(ui, panel, i18n);
+                            render_trading_engine_content(ui, panel, i18n);
                         }
                         SettingsTab::Language => {
                             settings_components::render_language_settings(ui, i18n);
@@ -411,6 +421,25 @@ pub fn render_settings_view(
             });
         });
     });
+
+    // Symbol selector rendered outside the closures to avoid borrow conflicts
+    if panel.active_tab == SettingsTab::TradingEngine
+        && let Some(refs) = symbol_refs
+    {
+        let is_crypto = std::env::var("ASSET_CLASS")
+            .map(|v| v.to_lowercase() == "crypto")
+            .unwrap_or(false);
+
+        if is_crypto {
+            let data = settings_components::SymbolSelectorData {
+                available_symbols: refs.available_symbols,
+                active_symbols: refs.active_symbols,
+                symbols_loading: refs.symbols_loading,
+                client: refs.client,
+            };
+            settings_components::render_symbol_selector(ui, data, refs.state, i18n);
+        }
+    }
 }
 
 /// Renders the settings sidebar navigation
@@ -468,8 +497,8 @@ fn render_settings_sidebar(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: &
     });
 }
 
-/// Renders the Trading Engine configuration content
-fn render_trading_engine_tab(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: &I18nService) {
+/// Renders the Trading Engine configuration content (without symbol selector)
+fn render_trading_engine_content(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: &I18nService) {
     ui.label(
         egui::RichText::new(i18n.t("settings_config_description"))
             .color(DesignSystem::TEXT_SECONDARY)

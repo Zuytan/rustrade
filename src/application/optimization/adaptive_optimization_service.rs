@@ -47,7 +47,7 @@ impl AdaptiveOptimizationService {
             strategy_repo,
             candle_repo,
             evaluator,
-            regime_detector: MarketRegimeDetector::new(regime_window, dec!(25.0), dec!(2.0)), // TODO: Config
+            regime_detector: MarketRegimeDetector::new(regime_window, dec!(25.0), dec!(2.0)), // TODO: Move hardcoded thresholds to AnalystConfig
             enabled,
         }
     }

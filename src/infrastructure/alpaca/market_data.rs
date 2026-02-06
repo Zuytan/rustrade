@@ -27,6 +27,7 @@ pub struct AlpacaMarketDataService {
     api_secret: String,
     ws_manager: Arc<AlpacaWebSocketManager>,
     data_base_url: String,
+    api_base_url: String,
     bar_cache: std::sync::RwLock<std::collections::HashMap<String, Vec<AlpacaBar>>>,
     min_volume_threshold: f64,
     asset_class: AssetClass,
@@ -38,11 +39,13 @@ pub struct AlpacaMarketDataService {
 }
 
 impl AlpacaMarketDataService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         api_key: String,
         api_secret: String,
         ws_url: String,
         data_base_url: String,
+        api_base_url: String,
         min_volume_threshold: f64,
         asset_class: AssetClass,
         candle_repository: Option<Arc<dyn crate::domain::repositories::CandleRepository>>,
@@ -52,6 +55,7 @@ impl AlpacaMarketDataService {
             .api_secret(api_secret)
             .ws_url(ws_url)
             .data_base_url(data_base_url)
+            .api_base_url(api_base_url)
             .min_volume_threshold(min_volume_threshold)
             .asset_class(asset_class)
             .candle_repository(candle_repository)
@@ -142,7 +146,10 @@ impl AlpacaMarketDataService {
                     };
                     let abs_change = change_pct.abs();
 
-                    let is_penny = bar.close < 5.0;
+                    let is_penny = match self.asset_class {
+                        AssetClass::Crypto => false, // Crypto can be < 5.0 (e.g. XRP, ADA)
+                        AssetClass::Stock => bar.close < 5.0,
+                    };
                     let has_volume = bar.volume >= self.min_volume_threshold;
 
                     if !is_penny && has_volume {
@@ -323,6 +330,7 @@ pub struct AlpacaMarketDataServiceBuilder {
     api_secret: Option<String>,
     ws_url: Option<String>,
     data_base_url: Option<String>,
+    api_base_url: Option<String>,
     min_volume_threshold: Option<f64>,
     asset_class: Option<AssetClass>,
     candle_repository: Option<Option<Arc<dyn crate::domain::repositories::CandleRepository>>>,
@@ -349,6 +357,11 @@ impl AlpacaMarketDataServiceBuilder {
         self
     }
 
+    pub fn api_base_url(mut self, api_base_url: String) -> Self {
+        self.api_base_url = Some(api_base_url);
+        self
+    }
+
     pub fn min_volume_threshold(mut self, threshold: f64) -> Self {
         self.min_volume_threshold = Some(threshold);
         self
@@ -372,6 +385,7 @@ impl AlpacaMarketDataServiceBuilder {
         let api_secret = self.api_secret.expect("api_secret is required");
         let ws_url = self.ws_url.expect("ws_url is required");
         let data_base_url = self.data_base_url.expect("data_base_url is required");
+        let api_base_url = self.api_base_url.expect("api_base_url is required");
         let min_volume_threshold = self.min_volume_threshold.unwrap_or(100000.0);
         let asset_class = self.asset_class.unwrap_or(AssetClass::Stock);
         let candle_repository = self.candle_repository.flatten();
@@ -399,6 +413,7 @@ impl AlpacaMarketDataServiceBuilder {
             api_secret,
             ws_manager,
             data_base_url,
+            api_base_url,
             bar_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
             min_volume_threshold,
             asset_class,
@@ -467,9 +482,12 @@ impl MarketDataService for AlpacaMarketDataService {
             }
         }
 
-        info!("AlpacaMarketDataService: Fetching tradable crypto assets from /v2/assets");
+        info!(
+            "AlpacaMarketDataService: Fetching tradable crypto assets from {}/v2/assets",
+            self.api_base_url
+        );
 
-        let url = "https://api.alpaca.markets/v2/assets".to_string();
+        let url = format!("{}/v2/assets", self.api_base_url);
         let url_with_query =
             build_url_with_query(&url, &[("status", "active"), ("asset_class", "crypto")]);
 
@@ -1089,11 +1107,11 @@ mod crypto_movers {
             }
 
             let now = chrono::Utc::now();
-            let start = now - chrono::Duration::hours(24);
+            let start = now - chrono::Duration::days(7); // Look back 7 days to find ANY data
             let timeframe_str = "1Day".to_string();
             let start_str = start.to_rfc3339();
             let end_str = now.to_rfc3339();
-            let limit_str = "1".to_string();
+            let limit_str = "10".to_string();
 
             let mut all_movers = Vec::new();
 
@@ -1162,7 +1180,24 @@ mod crypto_movers {
             }
 
             all_movers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            info!(
+                "MarketScanner: Scanned {} symbols. Found {} with valid data (volume >= {}).",
+                symbols.len(),
+                all_movers.len(),
+                self.min_volume
+            );
+
             let top_movers: Vec<String> = all_movers.into_iter().take(10).map(|(s, _)| s).collect();
+
+            if top_movers.len() < 10 {
+                info!(
+                    "MarketScanner: Returning top {} movers (less than requested 10).",
+                    top_movers.len()
+                );
+            } else {
+                info!("MarketScanner: Returning top 10 movers.");
+            }
 
             Ok(top_movers)
         }

@@ -300,14 +300,20 @@ impl MarketDataService for BinanceMarketDataService {
         candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Take top 10 and normalize symbols
-        let top_symbols: Vec<String> = candidates
+        let mut top_symbols: Vec<String> = candidates
             .into_iter()
             .take(10)
             .filter_map(|(symbol, _, _)| normalize_crypto_symbol(&symbol).ok())
             .collect();
 
+        // Safety enforced limit
+        if top_symbols.len() > 10 {
+            warn!("MarketScanner: Top symbols logic failed to limit. Force truncating to 10.");
+            top_symbols.truncate(10);
+        }
+
         info!(
-            "MarketScanner: Final filtered Binance movers: {}",
+            "MarketScanner: Final filtered Binance movers: {} (Limited to 10)",
             top_symbols.len()
         );
 

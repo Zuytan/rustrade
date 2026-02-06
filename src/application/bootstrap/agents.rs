@@ -375,7 +375,7 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
             let path = std::path::PathBuf::from("data/ml/model.bin");
             let predictor =
                 crate::application::ml::smartcore_predictor::SmartCorePredictor::new(path);
-            Arc::new(MLStrategy::new(Arc::new(Box::new(predictor)), 0.6))
+            Arc::new(MLStrategy::new(Arc::new(Box::new(predictor)), 0.0005))
         }
     }
 }

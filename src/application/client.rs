@@ -87,6 +87,27 @@ impl SystemClient {
             .map_err(|e| anyhow::anyhow!("Failed to send analyst command: {}", e))
     }
 
+    /// Request available tradable symbols from Sentinel asynchronously
+    pub fn load_available_symbols(&self) -> tokio::sync::oneshot::Receiver<Vec<String>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        // Send command - ignore error if sentinel is down, receiver will just timeout/fail
+        let _ = self
+            .handle
+            .sentinel_cmd_tx
+            .try_send(SentinelCommand::LoadAvailableSymbols(tx));
+        rx
+    }
+
+    /// Request Top Movers symbols from Sentinel asynchronously
+    pub fn load_top_movers(&self) -> tokio::sync::oneshot::Receiver<Vec<String>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .handle
+            .sentinel_cmd_tx
+            .try_send(SentinelCommand::LoadTopMovers(tx));
+        rx
+    }
+
     // Accessors for shared state if needed
     pub fn portfolio(
         &self,

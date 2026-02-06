@@ -137,7 +137,101 @@ fn main() -> anyhow::Result<()> {
         risk_appetite,
     };
 
-    let agent = UserAgent::new(client, portfolio, config);
+    // Load available symbols in crypto mode
+    let available_symbols = if std::env::var("ASSET_CLASS")
+        .map(|v| v.to_lowercase() == "crypto")
+        .unwrap_or(false)
+    {
+        info!("Loading available symbols from exchange...");
+        let mut rx = client.load_available_symbols();
+        // Manual polling with timeout since we are in sync context
+        let timeout = std::time::Duration::from_secs(10);
+        let start = std::time::Instant::now();
+        let mut result = Vec::new();
+
+        loop {
+            match rx.try_recv() {
+                Ok(symbols) => {
+                    info!(
+                        "Loaded {} tradable symbols in {:?}",
+                        symbols.len(),
+                        start.elapsed()
+                    );
+                    result = symbols;
+                    break;
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                    if start.elapsed() > timeout {
+                        tracing::warn!(
+                            "Timeout waiting for symbols from exchange (10s). Starting with empty list."
+                        );
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    tracing::warn!("Symbol loading channel closed unexpectedly");
+                    break;
+                }
+            }
+        }
+        result
+    } else {
+        Vec::new()
+    };
+
+    // Bootstrap Sentinel with Top Movers (Top 10 by Volume)
+    if std::env::var("ASSET_CLASS")
+        .map(|v| v.to_lowercase() == "crypto")
+        .unwrap_or(false)
+    {
+        info!("Loading Top 10 Movers for initial tracking...");
+        let mut rx = client.load_top_movers();
+        // Manual polling with timeout
+        let timeout = std::time::Duration::from_secs(10);
+        let start = std::time::Instant::now();
+        let mut diff_symbols = Vec::new();
+
+        loop {
+            match rx.try_recv() {
+                Ok(symbols) => {
+                    info!(
+                        "Loaded {} top movers in {:?}",
+                        symbols.len(),
+                        start.elapsed()
+                    );
+                    diff_symbols = symbols;
+                    break;
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                    if start.elapsed() > timeout {
+                        tracing::warn!("Timeout waiting for Top Movers. Falling back to empty.");
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+
+        if !diff_symbols.is_empty() {
+            info!(
+                "Bootstrapping Sentinel with Top {} Movers",
+                diff_symbols.len()
+            );
+            use rustrade::application::agents::sentinel::SentinelCommand;
+            if let Err(e) =
+                client.send_sentinel_command(SentinelCommand::UpdateSymbols(diff_symbols))
+            {
+                tracing::error!("Failed to bootstrap Sentinel: {}", e);
+            }
+        }
+    }
+
+    let mut agent = UserAgent::new(client, portfolio, config);
+    agent.available_symbols = available_symbols;
 
     // 6. Run UI (Blocks Main Thread)
     let native_options = eframe::NativeOptions {

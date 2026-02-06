@@ -14,7 +14,8 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use rust_decimal::prelude::ToPrimitive;
-use std::collections::VecDeque;
+use rust_decimal_macros::dec;
+use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -105,6 +106,12 @@ pub struct UserAgent {
     // Phase 4: Analytics State
     pub monte_carlo_result: Option<crate::domain::performance::monte_carlo::MonteCarloResult>,
     pub correlation_matrix: std::collections::HashMap<(String, String), f64>,
+
+    // Dynamic Symbol Selection
+    pub available_symbols: Vec<String>,
+    pub active_symbols: Vec<String>,
+    pub symbols_loading: bool,
+    pub symbol_selector_state: crate::interfaces::settings_components::SymbolSelectorState,
 }
 
 /// Direction of the market trend for a symbol
@@ -194,6 +201,12 @@ impl UserAgent {
             market_sentiment: None,
             monte_carlo_result: None,
             correlation_matrix: std::collections::HashMap::new(),
+            // Dynamic Symbol Selection
+            available_symbols: Vec::new(),
+            active_symbols: Vec::new(),
+            symbols_loading: false,
+            symbol_selector_state: crate::interfaces::settings_components::SymbolSelectorState::new(
+            ),
         }
     }
 
@@ -615,5 +628,79 @@ impl UserAgent {
             }
         }
         None
+    }
+    /// Calculate full performance metrics from portfolio history
+    pub fn get_performance_metrics(
+        &self,
+    ) -> crate::domain::performance::metrics::PerformanceMetrics {
+        if let Ok(pf) = self.portfolio.try_read() {
+            // Use starting cash as initial equity
+            let initial_equity = if pf.starting_cash > Decimal::ZERO {
+                pf.starting_cash
+            } else {
+                dec!(10000) // Default fallback if not set
+            };
+
+            // Calculate period in days (from first trade to now, or 1 day min)
+            let start_ts = pf
+                .trade_history
+                .first()
+                .map(|t| t.entry_timestamp)
+                .unwrap_or(chrono::Utc::now().timestamp_millis());
+            let end_ts = chrono::Utc::now().timestamp_millis();
+            let period_days = ((end_ts - start_ts) as f64 / (1000.0 * 3600.0 * 24.0)).max(1.0);
+
+            crate::domain::performance::metrics::PerformanceMetrics::calculate(
+                &pf.trade_history,
+                initial_equity,
+                pf.total_equity(&HashMap::new()), // Approximation without live prices
+                period_days,
+            )
+        } else {
+            crate::domain::performance::metrics::PerformanceMetrics::default()
+        }
+    }
+
+    /// Generate equity curve points for plotting [timestamp, equity]
+    pub fn get_equity_curve_points(&self) -> Vec<[f64; 2]> {
+        if let Ok(pf) = self.portfolio.try_read() {
+            let initial_equity = if pf.starting_cash > Decimal::ZERO {
+                pf.starting_cash
+            } else {
+                dec!(10000)
+            };
+
+            let mut curve = Vec::new();
+            // Start point
+            let start_ts = pf
+                .trade_history
+                .first()
+                .map(|t| t.entry_timestamp)
+                .unwrap_or(chrono::Utc::now().timestamp_millis() - 86400000);
+
+            curve.push([
+                start_ts as f64 / 1000.0,
+                initial_equity.to_f64().unwrap_or(0.0),
+            ]);
+
+            let mut current_equity = initial_equity;
+            for trade in &pf.trade_history {
+                current_equity += trade.pnl;
+                if let Some(exit_ts) = trade.exit_timestamp {
+                    curve.push([
+                        exit_ts as f64 / 1000.0,
+                        current_equity.to_f64().unwrap_or(0.0),
+                    ]);
+                }
+            }
+
+            // Add current point
+            let now = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
+            curve.push([now, current_equity.to_f64().unwrap_or(0.0)]);
+
+            curve
+        } else {
+            vec![]
+        }
     }
 }

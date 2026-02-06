@@ -114,6 +114,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 - **News Feed**: Real-time stream of analyzed news with sentiment badges.
 - **Configuration Panel**:
   - **Simple Mode**: Risk Score slider with **automatic strategy selection** (Risk 1-3→Standard, 4-6→RegimeAdaptive, 7-10→SMC).
+  - **Crypto Mode**: **Dynamic Symbol Selector** allows searching and selecting from all available exchange pairs.
   - **Advanced Mode**: Granular control over SMA periods, RSI thresholds, manual strategy override.
 - **Internationalization (I18n)**: Full support for English and French, with dynamic language switching.
 

@@ -10,9 +10,10 @@ use std::io::BufReader;
 use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct TrainingRecord {
-    _timestamp: i64,
-    _symbol: String,
+    timestamp: i64,
+    symbol: String,
     rsi: f64,
     macd: f64,
     macd_signal: f64,
@@ -28,7 +29,9 @@ struct TrainingRecord {
     cumulative_delta: f64,
     spread_bps: f64,
     adx: f64,
+    return_1m: Option<f64>,
     return_5m: Option<f64>,
+    return_15m: Option<f64>,
 }
 
 #[derive(Parser, Debug)]

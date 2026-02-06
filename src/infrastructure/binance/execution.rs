@@ -323,7 +323,8 @@ impl ExecutionService for BinanceExecutionService {
     }
 
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
-        // TODO: Implement User Data Stream for order updates
+        // TODO: Implement User Data Stream for order updates.
+        // Priority: Medium/Low - Current strategy relies on polling/REST. Stream needed only for HFT or high-concurrency needs.
         // This requires:
         // 1. POST /api/v3/userDataStream to get listenKey
         // 2. Connect WebSocket to wss://stream.binance.com:9443/ws/<listenKey>

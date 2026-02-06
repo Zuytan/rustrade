@@ -70,11 +70,29 @@ impl eframe::App for UserAgent {
                     render_analytics_view(ui, self);
                 }
                 crate::interfaces::ui_components::DashboardView::Settings => {
+                    // Check if crypto mode for symbol selector
+                    let is_crypto = std::env::var("ASSET_CLASS")
+                        .map(|v| v.to_lowercase() == "crypto")
+                        .unwrap_or(false);
+
+                    let symbol_refs = if is_crypto {
+                        Some(crate::interfaces::ui_components::SymbolSelectorRefs {
+                            available_symbols: &self.available_symbols,
+                            active_symbols: &mut self.active_symbols,
+                            symbols_loading: self.symbols_loading,
+                            client: &self.client,
+                            state: &mut self.symbol_selector_state,
+                        })
+                    } else {
+                        None
+                    };
+
                     crate::interfaces::ui_components::render_settings_view(
                         ui,
                         &mut self.settings_panel,
                         &mut self.i18n,
                         &self.client,
+                        symbol_refs,
                     );
                 }
             });
