@@ -207,6 +207,34 @@ impl Database {
         .await
         .context("Failed to create risk_state table")?;
 
+        // 8. Completed Trades (enriched for post-mortem analysis)
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS completed_trades (
+                id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                entry_price TEXT NOT NULL,
+                exit_price TEXT,
+                quantity TEXT NOT NULL,
+                pnl TEXT NOT NULL,
+                entry_timestamp INTEGER NOT NULL,
+                exit_timestamp INTEGER,
+                strategy_used TEXT,
+                regime_detected TEXT,
+                entry_reason TEXT,
+                exit_reason TEXT,
+                slippage TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_completed_trades_symbol ON completed_trades (symbol);
+            CREATE INDEX IF NOT EXISTS idx_completed_trades_entry_ts ON completed_trades (entry_timestamp);
+            "#,
+        )
+        .execute(&mut *conn)
+        .await
+        .context("Failed to create completed_trades table")?;
+
         info!("Database schema initialized.");
         Ok(())
     }

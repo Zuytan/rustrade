@@ -113,7 +113,9 @@ pub struct Order {
     pub timestamp: i64,
 }
 
-/// Represents a completed trade with profit/loss information
+/// Represents a completed trade with profit/loss information.
+/// Optional fields (strategy_used, regime_detected, entry_reason, exit_reason, slippage)
+/// support enriched persistence for post-mortem analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Trade {
     pub id: String,
@@ -125,6 +127,21 @@ pub struct Trade {
     pub pnl: Decimal, // Realized profit/loss
     pub entry_timestamp: i64,
     pub exit_timestamp: Option<i64>,
+    /// Strategy that generated the signal (e.g. "SMC", "ZScoreMR")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy_used: Option<String>,
+    /// Market regime when trade was opened (e.g. "TrendingUp", "Ranging")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regime_detected: Option<String>,
+    /// Human-readable entry reason from signal
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry_reason: Option<String>,
+    /// Exit reason (e.g. "stop", "target", "signal")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_reason: Option<String>,
+    /// Realized slippage vs expected price (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slippage: Option<Decimal>,
 }
 
 impl Trade {
@@ -140,6 +157,11 @@ impl Trade {
             pnl: Decimal::ZERO,
             entry_timestamp: order.timestamp,
             exit_timestamp: None,
+            strategy_used: None,
+            regime_detected: None,
+            entry_reason: None,
+            exit_reason: None,
+            slippage: None,
         }
     }
 

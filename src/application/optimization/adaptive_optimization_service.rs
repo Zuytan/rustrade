@@ -10,6 +10,7 @@ use crate::domain::repositories::{
 };
 use anyhow::Result;
 use chrono::{Duration, Utc};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -37,6 +38,8 @@ impl AdaptiveOptimizationService {
         candle_repo: Arc<dyn CandleRepository>,
         evaluator: PerformanceEvaluator,
         regime_window: usize,
+        adx_threshold: Decimal,
+        regime_volatility_threshold: Decimal,
         enabled: bool,
     ) -> Self {
         Self {
@@ -47,7 +50,11 @@ impl AdaptiveOptimizationService {
             strategy_repo,
             candle_repo,
             evaluator,
-            regime_detector: MarketRegimeDetector::new(regime_window, dec!(25.0), dec!(2.0)), // TODO: Move hardcoded thresholds to AnalystConfig
+            regime_detector: MarketRegimeDetector::new(
+                regime_window,
+                adx_threshold,
+                regime_volatility_threshold,
+            ),
             enabled,
         }
     }

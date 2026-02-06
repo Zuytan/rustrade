@@ -466,47 +466,43 @@ impl UserAgent {
         }
     }
 
-    /// Calculate win rate as a percentage
-    pub fn calculate_win_rate(&self) -> f64 {
+    /// Calculate win rate as a percentage (0..100). Kept in Decimal until UI render.
+    pub fn calculate_win_rate(&self) -> Decimal {
         if self.total_trades == 0 {
-            0.0
+            Decimal::ZERO
         } else {
-            (self.winning_trades as f64 / self.total_trades as f64) * 100.0
+            Decimal::from(self.winning_trades) * dec!(100) / Decimal::from(self.total_trades)
         }
     }
 
-    /// Calculate average win and loss percentages based on trade history
-    /// Returns (avg_win_pct, avg_loss_pct) as decimals (e.g. 0.05 for 5%)
-    pub fn calculate_trade_statistics(&self) -> (f64, f64) {
+    /// Calculate average win and loss percentages based on trade history.
+    /// Returns (avg_win_pct, avg_loss_pct) as Decimal (e.g. 0.05 for 5%). Kept in Decimal until UI/simulation.
+    pub fn calculate_trade_statistics(&self) -> (Decimal, Decimal) {
         if let Ok(pf) = self.portfolio.try_read() {
-            let mut total_win_pct = 0.0;
-            let mut total_loss_pct = 0.0;
-            let mut win_count = 0;
-            let mut loss_count = 0;
+            let mut total_win_pct = Decimal::ZERO;
+            let mut total_loss_pct = Decimal::ZERO;
+            let mut win_count: u32 = 0;
+            let mut loss_count: u32 = 0;
 
             for trade in &pf.trade_history {
-                if trade.exit_price.is_none() {
-                    continue;
-                }
-
-                let entry_val = trade.entry_price.to_f64().unwrap_or(0.0);
-                if entry_val == 0.0 {
-                    continue;
-                }
-
-                // PnL percentage relative to entry price
-                // For LONG: (exit - entry) / entry
-                // For SHORT: (entry - exit) / entry
-                // This is equivalent to trade.pnl / (entry * quantity), but per unit is simpler
-                let pnl_per_unit = if trade.side == OrderSide::Buy {
-                    trade.exit_price.and_then(|p| p.to_f64()).unwrap_or(0.0) - entry_val
-                } else {
-                    entry_val - trade.exit_price.and_then(|p| p.to_f64()).unwrap_or(0.0)
+                let exit_price = match trade.exit_price {
+                    Some(p) => p,
+                    None => continue,
                 };
+                if trade.entry_price.is_zero() {
+                    continue;
+                }
 
-                let pct = pnl_per_unit / entry_val;
+                // PnL percentage relative to entry price (Decimal throughout)
+                // For LONG: (exit - entry) / entry; For SHORT: (entry - exit) / entry
+                let pnl_per_unit = if trade.side == OrderSide::Buy {
+                    exit_price - trade.entry_price
+                } else {
+                    trade.entry_price - exit_price
+                };
+                let pct = pnl_per_unit / trade.entry_price;
 
-                if pct > 0.0 {
+                if pct > Decimal::ZERO {
                     total_win_pct += pct;
                     win_count += 1;
                 } else {
@@ -516,23 +512,31 @@ impl UserAgent {
             }
 
             let avg_win = if win_count > 0 {
-                total_win_pct / win_count as f64
+                total_win_pct / Decimal::from(win_count)
             } else {
-                0.0
+                Decimal::ZERO
             };
             let avg_loss = if loss_count > 0 {
-                total_loss_pct / loss_count as f64
+                total_loss_pct / Decimal::from(loss_count)
             } else {
-                0.0
+                Decimal::ZERO
             };
 
-            // Return safe defaults if no history yet to avoid flat lines in Monte Carlo
-            let safe_win = if avg_win == 0.0 { 0.02 } else { avg_win };
-            let safe_loss = if avg_loss == 0.0 { 0.015 } else { avg_loss };
+            // Safe defaults if no history yet (for Monte Carlo)
+            let safe_win = if avg_win.is_zero() {
+                dec!(0.02)
+            } else {
+                avg_win
+            };
+            let safe_loss = if avg_loss.is_zero() {
+                dec!(0.015)
+            } else {
+                avg_loss
+            };
 
             (safe_win, safe_loss)
         } else {
-            (0.02, 0.015)
+            (dec!(0.02), dec!(0.015))
         }
     }
 

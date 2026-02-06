@@ -1,5 +1,20 @@
 # Rustrade - Historique des Versions
 
+## Version 0.95.0 - Quality, Data & Evolution (February 2026)
+
+### Phase 1 – Code Quality
+- **Decimal-only finance**: Migrated all money-related calculations from `f64` to `rust_decimal::Decimal` in `feature_engineering_service`, `user_agent`, and `zscore_mean_reversion`; `f64` only for pure stats or ML/UI export.
+- **RwLock safety**: Replaced `.unwrap()` on `RwLock` in Alpaca and Binance market_data with proper `map_err` + `?`.
+- **Dead code & TODOs**: Externalized adaptive thresholds into config (`regime_volatility_threshold`); documented Binance User Data Stream limitation and RiskManager `spread_cache` intent.
+
+### Phase 3 – Data & Backtesting
+- **Trade persistence**: Enriched SQLite schema with `strategy_used`, `regime_detected`, `entry_reason`, `exit_reason`, `slippage`; domain `Trade` type extended accordingly.
+- **Walk-forward backtesting**: `BenchmarkEngine::run_walk_forward` with configurable train ratio and out-of-sample Sharpe.
+- **OANDA**: Sector provider only (`OandaSectorProvider`); `MODE=oanda` uses Mock for market data and execution until v20 API integration.
+
+### Phase 4 – Evolution
+- **Stress tests**: `stress_test_draft.rs` scenarios (circuit breaker, daily loss breach) integrated; Binance HMAC test marked `#[ignore]` for sandbox/CI (macOS system-configuration).
+
 ## Version 0.94.1 - Dynamic Crypto UI & Async Loading (February 2026)
 
 ### User Experience

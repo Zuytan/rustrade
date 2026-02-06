@@ -49,7 +49,7 @@ impl ZScoreMeanReversionStrategy {
             return None;
         }
 
-        // Calculate mean and std dev using statrs
+        // Calculate mean and std dev using statrs (f64 boundary for statistical library)
         let data = Data::new(prices);
         let mean = data.mean()?;
         let std_dev = data.std_dev()?;
@@ -58,9 +58,10 @@ impl ZScoreMeanReversionStrategy {
             return None; // Avoid division by zero
         }
 
-        // Z-Score = (Current Price - Mean) / StdDev
-        let zscore = (ctx.price_f64 - mean) / std_dev;
-        Decimal::from_f64(zscore)
+        // Z-Score = (Current Price - Mean) / StdDev — core comparison in Decimal for consistency with thresholds
+        let mean_d = Decimal::from_f64_retain(mean).unwrap_or(Decimal::ZERO);
+        let std_d = Decimal::from_f64_retain(std_dev).unwrap_or(Decimal::ONE);
+        Some((ctx.current_price - mean_d) / std_d)
     }
 }
 

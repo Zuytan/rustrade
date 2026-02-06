@@ -91,7 +91,7 @@ impl DashboardViewModel {
 
     pub fn get_win_rate(agent: &UserAgent) -> WinRateMetrics {
         WinRateMetrics {
-            rate: agent.calculate_win_rate(),
+            rate: agent.calculate_win_rate().to_f64().unwrap_or(0.0),
             winning_trades: agent.winning_trades,
             total_trades: agent.total_trades,
         }

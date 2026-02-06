@@ -97,6 +97,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         profit_target_multiplier: dec!(1.5),
         adx_period: 14,
         adx_threshold: dec!(25.0),
+        regime_volatility_threshold: dec!(2.0),
         smc_ob_lookback: 20,
         smc_min_fvg_size_pct: dec!(0.005),
         binance_api_key: "".to_string(),

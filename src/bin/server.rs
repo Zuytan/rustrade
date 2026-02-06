@@ -1,8 +1,7 @@
 //! Rustrade Server - Headless trading system
 //!
 //! This binary runs the trading system without a GUI, suitable for
-//! server deployments. Metrics are pushed via structured JSON logs
-//! to stdout - no HTTP server, no incoming connections.
+//! server deployments. Metrics are pushed via structured JSON logs to stdout.
 //!
 //! # Usage
 //! ```sh
@@ -12,15 +11,6 @@
 //! # Environment Variables
 //! - `OBSERVABILITY_ENABLED` - Enable metrics reporting (default: true)
 //! - `OBSERVABILITY_INTERVAL` - Interval in seconds between metric outputs (default: 60)
-//!
-//! # Metrics Output
-//! Metrics are output as JSON to stdout with prefix `METRICS_JSON:`.
-//! Example: `METRICS_JSON:{"timestamp":"...", "portfolio":{...}}`
-//!
-//! This can be collected by:
-//! - Log aggregators (Loki, Fluentd, CloudWatch Logs)
-//! - File-based collection (redirect stdout to file)
-//! - Prometheus Pushgateway (future enhancement)
 
 use anyhow::Result;
 use rustrade::application::system::Application;
@@ -43,7 +33,7 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Rustrade Server {} starting...", env!("CARGO_PKG_VERSION"));
-    info!("Mode: HEADLESS (no UI, no HTTP server)");
+    info!("Mode: HEADLESS (no UI)");
     info!("Metrics: Push-based (JSON to stdout)");
 
     // Load configuration
@@ -65,8 +55,6 @@ async fn main() -> Result<()> {
     if config.observability_enabled {
         let metrics = handle.metrics.clone();
 
-        // Use observability_port as interval for now (repurpose the config field)
-        // In future, add OBSERVABILITY_INTERVAL env var
         let interval = std::env::var("OBSERVABILITY_INTERVAL")
             .unwrap_or_else(|_| "60".to_string())
             .parse::<u64>()
@@ -74,7 +62,6 @@ async fn main() -> Result<()> {
 
         let reporter = MetricsReporter::new(handle.portfolio.clone(), metrics, interval);
 
-        // Spawn reporter in background
         tokio::spawn(async move {
             reporter.run().await;
         });
@@ -86,7 +73,6 @@ async fn main() -> Result<()> {
 
     info!("Server running. Press Ctrl+C to shutdown.");
 
-    // Wait for shutdown signal
     tokio::signal::ctrl_c().await?;
     info!("Shutdown signal received. Exiting...");
 

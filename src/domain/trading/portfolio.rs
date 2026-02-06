@@ -1,7 +1,8 @@
 use rust_decimal::Decimal;
+use serde::Serialize;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Portfolio {
     pub cash: Decimal,
     pub positions: HashMap<String, Position>,
@@ -15,7 +16,7 @@ pub struct Portfolio {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Position {
     pub symbol: String,
     pub quantity: Decimal,
@@ -172,6 +173,11 @@ mod tests {
             pnl: dec!(200), // Profit of $200
             entry_timestamp: 1000,
             exit_timestamp: Some(2000),
+            strategy_used: None,
+            regime_detected: None,
+            entry_reason: None,
+            exit_reason: None,
+            slippage: None,
         };
 
         portfolio.record_trade(trade.clone());

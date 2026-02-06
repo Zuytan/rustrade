@@ -95,6 +95,8 @@ impl ServicesBootstrap {
                 persistence.candle_repository.clone(),
                 PerformanceEvaluator::new(EvaluationThresholds::default()),
                 config.regime_detection_window,
+                config.adx_threshold,
+                config.regime_volatility_threshold,
                 true,
             )))
         } else {

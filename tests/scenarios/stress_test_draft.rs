@@ -1,30 +1,82 @@
-use rustrade::domain::market::{Candle, MarketEvent};
-use rustrade::domain::types::Decimal;
-use rustrade::application::agents::risk_manager::RiskManager;
+//! Stress tests: circuit breaker and daily loss scenarios.
+//! Run in CI to ensure resilience under adverse conditions.
 
-#[cfg(test)]
-mod stress_tests {
-    use super::*;
+use rust_decimal_macros::dec;
+use rustrade::domain::risk::filters::circuit_breaker_validator::{
+    CircuitBreakerConfig, CircuitBreakerValidator,
+};
+use rustrade::domain::risk::filters::{RiskValidator, ValidationContext, ValidationResult};
+use rustrade::domain::risk::state::RiskState;
+use rustrade::domain::trading::portfolio::Portfolio;
+use rustrade::domain::trading::types::{OrderSide, OrderType, TradeProposal};
+use rustrade::infrastructure::core::circuit_breaker::{CircuitBreaker, CircuitBreakerError};
+use std::collections::HashMap;
+use std::time::Duration;
 
-    /// Simulates a -10% flash crash in 1 minute
-    #[tokio::test]
-    async fn test_flash_crash_resilience() {
-        // Setup System
-        let (mut risk_manager, mut rx) = create_test_system();
-        
-        // Feed crash data
-        let start_price = Decimal::from(50000);
-        let mut price = start_price;
-        
-        for _ in 0..60 {
-            // Drop 0.2% per second (~12% total)
-            price = price * Decimal::from_f64_retain(0.998).unwrap();
-            risk_manager.handle_tick(price).await;
-            
-            // Assert Circuit Breaker trips at -5%
-            if price < start_price * Decimal::from_f64_retain(0.95).unwrap() {
-                assert!(risk_manager.circuit_breaker_active(), "Circuit breaker should toggle ON");
-            }
-        }
+/// Infrastructure circuit breaker opens after N consecutive failures.
+#[tokio::test]
+async fn test_stress_circuit_breaker_opens_after_failures() {
+    let cb = CircuitBreaker::new("stress-test", 3, 2, Duration::from_secs(60));
+
+    for _ in 0..3 {
+        let r = cb.call(async { Result::<(), ()>::Err(()) }).await;
+        assert!(matches!(r, Err(CircuitBreakerError::Inner(()))));
+    }
+
+    let state = cb.state().await;
+    assert_eq!(
+        state,
+        rustrade::infrastructure::core::circuit_breaker::CircuitState::Open
+    );
+
+    let r = cb.call(async { Result::<(), ()>::Err(()) }).await;
+    assert!(matches!(r, Err(CircuitBreakerError::Open(_))));
+}
+
+/// CircuitBreakerValidator rejects proposals when daily loss limit is breached (flash-crash scenario).
+#[tokio::test]
+async fn test_stress_daily_loss_breach_rejects_proposal() {
+    let validator = CircuitBreakerValidator::new(CircuitBreakerConfig {
+        max_daily_loss_pct: dec!(0.05),
+        max_drawdown_pct: dec!(0.10),
+        consecutive_loss_limit: 5,
+    });
+
+    let proposal = TradeProposal {
+        symbol: "BTC/USD".to_string(),
+        side: OrderSide::Buy,
+        price: dec!(50000),
+        quantity: dec!(0.1),
+        order_type: OrderType::Market,
+        reason: "stress test".to_string(),
+        timestamp: 0,
+    };
+
+    let portfolio = Portfolio::new();
+    let prices: HashMap<String, rust_decimal::Decimal> = HashMap::new();
+    let risk_state = RiskState {
+        session_start_equity: dec!(100_000),
+        ..Default::default()
+    };
+    let current_equity = dec!(93_000); // 7% loss > 5% limit
+
+    let ctx = ValidationContext::new(
+        &proposal,
+        &portfolio,
+        current_equity,
+        &prices,
+        &risk_state,
+        None,
+        None,
+        None,
+        dec!(0),
+        dec!(50_000),
+        None,
+    );
+
+    let result = validator.validate(&ctx).await;
+    match &result {
+        ValidationResult::Reject(reason) => assert!(reason.contains("Daily loss")),
+        _ => panic!("Expected Reject for daily loss breach, got {:?}", result),
     }
 }

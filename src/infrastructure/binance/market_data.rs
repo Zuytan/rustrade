@@ -172,7 +172,10 @@ impl MarketDataService for BinanceMarketDataService {
         // Check cache first (1 hour TTL)
         const CACHE_TTL_SECS: u64 = 3600;
         {
-            let cache = self.assets_cache.read().unwrap();
+            let cache = self
+                .assets_cache
+                .read()
+                .map_err(|e| anyhow::anyhow!("assets cache lock poisoned: {}", e))?;
             #[allow(clippy::collapsible_if)]
             if let Some((assets, cached_at)) = cache.as_ref() {
                 if cached_at.elapsed().as_secs() < CACHE_TTL_SECS {
@@ -228,7 +231,10 @@ impl MarketDataService for BinanceMarketDataService {
 
         // Update cache
         {
-            let mut cache = self.assets_cache.write().unwrap();
+            let mut cache = self
+                .assets_cache
+                .write()
+                .map_err(|e| anyhow::anyhow!("assets cache lock poisoned: {}", e))?;
             *cache = Some((assets.clone(), std::time::Instant::now()));
         }
 

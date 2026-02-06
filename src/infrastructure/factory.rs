@@ -6,7 +6,6 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::infrastructure::alpaca::{AlpacaExecutionService, AlpacaMarketDataService};
 use crate::infrastructure::binance::{BinanceExecutionService, BinanceMarketDataService};
 use crate::infrastructure::mock::{MockExecutionService, MockMarketDataService};
-use crate::infrastructure::oanda::{OandaExecutionService, OandaMarketDataService};
 use crate::infrastructure::observability::Metrics;
 use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
@@ -117,20 +116,33 @@ impl ServiceFactory {
                     spread_cache,
                 )
             }
-            Mode::Oanda => (
-                Arc::new(OandaMarketDataService::new(
-                    config.oanda_api_key.clone(),
-                    config.oanda_stream_base_url.clone(),
-                    config.oanda_api_base_url.clone(),
-                    config.oanda_account_id.clone(),
-                )),
-                Arc::new(OandaExecutionService::new(
-                    config.oanda_api_key.clone(),
-                    config.oanda_api_base_url.clone(),
-                    config.oanda_account_id.clone(),
-                )),
-                Arc::new(SpreadCache::new()),
-            ),
+            Mode::Oanda => {
+                // OANDA market data and execution not implemented; use Mock for now.
+                let execution_service = if config.simulation_enabled {
+                    use crate::infrastructure::simulation::latency_model::NetworkLatency;
+                    use crate::infrastructure::simulation::slippage_model::VolatilitySlippage;
+                    let latency_model = Arc::new(NetworkLatency::new(
+                        config.simulation_latency_base_ms,
+                        config.simulation_latency_jitter_ms,
+                    ));
+                    let slippage_model = Arc::new(VolatilitySlippage::new(
+                        config.simulation_slippage_volatility,
+                    ));
+                    MockExecutionService::with_simulation_models(
+                        portfolio.clone(),
+                        config.create_fee_model(),
+                        latency_model,
+                        slippage_model,
+                    )
+                } else {
+                    MockExecutionService::with_costs(portfolio.clone(), config.create_fee_model())
+                };
+                (
+                    Arc::new(MockMarketDataService::new()),
+                    Arc::new(execution_service),
+                    Arc::new(SpreadCache::new()),
+                )
+            }
             Mode::Binance => {
                 let market_service = BinanceMarketDataService::builder()
                     .api_key(config.binance_api_key.clone())

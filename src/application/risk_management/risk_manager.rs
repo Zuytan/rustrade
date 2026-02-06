@@ -95,7 +95,7 @@ pub struct RiskManager {
     candle_repository: Option<Arc<dyn CandleRepository>>,
 
     // Services
-    #[allow(dead_code)] // Todo: Use in LiquidationService in next task
+    #[allow(dead_code)] // Reserved for LiquidationService panic-mode exits (blind liquidation)
     spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
     metrics: Metrics,
 }

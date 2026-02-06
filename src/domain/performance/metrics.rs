@@ -424,6 +424,11 @@ mod tests {
                 pnl: dec!(100),
                 entry_timestamp: 0,
                 exit_timestamp: Some(86400000), // 1 day
+                strategy_used: None,
+                regime_detected: None,
+                entry_reason: None,
+                exit_reason: None,
+                slippage: None,
             },
             Trade {
                 id: "2".to_string(),
@@ -435,6 +440,11 @@ mod tests {
                 pnl: dec!(100),
                 entry_timestamp: 86400000,
                 exit_timestamp: Some(172800000), // 2 days total
+                strategy_used: None,
+                regime_detected: None,
+                entry_reason: None,
+                exit_reason: None,
+                slippage: None,
             },
         ];
 
@@ -469,6 +479,8 @@ mod tests {
 
     #[test]
     fn test_metrics_with_mixed_trades() {
+        let none = None::<String>;
+        let none_dec = None::<Decimal>;
         let trades = vec![
             Trade {
                 id: "1".to_string(),
@@ -480,6 +492,11 @@ mod tests {
                 pnl: dec!(100),
                 entry_timestamp: 0,
                 exit_timestamp: Some(86400000),
+                strategy_used: none.clone(),
+                regime_detected: none.clone(),
+                entry_reason: none.clone(),
+                exit_reason: none.clone(),
+                slippage: none_dec,
             },
             Trade {
                 id: "2".to_string(),
@@ -491,6 +508,11 @@ mod tests {
                 pnl: dec!(-200),
                 entry_timestamp: 86400000,
                 exit_timestamp: Some(172800000),
+                strategy_used: none.clone(),
+                regime_detected: none.clone(),
+                entry_reason: none.clone(),
+                exit_reason: none.clone(),
+                slippage: none_dec,
             },
             Trade {
                 id: "3".to_string(),
@@ -502,6 +524,11 @@ mod tests {
                 pnl: dec!(150),
                 entry_timestamp: 172800000,
                 exit_timestamp: Some(259200000),
+                strategy_used: none.clone(),
+                regime_detected: none.clone(),
+                entry_reason: none.clone(),
+                exit_reason: none.clone(),
+                slippage: none_dec,
             },
         ];
 
@@ -528,6 +555,11 @@ mod tests {
             pnl: dec!(100),
             entry_timestamp: 1000,
             exit_timestamp: Some(2000),
+            strategy_used: None,
+            regime_detected: None,
+            entry_reason: None,
+            exit_reason: None,
+            slippage: None,
         }];
 
         // Days:

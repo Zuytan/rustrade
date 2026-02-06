@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.95.0"
+version = "0.95.1"
 edition = "2024"
 default-run = "rustrade"
 
@@ -77,4 +77,3 @@ csv = "1.4.0"
 
 ort = { version = "2.0.0-rc.9", features = ["ndarray"] }
 ndarray = "0.15"
-

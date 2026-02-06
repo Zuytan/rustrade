@@ -138,9 +138,9 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                                             iterations: 10000,
                                             steps: 100,
                                             initial_equity: agent.calculate_total_value(),
-                                            win_rate: agent.calculate_win_rate() / 100.0,
-                                            avg_win_pct: avg_win,
-                                            avg_loss_pct: avg_loss,
+                                            win_rate: agent.calculate_win_rate().to_f64().unwrap_or(0.0) / 100.0,
+                                            avg_win_pct: avg_win.to_f64().unwrap_or(0.02),
+                                            avg_loss_pct: avg_loss.to_f64().unwrap_or(0.015),
                                         };
                                         agent.monte_carlo_result = Some(crate::domain::performance::monte_carlo::MonteCarloEngine::simulate(&config));
                                     }

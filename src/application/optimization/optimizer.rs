@@ -204,6 +204,11 @@ impl GridSearchOptimizer {
                             pnl,
                             entry_timestamp: buy_order.timestamp,
                             exit_timestamp: Some(order.timestamp),
+                            strategy_used: None,
+                            regime_detected: None,
+                            entry_reason: None,
+                            exit_reason: None,
+                            slippage: None,
                         });
                         open_position = None;
                     }

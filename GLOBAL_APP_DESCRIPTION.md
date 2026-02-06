@@ -121,10 +121,11 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 ## 6. Infrastructure & Data
 
 ### Connectivity
-- **Broker Agnostic**: Seamlessly switches between Alpaca (Stocks/Crypto), Binance (Crypto), and Mock (Paper Trading).
+- **Broker Agnostic**: Seamlessly switches between Alpaca (Stocks/Crypto), Binance (Crypto), and Mock (Paper Trading). OANDA (Forex) is supported as a sector provider only; when `MODE=oanda`, market data and execution fall back to Mock until full v20 API integration.
 - **Modular Services**: Each broker infrastructure is organized into focused modules:
   - **Binance**: `common.rs`, `market_data.rs`, `execution.rs`, `sector_provider.rs`, `websocket.rs`
   - **Alpaca**: Similar modular structure for consistency
+  - **OANDA**: `client.rs` (sector provider only; market data and execution to be added)
 - **Cost Modeling**: Unified `FeeModel` handles commission and slippage calculations for accurate simulation.
 
 ### UI Architecture
@@ -135,17 +136,19 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 
 ### Data Optimization
 - **Smart Caching**: `CandleRepository` caches historical data locally (SQLite). Services use an incremental load strategy to minimize API calls and vastly speed up startup (Warmup).
+- **Trade Persistence**: Completed trades are stored in SQLite with strategy, regime, entry/exit reasons, and slippage for post-mortem analysis.
 - **Dynamic Crypto Scanner**: dedicated "Top Movers" scanner for 24/7 crypto markets, automatically discovering new listings via exchange APIs.
 
 ## 7. Performance & Verification
 
 - **Simulator & Optimization**:
   - Detailed backtesting engine capable of replaying historical data (including specific crash scenarios) to verify strategy logic and metrics (Alpha, Beta, Sharpe).
+  - **Walk-Forward Backtesting**: Train/test window splitting for out-of-sample Sharpe and overfitting detection.
   - **Parallel Execution**: Leverages `Rayon` for multi-threaded backtesting, delivering massive speedups on multi-core CPU architectures.
-- **Quality Assurance**: 
-  - 100% Test Coverage on core logic (Risk, Sizing).
-  - CI pipeline enforcing `clippy` (linting) and `fmt` standards.
-  - "No Unwraps" policy in production code for stability.
+- **Quality Assurance**:
+  - All financial calculations use `rust_decimal::Decimal`; `f64` is used only for pure statistics or UI display.
+  - Stress tests (circuit breaker, daily loss breach) in `tests/scenarios/stress_test_draft.rs`; run with the `scenarios` test binary.
+  - CI pipeline enforcing `clippy` (linting) and `fmt` standards; "No Unwraps" policy in production code for stability.
 
 ## 8. Server Mode & Observability
 
@@ -153,6 +156,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 Rustrade is optimized for headless server deployments:
 - **Server Binary**: `cargo run --bin server` runs the full trading system without a GUI.
 - **Production Builds**: The `ui` feature flag can be disabled for minimal resource footprint.
+- **Common commands**: `cargo run --bin rustrade` (desktop UI), `cargo run --bin server` (headless), `cargo run --bin benchmark -- --symbol SPY` (backtest).
 
 ### Advanced Observability
 The system features a multi-tier observability stack designed for high-frequency monitoring:

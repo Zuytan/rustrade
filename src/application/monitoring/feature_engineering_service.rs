@@ -5,6 +5,7 @@ use crate::application::market_data::statistical_features::{
 use crate::application::risk_management::volatility::calculate_realized_volatility;
 use crate::domain::ports::FeatureEngineeringService;
 use crate::domain::trading::types::{Candle, FeatureSet};
+use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use std::collections::VecDeque;
 use ta::Next;
@@ -133,7 +134,8 @@ pub struct TechnicalFeatureEngineeringService {
     ema_fast: ExponentialMovingAverage,
     ema_slow: ExponentialMovingAverage,
     adx: ManualAdx,
-    price_history: VecDeque<f64>,
+    /// Price history kept in Decimal until conversion for statistical functions (hurst, skewness, volatility).
+    price_history: VecDeque<Decimal>,
 }
 
 impl TechnicalFeatureEngineeringService {
@@ -168,6 +170,11 @@ impl TechnicalFeatureEngineeringService {
             price_history: VecDeque::with_capacity(100),
         }
     }
+}
+
+/// Convert Decimal price history to f64 only for statistical library boundaries (statrs, etc.).
+fn price_history_to_f64(history: &VecDeque<Decimal>) -> Vec<f64> {
+    history.iter().filter_map(|d| d.to_f64()).collect()
 }
 
 impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
@@ -209,15 +216,14 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
         // Calculate ATR early as it is needed for momentum normalization
         let atr_val = self.atr.next(&item);
 
-        // Update price history
-        self.price_history.push_back(price);
+        // Update price history (keep as Decimal until statistical boundaries)
+        self.price_history.push_back(candle.close);
         if self.price_history.len() > 100 {
             self.price_history.pop_front();
         }
 
-        // Calculate advanced features
-        // Convert VecDeque to Vec for calculations
-        let prices_vec: Vec<f64> = self.price_history.iter().copied().collect();
+        // Convert to f64 only for statistical library boundaries
+        let prices_vec: Vec<f64> = price_history_to_f64(&self.price_history);
 
         // Hurst Exponent (requires ~50 periods)
         let hurst_exponent = if prices_vec.len() >= 50 {

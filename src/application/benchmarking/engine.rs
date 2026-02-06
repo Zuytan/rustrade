@@ -2,16 +2,28 @@ use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::optimization::parallel_benchmark::ParallelBenchmarkRunner;
 use crate::application::optimization::simulator::{BacktestResult, Simulator};
 use crate::config::{Config, StrategyMode};
+use crate::domain::performance::metrics::PerformanceMetrics;
 use crate::domain::risk::risk_appetite::RiskAppetite;
 use crate::domain::trading::fee_model::ConstantFeeModel;
 use crate::domain::trading::portfolio::Portfolio;
+use crate::domain::trading::types::{Order, OrderSide, Trade};
 use crate::infrastructure::alpaca::AlpacaMarketDataService;
 use crate::infrastructure::mock::MockExecutionService;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Result of walk-forward backtesting: out-of-sample metrics to detect overfitting.
+#[derive(Debug, Clone)]
+pub struct WalkForwardResult {
+    pub test_start: DateTime<Utc>,
+    pub test_end: DateTime<Utc>,
+    pub oos_sharpe_ratio: f64,
+    pub oos_return_pct: Decimal,
+    pub oos_trade_count: usize,
+}
 
 pub struct BenchmarkEngine {
     market_service: Arc<AlpacaMarketDataService>,
@@ -114,6 +126,59 @@ impl BenchmarkEngine {
         self.market_service.get_top_movers().await
     }
 
+    /// Walk-forward backtesting: split [start, end] into train (e.g. 70%) and test (30%),
+    /// run backtest on the test window only, and return out-of-sample Sharpe to detect overfitting.
+    pub async fn run_walk_forward(
+        &self,
+        symbol: &str,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        strategy: StrategyMode,
+        train_ratio: f64,
+        risk_score: Option<u8>,
+    ) -> anyhow::Result<WalkForwardResult> {
+        let total_secs = (end - start).num_seconds();
+        let train_secs = (total_secs as f64 * train_ratio) as i64;
+        let test_start = start + Duration::seconds(train_secs);
+
+        if test_start >= end {
+            anyhow::bail!(
+                "Walk-forward: test window empty (train_ratio too high or window too short)"
+            );
+        }
+
+        let mut app_config = self.base_config.clone();
+        app_config.strategy_mode = strategy;
+        if let Some(score) = risk_score {
+            let risk_appetite =
+                RiskAppetite::new(score).expect("risk_score validated within 1-9 range");
+            app_config.risk_appetite = Some(risk_appetite);
+        }
+        let mut config: AnalystConfig = app_config.clone().into();
+        if let Some(ra) = &app_config.risk_appetite {
+            config.apply_risk_appetite(ra);
+        }
+
+        let result = self
+            .execute_simulation(symbol, test_start, end, config)
+            .await?;
+
+        let trades = orders_to_trades(&result.trades);
+        let metrics = PerformanceMetrics::calculate_time_series_metrics(
+            &trades,
+            &result.daily_closes,
+            result.initial_equity,
+        );
+
+        Ok(WalkForwardResult {
+            test_start,
+            test_end: end,
+            oos_sharpe_ratio: metrics.sharpe_ratio,
+            oos_return_pct: result.total_return_pct,
+            oos_trade_count: trades.len(),
+        })
+    }
+
     async fn execute_simulation(
         &self,
         symbol: &str,
@@ -160,4 +225,38 @@ impl BenchmarkEngine {
 
         simulator.run(symbol, start, end).await
     }
+}
+
+/// Convert backtest orders (Buy/Sell pairs) into Trade records for metrics.
+fn orders_to_trades(orders: &[Order]) -> Vec<Trade> {
+    let mut trades = Vec::new();
+    let mut open_position: Option<&Order> = None;
+    for order in orders {
+        match order.side {
+            OrderSide::Buy => open_position = Some(order),
+            OrderSide::Sell => {
+                if let Some(buy) = open_position {
+                    let pnl = (order.price - buy.price) * order.quantity;
+                    trades.push(Trade {
+                        id: order.id.clone(),
+                        symbol: order.symbol.clone(),
+                        side: OrderSide::Buy,
+                        entry_price: buy.price,
+                        exit_price: Some(order.price),
+                        quantity: order.quantity,
+                        pnl,
+                        entry_timestamp: buy.timestamp,
+                        exit_timestamp: Some(order.timestamp),
+                        strategy_used: None,
+                        regime_detected: None,
+                        entry_reason: None,
+                        exit_reason: None,
+                        slippage: None,
+                    });
+                    open_position = None;
+                }
+            }
+        }
+    }
+    trades
 }

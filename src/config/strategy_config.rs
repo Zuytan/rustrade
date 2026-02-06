@@ -38,6 +38,8 @@ pub struct StrategyEnvConfig {
     // ADX
     pub adx_period: usize,
     pub adx_threshold: Decimal,
+    /// Volatility threshold for regime detection (e.g. 2.0 = 2x std dev)
+    pub regime_volatility_threshold: Decimal,
 
     // ATR
     pub atr_period: usize,
@@ -161,6 +163,11 @@ impl StrategyEnvConfig {
             ema_slow_period: Self::parse_usize("EMA_SLOW_PERIOD", 150).unwrap_or(150),
             adx_period: Self::parse_usize("ADX_PERIOD", 14).unwrap_or(14),
             adx_threshold: Self::parse_decimal("ADX_THRESHOLD", dec!(25.0)).unwrap_or(dec!(25.0)),
+            regime_volatility_threshold: Self::parse_decimal(
+                "REGIME_VOLATILITY_THRESHOLD",
+                dec!(2.0),
+            )
+            .unwrap_or(dec!(2.0)),
             atr_period: Self::parse_usize("ATR_PERIOD", 14)?,
             trailing_stop_atr_multiplier,
             strategy_mode,
