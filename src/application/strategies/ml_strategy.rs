@@ -81,10 +81,14 @@ impl TradingStrategy for MLStrategy {
                         None
                     }
                 } else {
-                    // Regression Mode (Return Prediction)
+                    // Regression Mode (Return Prediction). Confidence scales with prediction magnitude.
                     let score_dec = Decimal::from_f64_retain(score).unwrap_or(Decimal::ZERO);
                     let threshold_dec =
                         Decimal::from_f64_retain(self.threshold).unwrap_or(Decimal::ZERO);
+
+                    let scale = (self.threshold * 10.0).max(0.001);
+                    let magnitude = score.abs() / scale;
+                    let confidence = (0.5 + (magnitude * 0.3)).min(0.95);
 
                     if score_dec > threshold_dec {
                         Some(
@@ -93,7 +97,7 @@ impl TradingStrategy for MLStrategy {
                                 score_dec * dec!(100.0),
                                 threshold_dec * dec!(100.0)
                             ))
-                            .with_confidence(0.8), // Fixed confidence for now, or scale by magnitude
+                            .with_confidence(confidence),
                         )
                     } else if score_dec < -threshold_dec {
                         Some(
@@ -102,7 +106,7 @@ impl TradingStrategy for MLStrategy {
                                 score_dec * dec!(100.0),
                                 threshold_dec * dec!(100.0)
                             ))
-                            .with_confidence(0.8),
+                            .with_confidence(confidence),
                         )
                     } else {
                         None

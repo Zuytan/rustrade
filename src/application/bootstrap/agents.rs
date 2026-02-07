@@ -1,6 +1,5 @@
 use anyhow::Result;
 use chrono::Timelike;
-use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{error, info, warn};
@@ -135,21 +134,57 @@ impl AgentsBootstrap {
                 Mode::Binance => Some(Arc::new(BinanceSectorProvider)),
             };
 
-        let risk_config = crate::domain::risk::risk_config::RiskConfig {
-            max_position_size_pct: config.max_position_size_pct,
-            max_daily_loss_pct: config.max_daily_loss_pct,
-            max_drawdown_pct: config.max_drawdown_pct,
-            consecutive_loss_limit: config.consecutive_loss_limit,
-            valuation_interval_seconds: 60,
-            max_sector_exposure_pct: config.max_sector_exposure_pct,
-            sector_provider,
-            pending_order_ttl_ms: config.pending_order_ttl_ms,
-            allow_pdt_risk: false,
-            correlation_config:
-                crate::domain::risk::filters::correlation_filter::CorrelationFilterConfig {
-                    max_correlation_threshold: dec!(0.85),
+        let base_risk = if config.asset_class == crate::config::AssetClass::Crypto {
+            crate::domain::risk::risk_config::RiskConfig::crypto_default()
+        } else {
+            crate::domain::risk::risk_config::RiskConfig::default()
+        };
+
+        // When risk appetite is set, it drives all risk limits (prise de risque).
+        let risk_config = if let Some(ref ra) = config.risk_appetite {
+            crate::domain::risk::risk_config::RiskConfig {
+                max_position_size_pct: ra.calculate_max_position_size_pct(),
+                max_daily_loss_pct: ra.calculate_max_daily_loss_pct(),
+                max_drawdown_pct: ra.calculate_max_drawdown_pct(),
+                consecutive_loss_limit: ra.calculate_consecutive_loss_limit(),
+                valuation_interval_seconds: base_risk.valuation_interval_seconds,
+                max_sector_exposure_pct: config.max_sector_exposure_pct,
+                sector_provider: sector_provider.clone(),
+                pending_order_ttl_ms: config.pending_order_ttl_ms,
+                allow_pdt_risk: base_risk.allow_pdt_risk,
+                correlation_config: base_risk.correlation_config.clone(),
+                volatility_config: base_risk.volatility_config.clone(),
+            }
+        } else {
+            crate::domain::risk::risk_config::RiskConfig {
+                max_position_size_pct: if config.asset_class == crate::config::AssetClass::Crypto {
+                    base_risk.max_position_size_pct
+                } else {
+                    config.max_position_size_pct
                 },
-            volatility_config: crate::domain::risk::volatility_manager::VolatilityConfig::default(),
+                max_daily_loss_pct: if config.asset_class == crate::config::AssetClass::Crypto {
+                    base_risk.max_daily_loss_pct
+                } else {
+                    config.max_daily_loss_pct
+                },
+                max_drawdown_pct: if config.asset_class == crate::config::AssetClass::Crypto {
+                    base_risk.max_drawdown_pct
+                } else {
+                    config.max_drawdown_pct
+                },
+                consecutive_loss_limit: if config.asset_class == crate::config::AssetClass::Crypto {
+                    base_risk.consecutive_loss_limit
+                } else {
+                    config.consecutive_loss_limit
+                },
+                valuation_interval_seconds: base_risk.valuation_interval_seconds,
+                max_sector_exposure_pct: config.max_sector_exposure_pct,
+                sector_provider,
+                pending_order_ttl_ms: config.pending_order_ttl_ms,
+                allow_pdt_risk: base_risk.allow_pdt_risk,
+                correlation_config: base_risk.correlation_config,
+                volatility_config: base_risk.volatility_config,
+            }
         };
 
         let correlation_service = Some(Arc::new(CorrelationService::new(
@@ -198,6 +233,7 @@ impl AgentsBootstrap {
             Some(persistence.order_repository.clone()),
             retry_config,
             connection_health_service.clone(),
+            config.create_fee_model(),
         );
 
         // SPAWN TASKS
@@ -285,6 +321,15 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
         breakout_volume_mult: dec!(1.1),
         max_loss_per_trade_pct: dec!(-0.05),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     }
 }
 
@@ -363,13 +408,28 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
             Arc::new(MomentumDivergenceStrategy::default())
         }
         crate::domain::market::strategy_config::StrategyMode::Ensemble => {
-            Arc::new(EnsembleStrategy::default_ensemble())
+            Arc::new(EnsembleStrategy::modern_ensemble(analyst_config))
         }
         crate::domain::market::strategy_config::StrategyMode::ZScoreMR => {
-            Arc::new(ZScoreMeanReversionStrategy::default())
+            Arc::new(ZScoreMeanReversionStrategy::new(
+                analyst_config.zscore_lookback,
+                analyst_config.zscore_entry_threshold,
+                analyst_config.zscore_exit_threshold,
+            ))
         }
         crate::domain::market::strategy_config::StrategyMode::StatMomentum => {
-            Arc::new(StatisticalMomentumStrategy::default())
+            Arc::new(StatisticalMomentumStrategy::new(
+                analyst_config.stat_momentum_lookback,
+                analyst_config.stat_momentum_threshold,
+                analyst_config.stat_momentum_trend_confirmation,
+            ))
+        }
+        crate::domain::market::strategy_config::StrategyMode::OrderFlow => {
+            Arc::new(OrderFlowStrategy::new(
+                analyst_config.orderflow_ofi_threshold,
+                analyst_config.orderflow_stacked_count,
+                analyst_config.orderflow_volume_profile_lookback,
+            ))
         }
         crate::domain::market::strategy_config::StrategyMode::ML => {
             let path = std::path::PathBuf::from("data/ml/model.bin");

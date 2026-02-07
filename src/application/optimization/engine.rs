@@ -1,10 +1,10 @@
-//! Optimization engine for parameter grid search.
+//! Optimization engine for parameter search.
 //!
-//! This module provides a high-level interface for running optimization
-//! workflows, similar to `BenchmarkEngine` for backtesting.
+//! Uses a genetic algorithm by default (single period, parallel evaluation).
+//! Bounds are derived from ParameterGrid when provided.
 
 use crate::application::optimization::optimizer::{
-    GridSearchOptimizer, OptimizationResult, ParameterGrid,
+    GeneticOptimizer, OptimizationResult, ParameterGrid,
 };
 use crate::config::{AssetClass, Config, StrategyMode};
 use crate::domain::ports::ExecutionService;
@@ -38,6 +38,8 @@ impl OptimizeEngine {
         let api_secret = env::var("ALPACA_SECRET_KEY").context("ALPACA_SECRET_KEY must be set")?;
         let data_url = env::var("ALPACA_DATA_URL")
             .unwrap_or_else(|_| "https://data.alpaca.markets".to_string());
+        let api_base_url = env::var("ALPACA_BASE_URL")
+            .unwrap_or_else(|_| "https://paper-api.alpaca.markets".to_string());
         let ws_url = env::var("ALPACA_WS_URL")
             .unwrap_or_else(|_| "wss://stream.data.alpaca.markets/v2/iex".to_string());
         let asset_class_str = env::var("ASSET_CLASS").unwrap_or_else(|_| "stock".to_string());
@@ -50,6 +52,7 @@ impl OptimizeEngine {
                 .api_key(api_key)
                 .api_secret(api_secret)
                 .data_base_url(data_url)
+                .api_base_url(api_base_url)
                 .ws_url(ws_url)
                 .min_volume_threshold(dec!(10000.0).to_f64().unwrap_or(10000.0))
                 .asset_class(asset_class)
@@ -63,7 +66,9 @@ impl OptimizeEngine {
         })
     }
 
-    /// Runs a grid search optimization for a single symbol.
+    /// Runs parameter optimization for a single symbol using a genetic algorithm.
+    /// Bounds are derived from parameter_grid; population/generations control the search.
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_grid_search(
         &self,
         symbol: &str,
@@ -71,18 +76,61 @@ impl OptimizeEngine {
         end: DateTime<Utc>,
         strategy: StrategyMode,
         parameter_grid: ParameterGrid,
+        _train_ratio: f64,
+        risk_score: Option<u8>,
+    ) -> Result<Vec<OptimizationResult>> {
+        self.run_genetic_optimization(
+            symbol,
+            start,
+            end,
+            strategy,
+            parameter_grid,
+            None,
+            None,
+            None,
+            None,
+            risk_score,
+        )
+        .await
+    }
+
+    /// Runs genetic optimization with optional tuning (population, generations, mutation_rate, timeframe, risk_score).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn run_genetic_optimization(
+        &self,
+        symbol: &str,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        strategy: StrategyMode,
+        parameter_grid: ParameterGrid,
+        population_size: Option<usize>,
+        generations: Option<usize>,
+        mutation_rate: Option<f64>,
+        timeframe: Option<String>,
+        risk_score: Option<u8>,
     ) -> Result<Vec<OptimizationResult>> {
         let execution_service_factory = self.create_execution_factory();
+        let bounds = parameter_grid.gene_bounds();
+        let population_size = population_size.unwrap_or(24);
+        let generations = generations.unwrap_or(15);
+        let mutation_rate = mutation_rate.unwrap_or(0.15);
+        let timeframe = timeframe.as_deref().unwrap_or("1Min");
 
-        let optimizer = GridSearchOptimizer::new(
+        let optimizer = GeneticOptimizer::new(
             self.market_service.clone(),
             execution_service_factory,
-            parameter_grid,
+            bounds,
             strategy,
             self.base_config.min_profit_ratio,
+            population_size,
+            generations,
+            mutation_rate,
+            risk_score,
         );
 
-        optimizer.run_optimization(symbol, start, end).await
+        optimizer
+            .run_optimization(symbol, start, end, timeframe)
+            .await
     }
 
     /// Runs optimization on multiple symbols sequentially.
@@ -93,13 +141,22 @@ impl OptimizeEngine {
         end: DateTime<Utc>,
         strategy: StrategyMode,
         parameter_grid: ParameterGrid,
+        train_ratio: f64,
     ) -> Vec<(String, Result<Vec<OptimizationResult>>)> {
         let mut results = Vec::new();
 
         for symbol in symbols {
             info!("Running optimization for {}", symbol);
             let result = self
-                .run_grid_search(&symbol, start, end, strategy, parameter_grid.clone())
+                .run_grid_search(
+                    &symbol,
+                    start,
+                    end,
+                    strategy,
+                    parameter_grid.clone(),
+                    train_ratio,
+                    None, // risk_score: batch does not expose risk_score yet
+                )
                 .await;
             results.push((symbol, result));
         }

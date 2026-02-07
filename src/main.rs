@@ -4,7 +4,7 @@ use rustrade::application::client::SystemClient;
 use rustrade::application::system::Application;
 use rustrade::config::Config;
 
-use tracing::{Level, info};
+use tracing::info;
 use tracing_subscriber::prelude::*;
 
 // A writer that sends logs to the UI via a crossbeam channel
@@ -59,8 +59,10 @@ fn main() -> anyhow::Result<()> {
         .with_ansi(false) // No color codes for UI text
         .with_target(false); // cleaner
 
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .with(filter)
         .with(stdout_layer)
         .with(ui_layer)
         .init();

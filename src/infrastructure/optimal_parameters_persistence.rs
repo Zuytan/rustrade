@@ -69,6 +69,19 @@ impl OptimalParametersPersistence {
         }
     }
 
+    /// Gets optimal parameters for a specific risk appetite score (1-9).
+    /// Prefers an entry stored with that exact score (from `optimize --risk-score N`); otherwise falls back to the profile (1-3 Conservative, 4-6 Balanced, 7-9 Aggressive).
+    pub fn get_for_risk_score(
+        &self,
+        score: u8,
+        asset_type: crate::domain::risk::optimal_parameters::AssetType,
+    ) -> Result<Option<OptimalParameters>> {
+        match self.load()? {
+            Some(set) => Ok(set.get_by_risk_score(asset_type, score).cloned()),
+            None => Ok(None),
+        }
+    }
+
     /// Updates or inserts parameters for a single profile.
     pub fn upsert(&self, params: OptimalParameters) -> Result<()> {
         let mut set = self.load()?.unwrap_or_default();

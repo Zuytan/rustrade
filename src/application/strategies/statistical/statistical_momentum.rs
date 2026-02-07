@@ -86,41 +86,58 @@ impl TradingStrategy for StatisticalMomentumStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
         let momentum = self.calculate_normalized_momentum(ctx)?;
 
-        // BUY: Strong positive momentum + trend confirmation
+        // BUY: Strong positive momentum + trend confirmation. Confidence scales with momentum strength.
         if !ctx.has_position
             && momentum > self.momentum_threshold
             && self.check_trend_confirmation(ctx, true)
         {
+            let th_f64 = self.momentum_threshold.to_f64().unwrap_or(1.5);
+            let mom_f64 = momentum.to_f64().unwrap_or(th_f64);
+            let excess = (mom_f64 - th_f64) / th_f64.max(0.01);
+            let confidence = (0.5 + (excess * 0.3)).min(0.95);
             return Some(
                 Signal::buy(format!(
                     "StatMomentum: Strong upward momentum ({} ATR), Price {} > Trend {}",
                     momentum, ctx.current_price, ctx.trend_sma
                 ))
-                .with_confidence(0.80),
+                .with_confidence(confidence),
             );
         }
 
         // SELL: Momentum weakening or trend break
         if ctx.has_position {
-            // Exit if momentum turns negative
+            // Exit if momentum turns negative. Confidence scales with reversal magnitude.
             if momentum < -self.momentum_threshold {
+                let th_f64 = self.momentum_threshold.to_f64().unwrap_or(1.5);
+                let mom_abs = momentum.abs().to_f64().unwrap_or(0.0);
+                let strength = (mom_abs / th_f64).min(2.0);
+                let confidence = (0.5 + (strength * 0.25)).min(0.90);
                 return Some(
                     Signal::sell(format!(
                         "StatMomentum: Momentum reversed ({} ATR)",
                         momentum
                     ))
-                    .with_confidence(0.75),
+                    .with_confidence(confidence),
                 );
             }
 
-            // Exit if trend breaks (price below trend SMA)
+            // Exit if trend breaks (price below trend SMA). Confidence scales with distance below.
             if self.trend_confirmation && ctx.current_price < ctx.trend_sma {
+                let distance_pct = if ctx.trend_sma > Decimal::ZERO {
+                    ((ctx.trend_sma - ctx.current_price) / ctx.trend_sma)
+                        .to_f64()
+                        .unwrap_or(0.0)
+                        * 100.0
+                } else {
+                    0.0
+                };
+                let confidence = (0.5 + (distance_pct * 0.02)).min(0.85);
                 return Some(
                     Signal::sell(format!(
                         "StatMomentum: Trend break (Price {} < Trend {})",
                         ctx.current_price, ctx.trend_sma
                     ))
-                    .with_confidence(0.70),
+                    .with_confidence(confidence),
                 );
             }
         }

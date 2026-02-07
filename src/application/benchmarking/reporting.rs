@@ -111,9 +111,23 @@ impl BenchmarkReporter {
         );
         println!("{}", "-".repeat(120));
 
+        let mut warnings: Vec<String> = Vec::new();
+
         for res in results {
+            // Flag extreme returns (> +500% or < -90%)
+            let ret_f64 = res.return_pct.to_f64().unwrap_or(0.0);
+            let flag = if ret_f64 > 500.0 {
+                " ⚠️ EXTREME"
+            } else if ret_f64 < -90.0 {
+                " ⚠️ WIPEOUT"
+            } else if res.max_drawdown >= 99.0 {
+                " ⚠️ MAX-DD"
+            } else {
+                ""
+            };
+
             println!(
-                "{:<10} | {:<16} | {:<15} | {:>8.2}% | {:>8.2}% | ${:>9.2} | {:>6} | {:>7.1}% | {:>7.2}%",
+                "{:<10} | {:<16} | {:<15} | {:>8.2}% | {:>8.2}% | ${:>9.2} | {:>6} | {:>7.1}% | {:>7.2}%{}",
                 res.symbol,
                 res.strategy,
                 res.window,
@@ -122,10 +136,42 @@ impl BenchmarkReporter {
                 res.net_profit,
                 res.trade_count,
                 res.win_rate * 100.0,
-                res.max_drawdown
+                res.max_drawdown,
+                flag
             );
+
+            if ret_f64 > 500.0 {
+                warnings.push(format!(
+                    "  {} {}: Return {:.1}% is unrealistically high — check data quality / sizing",
+                    res.symbol, res.window, ret_f64
+                ));
+            }
+            if ret_f64 < -90.0 {
+                warnings.push(format!(
+                    "  {} {}: Return {:.1}% — near-total wipeout, review risk limits",
+                    res.symbol, res.window, ret_f64
+                ));
+            }
+            if res.max_drawdown >= 99.0 {
+                warnings.push(format!(
+                    "  {} {}: Max DD {:.1}% — possible data/simulation issue",
+                    res.symbol, res.window, res.max_drawdown
+                ));
+            }
         }
         println!("{}", "=".repeat(120));
+
+        if !warnings.is_empty() {
+            println!("\n⚠️  WARNINGS — Potentially unrealistic results detected:");
+            println!("{}", "-".repeat(80));
+            for w in &warnings {
+                println!("{}", w);
+            }
+            println!("{}", "-".repeat(80));
+            println!(
+                "  Tip: Check data quality, position sizing, and risk limits for flagged entries.\n"
+            );
+        }
     }
 
     fn calculate_summary(&self, results: &[BenchmarkResultEntry]) -> BenchmarkSummary {
@@ -183,6 +229,52 @@ impl BenchmarkReporter {
     }
 }
 
+/// Build equity curve from trades (FIFO) and compute max drawdown in percent.
+/// Uses running equity after each closed trade; drawdown = (peak - equity) / peak * 100.
+fn max_drawdown_from_trades(
+    initial_equity: rust_decimal::Decimal,
+    trades: &[crate::domain::trading::types::Order],
+) -> f64 {
+    use rust_decimal::prelude::ToPrimitive;
+    let init = initial_equity.to_f64().unwrap_or(100_000.0);
+    let mut equity_curve = vec![init];
+    let mut open_buys: Vec<(rust_decimal::Decimal, rust_decimal::Decimal)> = Vec::new();
+
+    for order in trades {
+        match order.side {
+            crate::domain::trading::types::OrderSide::Buy => {
+                open_buys.push((order.price, order.quantity));
+            }
+            crate::domain::trading::types::OrderSide::Sell => {
+                if let Some((entry_price, qty)) = open_buys.pop() {
+                    let prev = *equity_curve.last().unwrap();
+                    let pnl = (order.price - entry_price) * qty;
+                    let pnl_f = pnl.to_f64().unwrap_or(0.0);
+                    equity_curve.push(prev + pnl_f);
+                }
+            }
+        }
+    }
+
+    if equity_curve.len() < 2 {
+        return 0.0;
+    }
+    let mut peak = equity_curve[0];
+    let mut max_dd_pct = 0.0f64;
+    for &eq in &equity_curve[1..] {
+        if eq > peak {
+            peak = eq;
+        }
+        if peak > 0.0 && eq < peak {
+            let dd_pct = ((peak - eq) / peak * 100.0).min(100.0);
+            if dd_pct > max_dd_pct {
+                max_dd_pct = dd_pct;
+            }
+        }
+    }
+    max_dd_pct.min(100.0)
+}
+
 // Data conversion helper
 pub fn convert_backtest_result(
     res: &BacktestResult,
@@ -192,20 +284,9 @@ pub fn convert_backtest_result(
 ) -> BenchmarkResultEntry {
     let net = res.final_equity - res.initial_equity;
 
-    // Quick metric calc (simplified compared to full metrics)
-    // In a real scenario we'd use the PerformanceMetrics struct
     let trades_count = res.trades.len();
-
-    // We need to fetch/calc win rate properly.
-    // Since BacktestResult stores raw orders, we need to reconstruct trades or use metrics.
-    // For now, let's assume we can get it or approximate it.
-    // Ideally we should use the same logic as benchmark_matrix to convert orders to trades.
-
-    // For now, use 0.0 placeholder if not easily available without recalculation
-    // But better: reuse the logic we had in benchmark_matrix!
-
-    // Let's implement a simple trade reconstruction here to get winrate
     let win_rate = calculate_win_rate(&res.trades);
+    let max_drawdown = max_drawdown_from_trades(res.initial_equity, &res.trades);
 
     BenchmarkResultEntry {
         symbol: symbol.to_string(),
@@ -216,7 +297,7 @@ pub fn convert_backtest_result(
         net_profit: net,
         trade_count: trades_count,
         win_rate,
-        max_drawdown: 0.0, // Placeholder, requires full time series
+        max_drawdown,
     }
 }
 

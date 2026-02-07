@@ -142,6 +142,9 @@ pub struct Trade {
     /// Realized slippage vs expected price (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slippage: Option<Decimal>,
+    /// Transaction fees (commission + slippage cost) for this trade. P&L is net of fees.
+    #[serde(default)]
+    pub fees: Decimal,
 }
 
 impl Trade {
@@ -162,19 +165,27 @@ impl Trade {
             entry_reason: None,
             exit_reason: None,
             slippage: None,
+            fees: Decimal::ZERO,
         }
     }
 
-    /// Close the trade and calculate P&L
+    /// Close the trade and calculate P&L (gross). Caller should set `fees` and use net P&L if needed.
     pub fn close(&mut self, exit_price: Decimal, exit_timestamp: i64) {
         self.exit_price = Some(exit_price);
         self.exit_timestamp = Some(exit_timestamp);
 
-        // Calculate P&L: (exit - entry) * quantity for buy, (entry - exit) * quantity for sell
-        self.pnl = match self.side {
+        // Calculate gross P&L: (exit - entry) * quantity for buy, (entry - exit) * quantity for sell
+        let gross_pnl = match self.side {
             OrderSide::Buy => (exit_price - self.entry_price) * self.quantity,
             OrderSide::Sell => (self.entry_price - exit_price) * self.quantity,
         };
+        self.pnl = gross_pnl - self.fees;
+    }
+
+    /// Close the trade with explicit fees (net P&L = gross - fees).
+    pub fn close_with_fees(&mut self, exit_price: Decimal, exit_timestamp: i64, fees: Decimal) {
+        self.fees = fees;
+        self.close(exit_price, exit_timestamp);
     }
 }
 

@@ -30,6 +30,36 @@ impl OptimizeReporter {
         println!("  ATR Mult:       {:?}", grid.trailing_stop_atr_multiplier);
         println!("  Cooldown (s):   {:?}", grid.order_cooldown_seconds);
 
+        if grid.stat_momentum_lookback.is_some()
+            || grid.zscore_lookback.is_some()
+            || grid.smc_ob_lookback.is_some()
+        {
+            println!(
+                "  [Ensemble modern] StatMomentum lookback: {:?}",
+                grid.stat_momentum_lookback
+            );
+            println!(
+                "  [Ensemble modern] StatMomentum threshold: {:?}",
+                grid.stat_momentum_threshold
+            );
+            println!(
+                "  [Ensemble modern] ZScore lookback: {:?}",
+                grid.zscore_lookback
+            );
+            println!(
+                "  [Ensemble modern] ZScore entry/exit: {:?} / {:?}",
+                grid.zscore_entry_threshold, grid.zscore_exit_threshold
+            );
+            println!(
+                "  [Ensemble modern] OFI threshold: {:?}",
+                grid.ofi_threshold
+            );
+            println!(
+                "  [Ensemble modern] SMC OB lookback / FVG %: {:?} / {:?}",
+                grid.smc_ob_lookback, grid.smc_min_fvg_size_pct
+            );
+        }
+
         let total_combos = grid.fast_sma.len()
             * grid.slow_sma.len()
             * grid.rsi_threshold.len()

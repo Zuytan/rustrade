@@ -1,5 +1,7 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
-use rust_decimal_macros::dec;
+use super::{SMCStrategy, StatisticalMomentumStrategy, ZScoreMeanReversionStrategy};
+use crate::application::agents::analyst_config::AnalystConfig;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Ensemble Strategy
@@ -7,11 +9,13 @@ use std::sync::Arc;
 /// Combines multiple trading strategies and requires consensus for signals.
 /// - Analyzes using all child strategies
 /// - Only generates signal if voting threshold is met
-/// - Confidence is averaged from agreeing strategies
+/// - Confidence is averaged (or weighted by performance when weights provided) from agreeing strategies
 #[derive(Clone)]
 pub struct EnsembleStrategy {
     strategies: Vec<Arc<dyn TradingStrategy>>,
     voting_threshold: f64, // 0.0 to 1.0 - percentage of strategies that must agree
+    /// Optional per-strategy weights (e.g. rolling Sharpe). Key = strategy name. When None, equal vote.
+    weights: Option<HashMap<String, f64>>,
 }
 
 impl EnsembleStrategy {
@@ -19,7 +23,28 @@ impl EnsembleStrategy {
         Self {
             strategies,
             voting_threshold: voting_threshold.clamp(0.0, 1.0),
+            weights: None,
         }
+    }
+
+    /// Build ensemble with performance weights (e.g. rolling Sharpe per strategy name).
+    pub fn with_weights(
+        strategies: Vec<Arc<dyn TradingStrategy>>,
+        voting_threshold: f64,
+        weights: HashMap<String, f64>,
+    ) -> Self {
+        Self {
+            strategies,
+            voting_threshold: voting_threshold.clamp(0.0, 1.0),
+            weights: Some(weights),
+        }
+    }
+
+    fn weight_for(&self, name: &str) -> f64 {
+        self.weights
+            .as_ref()
+            .and_then(|w| w.get(name).copied())
+            .unwrap_or(1.0)
     }
 
     /// Create an ensemble with majority voting (>50% must agree)
@@ -32,33 +57,36 @@ impl EnsembleStrategy {
         Self::new(strategies, 1.0)
     }
 
-    /// Create a default ensemble with common strategies
+    /// Create a default ensemble with legacy strategies (deprecated). Prefer `modern_ensemble`.
     pub fn default_ensemble() -> Self {
-        use crate::application::strategies::legacy::{
-            AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, DualSMAStrategy,
-            MeanReversionStrategy,
-        };
+        Self::modern_ensemble(&AnalystConfig::default())
+    }
 
+    /// Modern ensemble: StatisticalMomentum (0.4) + ZScoreMR (0.3) + SMC (0.3), weighted voting >= 0.5.
+    pub fn modern_ensemble(config: &AnalystConfig) -> Self {
         let strategies: Vec<Arc<dyn TradingStrategy>> = vec![
-            Arc::new(DualSMAStrategy::new(20, 60, dec!(0.001))),
-            Arc::new(AdvancedTripleFilterStrategy::new(
-                AdvancedTripleFilterConfig {
-                    fast_period: 20,
-                    slow_period: 60,
-                    sma_threshold: dec!(0.001),
-                    trend_sma_period: 50,
-                    rsi_threshold: dec!(75.0),
-                    signal_confirmation_bars: 1,
-                    macd_requires_rising: true,
-                    trend_tolerance_pct: dec!(0.0),
-                    macd_min_threshold: dec!(0.0),
-                    adx_threshold: dec!(25.0),
-                },
+            Arc::new(StatisticalMomentumStrategy::new(
+                config.stat_momentum_lookback,
+                config.stat_momentum_threshold,
+                config.stat_momentum_trend_confirmation,
             )),
-            Arc::new(MeanReversionStrategy::new(20, dec!(50.0))),
+            Arc::new(ZScoreMeanReversionStrategy::new(
+                config.zscore_lookback,
+                config.zscore_entry_threshold,
+                config.zscore_exit_threshold,
+            )),
+            Arc::new(SMCStrategy::new(
+                config.smc_ob_lookback,
+                config.smc_min_fvg_size_pct,
+                config.smc_volume_multiplier,
+            )),
         ];
-
-        Self::majority(strategies)
+        let weights = HashMap::from([
+            ("StatMomentum".to_string(), 0.4),
+            ("ZScoreMR".to_string(), 0.3),
+            ("SMC".to_string(), 0.3),
+        ]);
+        Self::with_weights(strategies, 0.5, weights)
     }
 }
 
@@ -68,36 +96,43 @@ impl TradingStrategy for EnsembleStrategy {
             return None;
         }
 
-        let mut buy_votes = 0;
-        let mut sell_votes = 0;
-        let mut buy_confidence_sum = 0.0;
-        let mut sell_confidence_sum = 0.0;
+        let mut buy_votes = 0_usize;
+        let mut sell_votes = 0_usize;
+        let mut buy_weight = 0.0_f64;
+        let mut sell_weight = 0.0_f64;
+        let mut buy_confidence_weighted = 0.0_f64;
+        let mut sell_confidence_weighted = 0.0_f64;
         let mut buy_reasons = Vec::new();
         let mut sell_reasons = Vec::new();
+        let mut total_weight = 0.0_f64;
 
         for strategy in &self.strategies {
+            let w = self.weight_for(strategy.name());
+            total_weight += w;
             if let Some(signal) = strategy.analyze(ctx) {
                 match signal.side {
                     crate::domain::trading::types::OrderSide::Buy => {
                         buy_votes += 1;
-                        buy_confidence_sum += signal.confidence;
+                        buy_weight += w;
+                        buy_confidence_weighted += signal.confidence * w;
                         buy_reasons.push(format!("{}: {}", strategy.name(), signal.reason));
                     }
                     crate::domain::trading::types::OrderSide::Sell => {
                         sell_votes += 1;
-                        sell_confidence_sum += signal.confidence;
+                        sell_weight += w;
+                        sell_confidence_weighted += signal.confidence * w;
                         sell_reasons.push(format!("{}: {}", strategy.name(), signal.reason));
                     }
                 }
             }
         }
 
+        let required_weight = total_weight * self.voting_threshold;
         let total_strategies = self.strategies.len();
-        let required_votes = (total_strategies as f64 * self.voting_threshold).ceil() as usize;
 
-        // Check for buy consensus
-        if buy_votes >= required_votes && buy_votes > 0 {
-            let avg_confidence = buy_confidence_sum / buy_votes as f64;
+        // Check for buy consensus (weighted)
+        if buy_weight >= required_weight && buy_weight > 0.0 {
+            let avg_confidence = buy_confidence_weighted / buy_weight;
             return Some(
                 Signal::buy(format!(
                     "Ensemble ({}/{} agree): {}",
@@ -110,8 +145,8 @@ impl TradingStrategy for EnsembleStrategy {
         }
 
         // Check for sell consensus
-        if sell_votes >= required_votes && sell_votes > 0 {
-            let avg_confidence = sell_confidence_sum / sell_votes as f64;
+        if sell_weight >= required_weight && sell_weight > 0.0 {
+            let avg_confidence = sell_confidence_weighted / sell_weight;
             return Some(
                 Signal::sell(format!(
                     "Ensemble ({}/{} agree): {}",
@@ -269,5 +304,16 @@ mod tests {
 
         let signal = ensemble.analyze(&ctx);
         assert!(signal.is_none());
+    }
+
+    #[test]
+    fn test_modern_ensemble_creation() {
+        let config = AnalystConfig::default();
+        let ensemble = EnsembleStrategy::modern_ensemble(&config);
+        assert_eq!(ensemble.name(), "Ensemble");
+        // modern_ensemble uses with_weights so we cannot easily assert num strategies without exposing;
+        // just ensure default_ensemble() returns same type (it delegates to modern_ensemble)
+        let default_ens = EnsembleStrategy::default_ensemble();
+        assert_eq!(default_ens.name(), "Ensemble");
     }
 }

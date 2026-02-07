@@ -92,6 +92,15 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         max_loss_per_trade_pct: dec!(-0.05),
         smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     };
 
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, dec!(0.0)));

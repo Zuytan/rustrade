@@ -155,7 +155,7 @@ impl AdaptiveOptimizationService {
         // Run Grid Search
         let results = self
             .optimizer
-            .run_optimization(symbol, start_date, end_date)
+            .run_optimization(symbol, start_date, end_date, 0.70)
             .await?;
         let top_results = self.optimizer.rank_results(results, 1);
 

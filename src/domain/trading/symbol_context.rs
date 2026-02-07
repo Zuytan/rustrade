@@ -48,6 +48,10 @@ pub struct SymbolContext {
     pub cumulative_delta: crate::domain::market::order_flow::CumulativeDelta,
     pub volume_profile: Option<crate::domain::market::order_flow::VolumeProfile>,
     pub ofi_history: VecDeque<Decimal>,
+    /// Base risk score to restore after hysteresis (when regime was Volatile/TrendingDown).
+    pub risk_base_score: Option<u8>,
+    /// Consecutive "normal" regime bars required before restoring base risk (hysteresis).
+    pub risk_restore_bars_remaining: Option<u32>,
 }
 
 impl SymbolContext {
@@ -100,6 +104,8 @@ impl SymbolContext {
             },
             volume_profile: None,
             ofi_history: VecDeque::with_capacity(20),
+            risk_base_score: None,
+            risk_restore_bars_remaining: None,
         }
     }
 

@@ -61,6 +61,16 @@ pub struct AnalystConfig {
     pub max_loss_per_trade_pct: Decimal, // Maximum loss per trade before forced exit (e.g., -0.05 = -5%)
     // ML Configuration
     pub enable_ml_data_collection: bool,
+    // Modern strategy parameters (StatMomentum, ZScoreMR, OrderFlow)
+    pub stat_momentum_lookback: usize,
+    pub stat_momentum_threshold: Decimal,
+    pub stat_momentum_trend_confirmation: bool,
+    pub zscore_lookback: usize,
+    pub zscore_entry_threshold: Decimal,
+    pub zscore_exit_threshold: Decimal,
+    pub orderflow_ofi_threshold: Decimal,
+    pub orderflow_stacked_count: usize,
+    pub orderflow_volume_profile_lookback: usize,
 }
 
 impl Default for AnalystConfig {
@@ -111,6 +121,15 @@ impl Default for AnalystConfig {
             breakout_volume_mult: dec!(1.1),
             max_loss_per_trade_pct: dec!(-0.05), // -5% max loss per trade
             enable_ml_data_collection: true,
+            stat_momentum_lookback: 10,
+            stat_momentum_threshold: dec!(1.5),
+            stat_momentum_trend_confirmation: true,
+            zscore_lookback: 20,
+            zscore_entry_threshold: dec!(-2.0),
+            zscore_exit_threshold: dec!(0.0),
+            orderflow_ofi_threshold: dec!(0.3),
+            orderflow_stacked_count: 3,
+            orderflow_volume_profile_lookback: 100,
         }
     }
 }
@@ -163,6 +182,15 @@ impl From<crate::config::Config> for AnalystConfig {
             breakout_volume_mult: dec!(0.1), // 10% of average (effectively disable volume filter for now)
             max_loss_per_trade_pct: dec!(-0.05),
             enable_ml_data_collection: config.enable_ml_data_collection,
+            stat_momentum_lookback: 10,
+            stat_momentum_threshold: dec!(1.5),
+            stat_momentum_trend_confirmation: true,
+            zscore_lookback: 20,
+            zscore_entry_threshold: dec!(-2.0),
+            zscore_exit_threshold: dec!(0.0),
+            orderflow_ofi_threshold: dec!(0.3),
+            orderflow_stacked_count: 3,
+            orderflow_volume_profile_lookback: 100,
         }
     }
 }
@@ -182,15 +210,18 @@ impl AnalystConfig {
         self.macd_min_threshold = appetite.calculate_macd_min_threshold();
         self.profit_target_multiplier = appetite.calculate_profit_target_multiplier();
 
-        // Apply signal sensitivity factor for lower risk profiles
-        // This makes Conservative/Balanced profiles generate more signals
+        // Risk price: max loss per trade and take-profit (prise de risque)
+        self.max_loss_per_trade_pct = appetite.calculate_max_loss_per_trade_pct();
+        self.take_profit_pct = appetite.calculate_take_profit_pct();
+
+        // Stricter effective threshold for conservative => fewer/same signals; aggressive keeps normal.
         let sensitivity = appetite.calculate_signal_sensitivity_factor();
         self.sma_threshold *= sensitivity;
 
-        // Reduce confirmation bars for conservative profiles (1 for score <= 4, else keep)
-        if appetite.score() <= 4 {
-            self.signal_confirmation_bars = 1;
-        }
+        // Conservative: more confirmation bars => fewer trades. Aggressive: 1 bar => same as before.
+        self.signal_confirmation_bars = appetite.calculate_signal_confirmation_bars();
+
+        self.risk_appetite_score = Some(appetite.score());
     }
 }
 

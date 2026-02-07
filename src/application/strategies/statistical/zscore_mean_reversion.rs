@@ -80,8 +80,12 @@ impl TradingStrategy for ZScoreMeanReversionStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
         let zscore = self.calculate_zscore(ctx)?;
 
-        // BUY: Price significantly below mean (oversold)
+        // BUY: Price significantly below mean (oversold). Confidence scales with Z magnitude.
         if !ctx.has_position && zscore < self.entry_threshold {
+            let excess = (zscore.abs() - self.entry_threshold.abs())
+                .to_f64()
+                .unwrap_or(0.0);
+            let confidence = (0.5 + (excess * 0.15)).min(0.95);
             return Some(
                 Signal::buy(format!(
                     "Z-Score MR: Price {} is {} std devs below mean (Z={})",
@@ -89,18 +93,20 @@ impl TradingStrategy for ZScoreMeanReversionStrategy {
                     zscore.abs(),
                     zscore
                 ))
-                .with_confidence(0.85), // High confidence for statistical signals
+                .with_confidence(confidence),
             );
         }
 
-        // SELL: Price returned to mean or above
+        // SELL: Price returned to mean or above. Confidence scales with distance above mean.
         if ctx.has_position && zscore > self.exit_threshold {
+            let distance_above = (zscore - self.exit_threshold).abs().to_f64().unwrap_or(0.0);
+            let confidence = (0.5 + (distance_above * 0.10)).min(0.90);
             return Some(
                 Signal::sell(format!(
                     "Z-Score MR: Price {} returned to mean (Z={})",
                     ctx.current_price, zscore
                 ))
-                .with_confidence(0.80),
+                .with_confidence(confidence),
             );
         }
 

@@ -100,8 +100,10 @@ impl RiskValidator for PositionSizeValidator {
         // Calculate adjusted limit based on sentiment
         let adjusted_max_pct = self.calculate_adjusted_limit(ctx, ctx.proposal.side);
 
-        // Calculate position percentage
-        let position_pct = total_exposure / ctx.current_equity;
+        // Calculate position percentage (checked_div avoids overflow for tiny equity)
+        let position_pct = total_exposure
+            .checked_div(ctx.current_equity)
+            .unwrap_or(Decimal::ZERO);
 
         if position_pct > adjusted_max_pct {
             return ValidationResult::Reject(format!(

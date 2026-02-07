@@ -60,48 +60,75 @@ pub async fn detect_market_regime(
     MarketRegime::unknown()
 }
 
-/// Applies dynamic risk scaling based on market regime.
+/// Number of consecutive "normal" regime bars required before restoring base risk (hysteresis).
+const RISK_RESTORE_HYSTERESIS_BARS: u32 = 5;
+
+/// Applies dynamic risk scaling based on market regime, with hysteresis.
 ///
-/// Automatically lowers risk in volatile or bearish regimes to protect capital.
-///
-/// # Arguments
-/// * `context` - Symbol context to modify
-/// * `regime` - Current market regime
-/// * `symbol` - Symbol name for logging
+/// - In **Volatile** or **TrendingDown**: reduces risk immediately; stores base score and starts
+///   a countdown. Restore only after `RISK_RESTORE_HYSTERESIS_BARS` consecutive bars in a
+///   non-hostile regime, to avoid whipsaw.
 ///
 /// # Risk Modifiers
 /// - **Volatile**: -3 risk score
 /// - **TrendingDown**: -2 risk score
-/// - **Other regimes**: No modification
+/// - **Other regimes**: no reduction; if risk was reduced, decrement restore countdown and
+///   restore base score when countdown reaches 0.
 pub fn apply_dynamic_risk_scaling(
     context: &mut SymbolContext,
     regime: &MarketRegime,
     symbol: &str,
 ) {
-    if let Some(base_score) = context.config.risk_appetite_score {
-        let modifier = match regime.regime_type {
-            MarketRegimeType::Volatile => -3,
-            MarketRegimeType::TrendingDown => -2,
-            _ => 0,
-        };
+    let modifier = match regime.regime_type {
+        MarketRegimeType::Volatile => -3,
+        MarketRegimeType::TrendingDown => -2,
+        _ => 0,
+    };
 
-        if modifier != 0 {
-            let new_score = (base_score as i8 + modifier).clamp(1, 9) as u8;
+    if modifier != 0 {
+        // Hostile regime: reduce risk (from base score), set or keep base, reset countdown
+        let current = context.config.risk_appetite_score;
+        if let Some(current_score) = current {
+            let base = context.risk_base_score.unwrap_or(current_score);
+            if context.risk_base_score.is_none() {
+                context.risk_base_score = Some(base);
+            }
+            let new_score = (base as i8 + modifier).clamp(1, 9) as u8;
             if let Ok(new_appetite) = RiskAppetite::new(new_score) {
                 context.config.apply_risk_appetite(&new_appetite);
-                // Also update the stored score
                 context.config.risk_appetite_score = Some(new_score);
-
-                // Re-initialize the active strategy to pick up new risk parameters
-                // (e.g. RSI thresholds, stop multipliers, etc.)
+                context.risk_restore_bars_remaining = Some(RISK_RESTORE_HYSTERESIS_BARS);
                 context.strategy = crate::application::strategies::StrategyFactory::create(
                     context.active_strategy_mode,
                     &context.config,
                 );
-
                 info!(
-                    "RegimeHandler [{}]: Dynamic Risk Scaling active. Score {} -> {} ({:?}). Strategy re-initialized.",
-                    symbol, base_score, new_score, regime.regime_type
+                    "RegimeHandler [{}]: Dynamic Risk Scaling. Score {} -> {} ({:?}). Restore after {} normal bars.",
+                    symbol, base, new_score, regime.regime_type, RISK_RESTORE_HYSTERESIS_BARS
+                );
+            }
+        }
+        return;
+    }
+
+    // Normal regime: hysteresis countdown toward restore
+    if let Some(remaining) = context.risk_restore_bars_remaining.as_mut() {
+        if *remaining > 0 {
+            *remaining -= 1;
+        }
+        if *remaining == 0 && context.risk_base_score.is_some() {
+            let base = context.risk_base_score.take().unwrap();
+            context.risk_restore_bars_remaining = None;
+            if let Ok(restore_appetite) = RiskAppetite::new(base) {
+                context.config.apply_risk_appetite(&restore_appetite);
+                context.config.risk_appetite_score = Some(base);
+                context.strategy = crate::application::strategies::StrategyFactory::create(
+                    context.active_strategy_mode,
+                    &context.config,
+                );
+                info!(
+                    "RegimeHandler [{}]: Risk restored to base score {} after hysteresis.",
+                    symbol, base
                 );
             }
         }
@@ -177,8 +204,9 @@ mod tests {
 
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
-        // Score should be reduced: 7 - 3 = 4
         assert_eq!(context.config.risk_appetite_score, Some(4));
+        assert_eq!(context.risk_base_score, Some(7));
+        assert_eq!(context.risk_restore_bars_remaining, Some(5));
     }
 
     #[test]
@@ -227,7 +255,50 @@ mod tests {
 
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
-        // Score should be clamped: max(2 - 3, 1) = 1
         assert_eq!(context.config.risk_appetite_score, Some(1));
+    }
+
+    #[test]
+    fn test_hysteresis_restore_after_normal_bars() {
+        let mut context = create_test_context();
+        context.config.risk_appetite_score = Some(7);
+
+        let volatile =
+            MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(15.0));
+        apply_dynamic_risk_scaling(&mut context, &volatile, "TEST");
+        assert_eq!(context.config.risk_appetite_score, Some(4));
+
+        let normal = MarketRegime::new(
+            MarketRegimeType::TrendingUp,
+            dec!(0.8),
+            dec!(1.0),
+            dec!(30.0),
+        );
+        for _ in 0..RISK_RESTORE_HYSTERESIS_BARS {
+            apply_dynamic_risk_scaling(&mut context, &normal, "TEST");
+        }
+        assert_eq!(context.config.risk_appetite_score, Some(7));
+        assert_eq!(context.risk_base_score, None);
+        assert_eq!(context.risk_restore_bars_remaining, None);
+    }
+
+    #[test]
+    fn test_hysteresis_reset_on_volatile_again() {
+        let mut context = create_test_context();
+        context.config.risk_appetite_score = Some(7);
+
+        let volatile =
+            MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(15.0));
+        apply_dynamic_risk_scaling(&mut context, &volatile, "TEST");
+        assert_eq!(context.risk_restore_bars_remaining, Some(5));
+
+        let normal = MarketRegime::new(MarketRegimeType::Ranging, dec!(0.5), dec!(1.0), dec!(20.0));
+        apply_dynamic_risk_scaling(&mut context, &normal, "TEST");
+        apply_dynamic_risk_scaling(&mut context, &normal, "TEST");
+        assert_eq!(context.risk_restore_bars_remaining, Some(3));
+
+        apply_dynamic_risk_scaling(&mut context, &volatile, "TEST");
+        assert_eq!(context.config.risk_appetite_score, Some(4));
+        assert_eq!(context.risk_restore_bars_remaining, Some(5));
     }
 }

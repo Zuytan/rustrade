@@ -51,7 +51,8 @@ impl CircuitBreakerValidator {
     fn check_daily_loss(&self, ctx: &ValidationContext<'_>) -> Option<String> {
         if ctx.risk_state.session_start_equity > Decimal::ZERO {
             let daily_loss_pct = (ctx.current_equity - ctx.risk_state.session_start_equity)
-                / ctx.risk_state.session_start_equity;
+                .checked_div(ctx.risk_state.session_start_equity)
+                .unwrap_or(Decimal::ZERO);
 
             if daily_loss_pct < -self.config.max_daily_loss_pct {
                 return Some(format!(
@@ -70,7 +71,8 @@ impl CircuitBreakerValidator {
     fn check_drawdown(&self, ctx: &ValidationContext<'_>) -> Option<String> {
         if ctx.risk_state.equity_high_water_mark > Decimal::ZERO {
             let drawdown_pct = (ctx.current_equity - ctx.risk_state.equity_high_water_mark)
-                / ctx.risk_state.equity_high_water_mark;
+                .checked_div(ctx.risk_state.equity_high_water_mark)
+                .unwrap_or(Decimal::ZERO);
 
             if drawdown_pct < -self.config.max_drawdown_pct {
                 return Some(format!(

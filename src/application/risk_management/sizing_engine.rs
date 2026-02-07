@@ -4,7 +4,11 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::application::market_data::spread_cache::SpreadCache;
+use crate::application::monitoring::cost_evaluator::CostEvaluator;
+use crate::application::risk_management::circuit_breaker_service::HaltLevel;
 use crate::application::risk_management::volatility::calculate_realized_volatility;
+use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
+use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 
 #[derive(Debug, Clone)]
 pub struct SizingConfig {
@@ -17,28 +21,87 @@ pub struct SizingConfig {
     pub target_volatility: Decimal, // Target annualized volatility (e.g., 0.15 = 15%)
 }
 
+/// Trade statistics for Kelly Criterion position sizing. Use when n_trades >= 30.
+#[derive(Debug, Clone)]
+pub struct KellyStats {
+    pub win_rate: f64,
+    pub avg_win: Decimal,
+    pub avg_loss: Decimal,
+    pub n_trades: usize,
+}
+
+impl KellyStats {
+    /// Quarter-Kelly fraction: f* = (p*b - (1-p)*a) / b, then 0.25 * f*.
+    /// Returns None if avg_win <= 0 or result is non-positive.
+    pub fn quarter_kelly_fraction(&self) -> Option<Decimal> {
+        if self.n_trades < 30 || self.avg_win <= Decimal::ZERO {
+            return None;
+        }
+        let p = Decimal::from_f64_retain(self.win_rate).unwrap_or(Decimal::ZERO);
+        let one_p = Decimal::ONE - p;
+        let loss_as_positive = self.avg_loss.abs();
+        let numerator = p * self.avg_win - one_p * loss_as_positive;
+        let f_star = numerator.checked_div(self.avg_win).unwrap_or(Decimal::ZERO);
+        if f_star <= Decimal::ZERO {
+            return None;
+        }
+        let quarter = dec!(0.25);
+        Some((f_star * quarter).min(Decimal::ONE).max(Decimal::ZERO))
+    }
+}
+
 pub struct SizingEngine {
     spread_cache: Arc<SpreadCache>,
+    cost_evaluator: Option<CostEvaluator>,
 }
 
 use rust_decimal_macros::dec;
 
 impl SizingEngine {
     pub fn new(spread_cache: Arc<SpreadCache>) -> Self {
-        Self { spread_cache }
+        Self {
+            spread_cache,
+            cost_evaluator: None,
+        }
     }
 
-    /// Calculate quantity with slippage adjustment based on bid-ask spread
-    /// and optionally volatility targeting
+    /// Create a SizingEngine that deducts estimated transaction costs from position size.
+    pub fn with_cost_evaluator(
+        spread_cache: Arc<SpreadCache>,
+        cost_evaluator: CostEvaluator,
+    ) -> Self {
+        Self {
+            spread_cache,
+            cost_evaluator: Some(cost_evaluator),
+        }
+    }
+
+    /// Calculate quantity with slippage adjustment based on bid-ask spread,
+    /// optionally volatility targeting, Kelly Criterion cap, circuit breaker level, and market regime.
+    /// `available_cash` caps the target amount to prevent orders exceeding available funds.
+    #[allow(clippy::too_many_arguments)]
     pub fn calculate_quantity_with_slippage(
         &self,
         config: &SizingConfig,
         total_equity: Decimal,
         price: Decimal,
         symbol: &str,
-        recent_prices: Option<&[f64]>, // Keep f64 for volatility calc for now as it uses ta crate
+        recent_prices: Option<&[f64]>,
+        kelly_stats: Option<&KellyStats>,
+        halt_level: Option<HaltLevel>,
+        regime: Option<&MarketRegime>,
+        available_cash: Option<Decimal>,
     ) -> Decimal {
-        let mut base_qty = Self::calculate_quantity(config, total_equity, price, symbol);
+        let mut base_qty = self.calculate_quantity(
+            config,
+            total_equity,
+            price,
+            symbol,
+            kelly_stats,
+            halt_level,
+            regime,
+            available_cash,
+        );
 
         // NEW: Apply volatility targeting if enabled
         if config.enable_vol_targeting {
@@ -74,7 +137,10 @@ impl SizingEngine {
             let spread_pct = Decimal::from_f64_retain(spread_pct_f64).unwrap_or(Decimal::ZERO);
             // Reduce size if spread is wide (>20 bps = 0.002 = 0.2%)
             if spread_pct > dec!(0.002) {
-                let slippage_multiplier = (dec!(0.002) / spread_pct).min(Decimal::ONE);
+                let slippage_multiplier = dec!(0.002)
+                    .checked_div(spread_pct)
+                    .map(|v| v.min(Decimal::ONE))
+                    .unwrap_or(Decimal::ONE);
                 info!(
                     "SizingEngine: High spread detected for {} ({}%), reducing size by factor {}",
                     symbol,
@@ -89,11 +155,17 @@ impl SizingEngine {
         base_qty
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn calculate_quantity(
+        &self,
         config: &SizingConfig,
         total_equity: Decimal,
         price: Decimal,
         symbol: &str,
+        kelly_stats: Option<&KellyStats>,
+        halt_level: Option<HaltLevel>,
+        regime: Option<&MarketRegime>,
+        available_cash: Option<Decimal>,
     ) -> Decimal {
         // Fallback to static quantity if risk sizing is disabled
         if config.risk_per_trade_percent <= Decimal::ZERO {
@@ -101,10 +173,13 @@ impl SizingEngine {
                 "SizingEngine: Using static quantity for {}: {}",
                 symbol, config.static_trade_quantity
             );
-            return config.static_trade_quantity;
+            let q = config.static_trade_quantity;
+            let q = apply_halt_multiplier(q, halt_level);
+            return apply_regime_multiplier(q, regime);
         }
 
-        if total_equity <= Decimal::ZERO || price <= Decimal::ZERO {
+        let min_price = dec!(0.0001);
+        if total_equity <= Decimal::ZERO || price <= Decimal::ZERO || price < min_price {
             info!(
                 "SizingEngine: Cannot calculate quantity for {} - TotalEquity={}, Price={}",
                 symbol, total_equity, price
@@ -114,6 +189,36 @@ impl SizingEngine {
 
         // 1. Calculate the target amount to allocate based on risk_per_trade_percent
         let mut target_amt = total_equity * config.risk_per_trade_percent;
+
+        // 1a. Cap by Quarter-Kelly when we have enough trade history
+        if let Some(stats) = kelly_stats
+            && let Some(kelly_frac) = stats.quarter_kelly_fraction()
+        {
+            let kelly_amt = total_equity * kelly_frac;
+            if kelly_amt < target_amt {
+                info!(
+                    "SizingEngine: Kelly cap for {} - ${} (risk) capped to ${} (quarter-Kelly)",
+                    symbol, target_amt, kelly_amt
+                );
+                target_amt = kelly_amt;
+            }
+        }
+
+        // 1b. Deduct estimated transaction costs when CostEvaluator is available
+        if let Some(ref evaluator) = self.cost_evaluator {
+            let qty_est = target_amt.checked_div(price).unwrap_or(Decimal::ZERO);
+            let proposal = TradeProposal {
+                symbol: symbol.to_string(),
+                side: OrderSide::Buy,
+                price,
+                quantity: qty_est,
+                order_type: OrderType::Market,
+                reason: String::new(),
+                timestamp: 0,
+            };
+            let costs = evaluator.evaluate(&proposal);
+            target_amt = (target_amt - costs.total_cost).max(Decimal::ZERO);
+        }
 
         info!(
             "SizingEngine: Initial target amount for {} ({}% of equity): ${}",
@@ -153,8 +258,25 @@ impl SizingEngine {
             }
         }
 
-        // 3. Convert to Shares
-        let quantity = (target_amt / price).round_dp(4);
+        // 3. Cap by available cash (prevents buying more than we can pay for)
+        if let Some(cash) = available_cash
+            && cash > Decimal::ZERO
+            && target_amt > cash
+        {
+            info!(
+                "SizingEngine: Capped {} by available cash: ${} -> ${}",
+                symbol, target_amt, cash
+            );
+            target_amt = cash;
+        }
+
+        // 4. Convert to Shares (checked_div avoids overflow for tiny price)
+        let quantity = target_amt
+            .checked_div(price)
+            .map(|q| q.round_dp(4))
+            .unwrap_or(Decimal::ZERO);
+        let quantity = apply_halt_multiplier(quantity, halt_level);
+        let quantity = apply_regime_multiplier(quantity, regime);
 
         info!(
             "SizingEngine: Final quantity for {}: {} shares (${} / ${} per share)",
@@ -165,10 +287,41 @@ impl SizingEngine {
     }
 }
 
+fn apply_halt_multiplier(qty: Decimal, halt_level: Option<HaltLevel>) -> Decimal {
+    halt_level
+        .map(|l| {
+            let mult = Decimal::from_f64_retain(l.size_multiplier()).unwrap_or(Decimal::ONE);
+            (qty * mult).round_dp(4)
+        })
+        .unwrap_or(qty)
+}
+
+/// Position size multiplier by market regime (adjusted for crypto: Volatile 0.5, Unknown 0.3, Ranging 0.7).
+fn regime_size_multiplier(regime_type: MarketRegimeType) -> f64 {
+    match regime_type {
+        MarketRegimeType::TrendingUp => 1.0,
+        MarketRegimeType::TrendingDown => 0.5,
+        MarketRegimeType::Ranging => 0.7,
+        MarketRegimeType::Volatile => 0.5,
+        MarketRegimeType::Unknown => 0.3,
+    }
+}
+
+fn apply_regime_multiplier(qty: Decimal, regime: Option<&MarketRegime>) -> Decimal {
+    regime
+        .map(|r| {
+            let mult = Decimal::from_f64_retain(regime_size_multiplier(r.regime_type))
+                .unwrap_or(Decimal::ONE);
+            (qty * mult).round_dp(4)
+        })
+        .unwrap_or(qty)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::application::market_data::spread_cache::SpreadCache;
+    use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
     use rust_decimal_macros::dec;
     use std::sync::Arc;
 
@@ -200,6 +353,10 @@ mod tests {
             dec!(100),
             "BTC/USD",
             None,
+            None,
+            None,
+            None,
+            None, // no cash cap
         );
 
         assert_eq!(qty, dec!(10));
@@ -223,6 +380,10 @@ mod tests {
             dec!(100),
             "BTC/USD",
             None,
+            None,
+            None,
+            None,
+            None, // no cash cap
         );
 
         assert_eq!(qty, dec!(4));
@@ -243,8 +404,57 @@ mod tests {
             dec!(100),
             "BTC/USD",
             None,
+            None,
+            None,
+            None,
+            None, // no cash cap
         );
 
+        assert_eq!(qty, dec!(5));
+    }
+
+    #[test]
+    fn test_regime_multiplier_reduces_size() {
+        let spread_cache = Arc::new(SpreadCache::new());
+        spread_cache.update("BTC/USD".to_string(), 100.00, 100.05);
+        let engine = SizingEngine::new(spread_cache);
+        let config = create_test_config();
+        let regime = MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(0.0));
+        let qty = engine.calculate_quantity_with_slippage(
+            &config,
+            dec!(100000),
+            dec!(100),
+            "BTC/USD",
+            None,
+            None,
+            None,
+            Some(&regime),
+            None, // no cash cap
+        );
+        // Base qty 10, Volatile multiplier 0.5 -> 5
+        assert_eq!(qty, dec!(5));
+    }
+
+    #[test]
+    fn test_cash_cap_limits_quantity() {
+        let spread_cache = Arc::new(SpreadCache::new());
+        spread_cache.update("BTC/USD".to_string(), 100.00, 100.05);
+        let engine = SizingEngine::new(spread_cache);
+        let config = create_test_config();
+
+        // Equity 100k, risk 1% = $1000 target, price $100 -> 10 shares
+        // But only $500 cash available -> capped to 5 shares
+        let qty = engine.calculate_quantity_with_slippage(
+            &config,
+            dec!(100000),
+            dec!(100),
+            "BTC/USD",
+            None,
+            None,
+            None,
+            None,
+            Some(dec!(500)),
+        );
         assert_eq!(qty, dec!(5));
     }
 }

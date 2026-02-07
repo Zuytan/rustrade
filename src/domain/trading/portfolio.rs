@@ -170,7 +170,7 @@ mod tests {
             entry_price: dec!(100),
             exit_price: Some(dec!(120)),
             quantity: dec!(10),
-            pnl: dec!(200), // Profit of $200
+            pnl: dec!(200), // Profit of $200 (net of fees)
             entry_timestamp: 1000,
             exit_timestamp: Some(2000),
             strategy_used: None,
@@ -178,6 +178,7 @@ mod tests {
             entry_reason: None,
             exit_reason: None,
             slippage: None,
+            fees: dec!(0),
         };
 
         portfolio.record_trade(trade.clone());

@@ -2,8 +2,8 @@ use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::strategies::{
     AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, BreakoutStrategy, DualSMAStrategy,
     DynamicRegimeConfig, DynamicRegimeStrategy, EnsembleStrategy, MeanReversionStrategy,
-    MomentumDivergenceStrategy, SMCStrategy, StatisticalMomentumStrategy, TradingStrategy,
-    TrendRidingStrategy, VWAPStrategy, ZScoreMeanReversionStrategy,
+    MomentumDivergenceStrategy, OrderFlowStrategy, SMCStrategy, StatisticalMomentumStrategy,
+    TradingStrategy, TrendRidingStrategy, VWAPStrategy, ZScoreMeanReversionStrategy,
 };
 use crate::domain::market::strategy_config::StrategyMode;
 use std::sync::Arc;
@@ -75,10 +75,23 @@ impl StrategyFactory {
                 config.breakout_volume_mult,
             )),
             StrategyMode::Momentum => Arc::new(MomentumDivergenceStrategy::default()),
-            StrategyMode::Ensemble => Arc::new(EnsembleStrategy::default_ensemble()),
-            // NEW: Modern statistical strategies
-            StrategyMode::ZScoreMR => Arc::new(ZScoreMeanReversionStrategy::default()),
-            StrategyMode::StatMomentum => Arc::new(StatisticalMomentumStrategy::default()),
+            StrategyMode::Ensemble => Arc::new(EnsembleStrategy::modern_ensemble(config)),
+            // Modern statistical/microstructure strategies (params from config)
+            StrategyMode::ZScoreMR => Arc::new(ZScoreMeanReversionStrategy::new(
+                config.zscore_lookback,
+                config.zscore_entry_threshold,
+                config.zscore_exit_threshold,
+            )),
+            StrategyMode::StatMomentum => Arc::new(StatisticalMomentumStrategy::new(
+                config.stat_momentum_lookback,
+                config.stat_momentum_threshold,
+                config.stat_momentum_trend_confirmation,
+            )),
+            StrategyMode::OrderFlow => Arc::new(OrderFlowStrategy::new(
+                config.orderflow_ofi_threshold,
+                config.orderflow_stacked_count,
+                config.orderflow_volume_profile_lookback,
+            )),
             StrategyMode::ML => {
                 let onnx_path = std::path::PathBuf::from("data/ml/model.onnx");
                 let bin_path = std::path::PathBuf::from("data/ml/model.bin");

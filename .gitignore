@@ -18,9 +18,15 @@ rustrade.db*
 results.json
 benchmark_results/
 optimization*.json
+*_optimization.json
+cluster_*.json
 check_output.txt
 .rustrade/
 data/
+
+# --- INTERNAL DOCS (not versioned) ---
+docs/BENCHMARK_CORRECTIVE_PLAN.md
+docs/OPTIMIZATION_BOTTLENECKS.md
 
 # --- OS & TOOLS ---
 .DS_Store

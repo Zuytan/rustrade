@@ -44,12 +44,16 @@ impl FromStr for AssetType {
 ///
 /// These parameters represent the best-performing configuration found
 /// by the grid search optimizer for a specific risk profile and asset type.
+/// When `risk_score` is set (1-9), it takes precedence over `risk_profile` for lookup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimalParameters {
     /// Asset type (Stock or Crypto)
     pub asset_type: AssetType,
-    /// Risk profile these parameters are optimized for
+    /// Risk profile these parameters are optimized for (used when risk_score is None or for fallback)
     pub risk_profile: RiskProfile,
+    /// Exact risk appetite score (1-9) when optimization was run with --risk-score. Enables per-score optima.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_score: Option<u8>,
 
     // Strategy parameters
     /// Fast SMA period for trend detection
@@ -104,6 +108,7 @@ impl OptimalParameters {
         Self {
             asset_type,
             risk_profile,
+            risk_score: None,
             fast_sma_period,
             slow_sma_period,
             rsi_threshold,
@@ -118,6 +123,13 @@ impl OptimalParameters {
             win_rate,
             total_trades,
         }
+    }
+
+    /// Sets the exact risk score (1-9) and updates risk_profile to match. Used when saving from `optimize --risk-score N`.
+    pub fn with_risk_score(mut self, score: u8) -> Self {
+        self.risk_score = Some(score);
+        self.risk_profile = score_to_profile(score);
+        self
     }
 }
 
@@ -136,10 +148,18 @@ impl OptimalParametersSet {
     }
 
     /// Adds or updates parameters for a risk profile and asset type combination.
+    /// When `params.risk_score` is set, replaces the entry for that (asset_type, risk_score); otherwise (asset_type, risk_profile).
     pub fn upsert(&mut self, params: OptimalParameters) {
-        // Remove existing entry for this profile + asset type combination
         self.parameters.retain(|p| {
-            !(p.risk_profile == params.risk_profile && p.asset_type == params.asset_type)
+            if p.asset_type != params.asset_type {
+                return true;
+            }
+            let same_key = match (p.risk_score, params.risk_score) {
+                (Some(sa), Some(sb)) => sa == sb,
+                (_, Some(_)) => false,
+                _ => p.risk_profile == params.risk_profile,
+            };
+            !same_key
         });
         self.parameters.push(params);
     }
@@ -158,6 +178,30 @@ impl OptimalParametersSet {
         self.parameters
             .iter()
             .find(|p| p.risk_profile == profile && p.asset_type == asset_type)
+    }
+
+    /// Gets parameters for a specific risk appetite score (1-9).
+    /// Prefers an entry with matching `risk_score`; otherwise falls back to the profile for that score (1-3 Conservative, 4-6 Balanced, 7-9 Aggressive).
+    pub fn get_by_risk_score(
+        &self,
+        asset_type: AssetType,
+        score: u8,
+    ) -> Option<&OptimalParameters> {
+        let profile = score_to_profile(score);
+        self.parameters
+            .iter()
+            .find(|p| p.asset_type == asset_type && p.risk_score == Some(score))
+            .or_else(|| self.get_by_type(asset_type, profile))
+    }
+}
+
+/// Maps risk score 1-9 to RiskProfile (1-3 Conservative, 4-6 Balanced, 7-9 Aggressive).
+fn score_to_profile(score: u8) -> RiskProfile {
+    match score {
+        1..=3 => RiskProfile::Conservative,
+        4..=6 => RiskProfile::Balanced,
+        7..=9 => RiskProfile::Aggressive,
+        _ => RiskProfile::Balanced,
     }
 }
 

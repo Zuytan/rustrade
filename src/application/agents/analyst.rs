@@ -92,10 +92,11 @@ impl Analyst {
             dependencies.spread_cache.clone(),
         );
 
-        // Initialize SizingEngine & SignalProcessor
+        // Initialize SizingEngine with cost evaluator so position size accounts for estimated fees
         let sizing_engine = Arc::new(
-            crate::application::risk_management::sizing_engine::SizingEngine::new(
+            crate::application::risk_management::sizing_engine::SizingEngine::with_cost_evaluator(
                 dependencies.spread_cache.clone(),
+                cost_evaluator.clone(),
             ),
         );
 
@@ -410,7 +411,7 @@ impl Analyst {
                     debug!("Analyst [{}]: Proposal sent successfully", symbol);
                 }
                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                    warn!(
+                    debug!(
                         "Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, proposal dropped.",
                         symbol
                     );

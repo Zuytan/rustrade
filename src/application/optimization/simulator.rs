@@ -105,17 +105,31 @@ impl Simulator {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<BacktestResult> {
-        info!("Simulator: Fetching historical bars for {}...", symbol);
         let bars = self
             .market_data
             .get_historical_bars(symbol, start, end, "1Min")
             .await
             .context("Failed to fetch historical bars")?;
+        self.run_with_bars(symbol, &bars, start, end, None).await
+    }
 
-        info!(
-            "Simulator: Fetched {} bars. Starting simulation...",
-            bars.len()
-        );
+    /// Run backtest with pre-fetched bars (avoids repeated API calls when optimizing).
+    /// If spy_bars is None, SPY is fetched for alpha/beta; pass Some(...) to reuse.
+    pub async fn run_with_bars(
+        &self,
+        symbol: &str,
+        bars: &[Candle],
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        spy_bars: Option<Vec<Candle>>,
+    ) -> Result<BacktestResult> {
+        if bars.is_empty() {
+            anyhow::bail!(
+                "Simulator: no bars provided for {} in run_with_bars",
+                symbol
+            );
+        }
+        let bars_owned: Vec<Candle> = bars.to_vec();
 
         // Pre-process bars to extract daily closes
         // Map: Date (String YYYY-MM-DD) -> (Timestamp, ClosePrice)
@@ -123,7 +137,7 @@ impl Simulator {
         let mut daily_map: std::collections::BTreeMap<String, (i64, Decimal)> =
             std::collections::BTreeMap::new();
 
-        for bar in &bars {
+        for bar in bars {
             let dt = chrono::DateTime::from_timestamp(bar.timestamp, 0)
                 .unwrap_or_default()
                 .with_timezone(&Utc);
@@ -227,7 +241,7 @@ impl Simulator {
 
         let symbol_clone = symbol.to_string();
         let feeder_handle = tokio::spawn(async move {
-            for bar in bars {
+            for bar in bars_owned {
                 let candle = Candle {
                     symbol: symbol_clone.clone(),
                     open: bar.open,
@@ -264,7 +278,10 @@ impl Simulator {
                         .sum::<Decimal>();
 
                 let drawdown_pct = if !initial_equity.is_zero() {
-                    (current_equity - initial_equity) / initial_equity * Decimal::from(100)
+                    (current_equity - initial_equity)
+                        .checked_div(initial_equity)
+                        .map(|r| r * Decimal::from(100))
+                        .unwrap_or(Decimal::ZERO)
                 } else {
                     Decimal::ZERO
                 };
@@ -286,7 +303,9 @@ impl Simulator {
             let slippage_per_unit = if prop.quantity.is_zero() {
                 Decimal::ZERO
             } else {
-                slippage_amount / prop.quantity
+                slippage_amount
+                    .checked_div(prop.quantity)
+                    .unwrap_or(Decimal::ZERO)
             };
             let execution_price = match prop.side {
                 crate::domain::trading::types::OrderSide::Buy => prop.price + slippage_per_unit,
@@ -326,7 +345,10 @@ impl Simulator {
         }
 
         let mut total_return_pct = if !initial_equity.is_zero() {
-            (final_equity - initial_equity) / initial_equity * Decimal::from(100)
+            (final_equity - initial_equity)
+                .checked_div(initial_equity)
+                .map(|r| r * Decimal::from(100))
+                .unwrap_or(Decimal::ZERO)
         } else {
             Decimal::ZERO
         };
@@ -343,83 +365,78 @@ impl Simulator {
 
         // Buy & Hold Return: (LastPrice - StartPrice) / StartPrice
         let buy_and_hold_return_pct = if !start_price.is_zero() {
-            (last_close - start_price) / start_price * Decimal::from(100)
+            (last_close - start_price)
+                .checked_div(start_price)
+                .map(|r| r * Decimal::from(100))
+                .unwrap_or(Decimal::ZERO)
         } else {
             Decimal::ZERO
         };
 
-        // Fetch SPY (S&P 500) benchmark data for alpha/beta calculation
-        info!("Simulator: Fetching SPY benchmark data...");
-        let (alpha, beta, benchmark_correlation) = match self
-            .market_data
-            .get_historical_bars("SPY", start, end, "1Day")
-            .await
+        // SPY benchmark for alpha/beta: use provided bars or fetch once
+        let spy_bars_resolved: Vec<Candle> = if let Some(s) = spy_bars {
+            s
+        } else {
+            self.market_data
+                .get_historical_bars("SPY", start, end, "1Day")
+                .await
+                .unwrap_or_default()
+        };
+        let (alpha, beta, benchmark_correlation) = if !spy_bars_resolved.is_empty()
+            && daily_closes.len() > 1
         {
-            Ok(spy_bars) if !spy_bars.is_empty() && daily_closes.len() > 1 => {
-                // Calculate daily returns for strategy
-                let mut strategy_returns = Vec::new();
-                for i in 1..daily_closes.len() {
-                    let prev_price = daily_closes[i - 1].1.to_f64().unwrap_or(1.0);
-                    let curr_price = daily_closes[i].1.to_f64().unwrap_or(1.0);
-                    if prev_price > 0.0 {
-                        strategy_returns.push((curr_price - prev_price) / prev_price);
-                    }
+            let spy_bars_ref = &spy_bars_resolved;
+            // Calculate daily returns for strategy
+            let mut strategy_returns = Vec::new();
+            for i in 1..daily_closes.len() {
+                let prev_price = daily_closes[i - 1].1.to_f64().unwrap_or(1.0);
+                let curr_price = daily_closes[i].1.to_f64().unwrap_or(1.0);
+                if prev_price > 0.0 {
+                    strategy_returns.push((curr_price - prev_price) / prev_price);
                 }
+            }
 
-                // Build SPY daily close map
-                let mut spy_daily_map: std::collections::BTreeMap<String, f64> =
-                    std::collections::BTreeMap::new();
-                for bar in &spy_bars {
-                    let dt = chrono::DateTime::from_timestamp(bar.timestamp, 0)
-                        .unwrap_or_default()
-                        .with_timezone(&Utc);
-                    let date_key = dt.format("%Y-%m-%d").to_string();
-                    spy_daily_map.insert(date_key, bar.close.to_f64().unwrap_or(0.0));
-                }
+            // Build SPY daily close map
+            let mut spy_daily_map: std::collections::BTreeMap<String, f64> =
+                std::collections::BTreeMap::new();
+            for bar in spy_bars_ref {
+                let dt = chrono::DateTime::from_timestamp(bar.timestamp, 0)
+                    .unwrap_or_default()
+                    .with_timezone(&Utc);
+                let date_key = dt.format("%Y-%m-%d").to_string();
+                spy_daily_map.insert(date_key, bar.close.to_f64().unwrap_or(0.0));
+            }
 
-                // Calculate SPY daily returns aligned with strategy dates
-                let mut benchmark_returns = Vec::new();
-                for i in 1..daily_closes.len() {
-                    let prev_ts = daily_closes[i - 1].0;
-                    let curr_ts = daily_closes[i].0;
-                    let prev_dt = chrono::DateTime::from_timestamp(prev_ts / 1000, 0)
-                        .unwrap_or_default()
-                        .format("%Y-%m-%d")
-                        .to_string();
-                    let curr_dt = chrono::DateTime::from_timestamp(curr_ts / 1000, 0)
-                        .unwrap_or_default()
-                        .format("%Y-%m-%d")
-                        .to_string();
+            // Calculate SPY daily returns aligned with strategy dates
+            let mut benchmark_returns = Vec::new();
+            for i in 1..daily_closes.len() {
+                let prev_ts = daily_closes[i - 1].0;
+                let curr_ts = daily_closes[i].0;
+                let prev_dt = chrono::DateTime::from_timestamp(prev_ts / 1000, 0)
+                    .unwrap_or_default()
+                    .format("%Y-%m-%d")
+                    .to_string();
+                let curr_dt = chrono::DateTime::from_timestamp(curr_ts / 1000, 0)
+                    .unwrap_or_default()
+                    .format("%Y-%m-%d")
+                    .to_string();
 
-                    if let (Some(&prev_spy), Some(&curr_spy)) =
-                        (spy_daily_map.get(&prev_dt), spy_daily_map.get(&curr_dt))
-                        && prev_spy > 0.0
-                    {
-                        benchmark_returns.push((curr_spy - prev_spy) / prev_spy);
-                    }
-                }
-
-                // Only calculate if we have matching returns
-                if strategy_returns.len() == benchmark_returns.len() && !strategy_returns.is_empty()
+                if let (Some(&prev_spy), Some(&curr_spy)) =
+                    (spy_daily_map.get(&prev_dt), spy_daily_map.get(&curr_dt))
+                    && prev_spy > 0.0
                 {
-                    Self::calculate_alpha_beta(&strategy_returns, &benchmark_returns)
-                } else {
-                    info!(
-                        "Simulator: Mismatched return lengths (strategy: {}, benchmark: {})",
-                        strategy_returns.len(),
-                        benchmark_returns.len()
-                    );
-                    (0.0, 0.0, 0.0)
+                    benchmark_returns.push((curr_spy - prev_spy) / prev_spy);
                 }
             }
-            Ok(_) => {
-                info!("Simulator: Insufficient SPY data for alpha/beta calculation");
+
+            // Only calculate if we have matching returns
+            if strategy_returns.len() == benchmark_returns.len() && !strategy_returns.is_empty() {
+                Self::calculate_alpha_beta(&strategy_returns, &benchmark_returns)
+            } else {
                 (0.0, 0.0, 0.0)
             }
-            Err(e) => {
-                info!("Simulator: Failed to fetch SPY data: {}", e);
-                (0.0, 0.0, 0.0)
-            }
+        } else {
+            (0.0, 0.0, 0.0)
         };
 
         Ok(BacktestResult {

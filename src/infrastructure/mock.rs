@@ -344,24 +344,91 @@ impl ExecutionService for MockExecutionService {
 
         match order.side {
             crate::domain::trading::types::OrderSide::Buy => {
-                port.cash -= cost + commission;
-                let pos = port.positions.entry(order.symbol.clone()).or_insert(
-                    crate::domain::trading::portfolio::Position {
-                        symbol: order.symbol.clone(),
-                        quantity: Decimal::ZERO,
-                        average_price: Decimal::ZERO,
-                    },
-                );
-
-                let total_qty = pos.quantity + order.quantity;
-                let total_cost = (pos.quantity * pos.average_price) + cost;
-                if total_qty > Decimal::ZERO {
-                    pos.average_price = total_cost / total_qty;
+                let total_needed = cost + commission;
+                if port.cash < total_needed {
+                    // Reduce quantity to what cash allows (no margin / no negative cash)
+                    let available_for_cost = (port.cash - commission).max(Decimal::ZERO);
+                    let affordable_qty = available_for_cost
+                        .checked_div(execution_price)
+                        .unwrap_or(Decimal::ZERO)
+                        .round_dp(4);
+                    if affordable_qty <= Decimal::ZERO {
+                        info!(
+                            "MockExecution: Order {} REJECTED — insufficient cash (need ${}, have ${})",
+                            order.id, total_needed, port.cash
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Insufficient cash: need {}, have {}",
+                            total_needed,
+                            port.cash
+                        ));
+                    }
+                    // Execute with reduced quantity
+                    let reduced_cost = execution_price * affordable_qty;
+                    let reduced_commission = self
+                        .fee_model
+                        .calculate_cost(affordable_qty, execution_price, order.side)
+                        .fee;
+                    info!(
+                        "MockExecution: Order {} reduced qty {} -> {} (cash ${} < needed ${})",
+                        order.id, order.quantity, affordable_qty, port.cash, total_needed
+                    );
+                    port.cash -= reduced_cost + reduced_commission;
+                    let pos = port.positions.entry(order.symbol.clone()).or_insert(
+                        crate::domain::trading::portfolio::Position {
+                            symbol: order.symbol.clone(),
+                            quantity: Decimal::ZERO,
+                            average_price: Decimal::ZERO,
+                        },
+                    );
+                    let total_qty = pos.quantity + affordable_qty;
+                    let total_cost_pos = (pos.quantity * pos.average_price) + reduced_cost;
+                    if total_qty > Decimal::ZERO {
+                        pos.average_price = total_cost_pos
+                            .checked_div(total_qty)
+                            .unwrap_or(Decimal::ZERO);
+                    }
+                    pos.quantity = total_qty;
+                } else {
+                    port.cash -= total_needed;
+                    let pos = port.positions.entry(order.symbol.clone()).or_insert(
+                        crate::domain::trading::portfolio::Position {
+                            symbol: order.symbol.clone(),
+                            quantity: Decimal::ZERO,
+                            average_price: Decimal::ZERO,
+                        },
+                    );
+                    let total_qty = pos.quantity + order.quantity;
+                    let total_cost_pos = (pos.quantity * pos.average_price) + cost;
+                    if total_qty > Decimal::ZERO {
+                        pos.average_price = total_cost_pos
+                            .checked_div(total_qty)
+                            .unwrap_or(Decimal::ZERO);
+                    }
+                    pos.quantity = total_qty;
                 }
-                pos.quantity = total_qty;
             }
             crate::domain::trading::types::OrderSide::Sell => {
-                port.cash += cost - commission;
+                // Prevent selling more than we hold
+                let current_qty = port
+                    .positions
+                    .get(&order.symbol)
+                    .map(|p| p.quantity)
+                    .unwrap_or(Decimal::ZERO);
+                let sell_qty = order.quantity.min(current_qty);
+                if sell_qty <= Decimal::ZERO {
+                    info!(
+                        "MockExecution: Sell order {} REJECTED — no position to sell",
+                        order.id
+                    );
+                    return Err(anyhow::anyhow!("No position to sell for {}", order.symbol));
+                }
+                let sell_proceeds = execution_price * sell_qty;
+                let sell_commission = self
+                    .fee_model
+                    .calculate_cost(sell_qty, execution_price, order.side)
+                    .fee;
+                port.cash += sell_proceeds - sell_commission;
                 let pos = port.positions.entry(order.symbol.clone()).or_insert(
                     crate::domain::trading::portfolio::Position {
                         symbol: order.symbol.clone(),
@@ -369,7 +436,7 @@ impl ExecutionService for MockExecutionService {
                         average_price: Decimal::ZERO,
                     },
                 );
-                pos.quantity -= order.quantity;
+                pos.quantity -= sell_qty;
             }
         }
 

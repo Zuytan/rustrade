@@ -1,6 +1,6 @@
 //! Risk settings component (Simple Mode)
 
-use crate::domain::risk::optimal_parameters::OptimalParameters;
+use crate::domain::risk::optimal_parameters::{AssetType, OptimalParameters};
 use crate::domain::risk::risk_appetite::{RiskAppetite, RiskProfile};
 use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::optimal_parameters_persistence::OptimalParametersPersistence;
@@ -155,8 +155,9 @@ fn render_optimal_settings_button(
     panel: &mut SettingsPanel,
     profile: RiskProfile,
 ) {
-    // Try to load optimal parameters for current profile
-    let optimal = load_optimal_for_profile(profile);
+    // Prefer optimal params for exact risk score (from optimize --risk-score N), else profile
+    let optimal =
+        load_optimal_for_risk_score(panel.risk_score).or_else(|| load_optimal_for_profile(profile));
 
     match optimal {
         Some(params) => {
@@ -204,6 +205,15 @@ fn render_optimal_settings_button(
             );
         }
     }
+}
+
+/// Loads optimal parameters for the given risk score (1-9). Prefers exact score, then profile.
+fn load_optimal_for_risk_score(score: u8) -> Option<OptimalParameters> {
+    OptimalParametersPersistence::new()
+        .ok()?
+        .get_for_risk_score(score, AssetType::Stock)
+        .ok()
+        .flatten()
 }
 
 /// Loads optimal parameters for a given risk profile from persistence.

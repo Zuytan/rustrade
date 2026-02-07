@@ -67,7 +67,7 @@ pub struct LoggingListener;
 
 impl EventListener for LoggingListener {
     fn on_event(&self, event: &TradingEvent) {
-        use tracing::{info, warn};
+        use tracing::{debug, info, warn};
 
         match event {
             TradingEvent::SignalGenerated {
@@ -102,7 +102,7 @@ impl EventListener for LoggingListener {
                 quantity,
                 reason,
             } => {
-                warn!(
+                debug!(
                     "❌ Rejected: {:?} {} x{} - {}",
                     side, symbol, quantity, reason
                 );

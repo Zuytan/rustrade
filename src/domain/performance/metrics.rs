@@ -18,6 +18,10 @@ pub struct PerformanceMetrics {
     pub sortino_ratio: f64,
     pub calmar_ratio: f64,
 
+    // Benchmark-relative (when benchmark_returns provided)
+    pub alpha: f64,
+    pub beta: f64,
+
     // Drawdown
     pub max_drawdown: f64,
     pub max_drawdown_pct: f64,
@@ -65,12 +69,28 @@ impl PerformanceMetrics {
         Self::calculate_time_series_metrics(trades, &[], initial_equity)
     }
 
-    /// Calculate comprehensive performance metrics using daily time series data
-    /// This provides accurate Sharpe/Sortino ratios and Drawdowns based on daily returns.
+    /// Calculate comprehensive performance metrics using daily time series data.
+    /// Optionally pass benchmark daily prices (same timeline as daily_closes) for alpha/beta.
     pub fn calculate_time_series_metrics(
         trades: &[Trade],
         daily_closes: &[(i64, Decimal)], // (Timestamp, Price)
         initial_equity: Decimal,
+    ) -> Self {
+        Self::calculate_time_series_metrics_with_benchmark(
+            trades,
+            daily_closes,
+            initial_equity,
+            None,
+        )
+    }
+
+    /// Like calculate_time_series_metrics but with benchmark series for alpha/beta.
+    /// benchmark_daily_prices: (timestamp, price) aligned with daily_closes (e.g. SPY or BTC).
+    pub fn calculate_time_series_metrics_with_benchmark(
+        trades: &[Trade],
+        daily_closes: &[(i64, Decimal)],
+        initial_equity: Decimal,
+        benchmark_daily_prices: Option<&[(i64, Decimal)]>,
     ) -> Self {
         // 1. Reconstruct Daily Equity Curve
         let mut daily_equity = Vec::new();
@@ -238,6 +258,12 @@ impl PerformanceMetrics {
             0.0
         };
 
+        let (alpha, beta) = if let Some(benchmark_prices) = benchmark_daily_prices {
+            Self::calculate_alpha_beta(&returns, benchmark_prices, annualized_return_pct)
+        } else {
+            (0.0, 0.0)
+        };
+
         Self {
             total_return,
             total_return_pct,
@@ -245,6 +271,8 @@ impl PerformanceMetrics {
             sharpe_ratio,
             sortino_ratio,
             calmar_ratio,
+            alpha,
+            beta,
             max_drawdown,
             max_drawdown_pct,
             total_trades,
@@ -264,6 +292,48 @@ impl PerformanceMetrics {
             days_in_market,
             exposure_pct,
         }
+    }
+
+    /// Beta = Cov(strategy_returns, benchmark_returns) / Var(benchmark_returns).
+    /// Alpha (annualized) = strategy_annual_return - beta * benchmark_annual_return.
+    fn calculate_alpha_beta(
+        strategy_returns: &[f64],
+        benchmark_daily_prices: &[(i64, Decimal)],
+        annualized_return_pct: f64,
+    ) -> (f64, f64) {
+        if strategy_returns.is_empty() || benchmark_daily_prices.len() < 2 {
+            return (0.0, 0.0);
+        }
+        let bench_returns: Vec<f64> = (1..benchmark_daily_prices.len())
+            .filter_map(|i| {
+                let prev = benchmark_daily_prices[i - 1].1.to_f64()?;
+                let curr = benchmark_daily_prices[i].1.to_f64()?;
+                if prev > 0.0 {
+                    Some((curr - prev) / prev)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let n = strategy_returns.len().min(bench_returns.len()) as f64;
+        if n < 2.0 {
+            return (0.0, 0.0);
+        }
+        let s = &strategy_returns[..n as usize];
+        let b = &bench_returns[..n as usize];
+        let mean_s = s.iter().sum::<f64>() / n;
+        let mean_b = b.iter().sum::<f64>() / n;
+        let cov = s
+            .iter()
+            .zip(b.iter())
+            .map(|(si, bi)| (si - mean_s) * (bi - mean_b))
+            .sum::<f64>()
+            / (n - 1.0);
+        let var_b = b.iter().map(|bi| (bi - mean_b).powi(2)).sum::<f64>() / (n - 1.0);
+        let beta = if var_b > 0.0 { cov / var_b } else { 0.0 };
+        let benchmark_annual_pct = mean_b * 252.0 * 100.0;
+        let alpha = annualized_return_pct - (beta * benchmark_annual_pct);
+        (alpha, beta)
     }
 
     #[allow(dead_code)]
@@ -289,7 +359,13 @@ impl PerformanceMetrics {
             }
 
             if peak > Decimal::ZERO {
-                let drawdown_pct = ((equity - peak) / peak).to_f64().unwrap_or(0.0) * 100.0;
+                let drawdown_pct = (equity - peak)
+                    .checked_div(peak)
+                    .and_then(|d| d.to_f64())
+                    .unwrap_or(0.0)
+                    * 100.0;
+                // Cap at -100% (equity can't lose more than 100% of capital)
+                let drawdown_pct = drawdown_pct.max(-100.0);
                 if drawdown_pct < max_dd {
                     max_dd = drawdown_pct;
                 }
@@ -429,6 +505,7 @@ mod tests {
                 entry_reason: None,
                 exit_reason: None,
                 slippage: None,
+                fees: dec!(0),
             },
             Trade {
                 id: "2".to_string(),
@@ -445,6 +522,7 @@ mod tests {
                 entry_reason: None,
                 exit_reason: None,
                 slippage: None,
+                fees: dec!(0),
             },
         ];
 
@@ -497,6 +575,7 @@ mod tests {
                 entry_reason: none.clone(),
                 exit_reason: none.clone(),
                 slippage: none_dec,
+                fees: dec!(0),
             },
             Trade {
                 id: "2".to_string(),
@@ -513,6 +592,7 @@ mod tests {
                 entry_reason: none.clone(),
                 exit_reason: none.clone(),
                 slippage: none_dec,
+                fees: dec!(0),
             },
             Trade {
                 id: "3".to_string(),
@@ -529,6 +609,7 @@ mod tests {
                 entry_reason: none.clone(),
                 exit_reason: none.clone(),
                 slippage: none_dec,
+                fees: dec!(0),
             },
         ];
 
@@ -560,6 +641,7 @@ mod tests {
             entry_reason: None,
             exit_reason: None,
             slippage: None,
+            fees: dec!(0),
         }];
 
         // Days:

@@ -16,7 +16,7 @@ use anyhow::Result;
 use rustrade::application::system::Application;
 use rustrade::config::Config;
 use rustrade::infrastructure::observability::MetricsReporter;
-use tracing::{Level, info};
+use tracing::info;
 use tracing_subscriber::prelude::*;
 
 #[tokio::main]
@@ -27,8 +27,10 @@ async fn main() -> Result<()> {
     // Setup logging (stdout only, no UI channel needed)
     let stdout_layer = tracing_subscriber::fmt::layer().with_target(false).pretty();
 
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .with(filter)
         .with(stdout_layer)
         .init();
 

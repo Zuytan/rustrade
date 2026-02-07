@@ -17,6 +17,7 @@ pub enum StrategyMode {
     // NEW: Modern statistical strategies
     ZScoreMR,
     StatMomentum,
+    OrderFlow,
     ML,
 }
 
@@ -38,10 +39,11 @@ impl std::str::FromStr for StrategyMode {
             "ensemble" => Ok(StrategyMode::Ensemble),
             "zscoremr" => Ok(StrategyMode::ZScoreMR),
             "statmomentum" => Ok(StrategyMode::StatMomentum),
+            "orderflow" => Ok(StrategyMode::OrderFlow),
             "ml" => Ok(StrategyMode::ML),
 
             _ => anyhow::bail!(
-                "Invalid STRATEGY_MODE: {}. Valid: standard, advanced, dynamic, trendriding, meanreversion, smc, vwap, breakout, momentum, ensemble, zscoremr, statmomentum, ml",
+                "Invalid STRATEGY_MODE: {}. Valid: standard, advanced, dynamic, trendriding, meanreversion, smc, vwap, breakout, momentum, ensemble, zscoremr, statmomentum, orderflow, ml",
                 s
             ),
         }
@@ -64,6 +66,7 @@ impl std::fmt::Display for StrategyMode {
             StrategyMode::Ensemble => write!(f, "Ensemble"),
             StrategyMode::ZScoreMR => write!(f, "ZScoreMR"),
             StrategyMode::StatMomentum => write!(f, "StatMomentum"),
+            StrategyMode::OrderFlow => write!(f, "OrderFlow"),
             StrategyMode::ML => write!(f, "ML"),
         }
     }

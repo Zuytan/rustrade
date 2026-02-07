@@ -102,3 +102,38 @@ impl Default for RiskConfig {
         }
     }
 }
+
+impl RiskConfig {
+    /// Crypto-oriented defaults: higher drawdown/position limits and more consecutive losses before halt.
+    pub fn crypto_default() -> Self {
+        Self {
+            max_position_size_pct: dec!(0.15), // 15%
+            max_daily_loss_pct: dec!(0.04),    // 4%
+            max_drawdown_pct: dec!(0.12),      // 12%
+            consecutive_loss_limit: 6,
+            valuation_interval_seconds: 60,
+            max_sector_exposure_pct: dec!(0.20),
+            sector_provider: None,
+            allow_pdt_risk: false,
+            pending_order_ttl_ms: None,
+            correlation_config: CorrelationFilterConfig::default(),
+            volatility_config: VolatilityConfig::default(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_crypto_default_relaxed_limits() {
+        let default = RiskConfig::default();
+        let crypto = RiskConfig::crypto_default();
+        assert!(crypto.max_drawdown_pct > default.max_drawdown_pct);
+        assert!(crypto.max_position_size_pct > default.max_position_size_pct);
+        assert!(crypto.consecutive_loss_limit > default.consecutive_loss_limit);
+        assert!(crypto.max_daily_loss_pct > default.max_daily_loss_pct);
+        assert!(crypto.validate().is_ok());
+    }
+}

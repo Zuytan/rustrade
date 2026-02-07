@@ -116,6 +116,7 @@ impl SignalProcessor {
         current_prices.insert(symbol.to_string(), price);
 
         let total_equity = portfolio.total_equity(&current_prices);
+        let available_cash = portfolio.cash;
 
         let sizing_config = crate::application::risk_management::sizing_engine::SizingConfig {
             risk_per_trade_percent: config.risk_per_trade_percent,
@@ -131,7 +132,11 @@ impl SignalProcessor {
             total_equity,
             price,
             symbol,
-            None, // No volatility targeting in signal processor for now
+            None,                 // No volatility targeting in signal processor for now
+            None, // Kelly stats can be wired from portfolio trade_history when available
+            None, // Halt level can be wired from risk state when available
+            None, // Regime can be wired from candle pipeline / regime detector when available
+            Some(available_cash), // Cap by available cash
         )
     }
 

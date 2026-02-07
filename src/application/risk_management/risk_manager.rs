@@ -1,6 +1,6 @@
 use crate::application::risk_management::circuit_breaker_service::{
-    CircuitBreakerConfig as ServiceCircuitBreakerConfig, CircuitBreakerService,
-}; // Added and Aliased
+    CircuitBreakerConfig as ServiceCircuitBreakerConfig, CircuitBreakerService, HaltLevel,
+};
 use crate::application::risk_management::liquidation_service::LiquidationService;
 use crate::application::risk_management::order_reconciler::{OrderReconciler, PendingOrder}; // Added PendingOrder import
 use crate::application::risk_management::pipeline::validation_pipeline::RiskValidationPipeline;
@@ -329,8 +329,8 @@ impl RiskManager {
         Ok(())
     }
 
-    /// Check if circuit breaker should trigger
-    fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<String> {
+    /// Check if circuit breaker should trigger; returns level and message when triggered.
+    fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<(HaltLevel, String)> {
         self.circuit_breaker_service
             .check_circuit_breaker(&self.risk_state, current_equity)
     }
@@ -369,11 +369,15 @@ impl RiskManager {
         // Check Risks (Async check)
         // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
         if !self.circuit_breaker_service.is_halted()
-            && let Some(reason) = self.check_circuit_breaker(current_equity)
+            && let Some((level, reason)) = self.check_circuit_breaker(current_equity)
         {
-            tracing::error!("RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED: {}", reason);
-            self.circuit_breaker_service.set_halted(true);
-            self.metrics.circuit_breaker_status.set(1.0); // Reset in handle_command if needed
+            tracing::error!(
+                "RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED ({:?}): {}",
+                level,
+                reason
+            );
+            self.circuit_breaker_service.set_halted(level);
+            self.metrics.circuit_breaker_status.set(1.0);
             self.liquidate_portfolio(&reason).await;
         } else if !self.circuit_breaker_service.is_halted() {
             self.metrics.circuit_breaker_status.set(0.0);
@@ -460,6 +464,8 @@ impl RiskManager {
 
         if self.risk_state.daily_drawdown_reset && !old_reset {
             self.daily_pnl = Decimal::ZERO;
+            self.circuit_breaker_service.set_halted(HaltLevel::Normal);
+            self.metrics.circuit_breaker_status.set(0.0);
             return true;
         }
 
@@ -512,7 +518,7 @@ impl RiskManager {
                 warn!(
                     "RiskManager: MANUAL CIRCUIT BREAKER TRIGGERED! Executing Panic Liquidation."
                 );
-                self.circuit_breaker_service.set_halted(true);
+                self.circuit_breaker_service.set_halted(HaltLevel::FullHalt);
                 self.metrics.circuit_breaker_status.set(1.0);
                 self.liquidate_portfolio("Manual Circuit Breaker Trigger")
                     .await;
@@ -581,12 +587,30 @@ impl RiskManager {
         &mut self,
         proposal: TradeProposal,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.circuit_breaker_service.is_halted() {
-            warn!(
-                "RiskManager: Trading HALTED. Rejecting proposal for {}",
-                proposal.symbol
+        let level = self.circuit_breaker_service.halt_level();
+        if level == HaltLevel::Reduced || level == HaltLevel::FullHalt {
+            debug!(
+                "RiskManager: Trading HALTED ({:?}). Rejecting proposal for {}",
+                level, proposal.symbol
             );
             return Ok(());
+        }
+        let mut proposal = proposal;
+        if level == HaltLevel::Warning {
+            let mult = rust_decimal::Decimal::from_f64_retain(HaltLevel::Warning.size_multiplier())
+                .unwrap_or(Decimal::ONE);
+            proposal.quantity = (proposal.quantity * mult).round_dp(4);
+            if proposal.quantity <= Decimal::ZERO {
+                debug!(
+                    "RiskManager: Proposal for {} scaled to zero under Warning level, skipping",
+                    proposal.symbol
+                );
+                return Ok(());
+            }
+            debug!(
+                "RiskManager: Circuit breaker Warning: reduced proposal size for {} by 50%",
+                proposal.symbol
+            );
         }
 
         // --- STALE DATA GUARD ---
@@ -646,10 +670,12 @@ impl RiskManager {
         }
 
         // Circuit breaker check (Trigger Liquidation logic)
-        // Keeps the system safe by checking global health before processing specific trade rules
-        if let Some(reason) = self.check_circuit_breaker(current_equity) {
-            error!("RiskManager: CIRCUIT BREAKER TRIGGERED - {}", reason);
-            self.circuit_breaker_service.set_halted(true);
+        if let Some((level, reason)) = self.check_circuit_breaker(current_equity) {
+            error!(
+                "RiskManager: CIRCUIT BREAKER TRIGGERED ({:?}) - {}",
+                level, reason
+            );
+            self.circuit_breaker_service.set_halted(level);
             self.metrics.circuit_breaker_status.set(1.0);
             self.liquidate_portfolio(&reason).await;
             return Ok(());
@@ -721,7 +747,7 @@ impl RiskManager {
                     .await?;
             }
             ValidationResult::Reject(reason) => {
-                warn!(
+                debug!(
                     "RiskManager: Rejecting {:?} order for {} - {}",
                     proposal.side, proposal.symbol, reason
                 );

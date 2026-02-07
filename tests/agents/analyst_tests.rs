@@ -148,6 +148,15 @@ async fn test_golden_cross() {
         max_loss_per_trade_pct: dec!(-0.05),
         smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -264,6 +273,15 @@ async fn test_prevent_short_selling() {
         max_loss_per_trade_pct: dec!(-0.05),
         smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -397,6 +415,15 @@ async fn test_sell_signal_with_position() {
         max_loss_per_trade_pct: dec!(-0.05),
         smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -525,6 +552,15 @@ async fn test_dynamic_quantity_scaling() {
         max_loss_per_trade_pct: dec!(-0.05),
         smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -583,14 +619,23 @@ async fn test_dynamic_quantity_scaling() {
 
     assert_eq!(proposal.side, OrderSide::Buy);
 
-    // Final Price = 110
-    // Equity = 100,000
-    // Risk = 2% of 100,000 = 2,000
-    // Qty = 2,000 / 110 = 18.18.. -> 18.1818
-    let expected_qty = Decimal::from_f64_retain(2000.0 / 110.0)
+    // Final Price = 110. Equity = 100,000. Risk = 2% = 2,000.
+    // With cost-aware sizing, target_amt is reduced by estimated fees, so qty <= 2000/110.
+    let naive_qty = Decimal::from_f64_retain(2000.0 / 110.0)
         .unwrap()
         .round_dp(4);
-    assert_eq!(proposal.quantity, expected_qty);
+    assert!(
+        proposal.quantity <= naive_qty,
+        "Cost-aware quantity {} should be <= naive {}",
+        proposal.quantity,
+        naive_qty
+    );
+    assert!(
+        proposal.quantity >= naive_qty - rust_decimal_macros::dec!(0.01),
+        "Quantity {} should be close to naive {}",
+        proposal.quantity,
+        naive_qty
+    );
 }
 
 #[tokio::test]
@@ -668,6 +713,15 @@ async fn test_multi_symbol_isolation() {
         max_loss_per_trade_pct: dec!(-0.05),
         smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -815,6 +869,15 @@ async fn test_advanced_strategy_trend_filter() {
         max_loss_per_trade_pct: dec!(-0.05),
         smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -960,6 +1023,15 @@ async fn test_risk_based_quantity_calculation() {
         max_loss_per_trade_pct: dec!(-0.05),
         smc_volume_multiplier: dec!(1.5),
         enable_ml_data_collection: false,
+        stat_momentum_lookback: 10,
+        stat_momentum_threshold: dec!(1.5),
+        stat_momentum_trend_confirmation: true,
+        zscore_lookback: 20,
+        zscore_entry_threshold: dec!(-2.0),
+        zscore_exit_threshold: dec!(0.0),
+        orderflow_ofi_threshold: dec!(0.3),
+        orderflow_stacked_count: 3,
+        orderflow_volume_profile_lookback: 100,
     };
 
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(

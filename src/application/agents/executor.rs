@@ -7,6 +7,7 @@ use crate::application::risk_management::{
 };
 use crate::domain::ports::ExecutionService;
 use crate::domain::repositories::TradeRepository;
+use crate::domain::trading::fee_model::FeeModel;
 use crate::domain::trading::portfolio::{Portfolio, Position};
 use crate::domain::trading::types::{Order, OrderSide};
 use anyhow::Result;
@@ -22,6 +23,7 @@ pub struct Executor {
     repository: Option<Arc<dyn TradeRepository>>,
     order_monitor: Arc<OrderMonitor>,
     health_service: Arc<ConnectionHealthService>,
+    fee_model: Arc<dyn FeeModel>,
 }
 
 impl Executor {
@@ -32,6 +34,7 @@ impl Executor {
         repository: Option<Arc<dyn TradeRepository>>,
         retry_config: RetryConfig,
         health_service: Arc<ConnectionHealthService>,
+        fee_model: Arc<dyn FeeModel>,
     ) -> Self {
         Self {
             execution_service,
@@ -40,6 +43,7 @@ impl Executor {
             repository,
             order_monitor: Arc::new(OrderMonitor::new(retry_config)),
             health_service,
+            fee_model,
         }
     }
 
@@ -201,15 +205,18 @@ impl Executor {
             };
 
         let cost = order.price * order.quantity;
-        let _sign = if is_reversal { -1 } else { 1 };
+        let trade_cost = self
+            .fee_model
+            .calculate_cost(order.quantity, order.price, order.side);
+        let fees = trade_cost.total_impact;
 
         match order.side {
             OrderSide::Buy => {
-                // If reversal (Buy), we ADD cash back. If normal (Buy), we SUBTRACT.
+                // If reversal (Buy), we ADD cash and fees back. If normal (Buy), we SUBTRACT cost + fees.
                 if is_reversal {
-                    portfolio.cash += cost;
+                    portfolio.cash += cost + fees;
                 } else {
-                    portfolio.cash -= cost;
+                    portfolio.cash -= cost + fees;
                 }
 
                 let position =
@@ -239,12 +246,12 @@ impl Executor {
             }
             OrderSide::Sell => {
                 if is_reversal {
-                    portfolio.cash -= cost;
+                    portfolio.cash -= cost - fees;
                     if let Some(position) = portfolio.positions.get_mut(&order.symbol) {
                         position.quantity += order.quantity;
                     }
                 } else {
-                    portfolio.cash += cost;
+                    portfolio.cash += cost - fees;
                     if let Some(position) = portfolio.positions.get_mut(&order.symbol) {
                         position.quantity -= order.quantity;
                     }
@@ -258,6 +265,7 @@ impl Executor {
 mod tests {
     use super::*;
     use crate::domain::ports::{ExecutionService, OrderUpdate};
+    use crate::domain::trading::fee_model::ConstantFeeModel;
     use anyhow::Result;
 
     use async_trait::async_trait;
@@ -323,6 +331,7 @@ mod tests {
         port.cash = Decimal::from(1000);
         let portfolio = Arc::new(RwLock::new(port));
 
+        let fee_model = Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO));
         let mut executor = Executor::new(
             Arc::new(MockExecService),
             rx,
@@ -330,6 +339,7 @@ mod tests {
             None,
             RetryConfig::default(),
             Arc::new(ConnectionHealthService::new()),
+            fee_model,
         );
         tokio::spawn(async move { executor.run().await });
 
@@ -349,7 +359,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let p = portfolio.read().await;
-        assert_eq!(p.cash, Decimal::from(800)); // 1000 - (100*2)
+        assert_eq!(p.cash, Decimal::from(800)); // 1000 - (100*2) - 0 fees
         assert_eq!(p.positions.get("ABC").unwrap().quantity, Decimal::from(2));
     }
 
@@ -360,6 +370,7 @@ mod tests {
         port.cash = Decimal::from(1000);
         let portfolio = Arc::new(RwLock::new(port));
 
+        let fee_model = Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO));
         let mut executor = Executor::new(
             Arc::new(FailExecService),
             rx,
@@ -367,6 +378,7 @@ mod tests {
             None,
             RetryConfig::default(),
             Arc::new(ConnectionHealthService::new()),
+            fee_model,
         );
         tokio::spawn(async move { executor.run().await });
 
