@@ -339,12 +339,19 @@ impl RiskManager {
     /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
     /// Handle real-time order updates to maintain pending state
     /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
-    fn handle_order_update(&mut self, update: OrderUpdate) -> bool {
-        self.order_reconciler.handle_order_update(
-            &update,
-            &mut self.risk_state,
-            &self.portfolio_state_manager,
-        )
+    /// Handle real-time order updates to maintain pending state
+    /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
+    async fn handle_order_update(&mut self, update: OrderUpdate) -> bool {
+        let (state_changed, token) = self
+            .order_reconciler
+            .handle_order_update(&update, &mut self.risk_state);
+
+        // Release reservation token synchronously in this async context
+        if let Some(t) = token {
+            self.portfolio_state_manager.release_reservation(t).await;
+        }
+
+        state_changed
     }
 
     /// Fetch latest prices for all held positions and update valuation
@@ -490,9 +497,15 @@ impl RiskManager {
     }
 
     /// Cleanup tentative filled orders and release reservations
-    fn reconcile_pending_orders(&mut self, portfolio: &Portfolio) {
-        self.order_reconciler
-            .reconcile_pending_orders(portfolio, &self.portfolio_state_manager);
+    async fn reconcile_pending_orders(&mut self, portfolio: &Portfolio) {
+        let tokens = self.order_reconciler.reconcile_pending_orders(portfolio);
+
+        // Release all reservation tokens synchronously in this async context
+        for token in tokens {
+            self.portfolio_state_manager
+                .release_reservation(token)
+                .await;
+        }
     }
 
     pub fn is_halted(&self) -> bool {
@@ -560,7 +573,7 @@ impl RiskManager {
         &mut self,
         update: OrderUpdate,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.handle_order_update(update) {
+        if self.handle_order_update(update).await {
             self.persist_state().await;
         }
         Ok(())
@@ -569,14 +582,17 @@ impl RiskManager {
     /// Handle valuation tick command
     async fn cmd_handle_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.update_portfolio_valuation().await?;
-
         if !self.circuit_breaker_service.is_halted() {
             let snapshot = self.portfolio_state_manager.get_snapshot().await;
             if self.check_daily_reset(snapshot.portfolio.total_equity(&self.current_prices)) {
                 self.persist_state().await;
             }
-            self.reconcile_pending_orders(&snapshot.portfolio);
         }
+
+        // Always reconcile pending orders regardless of circuit breaker state.
+        // Stale reservations must be released to avoid permanently locking capital.
+        let snapshot = self.portfolio_state_manager.get_snapshot().await;
+        self.reconcile_pending_orders(&snapshot.portfolio).await;
 
         Ok(())
     }
@@ -647,7 +663,7 @@ impl RiskManager {
         }
 
         // Reconcile pending orders
-        self.reconcile_pending_orders(&snapshot.portfolio);
+        self.reconcile_pending_orders(&snapshot.portfolio).await;
 
         // Calculate current equity
         let current_equity = snapshot.portfolio.total_equity(&self.current_prices);
@@ -735,8 +751,67 @@ impl RiskManager {
         // Execute Pipeline
         match self.validation_pipeline.validate(&ctx).await {
             ValidationResult::Approve => {
-                // All checks passed
-                self.execute_proposal_internal(proposal, &snapshot.portfolio)
+                // Reserve exposure for BUY orders to prevent over-allocation.
+                // This ensures that subsequent proposals see reduced available_cash
+                // and won't exceed the actual balance at the broker.
+                let reservation_token = if proposal.side == OrderSide::Buy {
+                    let order_cost = proposal.price * proposal.quantity;
+                    match self
+                        .portfolio_state_manager
+                        .reserve_exposure(&proposal.symbol, order_cost, snapshot.version)
+                        .await
+                    {
+                        Ok(token) => {
+                            info!(
+                                "RiskManager: Reserved ${} for {} (token: {})",
+                                order_cost,
+                                proposal.symbol,
+                                &token.id[..8]
+                            );
+                            Some(token)
+                        }
+                        Err(e) => {
+                            // Version conflict or insufficient funds after reservation accounting.
+                            // Retry once with a fresh snapshot.
+                            match self.portfolio_state_manager.refresh().await {
+                                Ok(fresh) => {
+                                    match self
+                                        .portfolio_state_manager
+                                        .reserve_exposure(
+                                            &proposal.symbol,
+                                            order_cost,
+                                            fresh.version,
+                                        )
+                                        .await
+                                    {
+                                        Ok(token) => Some(token),
+                                        Err(retry_err) => {
+                                            info!(
+                                                "RiskManager: Reservation failed for {} after retry: {}. \
+                                                 Rejecting to prevent over-allocation.",
+                                                proposal.symbol, retry_err
+                                            );
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                                Err(refresh_err) => {
+                                    info!(
+                                        "RiskManager: Portfolio refresh failed during reservation for {}: {}. \
+                                         Original error: {}. Rejecting proposal.",
+                                        proposal.symbol, refresh_err, e
+                                    );
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                // All checks passed — submit order with reservation
+                self.execute_proposal_internal(proposal, reservation_token)
                     .await?;
             }
             ValidationResult::Reject(reason) => {
@@ -751,10 +826,17 @@ impl RiskManager {
     }
 
     /// Internal proposal execution logic (extracted from run())
+    ///
+    /// Accepts an optional `ReservationToken` for BUY orders that tracks the
+    /// reserved capital in `PortfolioStateManager`. The reservation is released
+    /// automatically when the order completes (fill/reject/cancel) via
+    /// `OrderReconciler::remove_order`.
     async fn execute_proposal_internal(
         &mut self,
         proposal: TradeProposal,
-        _portfolio: &Portfolio,
+        reservation_token: Option<
+            crate::application::monitoring::portfolio_state_manager::ReservationToken,
+        >,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Create order with correct structure
         let order = Order {
@@ -779,8 +861,15 @@ impl RiskManager {
                 filled_but_not_synced: false,
                 entry_price: proposal.price,
                 filled_at: None,
+                submitted_at: Utc::now().timestamp_millis(),
             },
         );
+
+        // Associate reservation token with order so it is released on completion
+        if let Some(token) = reservation_token {
+            self.order_reconciler
+                .add_reservation(order.id.clone(), token);
+        }
 
         // Submit order
         info!(
@@ -793,8 +882,11 @@ impl RiskManager {
 
         if let Err(e) = self.order_tx.send(order.clone()).await {
             error!(error = %e, "RiskManager: Failed to send order");
-            self.order_reconciler
-                .remove_order(&order.id, &self.portfolio_state_manager);
+            if let Some(token) = self.order_reconciler.remove_order(&order.id) {
+                self.portfolio_state_manager
+                    .release_reservation(token)
+                    .await;
+            }
             return Err(Box::new(e));
         }
 

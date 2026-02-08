@@ -1,13 +1,10 @@
-use crate::application::monitoring::portfolio_state_manager::{
-    PortfolioStateManager, ReservationToken,
-};
+use crate::application::monitoring::portfolio_state_manager::ReservationToken;
 use crate::domain::ports::OrderUpdate;
 use crate::domain::risk::state::RiskState;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{OrderSide, OrderStatus};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
@@ -19,6 +16,7 @@ pub struct PendingOrder {
     pub filled_but_not_synced: bool, // Track filled orders awaiting portfolio confirmation
     pub entry_price: Decimal,        // Track for P&L calculation on sell
     pub filled_at: Option<i64>,      // Timestamp when filled (for TTL cleanup)
+    pub submitted_at: i64,           // Timestamp when order was submitted (for stale pending TTL)
 }
 
 pub struct OrderReconciler {
@@ -44,14 +42,16 @@ impl OrderReconciler {
         self.pending_reservations.insert(order_id, token);
     }
 
-    /// Handle real-time order updates to maintain pending state
-    /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
+    /// Handle real-time order updates to maintain pending state.
+    ///
+    /// Returns `(state_changed, Option<ReservationToken>)`.
+    /// - `state_changed`: true if risk state (e.g. consecutive losses) changed and needs persistence.
+    /// - `Option<ReservationToken>`: token to release if order reached a terminal state.
     pub fn handle_order_update(
         &mut self,
         update: &OrderUpdate,
         risk_state: &mut RiskState,
-        portfolio_state_manager: &Arc<PortfolioStateManager>,
-    ) -> bool {
+    ) -> (bool, Option<ReservationToken>) {
         let mut state_changed = false;
 
         if let Some(pending) = self.pending_orders.get_mut(&update.client_order_id) {
@@ -101,37 +101,40 @@ impl OrderReconciler {
                 _ => {}
             }
 
-            // Cleanup only non-fill terminal states
+            // Cleanup only non-fill terminal states — return token for caller to release
             if matches!(
                 update.status,
                 OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired
             ) {
-                self.remove_order(&update.client_order_id, portfolio_state_manager);
+                let token = self.remove_order(&update.client_order_id);
+                return (state_changed, token);
             }
         }
 
-        state_changed
+        (state_changed, None)
     }
 
-    /// Cleanup tentative filled orders and release reservations
-    pub fn reconcile_pending_orders(
-        &mut self,
-        portfolio: &Portfolio,
-        portfolio_state_manager: &Arc<PortfolioStateManager>,
-    ) {
+    /// Cleanup stale pending orders and tentative filled orders.
+    ///
+    /// Returns `ReservationToken`s that must be released by the caller (async context).
+    /// This avoids `tokio::spawn` which can cause timing issues in tests and provides
+    /// deterministic reservation release ordering.
+    pub fn reconcile_pending_orders(&mut self, portfolio: &Portfolio) -> Vec<ReservationToken> {
         let ttl_ms = self.ttl_ms;
+        let now_ms = chrono::Utc::now().timestamp_millis();
 
         // Identify orders to remove first to avoid borrowing issues
         let mut to_remove = Vec::new();
 
         for (order_id, pending) in &self.pending_orders {
             if pending.filled_but_not_synced {
-                // Check TTL
+                // --- Filled-but-not-synced path ---
+                // Check TTL since fill
                 if let Some(filled_at) = pending.filled_at {
-                    let age_ms = chrono::Utc::now().timestamp_millis() - filled_at;
+                    let age_ms = now_ms - filled_at;
                     if age_ms > ttl_ms {
                         warn!(
-                            "RiskManager: Pending order {} TTL expired after {}ms. Forcing cleanup for {}",
+                            "RiskManager: Filled order {} TTL expired after {}ms. Forcing cleanup for {}",
                             &order_id[..8],
                             age_ms,
                             pending.symbol
@@ -156,27 +159,41 @@ impl OrderReconciler {
                     );
                     to_remove.push(order_id.clone());
                 }
+            } else {
+                // --- Still-pending path (never filled) ---
+                // If order has been pending for longer than TTL, it's stale — clean up
+                let age_ms = now_ms - pending.submitted_at;
+                if age_ms > ttl_ms {
+                    warn!(
+                        "RiskManager: Stale pending order {} expired after {}ms (never filled). Cleaning up for {}",
+                        &order_id[..8],
+                        age_ms,
+                        pending.symbol
+                    );
+                    to_remove.push(order_id.clone());
+                }
             }
         }
 
+        let mut released_tokens = Vec::new();
         for order_id in to_remove {
-            self.remove_order(&order_id, portfolio_state_manager);
+            let token = self.remove_order_internal(&order_id);
+            if let Some(t) = token {
+                released_tokens.push(t);
+            }
         }
+        released_tokens
     }
 
-    pub fn remove_order(
-        &mut self,
-        order_id: &str,
-        portfolio_state_manager: &Arc<PortfolioStateManager>,
-    ) {
-        self.pending_orders.remove(order_id);
+    /// Remove a pending order and return its reservation token (if any) for the caller to release.
+    pub fn remove_order(&mut self, order_id: &str) -> Option<ReservationToken> {
+        self.remove_order_internal(order_id)
+    }
 
-        if let Some(token) = self.pending_reservations.remove(order_id) {
-            let mgr = portfolio_state_manager.clone();
-            tokio::spawn(async move {
-                mgr.release_reservation(token).await;
-            });
-        }
+    /// Internal: remove order and extract reservation token without releasing it.
+    fn remove_order_internal(&mut self, order_id: &str) -> Option<ReservationToken> {
+        self.pending_orders.remove(order_id);
+        self.pending_reservations.remove(order_id)
     }
 
     pub fn get_pending_exposure(&self, symbol: &str, side: OrderSide) -> Decimal {

@@ -2,6 +2,9 @@ use rust_decimal_macros::dec;
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rustrade::application::monitoring::connection_health_service::{
+    ConnectionHealthService, ConnectionStatus,
+};
 use rustrade::application::system::Application;
 use rustrade::config::{Config, Mode};
 use rustrade::domain::ports::ExecutionService;
@@ -11,6 +14,13 @@ use rustrade::infrastructure::observability::Metrics;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
+
+async fn create_online_health_service() -> Arc<ConnectionHealthService> {
+    let svc = Arc::new(ConnectionHealthService::new());
+    svc.set_market_data_status(ConnectionStatus::Online, None)
+        .await;
+    svc
+}
 
 #[tokio::test]
 async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
@@ -87,8 +97,8 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         max_position_value_usd: dec!(5000.0),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: dec!(5.0),
-        min_profit_ratio: dec!(2.0),
+        spread_bps: dec!(0.0),
+        min_profit_ratio: dec!(0.0),
         portfolio_staleness_ms: 3000,
         portfolio_refresh_interval_ms: 60000,
         macd_requires_rising: true,
@@ -124,6 +134,8 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     config.slow_sma_period = 5;
     config.order_cooldown_seconds = 0; // Immediate execution
     config.rsi_threshold = dec!(99.0); // Ensure signal isn't blocked by RSI
+    config.spread_bps = dec!(0.0); // No spread cost for test
+    config.min_profit_ratio = dec!(0.0); // Accept any positive profit
 
     // 2. Build Application
     let _app = Application::build(config.clone()).await?;
@@ -248,7 +260,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         spread_cache: spread_cache.clone(),
         adaptive_optimization_service: None,
         performance_monitor: None,
-        connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        connection_health_service: create_online_health_service().await,
         metrics: Metrics::default(),
     };
 

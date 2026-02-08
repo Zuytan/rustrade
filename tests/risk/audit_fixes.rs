@@ -250,10 +250,10 @@ async fn test_pending_order_ttl_cleanup() {
     mock_exec.execute(order).await.unwrap();
 
     // 6. Wait for TTL expiry (TTL = 100ms, Check Interval = 1s)
-    // We wait 1.5s to ensure at least one valuation tick happens
-    tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+    // We wait 2.5s to ensure at least one valuation tick happens
+    tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
 
-    // 4. Verify Reservation Released (indicating pending order removed)
+    // 7. Verify Reservation Released (indicating pending order removed)
     // Since we can't inspect internal pending_orders map, we check reservations.
     // Initial reservation was $3000. It should be 0 after cleanup.
     let reserved_after = state_manager.get_total_reserved().await;

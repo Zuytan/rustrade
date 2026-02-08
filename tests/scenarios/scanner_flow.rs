@@ -4,6 +4,9 @@ use rust_decimal::Decimal;
 use rustrade::application::agents::analyst::{Analyst, AnalystConfig};
 use rustrade::application::agents::scanner::MarketScanner;
 use rustrade::application::agents::sentinel::Sentinel;
+use rustrade::application::monitoring::connection_health_service::{
+    ConnectionHealthService, ConnectionStatus,
+};
 use rustrade::application::strategies::DualSMAStrategy;
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::domain::trading::types::{Candle, MarketEvent, OrderSide};
@@ -11,6 +14,13 @@ use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 use tokio::time::{self, Duration};
+
+async fn create_online_health_service() -> Arc<ConnectionHealthService> {
+    let svc = Arc::new(ConnectionHealthService::new());
+    svc.set_market_data_status(ConnectionStatus::Online, None)
+        .await;
+    svc
+}
 
 #[tokio::test]
 async fn test_repro_dynamic_empty_portfolio_buys() {
@@ -30,7 +40,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         market_tx,
         vec![],
         Some(sentinel_cmd_rx),
-        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        create_online_health_service().await,
     );
 
     // 2. Setup MarketScanner (Dynamic Mode)
@@ -121,7 +131,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
                 rustrade::application::market_data::spread_cache::SpreadCache::new(),
             ),
             ui_candle_tx: None,
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 

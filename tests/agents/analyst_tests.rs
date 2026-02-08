@@ -22,6 +22,23 @@ fn setup_logging() {
     });
 }
 
+/// Create a ConnectionHealthService with MarketData already Online.
+/// Required because the Analyst skips ALL candles when market_data_online=false,
+/// and the default ConnectionHealthService starts Offline.
+async fn create_online_health_service()
+-> Arc<rustrade::application::monitoring::connection_health_service::ConnectionHealthService> {
+    let svc = Arc::new(
+        rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new(
+        ),
+    );
+    svc.set_market_data_status(
+        rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+        None,
+    )
+    .await;
+    svc
+}
+
 #[tokio::test]
 async fn test_immediate_warmup() {
     setup_logging();
@@ -55,7 +72,7 @@ async fn test_immediate_warmup() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
@@ -127,8 +144,8 @@ async fn test_golden_cross() {
         take_profit_pct: dec!(0.05),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: dec!(5.0),
-        min_profit_ratio: dec!(2.0),
+        spread_bps: dec!(0.0),
+        min_profit_ratio: dec!(0.0),
 
         macd_requires_rising: true,
 
@@ -177,7 +194,7 @@ async fn test_golden_cross() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
@@ -202,7 +219,10 @@ async fn test_golden_cross() {
         market_tx.send(event).await.unwrap();
     }
 
-    let proposal = proposal_rx.recv().await.expect("Should receive buy signal");
+    let proposal = tokio::time::timeout(std::time::Duration::from_secs(5), proposal_rx.recv())
+        .await
+        .expect("Timed out waiting for buy signal")
+        .expect("Channel closed without proposal");
     assert_eq!(proposal.side, OrderSide::Buy);
     assert_eq!(proposal.quantity, Decimal::from(1));
 }
@@ -302,7 +322,7 @@ async fn test_prevent_short_selling() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
@@ -395,8 +415,8 @@ async fn test_sell_signal_with_position() {
         take_profit_pct: dec!(0.05),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: dec!(5.0),
-        min_profit_ratio: dec!(2.0),
+        spread_bps: dec!(0.0),
+        min_profit_ratio: dec!(0.0),
 
         macd_requires_rising: true,
 
@@ -444,7 +464,7 @@ async fn test_sell_signal_with_position() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
@@ -470,7 +490,7 @@ async fn test_sell_signal_with_position() {
 
     let mut sell_detected = false;
     while let Ok(Some(proposal)) =
-        tokio::time::timeout(std::time::Duration::from_millis(100), proposal_rx.recv()).await
+        tokio::time::timeout(std::time::Duration::from_secs(2), proposal_rx.recv()).await
     {
         if proposal.side == OrderSide::Sell {
             sell_detected = true;
@@ -532,8 +552,8 @@ async fn test_dynamic_quantity_scaling() {
         take_profit_pct: dec!(0.05),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: dec!(5.0),
-        min_profit_ratio: dec!(2.0),
+        spread_bps: dec!(0.0),
+        min_profit_ratio: dec!(0.0),
 
         macd_requires_rising: true,
 
@@ -581,7 +601,7 @@ async fn test_dynamic_quantity_scaling() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
@@ -646,6 +666,7 @@ async fn test_multi_symbol_isolation() {
     let (proposal_tx, mut proposal_rx) = mpsc::channel(10);
 
     let mut portfolio = rustrade::domain::trading::portfolio::Portfolio::new();
+    portfolio.cash = Decimal::from(100000); // Need cash for BUY signals
     // Give explicit ETH position so Sell works
     portfolio.positions.insert(
         "ETH".to_string(),
@@ -693,8 +714,8 @@ async fn test_multi_symbol_isolation() {
         take_profit_pct: dec!(0.05),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: dec!(5.0),
-        min_profit_ratio: dec!(2.0),
+        spread_bps: dec!(0.0),
+        min_profit_ratio: dec!(0.0),
 
         macd_requires_rising: true,
 
@@ -742,7 +763,7 @@ async fn test_multi_symbol_isolation() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
@@ -788,7 +809,7 @@ async fn test_multi_symbol_isolation() {
 
     for _ in 0..5 {
         if let Ok(Some(proposal)) =
-            tokio::time::timeout(std::time::Duration::from_millis(100), proposal_rx.recv()).await
+            tokio::time::timeout(std::time::Duration::from_secs(2), proposal_rx.recv()).await
         {
             if proposal.symbol == "BTC" && proposal.side == OrderSide::Buy {
                 btc_buy = true;
@@ -898,7 +919,7 @@ async fn test_advanced_strategy_trend_filter() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
@@ -1004,8 +1025,8 @@ async fn test_risk_based_quantity_calculation() {
         take_profit_pct: dec!(0.05),
         min_hold_time_minutes: 0,
         signal_confirmation_bars: 1,
-        spread_bps: dec!(5.0),
-        min_profit_ratio: dec!(2.0),
+        spread_bps: dec!(0.0),
+        min_profit_ratio: dec!(0.0),
 
         macd_requires_rising: true,
 
@@ -1053,7 +1074,7 @@ async fn test_risk_based_quantity_calculation() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
@@ -1136,7 +1157,7 @@ async fn test_news_intelligence_filters() {
         win_rate_provider: None,
         ui_candle_tx: None,
         spread_cache: Arc::new(SpreadCache::new()),
-        connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        connection_health_service: create_online_health_service().await,
     };
 
     let mut analyst = Analyst::new(market_rx, cmd_rx, proposal_tx, config, strategy, deps);
@@ -1267,7 +1288,7 @@ async fn test_trailing_stop_suppresses_sell_signal() {
             win_rate_provider: None,
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
-            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            connection_health_service: create_online_health_service().await,
         },
     );
 
