@@ -122,10 +122,10 @@ impl Default for AnalystConfig {
             max_loss_per_trade_pct: dec!(-0.05), // -5% max loss per trade
             enable_ml_data_collection: true,
             stat_momentum_lookback: 10,
-            stat_momentum_threshold: dec!(1.5),
+            stat_momentum_threshold: dec!(0.8), // Lowered from 1.5 for crypto 1-min candles
             stat_momentum_trend_confirmation: true,
             zscore_lookback: 20,
-            zscore_entry_threshold: dec!(-2.0),
+            zscore_entry_threshold: dec!(-1.5), // Lowered from -2.0 for more signal generation
             zscore_exit_threshold: dec!(0.0),
             orderflow_ofi_threshold: dec!(0.3),
             orderflow_stacked_count: 3,
@@ -183,10 +183,10 @@ impl From<crate::config::Config> for AnalystConfig {
             max_loss_per_trade_pct: dec!(-0.05),
             enable_ml_data_collection: config.enable_ml_data_collection,
             stat_momentum_lookback: 10,
-            stat_momentum_threshold: dec!(1.5),
+            stat_momentum_threshold: dec!(0.8), // Lowered from 1.5 for crypto 1-min candles
             stat_momentum_trend_confirmation: true,
             zscore_lookback: 20,
-            zscore_entry_threshold: dec!(-2.0),
+            zscore_entry_threshold: dec!(-1.5), // Lowered from -2.0 for more signal generation
             zscore_exit_threshold: dec!(0.0),
             orderflow_ofi_threshold: dec!(0.3),
             orderflow_stacked_count: 3,

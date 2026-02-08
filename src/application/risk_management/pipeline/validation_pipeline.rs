@@ -1,4 +1,4 @@
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::domain::risk::filters::validator_trait::{
     RiskValidator, ValidationContext, ValidationResult,
@@ -48,7 +48,7 @@ impl RiskValidationPipeline {
 
             match validator.validate(ctx).await {
                 ValidationResult::Reject(reason) => {
-                    debug!("Validation failed at step {}: {}", validator.name(), reason);
+                    info!("⛔ Validation FAILED at [{}]: {}", validator.name(), reason);
                     return ValidationResult::Reject(reason);
                 }
                 ValidationResult::Approve => {
@@ -58,7 +58,7 @@ impl RiskValidationPipeline {
             }
         }
 
-        debug!("All validators passed");
+        info!("✅ All risk validators passed");
         ValidationResult::Approve
     }
 

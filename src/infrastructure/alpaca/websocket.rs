@@ -353,7 +353,24 @@ impl AlpacaWebSocketManager {
                                             // Store real-time spread BEFORE creating event
                                             deps.spread_cache.update(quote.symbol.clone(), quote.bid_price, quote.ask_price);
 
+                                            // Filter quotes with abnormally wide bid/ask spreads.
+                                            // Wide spreads produce unreliable mid-prices that corrupt candles.
                                             let mid_price = (quote.bid_price + quote.ask_price) / 2.0;
+                                            if mid_price > 0.0 {
+                                                let spread_ratio = (quote.ask_price - quote.bid_price) / mid_price;
+                                                // Reject if spread > 1.5% (very wide, indicates low liquidity)
+                                                if spread_ratio > 0.015 {
+                                                    tracing::debug!(
+                                                        "WebSocket: {} quote rejected - spread too wide ({:.2}%): bid={} ask={}",
+                                                        quote.symbol,
+                                                        spread_ratio * 100.0,
+                                                        quote.bid_price,
+                                                        quote.ask_price
+                                                    );
+                                                    continue;
+                                                }
+                                            }
+
                                             let event = MarketEvent::Quote {
                                                 symbol: quote.symbol,
                                                 price: Decimal::from_f64_retain(mid_price).unwrap_or(Decimal::ZERO),

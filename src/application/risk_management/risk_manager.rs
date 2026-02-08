@@ -589,7 +589,7 @@ impl RiskManager {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let level = self.circuit_breaker_service.halt_level();
         if level == HaltLevel::Reduced || level == HaltLevel::FullHalt {
-            debug!(
+            info!(
                 "RiskManager: Trading HALTED ({:?}). Rejecting proposal for {}",
                 level, proposal.symbol
             );
@@ -601,7 +601,7 @@ impl RiskManager {
                 .unwrap_or(Decimal::ONE);
             proposal.quantity = (proposal.quantity * mult).round_dp(4);
             if proposal.quantity <= Decimal::ZERO {
-                debug!(
+                info!(
                     "RiskManager: Proposal for {} scaled to zero under Warning level, skipping",
                     proposal.symbol
                 );
@@ -614,36 +614,29 @@ impl RiskManager {
         }
 
         // --- STALE DATA GUARD ---
+        // Use ConnectionHealthService as the single source of truth for market data freshness.
+        // It properly tracks the last received data event independently of proposal processing.
         if self
             .connection_health_service
             .get_market_data_status()
             .await
             == crate::application::monitoring::connection_health_service::ConnectionStatus::Offline
         {
-            debug!(
+            info!(
                 "RiskManager: Market Data OFFLINE. Rejecting proposal for {}",
                 proposal.symbol
             );
             return Ok(());
         }
-
-        let now = Utc::now().timestamp();
-        let age = now - self.last_quote_timestamp;
-        if age > 30 {
-            debug!(
-                "RiskManager: Market Data STALE ({}s > 30s). Rejecting proposal for {}",
-                age, proposal.symbol
-            );
-            return Ok(());
-        }
         // -------------------------
 
-        debug!("RiskManager: reviewing proposal {:?}", proposal);
+        info!("RiskManager: reviewing proposal {:?}", proposal);
 
         // Update current price
+        let now = Utc::now().timestamp();
         self.current_prices
             .insert(proposal.symbol.clone(), proposal.price);
-        self.last_quote_timestamp = now; // Update freshness
+        self.last_quote_timestamp = now; // Track for metrics/debugging
 
         // Get portfolio snapshot
         let mut snapshot = self.portfolio_state_manager.get_snapshot().await;
@@ -747,7 +740,7 @@ impl RiskManager {
                     .await?;
             }
             ValidationResult::Reject(reason) => {
-                debug!(
+                info!(
                     "RiskManager: Rejecting {:?} order for {} - {}",
                     proposal.side, proposal.symbol, reason
                 );
@@ -845,6 +838,11 @@ impl RiskManager {
         // Ticker for periodic volatility update
         let mut vol_interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Every hour
 
+        // Subscribe to Health Events ONCE before the loop to avoid missing events.
+        // Creating a new subscriber inside select! causes a race condition where
+        // events broadcast between iterations are permanently lost.
+        let mut health_rx = self.connection_health_service.subscribe();
+
         loop {
             tokio::select! {
                 // Periodic volatility refresh
@@ -861,10 +859,8 @@ impl RiskManager {
                     }
                 }
 
-                // Listen for Health Events
-                Ok(health_event) = async {
-                    self.connection_health_service.subscribe().recv().await
-                } => {
+                // Listen for Health Events (using persistent subscriber)
+                Ok(health_event) = health_rx.recv() => {
                     if health_event.component == "MarketData" && health_event.status == crate::application::monitoring::connection_health_service::ConnectionStatus::Offline {
                         warn!("RiskManager: Detected Market Data OFFLINE via HealthService. Safeguarding...");
                         // Future: Could force reconcile or tighter stops here

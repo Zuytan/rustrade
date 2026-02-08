@@ -86,7 +86,9 @@ impl EnsembleStrategy {
             ("ZScoreMR".to_string(), 0.3),
             ("SMC".to_string(), 0.3),
         ]);
-        Self::with_weights(strategies, 0.5, weights)
+        // Voting threshold 0.35: StatMomentum alone (0.4) can trigger a signal.
+        // Any two strategies combined always exceed the threshold.
+        Self::with_weights(strategies, 0.35, weights)
     }
 }
 

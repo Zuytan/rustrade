@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::application::monitoring::cost_evaluator::CostEvaluator;
 use crate::application::risk_management::position_manager::PositionManager;
@@ -101,8 +101,8 @@ impl TradeFilter {
     ) -> bool {
         // Basic static cost check (Total Profit > Total Cost)
         if expected_profit < estimated_cost {
-            debug!(
-                "TradeFilter: Signal IGNORED for {} - Negative Expectancy after costs (Expected Profit: ${} < Costs: ${})",
+            info!(
+                "TradeFilter [{}]: REJECTED - Negative Expectancy after costs (Expected Profit: ${} < Costs: ${})",
                 symbol, expected_profit, estimated_cost
             );
             return false;
@@ -117,8 +117,8 @@ impl TradeFilter {
                 .cost_evaluator
                 .get_profit_cost_ratio(proposal, expected_profit);
             let costs = self.cost_evaluator.evaluate(proposal);
-            debug!(
-                "TradeFilter [{}]: Trade REJECTED by cost filter - Profit/Cost ratio {} < {} threshold (Expected Profit: ${}, Total Costs: ${})",
+            info!(
+                "TradeFilter [{}]: REJECTED by cost filter - Profit/Cost ratio {} < {} threshold (Expected Profit: ${}, Total Costs: ${})",
                 symbol, ratio, min_profit_ratio, expected_profit, costs.total_cost
             );
             return false;
@@ -128,8 +128,8 @@ impl TradeFilter {
             .cost_evaluator
             .get_profit_cost_ratio(proposal, expected_profit);
         let costs = self.cost_evaluator.evaluate(proposal);
-        debug!(
-            "TradeFilter [{}]: Cost Filter PASSED - Profit/Cost ratio {}x (Expected: ${}, Costs: ${}, Net: ${})",
+        info!(
+            "TradeFilter [{}]: Cost Filter PASSED ✓ - Profit/Cost ratio {}x (Expected: ${}, Costs: ${}, Net: ${})",
             symbol,
             ratio,
             expected_profit,

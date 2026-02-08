@@ -9,11 +9,26 @@ use std::collections::VecDeque;
 /// 1. Order Blocks (OB): Zones where significant buying/selling occurred.
 /// 2. Fair Value Gaps (FVG): Imbalances in price action.
 /// 3. Market Structure Shift (MSS): Changes in trend direction.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SMCStrategy {
     pub ob_lookback: usize,
     pub min_fvg_size_pct: Decimal,
     pub volume_multiplier: Decimal,
+    /// Minimum OFI required for signal confirmation.
+    /// Set to 0.0 to disable OFI gating (useful when OFI data is unreliable).
+    pub ofi_threshold: Decimal,
+}
+
+impl Default for SMCStrategy {
+    fn default() -> Self {
+        use rust_decimal_macros::dec;
+        Self {
+            ob_lookback: 20,
+            min_fvg_size_pct: dec!(0.005),
+            volume_multiplier: dec!(1.5),
+            ofi_threshold: dec!(0.0), // Disabled by default for crypto compatibility
+        }
+    }
 }
 
 impl SMCStrategy {
@@ -22,6 +37,7 @@ impl SMCStrategy {
             ob_lookback,
             min_fvg_size_pct,
             volume_multiplier,
+            ofi_threshold: Decimal::ZERO, // Disabled by default for crypto compatibility
         }
     }
 
@@ -244,14 +260,15 @@ impl TradingStrategy for SMCStrategy {
                         mss == Some(OrderSide::Buy) || ctx.current_price > ctx.trend_sma;
 
                     if structure_bullish {
-                        // OFI Validation: Require positive OFI for bullish signals
+                        // OFI Validation: Require positive OFI for bullish signals (when threshold > 0)
                         // This confirms institutional buying pressure
-                        use rust_decimal_macros::dec;
-                        if ctx.ofi_value < dec!(0.2) {
+                        if self.ofi_threshold > Decimal::ZERO && ctx.ofi_value < self.ofi_threshold
+                        {
                             tracing::debug!(
-                                "SMC [{}]: Bullish FVG blocked - Weak OFI ({} < 0.2)",
+                                "SMC [{}]: Bullish FVG blocked - Weak OFI ({} < {})",
                                 ctx.symbol,
-                                ctx.ofi_value
+                                ctx.ofi_value,
+                                self.ofi_threshold
                             );
                             return None;
                         }
@@ -285,14 +302,15 @@ impl TradingStrategy for SMCStrategy {
                         mss == Some(OrderSide::Sell) || ctx.current_price < ctx.trend_sma;
 
                     if structure_bearish {
-                        // OFI Validation: Require negative OFI for bearish signals
+                        // OFI Validation: Require negative OFI for bearish signals (when threshold > 0)
                         // This confirms institutional selling pressure
-                        use rust_decimal_macros::dec;
-                        if ctx.ofi_value > dec!(-0.2) {
+                        if self.ofi_threshold > Decimal::ZERO && ctx.ofi_value > -self.ofi_threshold
+                        {
                             tracing::debug!(
-                                "SMC [{}]: Bearish FVG blocked - Weak OFI ({} > -0.2)",
+                                "SMC [{}]: Bearish FVG blocked - Weak OFI ({} > -{})",
                                 ctx.symbol,
-                                ctx.ofi_value
+                                ctx.ofi_value,
+                                self.ofi_threshold
                             );
                             return None;
                         }

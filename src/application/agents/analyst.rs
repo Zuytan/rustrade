@@ -217,6 +217,19 @@ impl Analyst {
             }
         };
 
+        // Subscribe to Health Events ONCE before the loop to avoid missing events.
+        // Creating a new subscriber inside select! causes a race condition where
+        // events broadcast between iterations are permanently lost.
+        let mut health_rx = self.health_service.subscribe();
+
+        // Sync initial state from health service to avoid stale default
+        let initial_status = self.health_service.get_market_data_status().await;
+        self.market_data_online = initial_status == ConnectionStatus::Online;
+        info!(
+            "Analyst: Initial MarketData status: {:?} (online={})",
+            initial_status, self.market_data_online
+        );
+
         loop {
             tokio::select! {
                 res = self.market_rx.recv() => {
@@ -250,10 +263,8 @@ impl Analyst {
                     }
                 }
 
-                // Handle Health Events
-                Ok(health_event) = async {
-                    self.health_service.subscribe().recv().await
-                } => {
+                // Handle Health Events (using persistent subscriber)
+                Ok(health_event) = health_rx.recv() => {
                     if health_event.component == "MarketData" {
                          match health_event.status {
                              ConnectionStatus::Online => {
@@ -408,10 +419,10 @@ impl Analyst {
             // 5. Send proposal to risk manager
             match self.proposal_tx.try_send(proposal) {
                 Ok(_) => {
-                    debug!("Analyst [{}]: Proposal sent successfully", symbol);
+                    info!("Analyst [{}]: Proposal sent to RiskManager ✓", symbol);
                 }
                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                    debug!(
+                    warn!(
                         "Analyst [{}]: Proposal channel FULL - RiskManager slow. Backpressure applied, proposal dropped.",
                         symbol
                     );

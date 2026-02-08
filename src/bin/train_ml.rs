@@ -64,6 +64,162 @@ struct Args {
     /// Time-series cross-validation folds (e.g. 5). When > 1, reports OOS mean and std; rejects if std > 50% of mean.
     #[arg(long, default_value_t = 0)]
     cv_folds: usize,
+
+    /// Maximum number of rows to use (most recent). 0 = use all.
+    #[arg(long, default_value_t = 0)]
+    max_rows: usize,
+
+    /// ML threshold for signal generation (used for evaluation metrics)
+    #[arg(long, default_value_t = 0.0005)]
+    threshold: f64,
+}
+
+/// Prints detailed prediction distribution analysis
+fn print_prediction_analysis(predictions: &[f64], actuals: &[f64], threshold: f64) {
+    let n = predictions.len();
+    if n == 0 {
+        return;
+    }
+
+    println!("\n══════════════════════════════════════════════════════");
+    println!("  PREDICTION DISTRIBUTION ANALYSIS");
+    println!("══════════════════════════════════════════════════════");
+
+    // Prediction statistics
+    let pred_mean = predictions.iter().sum::<f64>() / n as f64;
+    let pred_min = predictions.iter().cloned().fold(f64::INFINITY, f64::min);
+    let pred_max = predictions
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let pred_std = (predictions
+        .iter()
+        .map(|p| (p - pred_mean).powi(2))
+        .sum::<f64>()
+        / n as f64)
+        .sqrt();
+
+    println!("\n  Predictions (n={}):", n);
+    println!("    Mean:   {:.6}  ({:.4}%)", pred_mean, pred_mean * 100.0);
+    println!("    StdDev: {:.6}  ({:.4}%)", pred_std, pred_std * 100.0);
+    println!("    Min:    {:.6}  ({:.4}%)", pred_min, pred_min * 100.0);
+    println!("    Max:    {:.6}  ({:.4}%)", pred_max, pred_max * 100.0);
+
+    // Signal distribution
+    let buy_signals = predictions.iter().filter(|&&p| p > threshold).count();
+    let sell_signals = predictions.iter().filter(|&&p| p < -threshold).count();
+    let neutral = n - buy_signals - sell_signals;
+
+    println!(
+        "\n  Signal Distribution (threshold={:.4}%):",
+        threshold * 100.0
+    );
+    println!(
+        "    BUY  (>{:+.4}%): {:>7} ({:.1}%)",
+        threshold * 100.0,
+        buy_signals,
+        buy_signals as f64 / n as f64 * 100.0
+    );
+    println!(
+        "    SELL (<{:+.4}%): {:>7} ({:.1}%)",
+        -threshold * 100.0,
+        sell_signals,
+        sell_signals as f64 / n as f64 * 100.0
+    );
+    println!(
+        "    NEUTRAL:        {:>7} ({:.1}%)",
+        neutral,
+        neutral as f64 / n as f64 * 100.0
+    );
+
+    // Directional accuracy
+    let mut correct_direction = 0;
+    let mut correct_buy = 0;
+    let mut total_buy = 0;
+    let mut correct_sell = 0;
+    let mut total_sell = 0;
+    let mut profitable_buy = 0;
+    let mut profitable_sell = 0;
+
+    for (pred, actual) in predictions.iter().zip(actuals.iter()) {
+        if (*pred > 0.0 && *actual > 0.0) || (*pred < 0.0 && *actual < 0.0) {
+            correct_direction += 1;
+        }
+        if *pred > threshold {
+            total_buy += 1;
+            if *actual > 0.0 {
+                correct_buy += 1;
+            }
+            if *actual > threshold {
+                profitable_buy += 1;
+            }
+        }
+        if *pred < -threshold {
+            total_sell += 1;
+            if *actual < 0.0 {
+                correct_sell += 1;
+            }
+            if *actual < -threshold {
+                profitable_sell += 1;
+            }
+        }
+    }
+
+    println!("\n  Directional Accuracy:");
+    println!(
+        "    Overall:    {:.1}%  ({}/{})",
+        correct_direction as f64 / n as f64 * 100.0,
+        correct_direction,
+        n
+    );
+    if total_buy > 0 {
+        println!(
+            "    Buy  Win%:  {:.1}%  ({}/{})  | Profitable: {:.1}%",
+            correct_buy as f64 / total_buy as f64 * 100.0,
+            correct_buy,
+            total_buy,
+            profitable_buy as f64 / total_buy as f64 * 100.0
+        );
+    }
+    if total_sell > 0 {
+        println!(
+            "    Sell Win%:  {:.1}%  ({}/{})  | Profitable: {:.1}%",
+            correct_sell as f64 / total_sell as f64 * 100.0,
+            correct_sell,
+            total_sell,
+            profitable_sell as f64 / total_sell as f64 * 100.0
+        );
+    }
+
+    // Prediction histogram (10 buckets)
+    println!("\n  Prediction Histogram:");
+    let range = pred_max - pred_min;
+    if range > 0.0 {
+        let n_buckets = 10;
+        let bucket_size = range / n_buckets as f64;
+        let mut buckets = vec![0usize; n_buckets];
+        for p in predictions {
+            let idx = ((p - pred_min) / bucket_size).floor() as usize;
+            let idx = idx.min(n_buckets - 1);
+            buckets[idx] += 1;
+        }
+        let max_count = *buckets.iter().max().unwrap_or(&1);
+        for (i, count) in buckets.iter().enumerate() {
+            let lo = pred_min + i as f64 * bucket_size;
+            let hi = lo + bucket_size;
+            let bar_len = (*count as f64 / max_count as f64 * 40.0).ceil() as usize;
+            let bar: String = "█".repeat(bar_len);
+            println!(
+                "    [{:+.5}% .. {:+.5}%] {:>7} {}",
+                lo * 100.0,
+                hi * 100.0,
+                count,
+                bar
+            );
+        }
+    }
+
+    println!("══════════════════════════════════════════════════════\n");
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -122,7 +278,45 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    // Apply --max-rows: keep only the most recent rows
+    if args.max_rows > 0 && x.len() > args.max_rows {
+        let skip = x.len() - args.max_rows;
+        x.drain(..skip);
+        y.drain(..skip);
+        println!(
+            "Using most recent {} rows (skipped {} older rows)",
+            args.max_rows, skip
+        );
+    }
+
     let n = x.len();
+
+    // Print target distribution
+    let y_mean = y.iter().sum::<f64>() / n as f64;
+    let y_pos = y.iter().filter(|&&v| v > 0.0).count();
+    let y_buy = y.iter().filter(|&&v| v > args.threshold).count();
+    let y_sell = y.iter().filter(|&&v| v < -args.threshold).count();
+    println!("\nTarget Distribution (return_5m):");
+    println!("  Total:    {}", n);
+    println!("  Mean:     {:.6} ({:.4}%)", y_mean, y_mean * 100.0);
+    println!(
+        "  Positive: {} ({:.1}%)",
+        y_pos,
+        y_pos as f64 / n as f64 * 100.0
+    );
+    println!(
+        "  Buy  (>{:+.4}%): {} ({:.1}%)",
+        args.threshold * 100.0,
+        y_buy,
+        y_buy as f64 / n as f64 * 100.0
+    );
+    println!(
+        "  Sell (<{:+.4}%): {} ({:.1}%)",
+        -args.threshold * 100.0,
+        y_sell,
+        y_sell as f64 / n as f64 * 100.0
+    );
+    println!();
 
     if args.cv_folds > 1 {
         // Time-series CV: expanding train, test with gap. Fold i: train [0..train_end_i], test [test_start_i..test_end_i] with 5% gap.
@@ -277,6 +471,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             mae,
             r2
         );
+
+        // Detailed prediction distribution analysis
+        print_prediction_analysis(&pred, &y_test, args.threshold);
     }
 
     println!("Saving model to {:?}", model_path);
