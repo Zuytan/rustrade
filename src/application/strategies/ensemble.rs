@@ -86,8 +86,6 @@ impl EnsembleStrategy {
             ("ZScoreMR".to_string(), 0.3),
             ("SMC".to_string(), 0.3),
         ]);
-        // Voting threshold 0.50: Requires at least 2 strategies to agree (e.g. StatMomentum + SMC)
-        // or strong consensus among all three.
         Self::with_weights(strategies, 0.50, weights)
     }
 }
@@ -132,8 +130,23 @@ impl TradingStrategy for EnsembleStrategy {
         let required_weight = total_weight * self.voting_threshold;
         let total_strategies = self.strategies.len();
 
+        // Check for CONFLICT first
+        // If both thresholds are met, the market is sending mixed signals (or thresholds are too low).
+        // Return None (Neutral) to avoid bias.
+        let buy_consensus = buy_weight >= required_weight && buy_weight > 0.0;
+        let sell_consensus = sell_weight >= required_weight && sell_weight > 0.0;
+
+        if buy_consensus && sell_consensus {
+            tracing::warn!(
+                "Ensemble: CONFLICT - Both Buy ({:.2}) and Sell ({:.2}) thresholds met",
+                buy_weight,
+                sell_weight
+            );
+            return None;
+        }
+
         // Check for buy consensus (weighted)
-        if buy_weight >= required_weight && buy_weight > 0.0 {
+        if buy_consensus {
             let avg_confidence = buy_confidence_weighted / buy_weight;
             return Some(
                 Signal::buy(format!(
@@ -147,7 +160,7 @@ impl TradingStrategy for EnsembleStrategy {
         }
 
         // Check for sell consensus
-        if sell_weight >= required_weight && sell_weight > 0.0 {
+        if sell_consensus {
             let avg_confidence = sell_confidence_weighted / sell_weight;
             return Some(
                 Signal::sell(format!(
@@ -181,7 +194,9 @@ impl std::fmt::Debug for EnsembleStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::strategies::legacy::{DualSMAStrategy, MeanReversionStrategy};
+    use crate::application::strategies::legacy::{
+        DualSMAStrategy, MeanReversionStrategy, VWAPStrategy,
+    };
     use crate::domain::trading::types::OrderSide;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -197,7 +212,7 @@ mod tests {
     ) -> AnalysisContext {
         AnalysisContext {
             symbol: "TEST".to_string(),
-            current_price: dec!(100.0),
+            current_price: Decimal::from_f64_retain(price).unwrap(),
             price_f64: price,
             fast_sma: Decimal::from_f64_retain(fast_sma).unwrap_or(Decimal::ZERO),
             slow_sma: Decimal::from_f64_retain(slow_sma).unwrap_or(Decimal::ZERO),
@@ -318,5 +333,63 @@ mod tests {
         // just ensure default_ensemble() returns same type (it delegates to modern_ensemble)
         let default_ens = EnsembleStrategy::default_ensemble();
         assert_eq!(default_ens.name(), "Ensemble");
+    }
+
+    #[test]
+    fn test_conflict_returns_none() {
+        // Create 2 strategies. Threshold 0.5.
+        // Strat 1 (DualSMA): Buy. Strat 2 (VWAP): Sell.
+
+        let strategies: Vec<Arc<dyn TradingStrategy>> = vec![
+            Arc::new(DualSMAStrategy::new(20, 60, dec!(0.001))), // Configured to Buy
+            Arc::new(VWAPStrategy::default()), // Configured to Sell (Short Entry allowed)
+        ];
+
+        let ensemble = EnsembleStrategy::new(strategies.clone(), 0.5);
+
+        // Candles for VWAP calculation:
+        // We need VWAP to be around 100.
+        // Candles: 5 candles at 100 volume 1000.
+        // And current price 110.
+        let mut candles = VecDeque::new();
+        // Use manually constructed mock candles if mock_candle_with_ts is not public or importable
+        // Assuming we can access mocked candles via crate::... or just construct them manually if context allows
+        // But AnalysisContext expects candles.
+        // We can just push candles with specific close/vol/ts.
+        let day_start = 86400; // Midnight
+        for i in 0..10 {
+            use crate::domain::trading::types::Candle;
+            let c = Candle {
+                timestamp: day_start + i * 60, // Start exactly at Day Start
+                open: dec!(100.0),
+                high: dec!(100.0),
+                low: dec!(100.0),
+                close: dec!(100.0),
+                volume: dec!(1000.0),
+                symbol: "TEST".to_string(),
+            };
+            candles.push_back(c);
+        }
+
+        let mut ctx = create_context(
+            105.0, // Fast
+            100.0, // Slow
+            50.0,  // RSI
+            95.0,  // BB Lower
+            110.0, // Price
+            false, // No position
+        );
+        ctx.trend_sma = dec!(99.0); // Price 110 > Trend 99 -> DualSMA Buy OK
+        ctx.candles = candles;
+        ctx.timestamp = day_start + 3600; // ensure late enough
+        // VWAP should be 100. Price 110. Deviation 10%. Threshold is usually small.
+        // So VWAP should signal Sell.
+
+        let signal = ensemble.analyze(&ctx);
+
+        assert!(
+            signal.is_none(),
+            "Should return None due to conflict (Buy from DualSMA, Sell from VWAP)"
+        );
     }
 }

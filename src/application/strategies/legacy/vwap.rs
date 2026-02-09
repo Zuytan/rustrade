@@ -30,18 +30,30 @@ impl VWAPStrategy {
     /// Calculate VWAP from candle history
     /// VWAP = Σ(Typical Price × Volume) / Σ(Volume)
     /// Typical Price = (High + Low + Close) / 3
-    fn calculate_vwap(&self, ctx: &AnalysisContext) -> Option<Decimal> {
+    pub(crate) fn calculate_vwap(&self, ctx: &AnalysisContext) -> Option<Decimal> {
         if ctx.candles.is_empty() {
             return None;
         }
-
-        let mut cumulative_tp_vol = Decimal::ZERO;
-        let mut cumulative_vol = Decimal::ZERO;
 
         // Get current day start (midnight UTC) to reset VWAP
         // timestamp is i64 seconds, so modulo 86400 gives seconds since midnight
         let current_ts = ctx.timestamp;
         let day_start = current_ts - (current_ts % 86400);
+
+        // Check data sufficiency: Do we have data since the start of the day?
+        // If the first candle is after day_start, we are missing early volume data.
+        // This would make VWAP calculation incorrect (it would be a "Rolling VWAP" of available data).
+        if let Some(first_candle) = ctx.candles.front().filter(|c| c.timestamp > day_start) {
+            tracing::warn!(
+                "VWAP: Insufficient data. First candle ts {} > Day start {}. Cannot calculate accurate Daily VWAP.",
+                first_candle.timestamp,
+                day_start
+            );
+            return None;
+        }
+
+        let mut cumulative_tp_vol = Decimal::ZERO;
+        let mut cumulative_vol = Decimal::ZERO;
 
         for candle in &ctx.candles {
             // Only include candles from current trading day
@@ -105,31 +117,29 @@ impl TradingStrategy for VWAPStrategy {
             );
         }
 
-        // Sell conditions (only if we have a position)
-        if ctx.has_position {
-            // 1. Price significantly above VWAP
-            if deviation > self.deviation_threshold_pct {
-                return Some(
-                    Signal::sell(format!(
-                        "VWAP: Price {} is {}% above VWAP {} - Taking profit",
-                        ctx.current_price,
-                        deviation * dec!(100.0),
-                        vwap
-                    ))
-                    .with_confidence(0.75),
-                );
-            }
+        // Sell conditions (Exit Long OR Enter Short)
+        // 1. Price significantly above VWAP
+        if deviation > self.deviation_threshold_pct {
+            return Some(
+                Signal::sell(format!(
+                    "VWAP: Price {} is {}% above VWAP {} (Overextended)",
+                    ctx.current_price,
+                    deviation * dec!(100.0),
+                    vwap
+                ))
+                .with_confidence(0.75),
+            );
+        }
 
-            // 2. RSI overbought
-            if ctx.rsi > self.rsi_overbought {
-                return Some(
-                    Signal::sell(format!(
-                        "VWAP: RSI {} > {} (overbought) near VWAP {}",
-                        ctx.rsi, self.rsi_overbought, vwap
-                    ))
-                    .with_confidence(0.70),
-                );
-            }
+        // 2. RSI overbought
+        if ctx.rsi > self.rsi_overbought {
+            return Some(
+                Signal::sell(format!(
+                    "VWAP: RSI {} > {} (overbought) near VWAP {}",
+                    ctx.rsi, self.rsi_overbought, vwap
+                ))
+                .with_confidence(0.70),
+            );
         }
 
         None
@@ -148,7 +158,7 @@ mod tests {
     use rust_decimal::prelude::FromPrimitive;
     use std::collections::VecDeque;
 
-    fn mock_candle(high: f64, low: f64, close: f64, volume: f64) -> Candle {
+    fn mock_candle_with_ts(high: f64, low: f64, close: f64, volume: f64, ts: i64) -> Candle {
         let d_high = Decimal::from_f64(high).unwrap();
         let d_low = Decimal::from_f64(low).unwrap();
         let d_close = Decimal::from_f64(close).unwrap();
@@ -161,7 +171,7 @@ mod tests {
             low: d_low,
             close: d_close,
             volume: d_volume,
-            timestamp: 0,
+            timestamp: ts,
         }
     }
 
@@ -192,7 +202,7 @@ mod tests {
             adx: dec!(25.0),
             has_position,
             position: None,
-            timestamp: 0,
+            timestamp: candles.back().map(|c| c.timestamp).unwrap_or(100000),
             timeframe_features: None,
             candles,
             rsi_history: VecDeque::new(),
@@ -213,15 +223,27 @@ mod tests {
     fn test_vwap_calculation() {
         let strategy = VWAPStrategy::default();
 
-        // Create candles with known VWAP
-        // Candle 1: TP = (110+90+100)/3 = 100, Vol = 1000 -> TP*Vol = 100000
-        // Candle 2: TP = (115+95+105)/3 = 105, Vol = 2000 -> TP*Vol = 210000
-        // VWAP = (100000 + 210000) / 3000 = 103.33
+        // Midnight is 0.
+        // Candle 1 at 100 which is > 0.
+        // Needs start > day_start?
+        // timestamp is 100000. day_start = 100000 - (100000 % 86400) = 86400.
+        // So candles must be >= 86400.
+
+        let ts_start = 86400; // Start at midnight
+
         let mut candles = VecDeque::new();
-        candles.push_back(mock_candle(110.0, 90.0, 100.0, 1000.0));
-        candles.push_back(mock_candle(115.0, 95.0, 105.0, 2000.0));
+        candles.push_back(mock_candle_with_ts(110.0, 90.0, 100.0, 1000.0, ts_start));
+        candles.push_back(mock_candle_with_ts(
+            115.0,
+            95.0,
+            105.0,
+            2000.0,
+            ts_start + 60,
+        ));
 
         let ctx = create_context(100.0, 50.0, candles, false);
+        // Ensure ctx timestamp updates
+
         let vwap = strategy.calculate_vwap(&ctx);
 
         assert!(vwap.is_some());
@@ -237,10 +259,16 @@ mod tests {
     fn test_buy_signal_below_vwap() {
         let strategy = VWAPStrategy::new(dec!(0.02), dec!(35.0), dec!(65.0));
 
+        let ts_start = 86400;
         let mut candles = VecDeque::new();
-        // VWAP will be around 100
-        candles.push_back(mock_candle(105.0, 95.0, 100.0, 1000.0));
-        candles.push_back(mock_candle(105.0, 95.0, 100.0, 1000.0));
+        candles.push_back(mock_candle_with_ts(105.0, 95.0, 100.0, 1000.0, ts_start));
+        candles.push_back(mock_candle_with_ts(
+            105.0,
+            95.0,
+            100.0,
+            1000.0,
+            ts_start + 60,
+        ));
 
         // Price 97 = 3% below VWAP (100), RSI 30 < 35 (oversold)
         let ctx = create_context(97.0, 30.0, candles, false);
@@ -256,18 +284,26 @@ mod tests {
     }
 
     #[test]
-    fn test_sell_signal_above_vwap() {
+    fn test_sell_signal_short_entry() {
         let strategy = VWAPStrategy::new(dec!(0.02), dec!(35.0), dec!(65.0));
 
+        let ts_start = 86400;
         let mut candles = VecDeque::new();
-        candles.push_back(mock_candle(105.0, 95.0, 100.0, 1000.0));
-        candles.push_back(mock_candle(105.0, 95.0, 100.0, 1000.0));
+        candles.push_back(mock_candle_with_ts(105.0, 95.0, 100.0, 1000.0, ts_start));
+        candles.push_back(mock_candle_with_ts(
+            105.0,
+            95.0,
+            100.0,
+            1000.0,
+            ts_start + 60,
+        ));
 
-        // Price 103 = 3% above VWAP (100), has position
-        let ctx = create_context(103.0, 50.0, candles, true);
+        // Price 103 = 3% above VWAP (100), NO POSITION
+        // Should trigger Short Entry
+        let ctx = create_context(103.0, 50.0, candles, false);
 
         let signal = strategy.analyze(&ctx);
-        assert!(signal.is_some());
+        assert!(signal.is_some(), "Should signal Sell for Short Entry");
         let sig = signal.unwrap();
         assert!(matches!(
             sig.side,
@@ -276,16 +312,42 @@ mod tests {
     }
 
     #[test]
-    fn test_no_signal_at_vwap() {
-        let strategy = VWAPStrategy::new(dec!(0.02), dec!(35.0), dec!(65.0));
+    fn test_insufficient_data_check() {
+        let strategy = VWAPStrategy::default();
+
+        // Current time: 100000 (~1 day + 3.7h). Day start: 86400.
+        // First candle time: 90000 (valid, > 86400).
+        // BUT if first candle is 86400 + 10 = 86410, it's valid.
+
+        // Scenario: Trading day started at 86400.
+        // We connect at 90000. We fetch 100 candles.
+        // 100 candles * 60s = 6000s = 1.6h.
+        // 90000 - 6000 = 84000.
+        // 84000 < 86400.
+        // So the first candle IN THE LIST is 84000 (yesterday).
+        // calculate_vwap filters out < day_start. So it will use only today's candles.
+        // THIS IS FINE. We have data crossing the boundary.
+
+        // Scenario 2: Connecting at 90000. Fetch 10 candles.
+        // Start time = 89400.
+        // 89400 > 86400.
+        // We are missing data from 86400 to 89400.
+        // VWAP will be incorrect.
+        // The check `first_candle.timestamp > day_start` should catch this.
+
+        let current_ts = 100000;
+        let late_start = 90000;
 
         let mut candles = VecDeque::new();
-        candles.push_back(mock_candle(105.0, 95.0, 100.0, 1000.0));
+        candles.push_back(mock_candle_with_ts(100.0, 100.0, 100.0, 1000.0, late_start));
 
-        // Price exactly at VWAP, RSI neutral
-        let ctx = create_context(100.0, 50.0, candles, false);
+        let mut ctx = create_context(100.0, 50.0, candles, false);
+        ctx.timestamp = current_ts; // Ensure context knows current time
 
-        let signal = strategy.analyze(&ctx);
-        assert!(signal.is_none());
+        let vwap = strategy.calculate_vwap(&ctx);
+        assert!(
+            vwap.is_none(),
+            "Should fail due to insufficient history (start > day_start)"
+        );
     }
 }

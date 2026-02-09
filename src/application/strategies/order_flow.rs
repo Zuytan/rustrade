@@ -22,6 +22,11 @@ pub struct OrderFlowStrategy {
 }
 
 impl OrderFlowStrategy {
+    /// Threshold for "near" a High Volume Node (0.5%)
+    const HVN_THRESHOLD: Decimal = dec!(0.005);
+    /// Lookback for momentum confirmation
+    const MOMENTUM_LOOKBACK: usize = 5;
+
     pub fn new(
         ofi_threshold: Decimal,
         stacked_count: usize,
@@ -55,15 +60,15 @@ impl TradingStrategy for OrderFlowStrategy {
         // Bullish stacked imbalances
         if direction == 1 {
             // Additional confirmation: Cumulative Delta rising
-            let delta_rising = if ctx.ofi_history.len() >= 5 {
+            let delta_rising = if ctx.ofi_history.len() >= Self::MOMENTUM_LOOKBACK {
                 let recent_avg: Decimal = ctx
                     .ofi_history
                     .iter()
                     .rev()
-                    .take(5)
+                    .take(Self::MOMENTUM_LOOKBACK)
                     .copied()
                     .sum::<Decimal>()
-                    / Decimal::from(5);
+                    / Decimal::from(Self::MOMENTUM_LOOKBACK);
                 ctx.ofi_value > recent_avg
             } else {
                 ctx.ofi_value > Decimal::ZERO
@@ -73,7 +78,7 @@ impl TradingStrategy for OrderFlowStrategy {
             let near_hvn = if let Some(ref profile) = ctx.volume_profile {
                 profile.high_volume_nodes.iter().any(|&hvn| {
                     if ctx.current_price > Decimal::ZERO {
-                        (ctx.current_price - hvn).abs() / ctx.current_price < dec!(0.02)
+                        (ctx.current_price - hvn).abs() / ctx.current_price < Self::HVN_THRESHOLD
                     } else {
                         false
                     }
@@ -97,17 +102,18 @@ impl TradingStrategy for OrderFlowStrategy {
         }
 
         // Bearish stacked imbalances
-        if direction == -1 && ctx.has_position {
+        // Removed has_position check to allow Short Entry
+        if direction == -1 {
             // Additional confirmation: Cumulative Delta falling
-            let delta_falling = if ctx.ofi_history.len() >= 5 {
+            let delta_falling = if ctx.ofi_history.len() >= Self::MOMENTUM_LOOKBACK {
                 let recent_avg: Decimal = ctx
                     .ofi_history
                     .iter()
                     .rev()
-                    .take(5)
+                    .take(Self::MOMENTUM_LOOKBACK)
                     .copied()
                     .sum::<Decimal>()
-                    / Decimal::from(5);
+                    / Decimal::from(Self::MOMENTUM_LOOKBACK);
                 // Fix: Compare current OFI to recent average (momentum decreasing)
                 ctx.ofi_value < recent_avg
             } else {
@@ -118,7 +124,7 @@ impl TradingStrategy for OrderFlowStrategy {
             let near_hvn = if let Some(ref profile) = ctx.volume_profile {
                 profile.high_volume_nodes.iter().any(|&hvn| {
                     if ctx.current_price > Decimal::ZERO {
-                        (ctx.current_price - hvn).abs() / ctx.current_price < dec!(0.02)
+                        (ctx.current_price - hvn).abs() / ctx.current_price < Self::HVN_THRESHOLD
                     } else {
                         false
                     }
@@ -239,9 +245,9 @@ mod tests {
     fn test_buy_signal_with_hvn_support() {
         let strategy = OrderFlowStrategy::default();
 
-        // Price at 100, HVN at 99 (within 2%)
+        // Price at 100, HVN at 99.6 (within 0.5%)
         let ofi_history = vec![0.4, 0.5, 0.6];
-        let ctx = create_test_context(0.6, ofi_history, 1.5, false, 100.0, Some(vec![99.0]));
+        let ctx = create_test_context(0.6, ofi_history, 1.5, false, 100.0, Some(vec![99.6]));
 
         let signal = strategy.analyze(&ctx);
 
@@ -275,9 +281,9 @@ mod tests {
     fn test_sell_signal_with_hvn_resistance() {
         let strategy = OrderFlowStrategy::default();
 
-        // Price at 100, HVN at 101 (within 2%)
+        // Price at 100, HVN at 100.4 (within 0.5%)
         let ofi_history = vec![-0.4, -0.5, -0.6];
-        let ctx = create_test_context(-0.6, ofi_history, -1.5, true, 100.0, Some(vec![101.0]));
+        let ctx = create_test_context(-0.6, ofi_history, -1.5, true, 100.0, Some(vec![100.4]));
 
         let signal = strategy.analyze(&ctx);
 
@@ -315,16 +321,18 @@ mod tests {
     }
 
     #[test]
-    fn test_no_sell_without_position() {
+    fn test_sell_signal_short_entry() {
         let strategy = OrderFlowStrategy::default();
 
-        // Bearish stack but no position
+        // Bearish stack and no position -> Should signal Short Entry
         let ofi_history = vec![-0.4, -0.5, -0.6];
         let ctx = create_test_context(-0.6, ofi_history, -1.5, false, 100.0, None);
 
         let signal = strategy.analyze(&ctx);
 
-        assert!(signal.is_none(), "Should not sell without position");
+        assert!(signal.is_some(), "Should signal Sell for Short Entry");
+        let sig = signal.unwrap();
+        assert!(matches!(sig.side, OrderSide::Sell));
     }
 
     #[test]

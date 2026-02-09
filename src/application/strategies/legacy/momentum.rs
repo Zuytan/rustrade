@@ -27,7 +27,7 @@ impl MomentumDivergenceStrategy {
     /// Find local extremes (highs and lows) in price and RSI
     /// Returns: (price_low1, price_low2, rsi_at_low1, rsi_at_low2) for bullish
     /// or (price_high1, price_high2, rsi_at_high1, rsi_at_high2) for bearish
-    fn find_divergence(&self, ctx: &AnalysisContext) -> Option<DivergenceType> {
+    pub(crate) fn find_divergence(&self, ctx: &AnalysisContext) -> Option<DivergenceType> {
         if ctx.candles.len() < self.divergence_lookback {
             return None;
         }
@@ -48,10 +48,12 @@ impl MomentumDivergenceStrategy {
         let mut first_low = Decimal::MAX;
         let mut first_low_idx = 0;
         let mut second_low = Decimal::MAX;
+        let mut second_low_idx = 0;
 
         let mut first_high = Decimal::MIN;
         let mut first_high_idx = 0;
         let mut second_high = Decimal::MIN;
+        let mut second_high_idx = 0;
 
         // Analyze first half for initial extreme
         for (i, candle) in ctx
@@ -74,21 +76,20 @@ impl MomentumDivergenceStrategy {
             }
         }
 
-        // Analyze second half for second extreme (current extreme)
-        for candle in ctx.candles.iter().skip(mid_point) {
+        // Analyze second half for second extreme (recent extreme)
+        for (i, candle) in ctx.candles.iter().enumerate().skip(mid_point) {
             let low = candle.low;
             let high = candle.high;
 
             if low < second_low {
                 second_low = low;
+                second_low_idx = i;
             }
             if high > second_high {
                 second_high = high;
+                second_high_idx = i;
             }
         }
-
-        // Current RSI represents the "end" state
-        let current_rsi = ctx.rsi;
 
         // Helper to safely get RSI
         let get_rsi_at = |idx: usize| -> Option<Decimal> {
@@ -99,19 +100,27 @@ impl MomentumDivergenceStrategy {
             }
         };
 
+        // Get RSI at specific points
+        let rsi_at_first_low = get_rsi_at(first_low_idx)?;
+        let rsi_at_second_low = get_rsi_at(second_low_idx)?;
+
+        let rsi_at_first_high = get_rsi_at(first_high_idx)?;
+        let rsi_at_second_high = get_rsi_at(second_high_idx)?;
+
         // Check for bullish divergence: lower low in price, higher low in RSI
+        // Price low 2 < Price low 1
+        // RSI at low 2 > RSI at low 1
         let price_lower_low = second_low < first_low * (Decimal::ONE - self.min_divergence_pct);
 
         if !ctx.has_position
             && price_lower_low
-            && current_rsi < dec!(40.0)
-            && let Some(past_rsi) = get_rsi_at(first_low_idx)
-            && current_rsi > past_rsi
+            && rsi_at_second_low < dec!(40.0) // Second low must still be "oversold-ish"
+            && rsi_at_second_low > rsi_at_first_low
         {
             return Some(DivergenceType::Bullish {
                 price_low1: first_low,
                 price_low2: second_low,
-                rsi_now: current_rsi,
+                rsi_now: rsi_at_second_low, // We report the RSI at the divergence point
             });
         }
 
@@ -120,14 +129,13 @@ impl MomentumDivergenceStrategy {
 
         if ctx.has_position
             && price_higher_high
-            && current_rsi > dec!(60.0)
-            && let Some(past_rsi) = get_rsi_at(first_high_idx)
-            && current_rsi < past_rsi
+            && rsi_at_second_high > dec!(60.0)
+            && rsi_at_second_high < rsi_at_first_high
         {
             return Some(DivergenceType::Bearish {
                 price_high1: first_high,
                 price_high2: second_high,
-                rsi_now: current_rsi,
+                rsi_now: rsi_at_second_high,
             });
         }
 
@@ -136,7 +144,7 @@ impl MomentumDivergenceStrategy {
 }
 
 #[derive(Debug)]
-enum DivergenceType {
+pub(crate) enum DivergenceType {
     Bullish {
         price_low1: Decimal,
         price_low2: Decimal,
@@ -262,7 +270,6 @@ mod tests {
 
     #[test]
     fn test_bullish_divergence_detection() {
-        // This test validates the strategy can be instantiated and analyzes without panic
         let strategy = MomentumDivergenceStrategy::default();
 
         let mut candles = VecDeque::new();
@@ -275,19 +282,25 @@ mod tests {
         }
 
         // Create RSI history showing Bullish Divergence
+        // Price low 1 at index 6 or 7. Price low 2 at index 14.
+        // RSI must be rising between those indices.
+        // RSI index aligns with candles.
         let mut rsi_history = VecDeque::new();
         for i in 0..15 {
             rsi_history.push_back(dec!(20.0) + Decimal::from(i));
         }
 
-        let ctx = create_context(80.0, 25.0, candles, rsi_history, false);
-        // The strategy should analyze without panicking
-        let _ = strategy.analyze(&ctx);
+        let ctx = create_context(80.0, 34.0, candles, rsi_history, false);
+        // The strategy should find divergence
+        let signal = strategy.analyze(&ctx);
+        assert!(signal.is_some());
+        let sig = signal.unwrap();
+        assert!(sig.reason.contains("Momentum"));
+        assert!(sig.reason.contains("Bullish"));
     }
 
     #[test]
     fn test_bearish_divergence_detection() {
-        // This test validates the strategy can be instantiated and analyzes without panic
         let strategy = MomentumDivergenceStrategy::default();
 
         let mut candles = VecDeque::new();
@@ -300,14 +313,20 @@ mod tests {
         }
 
         // Create RSI history showing Bearish Divergence
+        // Price High 1 ~ idx 7. Price High 2 ~ idx 14.
+        // RSI should be falling.
         let mut rsi_history = VecDeque::new();
         for i in 0..15 {
             rsi_history.push_back(dec!(80.0) - Decimal::from(i));
         }
 
-        let ctx = create_context(120.0, 75.0, candles, rsi_history, true);
-        // The strategy should analyze without panicking
-        let _ = strategy.analyze(&ctx);
+        let ctx = create_context(120.0, 66.0, candles, rsi_history, true);
+
+        let signal = strategy.analyze(&ctx);
+        assert!(signal.is_some());
+        let sig = signal.unwrap();
+        assert!(sig.reason.contains("Momentum"));
+        assert!(sig.reason.contains("Bearish"));
     }
 
     #[test]

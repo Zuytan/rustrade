@@ -3,7 +3,6 @@ use crate::application::strategies::legacy::advanced::{
     AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy,
 };
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 
 /// Configuration for Dynamic Regime Strategy
 ///
@@ -51,6 +50,7 @@ impl Default for DynamicRegimeConfig {
 #[derive(Debug, Clone)]
 pub struct DynamicRegimeStrategy {
     advanced_strategy: AdvancedTripleFilterStrategy,
+    sma_threshold: Decimal,
     #[allow(dead_code)]
     trend_divergence_threshold: Decimal, // Legacy field, now using ADX-based regime detection
 }
@@ -73,6 +73,7 @@ impl DynamicRegimeStrategy {
                 macd_min_threshold: config.macd_min_threshold,
                 adx_threshold: config.adx_threshold,
             }),
+            sma_threshold: config.sma_threshold,
             trend_divergence_threshold: config.trend_divergence_threshold,
         }
     }
@@ -134,9 +135,9 @@ impl TradingStrategy for DynamicRegimeStrategy {
         match regime {
             MarketRegime::StrongTrendUp => {
                 // In strong UPTREND, be more permissive for BUYS
-                if ctx.fast_sma > ctx.slow_sma * (Decimal::ONE + dec!(0.001)) {
-                    // Golden cross
-                    if ctx.current_price > ctx.trend_sma {
+                if ctx.fast_sma > ctx.slow_sma * (Decimal::ONE + self.sma_threshold) {
+                    // Golden cross - Check !has_position to prevent spam
+                    if !ctx.has_position && ctx.current_price > ctx.trend_sma {
                         return Some(Signal::buy(
                             "Dynamic (Trend Up): Strong uptrend detected, buying above Trend SMA"
                                 .to_string(),
@@ -144,7 +145,7 @@ impl TradingStrategy for DynamicRegimeStrategy {
                     }
                 }
                 // Suppress sells unless trend breaks significantly or death cross
-                else if ctx.fast_sma < ctx.slow_sma * (Decimal::ONE - dec!(0.001))
+                else if ctx.fast_sma < ctx.slow_sma * (Decimal::ONE - self.sma_threshold)
                     && ctx.has_position
                     && ctx.current_price < ctx.trend_sma
                 {

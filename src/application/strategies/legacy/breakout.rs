@@ -28,19 +28,31 @@ impl BreakoutStrategy {
     }
 
     /// Calculate recent high and low from candle history
+    /// Excludes the most recent (current) candle to prevent looking ahead/comparing to self
     fn calculate_range(&self, ctx: &AnalysisContext) -> Option<(Decimal, Decimal, Decimal)> {
-        if ctx.candles.len() < self.lookback_period {
+        // Need at least lookback + 1 candle (history + current)
+        if ctx.candles.len() < self.lookback_period + 1 {
             return None;
         }
 
-        let start_idx = ctx.candles.len().saturating_sub(self.lookback_period);
+        // We want to look at the 'lookback_period' candles BEFORE the current one
+        // ctx.candles.len() - 1 is the index of the last item (current)
+        // So we take the range [len - 1 - lookback, len - 1)
+        let end_idx = ctx.candles.len().saturating_sub(1);
+        let start_idx = end_idx.saturating_sub(self.lookback_period);
 
         let mut highest_high = Decimal::MIN;
         let mut lowest_low = Decimal::MAX;
         let mut total_volume = Decimal::ZERO;
         let mut count = 0;
 
-        for candle in ctx.candles.iter().skip(start_idx) {
+        // Iterating up to end_idx (exclusive) effectively excludes the current candle
+        for candle in ctx
+            .candles
+            .iter()
+            .skip(start_idx)
+            .take(self.lookback_period)
+        {
             let high = candle.high;
             let low = candle.low;
 
@@ -188,7 +200,12 @@ mod tests {
             candles.push_back(mock_candle(98.0, 105.0, 95.0, 100.0, 1000.0));
         }
 
-        // Price 110 > 105 * (Decimal::ONE + dec!(0.02)) = 107.1 -> breakout
+        // Add correct "current" context where current price is 110
+        // The strategy now looks at previous 5 candles (the loop above) to find high=105
+        // Current price 110 > 105 * 1.02 (107.1) -> Breakout
+        // We need to add the current forming candle to the deque as well for the strategy to see "current volume"
+        candles.push_back(mock_candle(108.0, 110.0, 109.0, 110.0, 1000.0));
+
         let ctx = create_context(110.0, candles, false);
 
         let signal = strategy.analyze(&ctx);
@@ -211,7 +228,11 @@ mod tests {
             candles.push_back(mock_candle(98.0, 105.0, 95.0, 100.0, 1000.0));
         }
 
-        // Price 92 < 95 * (Decimal::ONE - dec!(0.02)) = 93.1 -> breakdown
+        // Add current candle for breakdown
+        // Lowest low was 95. Breakdown threshold 95 * (1 - 0.02) = 93.1
+        // Current price 92 < 93.1 -> Breakdown
+        candles.push_back(mock_candle(93.0, 94.0, 92.0, 92.0, 1000.0));
+
         let ctx = create_context(92.0, candles, true);
 
         let signal = strategy.analyze(&ctx);
@@ -231,6 +252,9 @@ mod tests {
         for _ in 0..5 {
             candles.push_back(mock_candle(98.0, 105.0, 95.0, 100.0, 1000.0));
         }
+
+        // Add current candle within range
+        candles.push_back(mock_candle(100.0, 102.0, 99.0, 102.0, 1000.0));
 
         // Price 102 is within the range
         let ctx = create_context(102.0, candles, false);

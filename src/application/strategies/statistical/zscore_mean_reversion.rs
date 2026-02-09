@@ -31,7 +31,7 @@ impl ZScoreMeanReversionStrategy {
     }
 
     /// Calculate Z-Score: (Price - Mean) / StdDev
-    fn calculate_zscore(&self, ctx: &AnalysisContext) -> Option<Decimal> {
+    pub(crate) fn calculate_zscore(&self, ctx: &AnalysisContext) -> Option<Decimal> {
         if ctx.candles.len() < self.min_data_points {
             return None;
         }

@@ -1,0 +1,662 @@
+use super::*;
+use crate::application::agents::analyst_config::AnalystConfig;
+use crate::domain::trading::types::Candle;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
+use rust_decimal_macros::dec;
+use std::collections::VecDeque;
+
+/// QA Context Builder to easily create scenarios
+struct ContextBuilder {
+    ctx: AnalysisContext,
+}
+
+impl ContextBuilder {
+    fn new(price: f64) -> Self {
+        let d_price = Decimal::from_f64(price).unwrap();
+        Self {
+            ctx: AnalysisContext {
+                symbol: "QA_TEST".to_string(),
+                current_price: d_price,
+                price_f64: price,
+                fast_sma: d_price,
+                slow_sma: d_price,
+                trend_sma: d_price,
+                rsi: dec!(50.0),
+                macd_value: Decimal::ZERO,
+                macd_signal: Decimal::ZERO,
+                macd_histogram: Decimal::ZERO,
+                last_macd_histogram: None,
+                atr: dec!(1.0),
+                bb_lower: d_price * dec!(0.98),
+                bb_middle: d_price,
+                bb_upper: d_price * dec!(1.02),
+                adx: dec!(25.0),
+                has_position: false,
+                position: None,
+                timestamp: 100000,
+                timeframe_features: None,
+                candles: VecDeque::new(),
+                rsi_history: VecDeque::new(),
+                ofi_value: Decimal::ZERO,
+                cumulative_delta: Decimal::ZERO,
+                volume_profile: None,
+                ofi_history: VecDeque::new(),
+                hurst_exponent: None,
+                skewness: None,
+                momentum_normalized: None,
+                realized_volatility: None,
+                feature_set: None,
+            },
+        }
+    }
+
+    fn with_sma(mut self, fast: f64, slow: f64, trend: f64) -> Self {
+        self.ctx.fast_sma = Decimal::from_f64(fast).unwrap();
+        self.ctx.slow_sma = Decimal::from_f64(slow).unwrap();
+        self.ctx.trend_sma = Decimal::from_f64(trend).unwrap();
+        self
+    }
+
+    fn with_rsi(mut self, rsi: f64) -> Self {
+        self.ctx.rsi = Decimal::from_f64(rsi).unwrap();
+        self
+    }
+
+    fn with_adx(mut self, adx: f64) -> Self {
+        self.ctx.adx = Decimal::from_f64(adx).unwrap();
+        self
+    }
+
+    fn with_macd(mut self, hist: f64) -> Self {
+        self.ctx.macd_histogram = Decimal::from_f64(hist).unwrap();
+        self
+    }
+
+    fn with_position(mut self, has_pos: bool) -> Self {
+        self.ctx.has_position = has_pos;
+        self
+    }
+
+    fn with_candles(mut self, count: usize, price: f64) -> Self {
+        for i in 0..count {
+            let c = Candle {
+                timestamp: 100000 - ((count - i) as i64 * 60),
+                open: Decimal::from_f64(price).unwrap(),
+                high: Decimal::from_f64(price).unwrap(),
+                low: Decimal::from_f64(price).unwrap(),
+                close: Decimal::from_f64(price).unwrap(),
+                volume: dec!(1000.0),
+                symbol: "QA_TEST".to_string(),
+            };
+            self.ctx.candles.push_back(c);
+        }
+        self
+    }
+
+    fn build(self) -> AnalysisContext {
+        self.ctx
+    }
+}
+
+// Factorized strategy provider
+fn get_all_strategies() -> Vec<Box<dyn TradingStrategy>> {
+    let strategies: Vec<Box<dyn TradingStrategy>> = vec![
+        // Legacy
+        Box::new(BreakoutStrategy::default()),
+        Box::new(MomentumDivergenceStrategy::default()),
+        Box::new(VWAPStrategy::default()),
+        Box::new(DualSMAStrategy::new(20, 60, dec!(0.005))),
+        Box::new(MeanReversionStrategy::new(20, dec!(70.0))),
+        Box::new(TrendRidingStrategy::new(20, 60, dec!(0.005), dec!(0.02))),
+        // Modern
+        Box::new(OrderFlowStrategy::default()),
+        Box::new(DynamicRegimeStrategy::with_config(
+            DynamicRegimeConfig::default(),
+        )),
+        Box::new(StatisticalMomentumStrategy::default()),
+        Box::new(ZScoreMeanReversionStrategy::default()),
+        Box::new(SMCStrategy::default()),
+        // Ensemble (Modern) - Using wrapper to box it
+        Box::new(EnsembleStrategy::modern_ensemble(&AnalystConfig::default())),
+    ];
+
+    strategies
+}
+
+#[test]
+fn test_qa_scenario_bull_market() {
+    // Scenario: Strong Uptrend
+    // Price > SMAs, RSI high but sustainable, ADX strong
+    let ctx = ContextBuilder::new(105.0)
+        .with_sma(103.0, 100.0, 95.0) // Fast > Slow > Trend
+        .with_rsi(65.0)
+        .with_adx(35.0) // Strong trend
+        .with_macd(0.5) // Positive momentum
+        .with_candles(100, 100.0) // History
+        .with_position(false)
+        .build();
+
+    let strategies = get_all_strategies();
+
+    for strategy in strategies {
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strategy.analyze(&ctx)));
+
+        assert!(
+            result.is_ok(),
+            "Strategy {} panicked in Bull Market scenario",
+            strategy.name()
+        );
+
+        if let Ok(Some(signal)) = result {
+            // In a bull market, we expect BUY or HOLD (None).
+            // Some mean reversion strategies might SELL if RSI is too high, which is valid logic.
+            // But we mainly check for validity.
+            assert!(
+                signal.confidence > 0.0 && signal.confidence <= 1.0,
+                "Strategy {} confidence out of bounds: {}",
+                strategy.name(),
+                signal.confidence
+            );
+            assert!(
+                !signal.reason.is_empty(),
+                "Strategy {} reason empty",
+                strategy.name()
+            );
+        }
+    }
+}
+
+#[test]
+fn test_qa_scenario_bear_market() {
+    // Scenario: Strong Downtrend
+    // Price < SMAs, RSI low, ADX strong
+    let ctx = ContextBuilder::new(95.0)
+        .with_sma(97.0, 100.0, 105.0) // Fast < Slow < Trend
+        .with_rsi(35.0)
+        .with_adx(35.0)
+        .with_macd(-0.5)
+        .with_candles(100, 100.0)
+        .with_position(true) // We have position to potentially sell
+        .build();
+
+    let strategies = get_all_strategies();
+
+    for strategy in strategies {
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strategy.analyze(&ctx)));
+
+        assert!(
+            result.is_ok(),
+            "Strategy {} panicked in Bear Market scenario",
+            strategy.name()
+        );
+    }
+}
+
+#[test]
+fn test_qa_scenario_flat_choppy() {
+    // Scenario: Flat / Chop
+    // Price ~ SMAs, Low ADX, RSI ~ 50
+    let ctx = ContextBuilder::new(100.0)
+        .with_sma(100.1, 100.0, 100.2) // Tangled
+        .with_rsi(51.0)
+        .with_adx(15.0) // Weak trend
+        .with_macd(0.01)
+        .with_candles(100, 100.0)
+        .with_position(false)
+        .build();
+
+    let strategies = get_all_strategies();
+
+    for strategy in strategies {
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strategy.analyze(&ctx)));
+
+        assert!(
+            result.is_ok(),
+            "Strategy {} panicked in Flat Market scenario",
+            strategy.name()
+        );
+    }
+}
+
+#[test]
+fn test_qa_scenario_extreme_volatility() {
+    // Scenario: Shock
+    // Price moves 20% in one tick
+    let ctx = ContextBuilder::new(120.0) // 20% jump from 100
+        .with_sma(100.0, 100.0, 100.0)
+        .with_rsi(95.0) // Extreme Overbought
+        .with_adx(50.0)
+        .with_macd(10.0)
+        .with_candles(10, 100.0) // Short history
+        .with_position(true)
+        .build();
+
+    let strategies = get_all_strategies();
+
+    for strategy in strategies {
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strategy.analyze(&ctx)));
+
+        assert!(
+            result.is_ok(),
+            "Strategy {} panicked in Extreme Volatility scenario",
+            strategy.name()
+        );
+    }
+}
+
+#[test]
+fn test_qa_scenario_insufficient_data() {
+    // Scenario: No history
+    let mut ctx = ContextBuilder::new(100.0).build();
+    ctx.candles.clear(); // Ensure empty
+    ctx.rsi_history.clear();
+
+    let strategies = get_all_strategies();
+
+    for strategy in strategies {
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strategy.analyze(&ctx)));
+
+        assert!(
+            result.is_ok(),
+            "Strategy {} panicked with Insufficient Data",
+            strategy.name()
+        );
+        // Most should return None
+        if let Ok(Some(_)) = result {
+            // Valid to return signal based on current price alone (though rare)
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Mathematical Precision Tests (QA Suite v2)
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_precision_vwap() {
+    // Objective: Verify VWAP is calculated exactly as Σ(TP * Vol) / Σ(Vol)
+    // Manual Calc:
+    // C1: High=101, Low=99, Close=100. TP=100. Vol=1000. TP*Vol=100,000.
+    // C2: High=103, Low=101, Close=102. TP=102. Vol=2000. TP*Vol=204,000.
+    // C3: High=102, Low=100, Close=101. TP=101. Vol=1000. TP*Vol=101,000.
+    // Total TP*Vol = 405,000. Total Vol = 4000.
+    // VWAP = 405,000 / 4,000 = 101.25.
+
+    let strategy = VWAPStrategy::default();
+    let mut candles = VecDeque::new();
+    let ts_start = 86400; // Midnight
+
+    // Helper to create exact candle
+    fn exact_candle(h: f64, l: f64, c: f64, v: f64, ts: i64) -> Candle {
+        Candle {
+            symbol: "TEST".to_string(),
+            open: dec!(100.0), // Irrelevant for VWAP
+            high: Decimal::from_f64(h).unwrap(),
+            low: Decimal::from_f64(l).unwrap(),
+            close: Decimal::from_f64(c).unwrap(),
+            volume: Decimal::from_f64(v).unwrap(),
+            timestamp: ts,
+        }
+    }
+
+    candles.push_back(exact_candle(101.0, 99.0, 100.0, 1000.0, ts_start));
+    candles.push_back(exact_candle(103.0, 101.0, 102.0, 2000.0, ts_start + 60));
+    candles.push_back(exact_candle(102.0, 100.0, 101.0, 1000.0, ts_start + 120));
+
+    // Manually construct context (ContextBuilder is too simple)
+    let ctx = AnalysisContext {
+        symbol: "TEST".to_string(),
+        current_price: dec!(101.0),
+        price_f64: 101.0,
+        fast_sma: Decimal::ZERO,
+        slow_sma: Decimal::ZERO,
+        trend_sma: Decimal::ZERO,
+        rsi: dec!(50.0),
+        macd_value: Decimal::ZERO,
+        macd_signal: Decimal::ZERO,
+        macd_histogram: Decimal::ZERO,
+        last_macd_histogram: None,
+        atr: Decimal::ONE,
+        bb_lower: Decimal::ZERO,
+        bb_middle: Decimal::ZERO,
+        bb_upper: Decimal::ZERO,
+        adx: Decimal::ZERO,
+        has_position: false,
+        position: None,
+        timestamp: ts_start + 120,
+        timeframe_features: None,
+        candles,
+        rsi_history: VecDeque::new(),
+        ofi_value: Decimal::ZERO,
+        cumulative_delta: Decimal::ZERO,
+        volume_profile: None,
+        ofi_history: VecDeque::new(),
+        hurst_exponent: None,
+        skewness: None,
+        momentum_normalized: None,
+        realized_volatility: None,
+        feature_set: None,
+    };
+
+    let vwap = strategy
+        .calculate_vwap(&ctx)
+        .expect("VWAP should be calculated");
+
+    // Assert exact match
+    assert_eq!(
+        vwap,
+        dec!(101.25),
+        "VWAP precision failed. Expected 101.25, got {}",
+        vwap
+    );
+}
+
+#[test]
+fn test_precision_smc_fvg() {
+    // Objective: Verify Fair Value Gap size is calculated exactly as (Low3 - High1) or (Low1 - High3)
+    // Setup: Bullish FVG
+    // C1: High = 100.0
+    // C2: Impulsive
+    // C3: Low = 105.0
+    // Gap = 105.0 - 100.0 = 5.0.
+
+    let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.0));
+    let mut candles = VecDeque::new();
+
+    // Padding (need 5 total)
+    for _ in 0..10 {
+        candles.push_back(Candle {
+            symbol: "TEST".to_string(),
+            open: dec!(10.0),
+            high: dec!(10.0),
+            low: dec!(10.0),
+            close: dec!(10.0),
+            volume: dec!(100.0),
+            timestamp: 0,
+        });
+    }
+
+    fn fvg_candle(h: f64, l: f64) -> Candle {
+        Candle {
+            symbol: "TEST".to_string(),
+            open: dec!(10.0),
+            high: Decimal::from_f64(h).unwrap(),
+            low: Decimal::from_f64(l).unwrap(),
+            close: dec!(10.0),
+            volume: dec!(1000.0),
+            timestamp: 0,
+        }
+    }
+
+    candles.push_back(fvg_candle(100.0, 90.0)); // C1 High 100
+    candles.push_back(fvg_candle(110.0, 100.0)); // C2
+    candles.push_back(fvg_candle(120.0, 105.0)); // C3 Low 105
+    // C4 & C5 to trigger detection/confirmation logic
+    candles.push_back(fvg_candle(120.0, 104.0)); // C4 In Zone (Low 104 < 105) (No, wait, C4 is checked for invalidation/entry)
+    // To detect, we need to iterate. logic: for i in (start..len-2).
+    // Our FVG is at index len-3 (if we added 3 relevant + padding).
+    // Need at least one more candle to process?
+    // detect_fvg loops from end-20 to end-2.
+    // If we have C1(i), C2(i+1), C3(i+2).
+    // The loop checks i.
+    // Then checks subsequent candles i+3...
+    // So we need at least i+3 (C4).
+    // C4 must NOT invalidate (Low < High1 i.e. < 100).
+    // And C4 MUST close in zone (Close <= Low3 i.e. <= 105) for Entry.
+    // Let's make C4 close at 102.0.
+
+    let mut c4 = fvg_candle(120.0, 103.0);
+    c4.close = dec!(102.0); // Entry 
+    candles.push_back(c4);
+
+    let result = strategy.detect_fvg(&candles);
+    assert!(result.is_some(), "FVG should be detected");
+    let (_, gap_size) = result.unwrap();
+
+    assert_eq!(
+        gap_size,
+        dec!(5.0),
+        "FVG Gap Size precision failed. Expected 5.0, got {}",
+        gap_size
+    );
+}
+
+#[test]
+fn test_precision_zscore() {
+    // Objective: Verify Z-Score = (Price - Mean) / StdDev
+    // Data: [10, 20, 30]. Mean=20.
+    // StdDev (Population or Sample? Statrs usually Sample).
+    // Sample StdDev:
+    // Mean = 20.
+    // (10-20)^2 = 100. (20-20)^2 = 0. (30-20)^2 = 100. Sum=200.
+    // Variance = 200 / (3-1) = 100.
+    // StdDev = 10.
+    // New Price = 40. Z = (40 - 20) / 10 = 2.0.
+
+    let strategy = ZScoreMeanReversionStrategy::new(3, dec!(2.0), dec!(0.0));
+    let mut candles = VecDeque::new();
+
+    // Fill required min_data_points (20 normally, but strategy clamps to max(20) in constructor? No, lookback.max(20) -> 20 min points.)
+    // Wait, `min_data_points: lookback_period.max(20)` in `new`.
+    // So I need at least 20 candles.
+    // I need the LAST 3 to be 10, 20, 30.
+    // The previous 17 can be anything? No, mean is calculated on `lookback_period` (3).
+    // So if lookback is 3, it takes last 3.
+    // But min_data_points is 20. So I must provide 20 candles.
+
+    // Let's inject 17 candles of 0.0 (ignored by take(3) rev? No wait.)
+    // `prices` = `ctx.candles.iter().rev().take(lookback)`.
+    // So it takes the MOST RECENT candles.
+    // So if I add 17 dummy candles, then 10, 20, 30.
+    // The prices vector will be [30, 20, 10].
+
+    for _ in 0..17 {
+        candles.push_back(Candle {
+            symbol: "T".to_string(),
+            open: dec!(0),
+            high: dec!(0),
+            low: dec!(0),
+            close: dec!(0),
+            volume: dec!(0),
+            timestamp: 0,
+        });
+    }
+    candles.push_back(Candle {
+        symbol: "T".to_string(),
+        open: dec!(0),
+        high: dec!(0),
+        low: dec!(0),
+        close: dec!(10.0),
+        volume: dec!(0),
+        timestamp: 0,
+    });
+    candles.push_back(Candle {
+        symbol: "T".to_string(),
+        open: dec!(0),
+        high: dec!(0),
+        low: dec!(0),
+        close: dec!(20.0),
+        volume: dec!(0),
+        timestamp: 0,
+    });
+    candles.push_back(Candle {
+        symbol: "T".to_string(),
+        open: dec!(0),
+        high: dec!(0),
+        low: dec!(0),
+        close: dec!(30.0),
+        volume: dec!(0),
+        timestamp: 0,
+    });
+
+    let ctx = AnalysisContext {
+        symbol: "TEST".to_string(),
+        current_price: dec!(40.0),
+        price_f64: 40.0,
+        fast_sma: Decimal::ZERO,
+        slow_sma: Decimal::ZERO,
+        trend_sma: Decimal::ZERO,
+        rsi: dec!(50.0),
+        macd_value: Decimal::ZERO,
+        macd_signal: Decimal::ZERO,
+        macd_histogram: Decimal::ZERO,
+        last_macd_histogram: None,
+        atr: Decimal::ONE,
+        bb_lower: Decimal::ZERO,
+        bb_middle: Decimal::ZERO,
+        bb_upper: Decimal::ZERO,
+        adx: Decimal::ZERO,
+        has_position: false,
+        position: None,
+        timestamp: 0,
+        timeframe_features: None,
+        candles,
+        rsi_history: VecDeque::new(),
+        ofi_value: Decimal::ZERO,
+        cumulative_delta: Decimal::ZERO,
+        volume_profile: None,
+        ofi_history: VecDeque::new(),
+        hurst_exponent: None,
+        skewness: None,
+        momentum_normalized: None,
+        realized_volatility: None,
+        feature_set: None,
+    };
+
+    let zscore = strategy
+        .calculate_zscore(&ctx)
+        .expect("Z-Score should calculate");
+
+    // We expect 2.0 exactly (if sample std dev is used)
+    // If population std dev used (n=3), var=200/3=66.66, std=8.16. Z=(20)/8.16 = 2.45.
+    // Statrs usually uses Sample StdDev.
+    assert_eq!(
+        zscore,
+        dec!(2.0),
+        "Z-Score precision failed. Expected 2.0, got {}",
+        zscore
+    );
+}
+
+#[test]
+fn test_precision_rsi_alignment() {
+    // Objective: Ensure verification uses the accurate RSI from history
+    use crate::application::strategies::legacy::momentum::DivergenceType;
+
+    let strategy = MomentumDivergenceStrategy::default(); // Lookback 14
+    let mut candles = VecDeque::new();
+    let mut rsi_history = VecDeque::new();
+
+    // Create 20 candles.
+    // Pivot at index 10. Low price.
+    // Current index 19. Lower low price.
+    // Divergence check looks for first low in first half (0..7?).
+    // Lookback 14. Start index = 20 - 14 = 6.
+    // Half = 6 + (14/2) = 13.
+    // First half: 6..13.
+    // Second half: 13..20.
+
+    // Let's set Low at index 10 (First Low).
+    // And Low at index 18 (Second Low).
+
+    for i in 0..20 {
+        candles.push_back(Candle {
+            symbol: "T".to_string(),
+            open: dec!(100),
+            high: dec!(100),
+            low: dec!(100),
+            close: dec!(100),
+            volume: dec!(1000),
+            timestamp: i as i64,
+        });
+        // RSI history: unique value per index to verify alignment
+        rsi_history.push_back(Decimal::from(i));
+    }
+
+    // Set Lows
+    candles[10].low = dec!(90.0); // First Low
+    candles[18].low = dec!(80.0); // Second Low < First Low (Bullish Price)
+
+    // Set RSI at those indices
+    // RSI[10]: We want accurate retrieval.
+    // RSI[18]: Should be > RSI[10].
+
+    // Note: rsi_history index aligns with candles index?
+    // "ctx.candles.len().saturating_sub(ctx.rsi_history.len())" -> Offset.
+    // Here len=20, hist_len=20. Offset 0.
+    // So rsi_history[10] corresponds to candle[10].
+
+    rsi_history[10] = dec!(30.0);
+    rsi_history[18] = dec!(35.0);
+
+    // Set current RSI for analyze input (though find_divergence uses history?)
+    // find_divergence passes rsi_at_second_low.
+
+    let ctx = AnalysisContext {
+        symbol: "TEST".to_string(),
+        current_price: dec!(80.0),
+        price_f64: 80.0,
+        fast_sma: Decimal::ZERO,
+        slow_sma: Decimal::ZERO,
+        trend_sma: Decimal::ZERO,
+        rsi: dec!(35.0),
+        macd_value: Decimal::ZERO,
+        macd_signal: Decimal::ZERO,
+        macd_histogram: Decimal::ZERO,
+        last_macd_histogram: None,
+        atr: Decimal::ONE,
+        bb_lower: Decimal::ZERO,
+        bb_middle: Decimal::ZERO,
+        bb_upper: Decimal::ZERO,
+        adx: Decimal::ZERO,
+        has_position: false,
+        position: None,
+        timestamp: 0,
+        timeframe_features: None,
+        candles,
+        rsi_history,
+        ofi_value: Decimal::ZERO,
+        cumulative_delta: Decimal::ZERO,
+        volume_profile: None,
+        ofi_history: VecDeque::new(),
+        hurst_exponent: None,
+        skewness: None,
+        momentum_normalized: None,
+        realized_volatility: None,
+        feature_set: None,
+    };
+
+    let div = strategy.find_divergence(&ctx);
+    if div.is_none() {
+        // Debug
+        // Maybe failed rsi < 40 check?
+        // RSI at second low (18) is 35.0. < 40. OK.
+        // RSI at first low (10) is 30.0.
+        // 35 > 30. OK.
+        panic!("Should find divergence");
+    }
+
+    if let Some(DivergenceType::Bullish {
+        price_low1,
+        price_low2,
+        rsi_now,
+    }) = div
+    {
+        assert_eq!(price_low1, dec!(90.0));
+        assert_eq!(price_low2, dec!(80.0));
+        assert_eq!(
+            rsi_now,
+            dec!(35.0),
+            "RSI retrieval precision failed. Expected 35.0 (from index 18), got {}",
+            rsi_now
+        );
+    } else {
+        panic!("Expected Bullish divergence");
+    }
+}

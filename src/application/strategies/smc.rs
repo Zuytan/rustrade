@@ -46,7 +46,7 @@ impl SMCStrategy {
     /// where Candle 2 is a large impulsive candle.
     ///
     /// Enhanced (v0.72): Checks if the FVG has been mitigated (filled) by subsequent price action.
-    fn detect_fvg(&self, candles: &VecDeque<Candle>) -> Option<(OrderSide, Decimal)> {
+    pub(crate) fn detect_fvg(&self, candles: &VecDeque<Candle>) -> Option<(OrderSide, Decimal)> {
         if candles.len() < 5 {
             return None;
         }

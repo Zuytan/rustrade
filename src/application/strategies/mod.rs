@@ -14,6 +14,9 @@ pub mod ml_strategy;
 mod order_flow;
 mod smc;
 
+#[cfg(test)]
+mod qa;
+
 // Re-export legacy strategies with deprecation warnings
 #[allow(deprecated)]
 pub use legacy::{
