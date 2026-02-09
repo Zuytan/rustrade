@@ -100,6 +100,7 @@ mod tests {
             bb_upper: Decimal::from_f64(upper).unwrap(),
             adx: Decimal::ZERO,
             has_position: has_pos,
+            position: None,
             timestamp: 0,
             candles: VecDeque::new(),
             rsi_history: VecDeque::new(),

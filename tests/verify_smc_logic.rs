@@ -53,6 +53,7 @@ fn create_context(candles: VecDeque<Candle>) -> AnalysisContext {
         momentum_normalized: None,
         realized_volatility: None,
         feature_set: None,
+        position: None,
     }
 }
 

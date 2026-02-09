@@ -54,8 +54,6 @@ pub struct Analyst {
     config: AnalystConfig,                      // Default config
     symbol_states: HashMap<String, SymbolContext>,
     candle_aggregator: CandleAggregator,
-    #[allow(dead_code)] // Used indirectly by pipeline
-    candle_repository: Option<Arc<dyn CandleRepository>>,
     win_rate_provider: Arc<dyn WinRateProvider>,
 
     #[allow(dead_code)] // Used indirectly by pipeline
@@ -171,7 +169,6 @@ impl Analyst {
                 dependencies.candle_repository.clone(),
                 dependencies.spread_cache.clone(),
             ),
-            candle_repository: dependencies.candle_repository,
             win_rate_provider,
             trade_evaluator,
             pipeline,

@@ -213,6 +213,7 @@ mod tests {
             bb_upper: dec!(105.0),
             adx: dec!(30.0),
             has_position,
+            position: None,
             timestamp: 0,
             timeframe_features: None,
             candles: VecDeque::new(),

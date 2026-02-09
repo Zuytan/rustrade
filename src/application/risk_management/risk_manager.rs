@@ -734,6 +734,8 @@ impl RiskManager {
 
         let candles_ref = recent_candles.as_deref();
 
+        let available_cash = snapshot.available_cash();
+
         let ctx = ValidationContext::new(
             &proposal,
             &snapshot.portfolio,
@@ -744,7 +746,7 @@ impl RiskManager {
             correlation_matrix.as_ref(), // Pass pre-calculated matrix
             volatility_multiplier,
             pending_exposure,
-            snapshot.available_cash(),
+            available_cash,
             candles_ref, // Pass recent candles from CandleRepository for PriceAnomalyValidator
         );
 

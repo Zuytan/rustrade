@@ -97,6 +97,7 @@ mod tests {
             bb_upper: Decimal::ZERO,
             adx: Decimal::ZERO,
             has_position,
+            position: None,
             timestamp: 0,
             timeframe_features: None,
             candles: std::collections::VecDeque::new(),

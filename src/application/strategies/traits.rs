@@ -17,6 +17,17 @@ pub struct TimeframeFeatures {
     pub price: Option<Decimal>,
 }
 
+/// Position information for position-aware strategies
+#[derive(Debug, Clone, Default)]
+pub struct PositionInfo {
+    /// Average entry price
+    pub entry_price: Decimal,
+    /// Current position quantity
+    pub quantity: Decimal,
+    /// Unrealized P&L as percentage (e.g., 0.05 = +5%)
+    pub unrealized_pnl_pct: Decimal,
+}
+
 /// Context provided to trading strategies for analysis
 #[derive(Debug, Clone)]
 pub struct AnalysisContext {
@@ -43,6 +54,8 @@ pub struct AnalysisContext {
 
     // Position state
     pub has_position: bool,
+    /// Position details (None if no position)
+    pub position: Option<PositionInfo>,
 
     // Timestamp
     pub timestamp: i64,

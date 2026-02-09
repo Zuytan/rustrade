@@ -195,6 +195,7 @@ mod tests {
             bb_upper: Decimal::ZERO,
             adx: Decimal::ZERO,
             has_position,
+            position: None,
             timestamp: 0,
             candles: VecDeque::new(),
             rsi_history: VecDeque::new(),

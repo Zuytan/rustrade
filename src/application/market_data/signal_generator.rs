@@ -1,4 +1,4 @@
-use crate::application::strategies::{AnalysisContext, TradingStrategy};
+use crate::application::strategies::{AnalysisContext, PositionInfo, TradingStrategy};
 use crate::domain::trading::types::{FeatureSet, OrderSide};
 use rust_decimal::Decimal;
 use std::collections::VecDeque;
@@ -32,6 +32,7 @@ impl SignalGenerator {
         strategy: &Arc<dyn TradingStrategy>,
         _sma_threshold: Decimal, // Unused
         has_position: bool,
+        position: Option<PositionInfo>,
         previous_macd_histogram: Option<Decimal>, // Previous MACD histogram
         candle_history: &VecDeque<crate::domain::trading::types::Candle>,
         rsi_history: &VecDeque<Decimal>,
@@ -62,6 +63,7 @@ impl SignalGenerator {
             bb_middle: features.bb_middle.unwrap_or(Decimal::ZERO),
             adx: features.adx.unwrap_or(Decimal::ZERO),
             has_position,
+            position,
             timestamp,
             candles: candle_history.clone(),
             rsi_history: rsi_history.clone(),
@@ -71,7 +73,6 @@ impl SignalGenerator {
             volume_profile,
             ofi_history: ofi_history.clone(),
 
-            // Advanced Statistical Features (Phase 2)
             // Advanced Statistical Features (Phase 2)
             hurst_exponent: features.hurst_exponent,
             skewness: features.skewness,

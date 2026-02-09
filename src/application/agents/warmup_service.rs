@@ -161,6 +161,7 @@ impl WarmupService {
                         bb_middle: Decimal::ZERO,
                         adx: fs.adx.unwrap_or(Decimal::ZERO),
                         has_position: false,
+                        position: None,
                         timestamp: candle.timestamp,
                         candles: std::collections::VecDeque::new(), // optimizing: don't clone history for warmup
                         rsi_history: std::collections::VecDeque::new(),

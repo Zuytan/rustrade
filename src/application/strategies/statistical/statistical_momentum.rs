@@ -199,6 +199,7 @@ mod tests {
             bb_upper: Decimal::ZERO,
             adx: dec!(25.0),
             has_position,
+            position: None,
             timestamp: 0,
             timeframe_features: None,
             candles,

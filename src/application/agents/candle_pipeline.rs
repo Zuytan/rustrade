@@ -226,6 +226,23 @@ impl CandlePipeline {
         ctx: &mut PipelineContext<'_>,
         has_position: bool,
     ) -> Option<OrderSide> {
+        // Build position info from portfolio
+        let position = if has_position {
+            ctx.portfolio
+                .and_then(|p| p.positions.get(ctx.symbol))
+                .map(|pos| crate::application::strategies::PositionInfo {
+                    entry_price: pos.average_price,
+                    quantity: pos.quantity,
+                    unrealized_pnl_pct: if pos.average_price > Decimal::ZERO {
+                        (ctx.candle.close - pos.average_price) / pos.average_price
+                    } else {
+                        Decimal::ZERO
+                    },
+                })
+        } else {
+            None
+        };
+
         // Generate signal from strategy
         let mut signal = super::signal_processor::SignalProcessor::generate_signal(
             ctx.context,
@@ -233,6 +250,7 @@ impl CandlePipeline {
             ctx.candle.close,
             ctx.candle.timestamp * 1000,
             has_position,
+            position,
         );
 
         // Apply RSI filter

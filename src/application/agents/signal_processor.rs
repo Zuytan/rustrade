@@ -33,6 +33,7 @@ impl SignalProcessor {
         price: Decimal,
         timestamp: i64,
         has_position: bool,
+        position: Option<crate::application::strategies::PositionInfo>,
     ) -> Option<OrderSide> {
         context.signal_generator.generate_signal(
             symbol,
@@ -42,6 +43,7 @@ impl SignalProcessor {
             &context.strategy,
             context.config.sma_threshold,
             has_position,
+            position,
             context.last_macd_histogram,
             &context.candle_history,
             &context.rsi_history,
@@ -57,6 +59,8 @@ impl SignalProcessor {
     ///
     /// Calculates appropriate position size and creates a complete trade proposal
     /// ready to be sent to the risk manager.
+    ///
+    /// For SELL orders, uses the actual position quantity (not a calculated size).
     #[allow(clippy::too_many_arguments)]
     pub async fn build_proposal(
         &self,
@@ -68,10 +72,38 @@ impl SignalProcessor {
         timestamp: i64,
         reason: String,
     ) -> Option<TradeProposal> {
-        // Calculate quantity
-        let quantity = self
-            .calculate_trade_quantity(config, execution_service, &symbol, price)
-            .await;
+        // For SELL orders, use position quantity (sell what we own)
+        // For BUY orders, calculate new position size
+        let quantity = match side {
+            OrderSide::Sell => {
+                // Get actual position quantity from portfolio
+                let portfolio = match execution_service.get_portfolio().await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        debug!(
+                            "SignalProcessor [{}]: Failed to get portfolio for sell: {}",
+                            symbol, e
+                        );
+                        return None;
+                    }
+                };
+
+                match portfolio.positions.get(&symbol) {
+                    Some(pos) if pos.quantity > Decimal::ZERO => pos.quantity,
+                    _ => {
+                        debug!(
+                            "SignalProcessor [{}]: No position to sell. Skipping proposal.",
+                            symbol
+                        );
+                        return None;
+                    }
+                }
+            }
+            OrderSide::Buy => {
+                self.calculate_trade_quantity(config, execution_service, &symbol, price)
+                    .await
+            }
+        };
 
         if quantity <= Decimal::ZERO {
             debug!(

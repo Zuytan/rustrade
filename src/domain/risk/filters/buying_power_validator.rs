@@ -54,15 +54,20 @@ impl RiskValidator for BuyingPowerValidator {
         // Note: For market orders, this is an estimate. Using proposal price (which is usually last trade or ticker price).
         let estimated_cost = ctx.get_proposal_price() * ctx.proposal.quantity;
 
-        // Check against available cash
-        if estimated_cost > ctx.available_cash {
+        // Apply 5% safety margin to account for stale portfolio data
+        // This prevents "insufficient balance" errors when cached data differs from Alpaca's actual state
+        let safety_margin = rust_decimal_macros::dec!(0.95);
+        let effective_available = ctx.available_cash * safety_margin;
+
+        // Check against available cash with safety margin
+        if estimated_cost > effective_available {
             debug!(
-                "BuyingPowerValidator: Insufficient funds. Cost: {}, Available: {}",
-                estimated_cost, ctx.available_cash
+                "BuyingPowerValidator: Insufficient funds. Cost: {}, Available: {} (effective: {} with 5% margin)",
+                estimated_cost, ctx.available_cash, effective_available
             );
             return ValidationResult::Reject(format!(
-                "Insufficient buying power. Cost: {}, Available: {}",
-                estimated_cost, ctx.available_cash
+                "Insufficient buying power. Cost: {}, Available: {} (with safety margin)",
+                estimated_cost, effective_available
             ));
         }
 

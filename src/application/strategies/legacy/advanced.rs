@@ -283,6 +283,7 @@ mod tests {
             bb_middle: Decimal::ZERO,
             adx: dec!(26.0), // Strong trend by default
             has_position: false,
+            position: None,
             timestamp: 0,
             timeframe_features: None,
             candles: std::collections::VecDeque::new(),

@@ -200,6 +200,7 @@ mod tests {
             bb_upper: Decimal::ZERO,
             adx: dec!(30.0), // Strong trend for dynamic strategy tests
             has_position,
+            position: None,
             timestamp: 0,
             timeframe_features: None,
             candles: std::collections::VecDeque::new(),

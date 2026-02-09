@@ -110,8 +110,10 @@ impl AlpacaExecutionService {
                         })?;
 
                     let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
+                    // Use buying_power instead of cash - it reflects funds actually available
+                    // for new orders (subtracts pending order values)
                     let cash = account_resp
-                        .cash
+                        .buying_power
                         .parse::<Decimal>()
                         .unwrap_or(Decimal::ZERO);
 
@@ -151,13 +153,13 @@ impl AlpacaExecutionService {
                     Ok::<_, anyhow::Error>(portfolio)
                 };
 
-                // Execute via circuit breaker
                 match breaker_clone.call(fetch_result).await {
                     Ok(portfolio) => {
                         let mut guard = portfolio_clone.write().await;
                         *guard = portfolio.clone();
-                        // tracing::trace!(
-                        //     "AlpacaExecutionService: Portfolio cache updated - Cash: {}, Positions: {}",
+                        // Debug logging disabled - uncomment if needed for troubleshooting
+                        // tracing::debug!(
+                        //     "AlpacaExecutionService: Portfolio cache updated - Cash: ${}, Positions: {}",
                         //     portfolio.cash,
                         //     portfolio.positions.len()
                         // );
@@ -207,9 +209,9 @@ struct AlpacaOrderResponse {
 
 #[derive(Debug, Deserialize)]
 struct AlpacaAccount {
+    #[allow(dead_code)]
     cash: String,
-    #[serde(rename = "buying_power")]
-    _buying_power: String,
+    buying_power: String,
     #[serde(default)]
     daytrade_count: i64,
 }

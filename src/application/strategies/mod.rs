@@ -29,4 +29,4 @@ pub use order_flow::OrderFlowStrategy;
 pub use smc::SMCStrategy;
 pub use statistical::{StatisticalMomentumStrategy, ZScoreMeanReversionStrategy};
 pub use strategy_factory::StrategyFactory;
-pub use traits::{AnalysisContext, Signal, TradingStrategy};
+pub use traits::{AnalysisContext, PositionInfo, Signal, TradingStrategy};
