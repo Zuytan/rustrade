@@ -38,7 +38,16 @@ impl VWAPStrategy {
         let mut cumulative_tp_vol = Decimal::ZERO;
         let mut cumulative_vol = Decimal::ZERO;
 
+        // Get current day start (midnight UTC) to reset VWAP
+        // timestamp is i64 seconds, so modulo 86400 gives seconds since midnight
+        let current_ts = ctx.timestamp;
+        let day_start = current_ts - (current_ts % 86400);
+
         for candle in &ctx.candles {
+            // Only include candles from current trading day
+            if candle.timestamp < day_start {
+                continue;
+            }
             let volume = candle.volume;
 
             if volume <= Decimal::ZERO {

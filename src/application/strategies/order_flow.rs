@@ -64,9 +64,9 @@ impl TradingStrategy for OrderFlowStrategy {
                     .copied()
                     .sum::<Decimal>()
                     / Decimal::from(5);
-                ctx.cumulative_delta > recent_avg
+                ctx.ofi_value > recent_avg
             } else {
-                true // Not enough history, allow signal
+                ctx.ofi_value > Decimal::ZERO
             };
 
             // Check if price is near a High Volume Node (support)
@@ -108,9 +108,10 @@ impl TradingStrategy for OrderFlowStrategy {
                     .copied()
                     .sum::<Decimal>()
                     / Decimal::from(5);
-                ctx.cumulative_delta < recent_avg
+                // Fix: Compare current OFI to recent average (momentum decreasing)
+                ctx.ofi_value < recent_avg
             } else {
-                true // Not enough history, allow signal
+                ctx.ofi_value < Decimal::ZERO // Simple negative check
             };
 
             // Check if price is near a High Volume Node (resistance)

@@ -108,7 +108,12 @@ impl DynamicRegimeStrategy {
         // ADX-based regime detection (more reliable than SMA divergence)
         // ADX > threshold = Strong Trend, otherwise Choppy
         if adx > self.advanced_strategy.adx_threshold {
-            MarketRegime::StrongTrend
+            // Check trend direction using price vs trend_sma
+            if ctx.current_price > ctx.trend_sma {
+                MarketRegime::StrongTrendUp
+            } else {
+                MarketRegime::StrongTrendDown
+            }
         } else {
             MarketRegime::Choppy
         }
@@ -117,7 +122,8 @@ impl DynamicRegimeStrategy {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum MarketRegime {
-    StrongTrend,
+    StrongTrendUp,
+    StrongTrendDown,
     Choppy,
 }
 
@@ -126,31 +132,38 @@ impl TradingStrategy for DynamicRegimeStrategy {
         let regime = self.detect_regime(ctx);
 
         match regime {
-            MarketRegime::StrongTrend => {
-                // In strong trends, be more permissive
-                // Buy: Just need price above trend
-                // Sell: Only if trend breaks (price below trend SMA)
-
+            MarketRegime::StrongTrendUp => {
+                // In strong UPTREND, be more permissive for BUYS
                 if ctx.fast_sma > ctx.slow_sma * (Decimal::ONE + dec!(0.001)) {
                     // Golden cross
                     if ctx.current_price > ctx.trend_sma {
                         return Some(Signal::buy(
-                            "Dynamic (Trend): Strong trend detected, buying above Trend SMA"
+                            "Dynamic (Trend Up): Strong uptrend detected, buying above Trend SMA"
                                 .to_string(),
                         ));
                     }
-                } else if ctx.fast_sma < ctx.slow_sma * (Decimal::ONE - dec!(0.001))
+                }
+                // Suppress sells unless trend breaks significantly or death cross
+                else if ctx.fast_sma < ctx.slow_sma * (Decimal::ONE - dec!(0.001))
                     && ctx.has_position
                 {
-                    // Death cross
                     if ctx.current_price < ctx.trend_sma {
                         return Some(Signal::sell(
-                            "Dynamic (Trend): Trend broken, exiting".to_string(),
+                            "Dynamic (Trend Up): Trend broken, exiting".to_string(),
                         ));
                     }
-                    // Otherwise suppress sell - hold through pullback
                 }
-
+                None
+            }
+            MarketRegime::StrongTrendDown => {
+                // In strong DOWNTREND, avoid buying even if Golden Cross occurs
+                // (unless we add Shorting logic later)
+                if ctx.has_position && ctx.current_price < ctx.trend_sma {
+                    // Aggressive exit if we somehow have a position
+                    return Some(Signal::sell(
+                        "Dynamic (Trend Down): Strong downtrend, exiting".to_string(),
+                    ));
+                }
                 None
             }
             MarketRegime::Choppy => {
@@ -237,7 +250,7 @@ mod tests {
         assert!(signal.is_some());
         let sig = signal.unwrap();
         assert!(matches!(sig.side, OrderSide::Buy));
-        assert!(sig.reason.contains("Dynamic (Trend)"));
+        assert!(sig.reason.contains("Dynamic (Trend Up)"));
     }
 
     #[test]

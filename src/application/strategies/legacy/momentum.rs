@@ -32,6 +32,12 @@ impl MomentumDivergenceStrategy {
             return None;
         }
 
+        // Ensure RSI history is sufficiently aligned with candles
+        if ctx.rsi_history.len() < self.divergence_lookback / 2 {
+            tracing::debug!("Insufficient RSI history for divergence detection");
+            return None;
+        }
+
         // Align RSI history with candles
         let rsi_offset = ctx.candles.len().saturating_sub(ctx.rsi_history.len());
         let start_idx = ctx.candles.len().saturating_sub(self.divergence_lookback);

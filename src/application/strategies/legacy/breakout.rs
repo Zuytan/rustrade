@@ -84,7 +84,10 @@ impl TradingStrategy for BreakoutStrategy {
             let vol_ok = current_vol >= avg_vol * self.volume_multiplier;
 
             // Breakout Long: Price breaks above recent high
-            if current_price > high * (Decimal::ONE + self.breakout_threshold_pct) && vol_ok {
+            if !ctx.has_position
+                && current_price > high * (Decimal::ONE + self.breakout_threshold_pct)
+                && vol_ok
+            {
                 return Some(Signal::buy(format!(
                     "Bullish Breakout (Price={} > High={}, Vol={} > Avg={})",
                     current_price, high, current_vol, avg_vol
@@ -92,7 +95,10 @@ impl TradingStrategy for BreakoutStrategy {
             }
 
             // Breakout Short: Price breaks below recent low
-            if current_price < low * (Decimal::ONE - self.breakout_threshold_pct) && vol_ok {
+            if ctx.has_position
+                && current_price < low * (Decimal::ONE - self.breakout_threshold_pct)
+                && vol_ok
+            {
                 return Some(Signal::sell(format!(
                     "Bearish Breakout (Price={} < Low={}, Vol={} > Avg={})",
                     current_price, low, current_vol, avg_vol
