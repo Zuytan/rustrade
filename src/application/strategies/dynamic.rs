@@ -146,12 +146,11 @@ impl TradingStrategy for DynamicRegimeStrategy {
                 // Suppress sells unless trend breaks significantly or death cross
                 else if ctx.fast_sma < ctx.slow_sma * (Decimal::ONE - dec!(0.001))
                     && ctx.has_position
+                    && ctx.current_price < ctx.trend_sma
                 {
-                    if ctx.current_price < ctx.trend_sma {
-                        return Some(Signal::sell(
-                            "Dynamic (Trend Up): Trend broken, exiting".to_string(),
-                        ));
-                    }
+                    return Some(Signal::sell(
+                        "Dynamic (Trend Up): Trend broken, exiting".to_string(),
+                    ));
                 }
                 None
             }
