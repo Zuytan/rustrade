@@ -1,5 +1,43 @@
 # Rustrade - Historique des Versions
 
+## Version 0.96.3 - Test Suite Enhancement & Code Quality (February 2026)
+
+### Test Implementation (P0/P2)
+- **Feature Engineering Tests**: 8 comprehensive tests for `TechnicalFeatureEngineeringService`
+  - SMA calculation (20/50/200)
+  - RSI calculation (flat prices, trends)
+  - Bollinger Bands convergence
+  - ATR calculation
+  - MACD calculation
+  - ADX trending detection
+  - Momentum normalized calculation
+  - Insufficient data handling
+- **SignalGenerator Tests**: 3 critical tests validating data integrity
+  - FeatureSet → AnalysisContext mapping validation (field-by-field verification)
+  - Signal propagation (Buy/None scenarios)
+  - MockStrategy with thread-safe Mutex for testing
+- **Integration Test Strengthening**: Enhanced `candle_pipeline` with robust indicator validation
+
+### Production Bug Fixes
+- **DualSMAStrategy Logic Error**: Fixed incorrect trend filter in Golden Cross detection
+  - **Issue**: Strategy required `price > trend_sma` (SMA 200) IN ADDITION to Fast > Slow crossover, blocking valid buy signals
+  - **Root Cause**: Confusion between "Dual SMA" (crossover only) and "Trend Riding" (multi-timeframe confirmation)
+  - **Fix**: Removed erroneous `trend_sma` condition from buy signal logic (lines 30-36 in `dual_sma.rs`)
+  - **Impact**: Strategy now correctly triggers on fast/slow SMA crossover only, respecting separation of concerns
+
+### Code Quality Improvements
+- **Test Safety**: Replaced `.unwrap()` with `.expect()` in test helpers (6 occurrences) for clearer error messages
+- **Clippy Compliance**: Fixed 3 warnings across all targets (`--all-targets -- -D warnings`)
+  - `field_reassign_with_default` in `ensemble_optimizer.rs` (2 occurrences)
+  - `map_clone` in `ensemble_optimizer.rs`
+  - `field_reassign_with_default` + `unused_mut` in `signal_generator.rs` tests
+
+### Verification
+- ✅ All tests passing: 408/408
+- ✅ Clippy clean: 0 warnings
+- ✅ Build verified: Release compilation successful
+- ✅ Code formatted with `cargo fmt`
+
 ## Version 0.95.0 - Quality, Data & Evolution (February 2026)
 
 ### Phase 1 – Code Quality

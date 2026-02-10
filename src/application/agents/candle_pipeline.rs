@@ -354,7 +354,7 @@ mod tests {
 
     fn create_test_context() -> SymbolContext {
         let config = AnalystConfig::default();
-        let strategy = Arc::new(DualSMAStrategy::new(20, 60, dec!(0.0)));
+        let strategy = Arc::new(DualSMAStrategy::new(20, 50, dec!(0.0)));
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
     }
@@ -440,25 +440,47 @@ mod tests {
     fn test_generate_and_filter_signal() {
         let pipeline = create_test_pipeline();
         let mut context = create_test_context();
-        let candle = create_test_candle("BTC/USD", 50000.0, 1000);
 
-        // Warm up indicators
+        // Warm up indicators with sufficient data
         for i in 0..100 {
-            let c = create_test_candle("BTC/USD", 50000.0 + i as f64, i);
-            context.update(&c);
+            let c = create_test_candle("BTC/USD", 50000.0 + i as f64 * 10.0, 1000 + i);
+            let mut ctx = PipelineContext {
+                symbol: "BTC/USD",
+                candle: &c,
+                context: &mut context,
+                portfolio: None,
+            };
+            pipeline.update_indicators(&mut ctx);
         }
 
+        // Final candle for signal generation
+        let final_candle = create_test_candle("BTC/USD", 51000.0, 1100);
         let mut ctx = PipelineContext {
             symbol: "BTC/USD",
-            candle: &candle,
+            candle: &final_candle,
             context: &mut context,
             portfolio: None,
         };
 
+        pipeline.update_indicators(&mut ctx);
         let signal = pipeline.generate_and_filter_signal(&mut ctx, false);
 
-        // Signal may or may not be generated depending on strategy
-        // Just verify it doesn't panic
+        // Verify indicators were properly calculated (not panicking, features present)
+        assert!(
+            context.last_features.rsi.is_some(),
+            "RSI should be calculated"
+        );
+        assert!(
+            context.last_features.sma_20.is_some(),
+            "SMA 20 should be calculated"
+        );
+        assert!(
+            context.last_features.sma_50.is_some(),
+            "SMA 50 should be calculated"
+        );
+
+        // Signal generation depends on many factors (strategy logic, filters, cost analysis, etc.)
+        // This is an integration test, so we just verify it doesn't panic
         let _ = signal;
     }
 }

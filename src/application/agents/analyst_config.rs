@@ -71,6 +71,7 @@ pub struct AnalystConfig {
     pub orderflow_ofi_threshold: Decimal,
     pub orderflow_stacked_count: usize,
     pub orderflow_volume_profile_lookback: usize,
+    pub ensemble_weights: Option<std::collections::HashMap<String, f64>>,
 }
 
 impl Default for AnalystConfig {
@@ -130,6 +131,7 @@ impl Default for AnalystConfig {
             orderflow_ofi_threshold: dec!(0.3),
             orderflow_stacked_count: 3,
             orderflow_volume_profile_lookback: 100,
+            ensemble_weights: None,
         }
     }
 }
@@ -191,6 +193,7 @@ impl From<crate::config::Config> for AnalystConfig {
             orderflow_ofi_threshold: dec!(0.3),
             orderflow_stacked_count: 3,
             orderflow_volume_profile_lookback: 100,
+            ensemble_weights: None,
         }
     }
 }

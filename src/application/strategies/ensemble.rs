@@ -81,11 +81,15 @@ impl EnsembleStrategy {
                 config.smc_volume_multiplier,
             )),
         ];
-        let weights = HashMap::from([
-            ("StatMomentum".to_string(), 0.4),
-            ("ZScoreMR".to_string(), 0.3),
-            ("SMC".to_string(), 0.3),
-        ]);
+        let weights = if let Some(w) = &config.ensemble_weights {
+            w.clone()
+        } else {
+            HashMap::from([
+                ("StatMomentum".to_string(), 0.4),
+                ("ZScoreMR".to_string(), 0.3),
+                ("SMC".to_string(), 0.3),
+            ])
+        };
         Self::with_weights(strategies, 0.50, weights)
     }
 }
@@ -157,6 +161,15 @@ impl TradingStrategy for EnsembleStrategy {
                 ))
                 .with_confidence(avg_confidence),
             );
+        } else if buy_weight > 0.0 {
+            tracing::info!(
+                "Ensemble: Buy threshold NOT met. Weight: {:.2}/{:.2} (Votes: {}/{}) - Reasons: {}",
+                buy_weight,
+                required_weight,
+                buy_votes,
+                total_strategies,
+                buy_reasons.join("; ")
+            );
         }
 
         // Check for sell consensus
@@ -170,6 +183,15 @@ impl TradingStrategy for EnsembleStrategy {
                     sell_reasons.join("; ")
                 ))
                 .with_confidence(avg_confidence),
+            );
+        } else if sell_weight > 0.0 {
+            tracing::info!(
+                "Ensemble: Sell threshold NOT met. Weight: {:.2}/{:.2} (Votes: {}/{}) - Reasons: {}",
+                sell_weight,
+                required_weight,
+                sell_votes,
+                total_strategies,
+                sell_reasons.join("; ")
             );
         }
 

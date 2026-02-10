@@ -134,3 +134,151 @@ impl SignalGenerator {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::strategies::{AnalysisContext, Signal, TradingStrategy};
+    use rust_decimal_macros::dec;
+    use std::sync::Mutex;
+
+    struct MockStrategy {
+        signal_to_return: Option<Signal>,
+        captured_context: Mutex<Option<AnalysisContext>>,
+    }
+
+    impl MockStrategy {
+        fn new(signal: Option<Signal>) -> Self {
+            Self {
+                signal_to_return: signal,
+                captured_context: Mutex::new(None),
+            }
+        }
+    }
+
+    impl TradingStrategy for MockStrategy {
+        fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
+            *self.captured_context.lock().unwrap() = Some(ctx.clone());
+            self.signal_to_return.clone()
+        }
+
+        fn name(&self) -> &str {
+            "MockStrategy"
+        }
+    }
+
+    #[test]
+    fn test_context_mapping() {
+        let generator = SignalGenerator::new();
+        let strategy = Arc::new(MockStrategy::new(None));
+
+        let features = FeatureSet {
+            rsi: Some(dec!(70.0)),
+            macd_line: Some(dec!(1.5)),
+            bb_upper: Some(dec!(105.0)),
+            bb_lower: Some(dec!(95.0)),
+            adx: Some(dec!(30.0)),
+            ..Default::default()
+        };
+
+        let candle_history = VecDeque::new();
+        let rsi_history = VecDeque::new();
+        let ofi_history = VecDeque::new();
+
+        generator.generate_signal(
+            "BTC",
+            dec!(100.0),
+            1234567890,
+            &features,
+            &(strategy.clone() as Arc<dyn TradingStrategy>),
+            dec!(0.0),
+            false,
+            None,
+            None,
+            &candle_history,
+            &rsi_history,
+            dec!(0.5),    // OFI
+            dec!(1000.0), // CVD
+            None,
+            &ofi_history,
+        );
+
+        let ctx = strategy
+            .captured_context
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("Context should be captured");
+
+        assert_eq!(ctx.symbol, "BTC");
+        assert_eq!(ctx.rsi, dec!(70.0));
+        assert_eq!(ctx.macd_value, dec!(1.5));
+        assert_eq!(ctx.bb_upper, dec!(105.0));
+        assert_eq!(ctx.adx, dec!(30.0));
+        assert_eq!(ctx.ofi_value, dec!(0.5));
+        assert_eq!(ctx.cumulative_delta, dec!(1000.0));
+    }
+
+    #[test]
+    fn test_signal_propagation_buy() {
+        let generator = SignalGenerator::new();
+        let signal = Signal::buy("Test Buy");
+        let strategy = Arc::new(MockStrategy::new(Some(signal)));
+
+        let features = FeatureSet::default();
+        let candle_history = VecDeque::new();
+        let rsi_history = VecDeque::new();
+        let ofi_history = VecDeque::new();
+
+        let result = generator.generate_signal(
+            "BTC",
+            dec!(100.0),
+            0,
+            &features,
+            &(strategy as Arc<dyn TradingStrategy>),
+            dec!(0.0),
+            false,
+            None,
+            None,
+            &candle_history,
+            &rsi_history,
+            dec!(0.0),
+            dec!(0.0),
+            None,
+            &ofi_history,
+        );
+
+        assert_eq!(result, Some(OrderSide::Buy));
+    }
+
+    #[test]
+    fn test_signal_propagation_none() {
+        let generator = SignalGenerator::new();
+        let strategy = Arc::new(MockStrategy::new(None));
+
+        let features = FeatureSet::default();
+        let candle_history = VecDeque::new();
+        let rsi_history = VecDeque::new();
+        let ofi_history = VecDeque::new();
+
+        let result = generator.generate_signal(
+            "BTC",
+            dec!(100.0),
+            0,
+            &features,
+            &(strategy as Arc<dyn TradingStrategy>),
+            dec!(0.0),
+            false,
+            None,
+            None,
+            &candle_history,
+            &rsi_history,
+            dec!(0.0),
+            dec!(0.0),
+            None,
+            &ofi_history,
+        );
+
+        assert!(result.is_none());
+    }
+}

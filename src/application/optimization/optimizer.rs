@@ -343,6 +343,7 @@ fn decode_genome(
         orderflow_ofi_threshold: ofi_threshold,
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: None,
     }
 }
 
@@ -612,6 +613,7 @@ impl GridSearchOptimizer {
                                                                     orderflow_ofi_threshold: ofi,
                                                                     orderflow_stacked_count: 3,
                                                                     orderflow_volume_profile_lookback: 100,
+                                                                    ensemble_weights: None,
                                                                 });
                                                             }
                                                         }
@@ -1531,6 +1533,7 @@ mod tests {
                 orderflow_ofi_threshold: dec!(0.3),
                 orderflow_stacked_count: 3,
                 orderflow_volume_profile_lookback: 100,
+                ensemble_weights: Default::default(),
             },
             sharpe_ratio: dec!(2.0),
             total_return: dec!(15.0),

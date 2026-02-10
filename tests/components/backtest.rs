@@ -128,6 +128,7 @@ async fn test_backtest_strategy_on_historical_data() {
         orderflow_ofi_threshold: dec!(0.3),
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: Default::default(),
     };
 
     let simulator = Simulator::new(market_service, execution_service, config);

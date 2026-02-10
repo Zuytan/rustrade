@@ -27,12 +27,11 @@ impl TradingStrategy for DualSMAStrategy {
         let fast = ctx.fast_sma;
         let slow = ctx.slow_sma;
 
-        // Buy: Golden cross above trend (enhanced for reliability)
-        // Requires BOTH crossover AND price above trend like TrendRiding
-        if fast > slow * (Decimal::ONE + self.threshold) && ctx.current_price > ctx.trend_sma {
+        // Buy: Golden cross (fast SMA crosses above slow SMA)
+        if fast > slow * (Decimal::ONE + self.threshold) {
             return Some(Signal::buy(format!(
-                "Golden Cross + Trend (Fast={} > Slow={}, Price={} > Trend={})",
-                fast, slow, ctx.current_price, ctx.trend_sma
+                "Golden Cross (Fast={} > Slow={})",
+                fast, slow
             )));
         }
 

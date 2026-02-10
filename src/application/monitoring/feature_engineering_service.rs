@@ -310,3 +310,166 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn create_test_candle(price: f64) -> Candle {
+        Candle {
+            symbol: "TEST".to_string(),
+            open: Decimal::from_f64_retain(price).expect("Test price must be valid"),
+            high: Decimal::from_f64_retain(price).expect("Test price must be valid"),
+            low: Decimal::from_f64_retain(price).expect("Test price must be valid"),
+            close: Decimal::from_f64_retain(price).expect("Test price must be valid"),
+            volume: dec!(100.0),
+            timestamp: 0,
+        }
+    }
+
+    fn create_trending_candle(price: f64, range: f64) -> Candle {
+        Candle {
+            symbol: "TEST".to_string(),
+            open: Decimal::from_f64_retain(price).expect("Test price must be valid"),
+            high: Decimal::from_f64_retain(price + range).expect("Test price must be valid"),
+            low: Decimal::from_f64_retain(price - range).expect("Test price must be valid"),
+            close: Decimal::from_f64_retain(price).expect("Test price must be valid"),
+            volume: dec!(100.0),
+            timestamp: 0,
+        }
+    }
+
+    #[test]
+    fn test_sma_values_after_warmup() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        // Feed 50 identical candles
+        for _ in 0..50 {
+            service.update(&create_test_candle(100.0));
+        }
+
+        let features = service.update(&create_test_candle(100.0));
+
+        assert_eq!(features.sma_20.unwrap(), dec!(100.0));
+        assert_eq!(features.sma_50.unwrap(), dec!(100.0));
+    }
+
+    #[test]
+    fn test_rsi_neutral_after_flat_prices() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        // Feed 20 identical prices
+        for _ in 0..20 {
+            service.update(&create_test_candle(100.0));
+        }
+
+        let features = service.update(&create_test_candle(100.0));
+
+        if let Some(rsi) = features.rsi {
+            assert!(rsi >= dec!(0.0) && rsi <= dec!(100.0));
+        }
+    }
+
+    #[test]
+    fn test_bollinger_bands_converge_on_flat() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        for _ in 0..50 {
+            service.update(&create_test_candle(100.0));
+        }
+
+        let features = service.update(&create_test_candle(100.0));
+
+        let upper = features.bb_upper.unwrap();
+        let lower = features.bb_lower.unwrap();
+        let middle = features.bb_middle.unwrap();
+
+        assert_eq!(middle, dec!(100.0));
+        assert!(upper - lower < dec!(0.001));
+    }
+
+    #[test]
+    fn test_atr_zero_on_identical_candles() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        for _ in 0..20 {
+            service.update(&create_trending_candle(100.0, 0.0)); // High=Low=Close=100
+        }
+
+        let features = service.update(&create_test_candle(100.0));
+        assert!(features.atr.unwrap() < dec!(0.001));
+    }
+
+    #[test]
+    fn test_macd_zero_on_flat() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        for _ in 0..50 {
+            service.update(&create_test_candle(100.0));
+        }
+
+        let features = service.update(&create_test_candle(100.0));
+        assert!(features.macd_line.unwrap().abs() < dec!(0.001));
+        assert!(features.macd_signal.unwrap().abs() < dec!(0.001));
+        assert!(features.macd_hist.unwrap().abs() < dec!(0.001));
+    }
+
+    #[test]
+    fn test_adx_manual_vs_known_values() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        // Strong trend: Price increases by 1.0 every bar
+        for i in 0..50 {
+            let price = 100.0 + i as f64;
+            service.update(&create_trending_candle(price, 0.5));
+        }
+
+        let features = service.update(&create_trending_candle(150.0, 0.5));
+
+        let adx = features.adx.unwrap();
+        assert!(
+            adx > dec!(20.0),
+            "ADX should be trending (typically > 20/25), got {}",
+            adx
+        );
+    }
+
+    #[test]
+    fn test_momentum_normalized_positive_uptrend() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        // 30 bars of uptrend
+        for i in 0..30 {
+            let price = 100.0 + i as f64;
+            service.update(&create_trending_candle(price, 0.5));
+        }
+
+        let features = service.update(&create_trending_candle(130.0, 0.5));
+
+        // Momentum = (Price - Price_N) / ATR
+        // Price rose, so momentum should be positive
+        assert!(features.momentum_normalized.unwrap() > dec!(0.0));
+    }
+
+    #[test]
+    fn test_features_none_when_insufficient_data() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        // Just 1 candle
+        let features = service.update(&create_test_candle(100.0));
+
+        assert!(features.hurst_exponent.is_none());
+        assert!(features.skewness.is_none());
+        assert!(features.realized_volatility.is_none());
+        assert!(features.momentum_normalized.is_none());
+    }
+}

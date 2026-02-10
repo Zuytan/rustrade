@@ -174,6 +174,7 @@ async fn test_golden_cross() {
         orderflow_ofi_threshold: dec!(0.3),
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: Default::default(),
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -302,6 +303,7 @@ async fn test_prevent_short_selling() {
         orderflow_ofi_threshold: dec!(0.3),
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: Default::default(),
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -444,6 +446,7 @@ async fn test_sell_signal_with_position() {
         orderflow_ofi_threshold: dec!(0.3),
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: Default::default(),
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -581,6 +584,7 @@ async fn test_dynamic_quantity_scaling() {
         orderflow_ofi_threshold: dec!(0.3),
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: Default::default(),
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -743,6 +747,7 @@ async fn test_multi_symbol_isolation() {
         orderflow_ofi_threshold: dec!(0.3),
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: Default::default(),
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -899,6 +904,7 @@ async fn test_advanced_strategy_trend_filter() {
         orderflow_ofi_threshold: dec!(0.3),
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: Default::default(),
     };
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
         config.fast_sma_period,
@@ -1053,6 +1059,7 @@ async fn test_risk_based_quantity_calculation() {
         orderflow_ofi_threshold: dec!(0.3),
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
+        ensemble_weights: Default::default(),
     };
 
     let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
