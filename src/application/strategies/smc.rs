@@ -58,6 +58,7 @@ impl SMCStrategy {
         // Iterate RECENT to OLD (finding the most relevant recent structure)
         for i in (start_idx..candles.len() - 2).rev() {
             let c1 = &candles[i];
+            let c2 = &candles[i + 1];
             let c3 = &candles[i + 2];
 
             let high1 = c1.high;
@@ -65,10 +66,22 @@ impl SMCStrategy {
             let high3 = c3.high;
             let low3 = c3.low;
 
+            // Bullish FVG: gap between C1 high and C3 low
             if low3 > high1 {
+                // C2 MUST be an impulsive bullish candle (close > open, large body)
+                let c2_body = c2.close - c2.open;
+                if c2_body <= Decimal::ZERO {
+                    continue; // C2 is not bullish — skip
+                }
+                let c2_body_abs = c2_body.abs();
+                if c2_body_abs < self.min_fvg_size_pct * c2.open {
+                    continue; // C2 body too small to be impulsive
+                }
+
                 let gap = low3 - high1;
-                let gap_pct = if high1 > Decimal::ZERO {
-                    gap / high1
+                let midpoint = (high1 + low3) / Decimal::TWO;
+                let gap_pct = if midpoint > Decimal::ZERO {
+                    gap / midpoint
                 } else {
                     Decimal::ZERO
                 };
@@ -108,9 +121,20 @@ impl SMCStrategy {
 
             // Bearish FVG: Low1 > High3
             if low1 > high3 {
+                // C2 MUST be an impulsive bearish candle (close < open, large body)
+                let c2_body = c2.open - c2.close;
+                if c2_body <= Decimal::ZERO {
+                    continue; // C2 is not bearish — skip
+                }
+                let c2_body_abs = c2_body.abs();
+                if c2_body_abs < self.min_fvg_size_pct * c2.open {
+                    continue; // C2 body too small to be impulsive
+                }
+
                 let gap = low1 - high3;
-                let gap_pct = if high3 > Decimal::ZERO {
-                    gap / high3
+                let midpoint = (low1 + high3) / Decimal::TWO;
+                let gap_pct = if midpoint > Decimal::ZERO {
+                    gap / midpoint
                 } else {
                     Decimal::ZERO
                 };

@@ -5,16 +5,47 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::sync::Arc;
 
+/// Explicit prediction mode for ML Strategy
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredictionMode {
+    /// Classification: score is a probability [0, 1]
+    Classification,
+    /// Regression: score is predicted return (e.g., 0.001 = 0.1%)
+    Regression,
+}
+
 pub struct MLStrategy {
     predictor: Arc<Box<dyn MLPredictor>>,
     threshold: f64,
+    mode: PredictionMode,
 }
 
 impl MLStrategy {
     pub fn new(predictor: Arc<Box<dyn MLPredictor>>, threshold: f64) -> Self {
+        // Backwards-compatible: infer mode from threshold,
+        // but prefer using with_mode() for clarity
+        let mode = if threshold > 0.1 {
+            PredictionMode::Classification
+        } else {
+            PredictionMode::Regression
+        };
         Self {
             predictor,
             threshold,
+            mode,
+        }
+    }
+
+    /// Create with explicit prediction mode (preferred)
+    pub fn with_mode(
+        predictor: Arc<Box<dyn MLPredictor>>,
+        threshold: f64,
+        mode: PredictionMode,
+    ) -> Self {
+        Self {
+            predictor,
+            threshold,
+            mode,
         }
     }
 
@@ -57,9 +88,8 @@ impl TradingStrategy for MLStrategy {
                 // Regression Logic: score is predicted return (e.g., 0.001)
                 // Threshold is minimum expected return (e.g., 0.0005)
 
-                // If the threshold is large (> 0.1), we assume it's probability mode (legacy)
-                // If it's small (< 0.1), we assume it's regression/return mode
-                let is_probability_mode = self.threshold > 0.1;
+                // Use explicit mode instead of fragile threshold-based heuristic
+                let is_probability_mode = self.mode == PredictionMode::Classification;
 
                 if is_probability_mode {
                     // Probability Mode (Classification)

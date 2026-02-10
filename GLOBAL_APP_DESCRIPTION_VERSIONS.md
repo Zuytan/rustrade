@@ -1,5 +1,27 @@
 # Rustrade - Historique des Versions
 
+## Version 0.97.0 - Strategy Mathematical Fixes & Quality (February 2026)
+
+### Strategy Mathematical Audit & Fixes (12 corrections)
+- **VWAP**: Added `has_position` guard to Sell signal to prevent phantom short entries.
+- **Statistical Momentum**: Fixed off-by-one error in lookback window (`nth(lookback-1)`).
+- **SMC**: Enhanced FVG detection with midpoint normalization and impulsive candle validation.
+- **Order Flow**: 
+  - Implemented body-weighted OFI (wicks contribute to buy/sell pressure).
+  - Fixed logic error where OFI compared against itself (`skip(1)` added).
+- **Momentum Divergence**: Made RSI thresholds configurable (removed hardcoded 40/60).
+- **Dynamic Regime**: Added ADX hysteresis (±2.0 buffer) to prevent rapid regime switching.
+- **Z-Score**: Included `current_price` in mean/std_dev calculation for statistical consistency.
+- **DualSMA**: Added `!has_position` guard to Buy signal to prevent signal spam in sustained uptrends.
+- **ML Strategy**: Explicit `PredictionMode` enum (Regression vs Classification).
+- **Ensemble**: Added systematic logging for strategy disagreements.
+
+### Code Quality & Compliance
+- **Dead Code Removal**: Removed 5 unused configuration fields across `Dynamic`, `MeanReversion`, `TrendRiding`, and `Advanced` strategies, eliminating all `#[allow(dead_code)]` suppressions.
+- **Mathematical Verification**: Verified correctness of linear regression variance formula in `statistical_features.rs`.
+- **Test Suite**: Achieved 100% pass rate (408/408 tests) covering all strategy edge cases.
+- **Linting**: maintained zero clippy warnings (`--all-targets -D warnings`).
+
 ## Version 0.96.3 - Test Suite Enhancement & Code Quality (February 2026)
 
 ### Test Implementation (P0/P2)

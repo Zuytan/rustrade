@@ -60,11 +60,13 @@ impl TradingStrategy for OrderFlowStrategy {
         // Bullish stacked imbalances
         if direction == 1 {
             // Additional confirmation: Cumulative Delta rising
-            let delta_rising = if ctx.ofi_history.len() >= Self::MOMENTUM_LOOKBACK {
+            // Skip the most recent value (ofi_value itself) to avoid self-comparison bias
+            let delta_rising = if ctx.ofi_history.len() > Self::MOMENTUM_LOOKBACK {
                 let recent_avg: Decimal = ctx
                     .ofi_history
                     .iter()
                     .rev()
+                    .skip(1) // Exclude current ofi_value (last pushed)
                     .take(Self::MOMENTUM_LOOKBACK)
                     .copied()
                     .sum::<Decimal>()
@@ -105,16 +107,17 @@ impl TradingStrategy for OrderFlowStrategy {
         // Removed has_position check to allow Short Entry
         if direction == -1 {
             // Additional confirmation: Cumulative Delta falling
-            let delta_falling = if ctx.ofi_history.len() >= Self::MOMENTUM_LOOKBACK {
+            // Skip the most recent value (ofi_value itself) to avoid self-comparison bias
+            let delta_falling = if ctx.ofi_history.len() > Self::MOMENTUM_LOOKBACK {
                 let recent_avg: Decimal = ctx
                     .ofi_history
                     .iter()
                     .rev()
+                    .skip(1) // Exclude current ofi_value (last pushed)
                     .take(Self::MOMENTUM_LOOKBACK)
                     .copied()
                     .sum::<Decimal>()
                     / Decimal::from(Self::MOMENTUM_LOOKBACK);
-                // Fix: Compare current OFI to recent average (momentum decreasing)
                 ctx.ofi_value < recent_avg
             } else {
                 ctx.ofi_value < Decimal::ZERO // Simple negative check

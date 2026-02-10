@@ -46,8 +46,8 @@ impl StatisticalMomentumStrategy {
             return None; // Invalid ATR
         }
 
-        // Get price N periods ago
-        let past_candle = ctx.candles.iter().rev().nth(self.lookback_period)?;
+        // Get price N periods ago (nth() is 0-indexed: nth(0) = last, nth(N-1) = N ago)
+        let past_candle = ctx.candles.iter().rev().nth(self.lookback_period - 1)?;
         let past_price = past_candle.close;
 
         // Normalized Momentum = (Current - Past) / ATR

@@ -37,17 +37,21 @@ impl ZScoreMeanReversionStrategy {
         }
 
         // Extract closing prices for lookback period
-        let prices: Vec<f64> = ctx
+        // Include current_price in the sample so μ and σ are consistent with the price being evaluated
+        let historical_prices: Vec<f64> = ctx
             .candles
             .iter()
             .rev()
-            .take(self.lookback_period)
+            .take(self.lookback_period.saturating_sub(1))
             .filter_map(|c| c.close.to_f64())
             .collect();
 
-        if prices.len() < self.lookback_period {
+        if historical_prices.len() < self.lookback_period.saturating_sub(1) {
             return None;
         }
+
+        let mut prices = vec![ctx.price_f64];
+        prices.extend(historical_prices);
 
         // Calculate mean and std dev using statrs (f64 boundary for statistical library)
         let data = Data::new(prices);

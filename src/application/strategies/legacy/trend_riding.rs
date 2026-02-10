@@ -9,24 +9,18 @@ use rust_decimal::Decimal;
 /// - Exit only when price drops significantly below trend
 #[derive(Debug, Clone)]
 pub struct TrendRidingStrategy {
-    #[allow(dead_code)]
-    fast_period: usize,
-    #[allow(dead_code)]
-    slow_period: usize,
     sma_threshold: Decimal,
     exit_buffer_pct: Decimal, // Buffer below trend SMA before exiting
 }
 
 impl TrendRidingStrategy {
     pub fn new(
-        fast_period: usize,
-        slow_period: usize,
+        _fast_period: usize,
+        _slow_period: usize,
         sma_threshold: Decimal,
         exit_buffer_pct: Decimal,
     ) -> Self {
         Self {
-            fast_period,
-            slow_period,
             sma_threshold,
             exit_buffer_pct,
         }

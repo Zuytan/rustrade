@@ -382,37 +382,23 @@ fn test_precision_smc_fvg() {
         });
     }
 
-    fn fvg_candle(h: f64, l: f64) -> Candle {
+    fn fvg_candle(o: f64, h: f64, l: f64, c: f64) -> Candle {
         Candle {
             symbol: "TEST".to_string(),
-            open: dec!(10.0),
+            open: Decimal::from_f64(o).unwrap(),
             high: Decimal::from_f64(h).unwrap(),
             low: Decimal::from_f64(l).unwrap(),
-            close: dec!(10.0),
+            close: Decimal::from_f64(c).unwrap(),
             volume: dec!(1000.0),
             timestamp: 0,
         }
     }
 
-    candles.push_back(fvg_candle(100.0, 90.0)); // C1 High 100
-    candles.push_back(fvg_candle(110.0, 100.0)); // C2
-    candles.push_back(fvg_candle(120.0, 105.0)); // C3 Low 105
-    // C4 & C5 to trigger detection/confirmation logic
-    candles.push_back(fvg_candle(120.0, 104.0)); // C4 In Zone (Low 104 < 105) (No, wait, C4 is checked for invalidation/entry)
-    // To detect, we need to iterate. logic: for i in (start..len-2).
-    // Our FVG is at index len-3 (if we added 3 relevant + padding).
-    // Need at least one more candle to process?
-    // detect_fvg loops from end-20 to end-2.
-    // If we have C1(i), C2(i+1), C3(i+2).
-    // The loop checks i.
-    // Then checks subsequent candles i+3...
-    // So we need at least i+3 (C4).
-    // C4 must NOT invalidate (Low < High1 i.e. < 100).
-    // And C4 MUST close in zone (Close <= Low3 i.e. <= 105) for Entry.
-    // Let's make C4 close at 102.0.
-
-    let mut c4 = fvg_candle(120.0, 103.0);
-    c4.close = dec!(102.0); // Entry 
+    candles.push_back(fvg_candle(95.0, 100.0, 90.0, 95.0)); // C1 High 100
+    candles.push_back(fvg_candle(100.0, 110.0, 100.0, 108.0)); // C2 Impulsive bullish (open=100, close=108)
+    candles.push_back(fvg_candle(108.0, 120.0, 105.0, 115.0)); // C3 Low 105
+    // C4 (last candle): must NOT invalidate (Low >= 100) and MUST close in zone (Close <= 105)
+    let c4 = fvg_candle(103.0, 120.0, 103.0, 102.0);
     candles.push_back(c4);
 
     let result = strategy.detect_fvg(&candles);
@@ -533,13 +519,13 @@ fn test_precision_zscore() {
         .calculate_zscore(&ctx)
         .expect("Z-Score should calculate");
 
-    // We expect 2.0 exactly (if sample std dev is used)
-    // If population std dev used (n=3), var=200/3=66.66, std=8.16. Z=(20)/8.16 = 2.45.
-    // Statrs usually uses Sample StdDev.
+    // Z-Score with current price in sample:
+    // Prices = [40, 30, 20]. Mean = 30. StdDev(sample) = 10.
+    // Z = (40 - 30) / 10 = 1.0 (current_price is now part of the sample)
     assert_eq!(
         zscore,
-        dec!(2.0),
-        "Z-Score precision failed. Expected 2.0, got {}",
+        dec!(1.0),
+        "Z-Score precision failed. Expected 1.0, got {}",
         zscore
     );
 }

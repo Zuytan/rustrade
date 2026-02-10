@@ -28,7 +28,8 @@ impl TradingStrategy for DualSMAStrategy {
         let slow = ctx.slow_sma;
 
         // Buy: Golden cross (fast SMA crosses above slow SMA)
-        if fast > slow * (Decimal::ONE + self.threshold) {
+        // Guard: only emit buy if no position open (avoid spam in sustained uptrend)
+        if !ctx.has_position && fast > slow * (Decimal::ONE + self.threshold) {
             return Some(Signal::buy(format!(
                 "Golden Cross (Fast={} > Slow={})",
                 fast, slow

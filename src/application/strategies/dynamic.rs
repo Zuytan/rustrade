@@ -47,12 +47,25 @@ impl Default for DynamicRegimeConfig {
 /// Adapts behavior based on market regime:
 /// - Strong Trend: Looser filters, hold through pullbacks
 /// - Choppy/Range-bound: Strict filters (uses Advanced strategy)
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct DynamicRegimeStrategy {
     advanced_strategy: AdvancedTripleFilterStrategy,
     sma_threshold: Decimal,
-    #[allow(dead_code)]
-    trend_divergence_threshold: Decimal, // Legacy field, now using ADX-based regime detection
+    /// Tracks the last detected regime to apply hysteresis
+    last_regime_is_trending: std::sync::atomic::AtomicBool,
+}
+
+impl Clone for DynamicRegimeStrategy {
+    fn clone(&self) -> Self {
+        Self {
+            advanced_strategy: self.advanced_strategy.clone(),
+            sma_threshold: self.sma_threshold,
+            last_regime_is_trending: std::sync::atomic::AtomicBool::new(
+                self.last_regime_is_trending
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
+        }
+    }
 }
 
 impl DynamicRegimeStrategy {
@@ -74,7 +87,7 @@ impl DynamicRegimeStrategy {
                 adx_threshold: config.adx_threshold,
             }),
             sma_threshold: config.sma_threshold,
-            trend_divergence_threshold: config.trend_divergence_threshold,
+            last_regime_is_trending: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -96,19 +109,36 @@ impl DynamicRegimeStrategy {
             sma_threshold,
             trend_sma_period,
             rsi_threshold,
-            trend_divergence_threshold,
+            trend_divergence_threshold, // Still accepted for backwards compatibility
             ..Default::default()
         })
     }
 
     fn detect_regime(&self, ctx: &AnalysisContext) -> MarketRegime {
         // Use highest available timeframe ADX for more reliable regime detection
-        // Higher timeframes give better signal for overall market regime
         let adx = ctx.get_highest_timeframe_adx();
+        let threshold = self.advanced_strategy.adx_threshold;
 
-        // ADX-based regime detection (more reliable than SMA divergence)
-        // ADX > threshold = Strong Trend, otherwise Choppy
-        if adx > self.advanced_strategy.adx_threshold {
+        // Hysteresis buffer: prevents rapid flipping between regimes
+        // Choppy → Trending requires ADX > threshold + buffer
+        // Trending → Choppy requires ADX < threshold - buffer
+        use rust_decimal_macros::dec;
+        let hysteresis_buffer = dec!(2.0);
+        let was_trending = self
+            .last_regime_is_trending
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        let is_trending = if was_trending {
+            // Currently trending: stay trending unless ADX drops below threshold - buffer
+            adx > (threshold - hysteresis_buffer)
+        } else {
+            // Currently choppy: only switch to trending if ADX exceeds threshold + buffer
+            adx > (threshold + hysteresis_buffer)
+        };
+        self.last_regime_is_trending
+            .store(is_trending, std::sync::atomic::Ordering::Relaxed);
+
+        if is_trending {
             // Check trend direction using price vs trend_sma
             if ctx.current_price > ctx.trend_sma {
                 MarketRegime::StrongTrendUp

@@ -11,6 +11,8 @@ use rust_decimal_macros::dec;
 pub struct MomentumDivergenceStrategy {
     pub divergence_lookback: usize, // Number of candles to look back for divergence
     pub min_divergence_pct: Decimal, // Minimum price movement to consider (e.g., 0.02 = 2%)
+    pub rsi_oversold_zone: Decimal, // RSI threshold for bullish divergence (default: 40.0)
+    pub rsi_overbought_zone: Decimal, // RSI threshold for bearish divergence (default: 60.0)
 }
 
 impl MomentumDivergenceStrategy {
@@ -18,6 +20,8 @@ impl MomentumDivergenceStrategy {
         Self {
             divergence_lookback,
             min_divergence_pct,
+            rsi_oversold_zone: dec!(40.0),
+            rsi_overbought_zone: dec!(60.0),
         }
     }
 
@@ -114,7 +118,7 @@ impl MomentumDivergenceStrategy {
 
         if !ctx.has_position
             && price_lower_low
-            && rsi_at_second_low < dec!(40.0) // Second low must still be "oversold-ish"
+            && rsi_at_second_low < self.rsi_oversold_zone
             && rsi_at_second_low > rsi_at_first_low
         {
             return Some(DivergenceType::Bullish {
@@ -129,7 +133,7 @@ impl MomentumDivergenceStrategy {
 
         if ctx.has_position
             && price_higher_high
-            && rsi_at_second_high > dec!(60.0)
+            && rsi_at_second_high > self.rsi_overbought_zone
             && rsi_at_second_high < rsi_at_first_high
         {
             return Some(DivergenceType::Bearish {
@@ -163,6 +167,8 @@ impl Default for MomentumDivergenceStrategy {
         Self {
             divergence_lookback: 14,
             min_divergence_pct: dec!(0.02), // 2% price movement
+            rsi_oversold_zone: dec!(40.0),
+            rsi_overbought_zone: dec!(60.0),
         }
     }
 }

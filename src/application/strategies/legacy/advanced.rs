@@ -16,8 +16,6 @@ use std::collections::HashMap;
 pub struct AdvancedTripleFilterStrategy {
     sma_strategy: DualSMAStrategy,
     rsi_threshold: Decimal,
-    #[allow(dead_code)]
-    trend_sma_period: usize,
     _signal_confirmation_bars: usize, // Phase 2: require N bars confirmation
     _last_signals: HashMap<String, (OrderSide, usize)>, // Phase 2: track (signal, count)
     // Risk-based adaptive filters
@@ -68,7 +66,6 @@ impl AdvancedTripleFilterStrategy {
                 config.sma_threshold,
             ),
             rsi_threshold: config.rsi_threshold,
-            trend_sma_period: config.trend_sma_period,
             _signal_confirmation_bars: config.signal_confirmation_bars,
             _last_signals: HashMap::new(),
             macd_requires_rising: config.macd_requires_rising,

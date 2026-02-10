@@ -92,16 +92,28 @@ pub fn calculate_ofi(candles: &VecDeque<Candle>) -> OrderFlowImbalance {
         let close = candle.close;
         let open = candle.open;
         let volume = candle.volume;
+        let range = candle.high - candle.low;
+        let body = (close - open).abs();
+
+        // Body ratio: proportion of the candle that is body vs wick
+        // A full-body candle (no wicks) = 1.0, a doji = ~0.0
+        use rust_decimal_macros::dec;
+        let body_ratio = if range > Decimal::ZERO {
+            body / range
+        } else {
+            dec!(0.5) // No range = neutral
+        };
 
         if close > open {
-            // Bullish candle - aggressive buying
-            buy_volume += volume;
+            // Bullish candle: body portion is buying, wick portion is selling pressure
+            buy_volume += volume * body_ratio;
+            sell_volume += volume * (Decimal::ONE - body_ratio);
         } else if close < open {
-            // Bearish candle - aggressive selling
-            sell_volume += volume;
+            // Bearish candle: body portion is selling, wick portion is buying pressure
+            sell_volume += volume * body_ratio;
+            buy_volume += volume * (Decimal::ONE - body_ratio);
         } else {
             // Doji - split volume
-            use rust_decimal_macros::dec;
             buy_volume += volume / dec!(2.0);
             sell_volume += volume / dec!(2.0);
         }

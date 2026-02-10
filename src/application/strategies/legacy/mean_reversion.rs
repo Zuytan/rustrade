@@ -8,17 +8,12 @@ use rust_decimal::Decimal;
 /// - Sell: Price returns to Mean (Middle Band) OR RSI is overbought (> 70)
 #[derive(Debug, Clone)]
 pub struct MeanReversionStrategy {
-    #[allow(dead_code)]
-    bb_period: usize,
     rsi_exit_threshold: Decimal,
 }
 
 impl MeanReversionStrategy {
-    pub fn new(bb_period: usize, rsi_exit_threshold: Decimal) -> Self {
-        Self {
-            bb_period,
-            rsi_exit_threshold,
-        }
+    pub fn new(_bb_period: usize, rsi_exit_threshold: Decimal) -> Self {
+        Self { rsi_exit_threshold }
     }
 }
 

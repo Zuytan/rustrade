@@ -117,29 +117,31 @@ impl TradingStrategy for VWAPStrategy {
             );
         }
 
-        // Sell conditions (Exit Long OR Enter Short)
-        // 1. Price significantly above VWAP
-        if deviation > self.deviation_threshold_pct {
-            return Some(
-                Signal::sell(format!(
-                    "VWAP: Price {} is {}% above VWAP {} (Overextended)",
-                    ctx.current_price,
-                    deviation * dec!(100.0),
-                    vwap
-                ))
-                .with_confidence(0.75),
-            );
-        }
+        // Sell conditions (Exit Long only — requires open position in a long-only system)
+        if ctx.has_position {
+            // 1. Price significantly above VWAP
+            if deviation > self.deviation_threshold_pct {
+                return Some(
+                    Signal::sell(format!(
+                        "VWAP: Price {} is {}% above VWAP {} (Overextended)",
+                        ctx.current_price,
+                        deviation * dec!(100.0),
+                        vwap
+                    ))
+                    .with_confidence(0.75),
+                );
+            }
 
-        // 2. RSI overbought
-        if ctx.rsi > self.rsi_overbought {
-            return Some(
-                Signal::sell(format!(
-                    "VWAP: RSI {} > {} (overbought) near VWAP {}",
-                    ctx.rsi, self.rsi_overbought, vwap
-                ))
-                .with_confidence(0.70),
-            );
+            // 2. RSI overbought
+            if ctx.rsi > self.rsi_overbought {
+                return Some(
+                    Signal::sell(format!(
+                        "VWAP: RSI {} > {} (overbought) near VWAP {}",
+                        ctx.rsi, self.rsi_overbought, vwap
+                    ))
+                    .with_confidence(0.70),
+                );
+            }
         }
 
         None
@@ -298,12 +300,12 @@ mod tests {
             ts_start + 60,
         ));
 
-        // Price 103 = 3% above VWAP (100), NO POSITION
-        // Should trigger Short Entry
-        let ctx = create_context(103.0, 50.0, candles, false);
+        // Price 103 = 3% above VWAP (100), HAS POSITION
+        // Should trigger Exit Long
+        let ctx = create_context(103.0, 50.0, candles, true);
 
         let signal = strategy.analyze(&ctx);
-        assert!(signal.is_some(), "Should signal Sell for Short Entry");
+        assert!(signal.is_some(), "Should signal Sell for Exit Long");
         let sig = signal.unwrap();
         assert!(matches!(
             sig.side,
