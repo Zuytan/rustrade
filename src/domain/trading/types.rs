@@ -98,6 +98,8 @@ pub struct TradeProposal {
     pub order_type: OrderType,
     pub reason: String,
     pub timestamp: i64,
+    pub stop_loss: Option<Decimal>,
+    pub take_profit: Option<Decimal>,
 }
 
 #[allow(dead_code)]

@@ -122,6 +122,8 @@ mod tests {
             order_type: OrderType::Market,
             reason: String::new(),
             timestamp: 0,
+            stop_loss: None,
+            take_profit: None,
         }));
 
         let portfolio = Box::leak(Box::new(Portfolio::new()));

@@ -82,16 +82,16 @@ impl NewsHandler {
 
         // 3. Construct Proposal
         let reason = format!("News (Trend Correct & RSI OK): {}", signal.headline);
+        let signal_obj = crate::application::strategies::Signal::buy(reason);
         if let Some(mut proposal) = self
             .signal_processor
             .build_proposal(
                 config,
                 execution_service,
                 signal.symbol.clone(),
-                OrderSide::Buy,
+                signal_obj,
                 price,
                 timestamp * 1000,
-                reason,
             )
             .await
         {
@@ -166,6 +166,8 @@ pub fn process_bearish_news(
             signal.headline
         ),
         timestamp,
+        stop_loss: None,
+        take_profit: None,
     };
 
     NewsAction::PanicSell(proposal)

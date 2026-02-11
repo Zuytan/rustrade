@@ -127,13 +127,15 @@ async fn test_circuit_breaker_triggers_on_crash() {
     // 6. Verify HALT state by sending a proposal
     info!("Test: Verifying System Halt on new proposal...");
     let proposal = TradeProposal {
-        symbol: "AAPL".to_string(),
+        symbol: "NVDA".to_string(),
         side: OrderSide::Buy,
-        price: dec!(150.0),
-        quantity: dec!(10.0),
-        order_type: rustrade::domain::trading::types::OrderType::Limit,
-        reason: "Test".to_string(),
-        timestamp: 0,
+        price: dec!(400.0),
+        quantity: dec!(1.0),
+        order_type: rustrade::domain::trading::types::OrderType::Market,
+        reason: "Circuit Breaker Test".to_string(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        stop_loss: None,
+        take_profit: None,
     };
 
     proposal_tx.send(proposal).await.unwrap();

@@ -45,6 +45,8 @@ pub struct TradeCost {
 ///     order_type: OrderType::Market,
 ///     reason: "Test".to_string(),
 ///     timestamp: 0,
+///     stop_loss: None,
+///     take_profit: None,
 /// };
 /// let costs = evaluator.evaluate(&proposal);
 /// let expected_profit = Decimal::from(5);
@@ -205,6 +207,8 @@ impl CostEvaluator {
     ///     order_type: OrderType::Market,
     ///     reason: "Test".to_string(),
     ///     timestamp: 0,
+    ///     stop_loss: None,
+    ///     take_profit: None,
     /// };
     ///
     /// // Trade costs $1.50, expected profit is $5.00, min ratio is 2.0
@@ -297,6 +301,8 @@ mod tests {
             order_type: OrderType::Limit,
             reason: "Test trade".to_string(),
             timestamp: 0,
+            stop_loss: None,
+            take_profit: None,
         }
     }
 

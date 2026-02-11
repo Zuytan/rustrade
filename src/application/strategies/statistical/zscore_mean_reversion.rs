@@ -30,8 +30,11 @@ impl ZScoreMeanReversionStrategy {
         }
     }
 
-    /// Calculate Z-Score: (Price - Mean) / StdDev
-    pub(crate) fn calculate_zscore(&self, ctx: &AnalysisContext) -> Option<Decimal> {
+    /// Calculate Z-Score statistics: (Z-Score, Mean, StdDev)
+    pub(crate) fn calculate_stats(
+        &self,
+        ctx: &AnalysisContext,
+    ) -> Option<(Decimal, Decimal, Decimal)> {
         if ctx.candles.len() < self.min_data_points {
             return None;
         }
@@ -65,7 +68,15 @@ impl ZScoreMeanReversionStrategy {
         // Z-Score = (Current Price - Mean) / StdDev — core comparison in Decimal for consistency with thresholds
         let mean_d = Decimal::from_f64_retain(mean).unwrap_or(Decimal::ZERO);
         let std_d = Decimal::from_f64_retain(std_dev).unwrap_or(Decimal::ONE);
-        Some((ctx.current_price - mean_d) / std_d)
+        let z_score = (ctx.current_price - mean_d) / std_d;
+
+        Some((z_score, mean_d, std_d))
+    }
+
+    // Backward compatibility wrapper if needed, or just remove if unused internally
+    #[allow(dead_code)]
+    pub(crate) fn calculate_zscore(&self, ctx: &AnalysisContext) -> Option<Decimal> {
+        self.calculate_stats(ctx).map(|(z, _, _)| z)
     }
 }
 
@@ -82,7 +93,7 @@ impl Default for ZScoreMeanReversionStrategy {
 
 impl TradingStrategy for ZScoreMeanReversionStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
-        let zscore = self.calculate_zscore(ctx)?;
+        let (zscore, _mean, _std_dev) = self.calculate_stats(ctx)?;
 
         // BUY: Price significantly below mean (oversold). Confidence scales with Z magnitude.
         if !ctx.has_position && zscore < self.entry_threshold {
@@ -90,6 +101,7 @@ impl TradingStrategy for ZScoreMeanReversionStrategy {
                 .to_f64()
                 .unwrap_or(0.0);
             let confidence = (0.5 + (excess * 0.15)).min(0.95);
+
             return Some(
                 Signal::buy(format!(
                     "Z-Score MR: Price {} is {} std devs below mean (Z={})",
@@ -98,6 +110,7 @@ impl TradingStrategy for ZScoreMeanReversionStrategy {
                     zscore
                 ))
                 .with_confidence(confidence),
+                // TODO: Add SL/TP once we expose Mean/Std
             );
         }
 

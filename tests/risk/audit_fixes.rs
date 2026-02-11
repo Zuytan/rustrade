@@ -107,15 +107,17 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
     // Set market price to 90
     mock_market.set_price("AAPL", dec!(90.0)).await;
 
-    for i in 1..=3 {
+    for _i in 1..=3 {
         let proposal = TradeProposal {
             symbol: "AAPL".to_string(),
             side: OrderSide::Sell,
             price: dec!(90.0),
             quantity: dec!(0.5),
             order_type: OrderType::Market,
-            reason: format!("Loss Trade {}", i),
+            reason: format!("Loss Trade {}", _i),
             timestamp: chrono::Utc::now().timestamp_millis(),
+            stop_loss: None,
+            take_profit: None,
         };
 
         proposal_tx.send(proposal).await.unwrap();
@@ -146,6 +148,8 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         order_type: OrderType::Limit,
         reason: "Test Halt".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
+        stop_loss: None,
+        take_profit: None,
     };
 
     proposal_tx.send(proposal).await.unwrap();
@@ -235,13 +239,15 @@ async fn test_pending_order_ttl_cleanup() {
     // We send a proposal but do NOT follow up with more proposals.
     // The RiskManager periodic loop should clean up the pending order.
     let proposal = TradeProposal {
-        symbol: "MSFT".to_string(),
+        symbol: "TSLA".to_string(),
         side: OrderSide::Buy,
-        price: dec!(300.0),
-        quantity: dec!(10.0), // $3000
-        order_type: OrderType::Limit,
-        reason: "TTL Test".to_string(),
+        price: dec!(200.0),
+        quantity: dec!(50.0),
+        order_type: OrderType::Market,
+        reason: "Test".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 

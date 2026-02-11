@@ -174,6 +174,8 @@ async fn test_circuit_breaker_on_market_crash() {
         order_type: OrderType::Market,
         reason: "Buy the dip".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -236,6 +238,8 @@ async fn test_buy_approval() {
         order_type: OrderType::Market,
         reason: "Test".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -284,6 +288,8 @@ async fn test_buy_rejection_insufficient_funds() {
         order_type: OrderType::Market,
         reason: "Test".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -351,6 +357,8 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         order_type: OrderType::Market,
         reason: "Test Buying Power".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -412,6 +420,8 @@ async fn test_sell_approval() {
         order_type: OrderType::Market,
         reason: "Test".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -494,6 +504,8 @@ async fn test_pdt_protection_rejection() {
         order_type: OrderType::Market,
         reason: "Test PDT".to_string(),
         timestamp: Utc::now().timestamp_millis(),
+        stop_loss: None,
+        take_profit: None,
     };
 
     // Handle command directly (via Command Pattern!)
@@ -581,6 +593,8 @@ async fn test_sector_exposure_limit() {
         reason: "Sector Test".to_string(),
         timestamp: dec!(0.0),
         order_type: OrderType::Market,
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -660,6 +674,8 @@ async fn test_circuit_breaker_triggers_liquidation() {
         order_type: OrderType::Market,
         reason: "Trying to catch a falling knife".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -684,6 +700,8 @@ async fn test_circuit_breaker_triggers_liquidation() {
         order_type: OrderType::Market,
         reason: "Safe trade".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal2).await.unwrap();
 
@@ -815,6 +833,8 @@ async fn test_sentiment_risk_adjustment() {
         order_type: OrderType::Market,
         reason: "Test Sentiment".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -847,6 +867,8 @@ async fn test_sentiment_risk_adjustment() {
         order_type: OrderType::Market,
         reason: "Test Sentiment Greed".to_string(),
         timestamp: dec!(0.0),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal2).await.unwrap();
 

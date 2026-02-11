@@ -95,12 +95,18 @@ impl TradingStrategy for StatisticalMomentumStrategy {
             let mom_f64 = momentum.to_f64().unwrap_or(th_f64);
             let excess = (mom_f64 - th_f64) / th_f64.max(0.01);
             let confidence = (0.5 + (excess * 0.3)).min(0.95);
+
+            // Volatility-based Stop Loss: 2.0 ATR below entry
+            use rust_decimal_macros::dec;
+            let stop_loss = ctx.current_price - (ctx.atr * dec!(2.0));
+
             return Some(
                 Signal::buy(format!(
                     "StatMomentum: Strong upward momentum ({} ATR), Price {} > Trend {}",
                     momentum, ctx.current_price, ctx.trend_sma
                 ))
-                .with_confidence(confidence),
+                .with_confidence(confidence)
+                .with_stop_loss(stop_loss),
             );
         }
 

@@ -215,6 +215,8 @@ impl SizingEngine {
                 order_type: OrderType::Market,
                 reason: String::new(),
                 timestamp: 0,
+                stop_loss: None,
+                take_profit: None,
             };
             let costs = evaluator.evaluate(&proposal);
             target_amt = (target_amt - costs.total_cost).max(Decimal::ZERO);

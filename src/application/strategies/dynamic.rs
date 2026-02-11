@@ -171,7 +171,9 @@ impl TradingStrategy for DynamicRegimeStrategy {
                         return Some(Signal::buy(
                             "Dynamic (Trend Up): Strong uptrend detected, buying above Trend SMA"
                                 .to_string(),
-                        ));
+                        )
+                        // Trailing Stop: Trend SMA
+                        .with_stop_loss(ctx.trend_sma));
                     }
                 }
                 // Suppress sells unless trend breaks significantly or death cross
@@ -189,10 +191,14 @@ impl TradingStrategy for DynamicRegimeStrategy {
                 // In strong DOWNTREND, allow Shorting
                 if !ctx.has_position && ctx.current_price < ctx.trend_sma {
                     if ctx.fast_sma < ctx.slow_sma * (Decimal::ONE - self.sma_threshold) {
-                        return Some(Signal::sell(
-                            "Dynamic (Trend Down): Strong downtrend, selling below Trend SMA"
-                                .to_string(),
-                        ));
+                        return Some(
+                            Signal::sell(
+                                "Dynamic (Trend Down): Strong downtrend, selling below Trend SMA"
+                                    .to_string(),
+                            )
+                            // Trailing Stop: Trend SMA (above price in downtrend)
+                            .with_stop_loss(ctx.trend_sma),
+                        );
                     }
                 }
                 // Avoid buying even if Golden Cross occurs

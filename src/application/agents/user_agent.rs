@@ -258,6 +258,8 @@ impl UserAgent {
                 price: Decimal::ZERO, // Ignored for Market orders
                 reason: self.i18n.t("activity_user_command").to_string(),
                 timestamp: chrono::Utc::now().timestamp_millis(), // i64
+                stop_loss: None,
+                take_profit: None,
             };
 
             match self.client.submit_proposal(proposal) {

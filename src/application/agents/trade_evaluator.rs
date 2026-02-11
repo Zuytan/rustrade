@@ -29,6 +29,7 @@ pub struct EvaluationInput<'a> {
     pub regime: &'a MarketRegime,
     pub execution_service: &'a Arc<dyn ExecutionService>,
     pub has_position: bool,
+    pub strategy_signal: Option<crate::application::strategies::Signal>,
 }
 
 impl TradeEvaluator {
@@ -45,7 +46,6 @@ impl TradeEvaluator {
         context: &mut SymbolContext,
         input: EvaluationInput<'_>,
     ) -> Option<TradeProposal> {
-        // 1. Basic Signal Validation (Long-Only, Pending, Cooldown)
         // 1. Basic Signal Validation (Long-Only, Pending, Cooldown)
         if !self.trade_filter.validate_signal(
             input.signal,
@@ -97,10 +97,17 @@ impl TradeEvaluator {
             OrderSide::Sell => OrderType::Market,
         };
 
-        let reason = format!(
-            "Strategy: {} (Regime: {})",
-            context.active_strategy_mode, input.regime.regime_type
-        );
+        // Prepare Signal object (use provided one or construct fallback from Side)
+        let signal_object = input.strategy_signal.unwrap_or_else(|| match input.signal {
+            OrderSide::Buy => crate::application::strategies::Signal::buy(format!(
+                "Strategy: {} (Regime: {})",
+                context.active_strategy_mode, input.regime.regime_type
+            )),
+            OrderSide::Sell => crate::application::strategies::Signal::sell(format!(
+                "Strategy: {} (Regime: {})",
+                context.active_strategy_mode, input.regime.regime_type
+            )),
+        });
 
         // 3. Build Proposal via SignalProcessor
         let mut proposal = match self
@@ -109,10 +116,9 @@ impl TradeEvaluator {
                 &context.config,
                 input.execution_service,
                 input.symbol.to_string(),
-                input.signal,
+                signal_object,
                 input.price,
                 input.timestamp,
-                reason,
             )
             .await
         {

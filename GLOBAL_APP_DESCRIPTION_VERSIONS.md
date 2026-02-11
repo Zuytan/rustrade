@@ -1,5 +1,19 @@
 # Rustrade - Historique des Versions
 
+## Version 0.97.4 - Trade Proposal Precision & Risk Compliance (February 2026)
+
+### Core Trading Architecture
+- **Trade Proposal Refactoring**: enhanced `TradeProposal` struct with explicit `stop_loss` and `take_profit` fields (`Option<Decimal>`).
+  - **Impact**: enables strategies to communicate precise invalidation points to the Execution Engine, replacing the previous "OrderSide-only" signal flow.
+  - **Compliance**: all instantiation points (Risk Manager, Agents, Tests) updated to initialize these fields (currently `None` for backward compatibility).
+- **Signal Propagation**: Updated `SignalProcessor`, `CandlePipeline`, and `NewsHandler` to propagate full `Signal` objects containing SL/TP metadata instead of just `OrderSide`.
+
+### Quality & Verification
+- **Test Suite**: Fixed `TradeProposal` instantiation in all integration tests (`tests/risk/*.rs`).
+- **Bug Fix**: Resolved `undeclared type` and `unused variable` warnings in `circuit_breaker.rs` and `audit_fixes.rs`.
+- **Cleanup**: Removed stale internal comments and temporary test output files to ensure a clean codebase.
+
+
 ## Version 0.97.3 - Institutional Strategy Precision (February 2026)
 
 ### Strategy Enhancements

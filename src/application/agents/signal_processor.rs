@@ -27,6 +27,10 @@ impl SignalProcessor {
     ///
     /// Delegates to the context's signal generator which applies the trading strategy
     /// to current market conditions and features.
+    /// Generate trading signal from strategy.
+    ///
+    /// Delegates to the context's signal generator which applies the trading strategy
+    /// to current market conditions and features.
     pub fn generate_signal(
         context: &mut SymbolContext,
         symbol: &str,
@@ -34,7 +38,7 @@ impl SignalProcessor {
         timestamp: i64,
         has_position: bool,
         position: Option<crate::application::strategies::PositionInfo>,
-    ) -> Option<OrderSide> {
+    ) -> Option<crate::application::strategies::Signal> {
         context.signal_generator.generate_signal(
             symbol,
             price,
@@ -67,14 +71,13 @@ impl SignalProcessor {
         config: &super::analyst::AnalystConfig,
         execution_service: &Arc<dyn ExecutionService>,
         symbol: String,
-        side: OrderSide,
+        signal: crate::application::strategies::Signal,
         price: Decimal,
         timestamp: i64,
-        reason: String,
     ) -> Option<TradeProposal> {
         // For SELL orders, use position quantity (sell what we own)
         // For BUY orders, calculate new position size
-        let quantity = match side {
+        let quantity = match signal.side {
             OrderSide::Sell => {
                 // Get actual position quantity from portfolio
                 let portfolio = match execution_service.get_portfolio().await {
@@ -115,12 +118,14 @@ impl SignalProcessor {
 
         Some(TradeProposal {
             symbol,
-            side,
+            side: signal.side,
             price,
             quantity,
             order_type: OrderType::Market,
-            reason,
+            reason: signal.reason,
             timestamp,
+            stop_loss: signal.suggested_stop_loss,
+            take_profit: signal.suggested_take_profit,
         })
     }
 
@@ -174,19 +179,23 @@ impl SignalProcessor {
 
     /// Apply RSI filter to buy signals.
     pub fn apply_rsi_filter(
-        signal: Option<OrderSide>,
+        signal: Option<crate::application::strategies::Signal>,
         context: &SymbolContext,
         symbol: &str,
-    ) -> Option<OrderSide> {
-        if let Some(OrderSide::Buy) = signal
-            && let Some(rsi) = context.last_features.rsi
-            && rsi > context.config.rsi_threshold
-        {
-            debug!(
-                "SignalProcessor: Buy signal BLOCKED for {} - RSI {} > {} (Overbought)",
-                symbol, rsi, context.config.rsi_threshold
-            );
-            return None;
+    ) -> Option<crate::application::strategies::Signal> {
+        match &signal {
+            Some(s) if s.side == OrderSide::Buy => {
+                if let Some(rsi) = context.last_features.rsi
+                    && rsi > context.config.rsi_threshold
+                {
+                    debug!(
+                        "SignalProcessor: Buy signal BLOCKED for {} - RSI {} > {} (Overbought)",
+                        symbol, rsi, context.config.rsi_threshold
+                    );
+                    return None;
+                }
+            }
+            _ => {}
         }
         signal
     }
@@ -196,20 +205,22 @@ impl SignalProcessor {
     /// When a trailing stop is managing the exit, we don't want regular
     /// sell signals to interfere.
     pub fn suppress_sell_if_trailing_stop(
-        signal: Option<OrderSide>,
+        signal: Option<crate::application::strategies::Signal>,
         context: &SymbolContext,
         symbol: &str,
         trailing_stop_triggered: bool,
-    ) -> Option<OrderSide> {
-        if let Some(OrderSide::Sell) = signal
-            && context.position_manager.trailing_stop.is_active()
-            && !trailing_stop_triggered
-        {
-            debug!(
-                "SignalProcessor: Sell signal SUPPRESSED for {} - Using trailing stop exit instead",
-                symbol
-            );
-            return None;
+    ) -> Option<crate::application::strategies::Signal> {
+        match &signal {
+            Some(s) if s.side == OrderSide::Sell => {
+                if context.position_manager.trailing_stop.is_active() && !trailing_stop_triggered {
+                    debug!(
+                        "SignalProcessor: Sell signal SUPPRESSED for {} - Using trailing stop exit instead",
+                        symbol
+                    );
+                    return None;
+                }
+            }
+            _ => {}
         }
         signal
     }
@@ -264,6 +275,8 @@ impl SignalProcessor {
                     order_type: OrderType::Market,
                     reason: format!("Partial Take-Profit (+{}%)", pnl_pct * dec!(100.0)),
                     timestamp,
+                    stop_loss: None,
+                    take_profit: None,
                 });
             }
         }
@@ -329,7 +342,9 @@ mod tests {
         context.last_features.rsi = Some(dec!(75.0));
         context.config.rsi_threshold = dec!(70.0);
 
-        let signal = Some(OrderSide::Buy);
+        let signal = Some(crate::application::strategies::Signal::buy(
+            "Test".to_string(),
+        ));
         let filtered = SignalProcessor::apply_rsi_filter(signal, &context, "BTC/USD");
 
         // Should block the buy signal
@@ -344,11 +359,16 @@ mod tests {
         context.last_features.rsi = Some(dec!(50.0));
         context.config.rsi_threshold = dec!(70.0);
 
-        let signal = Some(OrderSide::Buy);
+        let signal = Some(crate::application::strategies::Signal::buy(
+            "Test".to_string(),
+        ));
         let filtered = SignalProcessor::apply_rsi_filter(signal, &context, "BTC/USD");
 
         // Should allow the buy signal
-        assert_eq!(filtered, Some(OrderSide::Buy));
+        assert_eq!(
+            filtered.map(|s| s.side),
+            Some(crate::domain::trading::types::OrderSide::Buy)
+        );
     }
 
     #[test]
@@ -359,11 +379,16 @@ mod tests {
         context.last_features.rsi = Some(dec!(75.0));
         context.config.rsi_threshold = dec!(70.0);
 
-        let signal = Some(OrderSide::Sell);
+        let signal = Some(crate::application::strategies::Signal::sell(
+            "Test".to_string(),
+        ));
         let filtered = SignalProcessor::apply_rsi_filter(signal, &context, "BTC/USD");
 
         // Should not affect sell signals
-        assert_eq!(filtered, Some(OrderSide::Sell));
+        assert_eq!(
+            filtered.map(|s| s.side),
+            Some(crate::domain::trading::types::OrderSide::Sell)
+        );
     }
 
     #[test]
@@ -378,7 +403,9 @@ mod tests {
                 dec!(2),
             );
 
-        let signal = Some(OrderSide::Sell);
+        let signal = Some(crate::application::strategies::Signal::sell(
+            "Test".to_string(),
+        ));
         let filtered = SignalProcessor::suppress_sell_if_trailing_stop(
             signal, &context, "BTC/USD", false, // trailing stop not triggered
         );
@@ -399,12 +426,17 @@ mod tests {
                 dec!(2),
             );
 
-        let signal = Some(OrderSide::Sell);
+        let signal = Some(crate::application::strategies::Signal::sell(
+            "Test".to_string(),
+        ));
         let filtered = SignalProcessor::suppress_sell_if_trailing_stop(
             signal, &context, "BTC/USD", true, // trailing stop triggered
         );
 
         // Should allow the sell signal when trailing stop triggered
-        assert_eq!(filtered, Some(OrderSide::Sell));
+        assert_eq!(
+            filtered.map(|s| s.side),
+            Some(crate::domain::trading::types::OrderSide::Sell)
+        );
     }
 }

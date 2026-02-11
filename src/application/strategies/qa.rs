@@ -164,6 +164,22 @@ fn test_qa_scenario_bull_market() {
                 "Strategy {} reason empty",
                 strategy.name()
             );
+
+            // VERIFICATION: Check if strategies supporting SL/TP are actually returning it
+            // SMC, ZScoreMR, StatMomentum should return SL
+            match strategy.name() {
+                "SMC" | "ZScoreMR" | "StatMomentum" => {
+                    if !signal.reason.contains("blocked") {
+                        // Ignore if it was a blocked signal logging (though here we have Some(Signal))
+                        assert!(
+                            signal.suggested_stop_loss.is_some(),
+                            "Strategy {} missing Stop Loss",
+                            strategy.name()
+                        );
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -403,7 +419,7 @@ fn test_precision_smc_fvg() {
 
     let result = strategy.detect_fvg(&candles);
     assert!(result.is_some(), "FVG should be detected");
-    let (_, gap_size) = result.unwrap();
+    let (_, gap_size, _) = result.unwrap();
 
     assert_eq!(
         gap_size,

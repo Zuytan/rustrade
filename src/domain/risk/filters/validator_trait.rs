@@ -204,6 +204,8 @@ mod tests {
             order_type: OrderType::Market,
             reason: "test".to_string(),
             timestamp: 0,
+            stop_loss: None,
+            take_profit: None,
         };
 
         let portfolio = Portfolio::new();
@@ -242,6 +244,8 @@ mod tests {
             order_type: OrderType::Market,
             reason: "test".to_string(),
             timestamp: 0,
+            stop_loss: None,
+            take_profit: None,
         };
 
         let portfolio = Portfolio::new();

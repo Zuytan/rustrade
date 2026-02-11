@@ -41,7 +41,7 @@ impl SignalGenerator {
         cumulative_delta: Decimal,
         volume_profile: Option<crate::domain::market::order_flow::VolumeProfile>,
         ofi_history: &VecDeque<Decimal>,
-    ) -> Option<OrderSide> {
+    ) -> Option<crate::application::strategies::Signal> {
         let price_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&price).unwrap_or(0.0);
 
         // Strategy Logic (Authoritative)
@@ -89,7 +89,7 @@ impl SignalGenerator {
                 symbol,
                 strategy_signal.reason
             );
-            return Some(strategy_signal.side);
+            return Some(strategy_signal);
         }
 
         None
@@ -248,7 +248,7 @@ mod tests {
             &ofi_history,
         );
 
-        assert_eq!(result, Some(OrderSide::Buy));
+        assert_eq!(result.map(|s| s.side), Some(OrderSide::Buy));
     }
 
     #[test]

@@ -45,8 +45,11 @@ impl SMCStrategy {
     /// A bullish FVG is a gap between the High of Candle 1 and the Low of Candle 3,
     /// where Candle 2 is a large impulsive candle.
     ///
-    /// Enhanced (v0.72): Checks if the FVG has been mitigated (filled) by subsequent price action.
-    pub(crate) fn detect_fvg(&self, candles: &VecDeque<Candle>) -> Option<(OrderSide, Decimal)> {
+    /// Returns: Option<(Side, GapSize, InvalidationLevel)>
+    pub(crate) fn detect_fvg(
+        &self,
+        candles: &VecDeque<Candle>,
+    ) -> Option<(OrderSide, Decimal, Decimal)> {
         if candles.len() < 5 {
             return None;
         }
@@ -114,7 +117,7 @@ impl SMCStrategy {
                     }
 
                     if !invalidated && in_zone {
-                        return Some((OrderSide::Buy, gap));
+                        return Some((OrderSide::Buy, gap, fvg_bottom));
                     }
                 }
             }
@@ -163,7 +166,7 @@ impl SMCStrategy {
                     }
 
                     if !invalidated && in_zone {
-                        return Some((OrderSide::Sell, gap));
+                        return Some((OrderSide::Sell, gap, fvg_top));
                     }
                 }
             }
@@ -342,10 +345,11 @@ impl SMCStrategy {
 
 impl TradingStrategy for SMCStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
+        use rust_decimal_macros::dec;
         let fvg = self.detect_fvg(&ctx.candles);
         let mss = self.detect_mss(&ctx.candles);
 
-        if let Some((side, _gap)) = fvg {
+        if let Some((side, _gap, invalidation_level)) = fvg {
             let ob = self.find_last_ob(&ctx.candles, side);
 
             match side {
@@ -389,7 +393,23 @@ impl TradingStrategy for SMCStrategy {
                                 ctx.ofi_value, ctx.cumulative_delta
                             )
                         };
-                        return Some(Signal::buy(reason).with_confidence(confidence));
+
+                        let mut signal = Signal::buy(reason).with_confidence(confidence);
+
+                        // Stop Loss: Just below the FVG bottom (High1 or InvalidationLevel) or OB Low
+                        // If we have an OB, the OB low is usually a better structural stop (typically lower than FVG)
+                        // But we should take the lower of the two to be safe? Or higher?
+                        // Standard SMC: Stop below OB.
+                        // If no OB, stop below FVG.
+                        if let Some(ob_level) = ob {
+                            // If OB exists, stop goes below OB
+                            signal = signal.with_stop_loss(ob_level * dec!(0.999)); // 0.1% buffer
+                        } else {
+                            // Stop below FVG invalidation level
+                            signal = signal.with_stop_loss(invalidation_level * dec!(0.999));
+                        }
+
+                        return Some(signal);
                     }
                 }
                 OrderSide::Sell => {
@@ -431,7 +451,17 @@ impl TradingStrategy for SMCStrategy {
                                 ctx.ofi_value, ctx.cumulative_delta
                             )
                         };
-                        return Some(Signal::sell(reason).with_confidence(confidence));
+
+                        let mut signal = Signal::sell(reason).with_confidence(confidence);
+
+                        // Stop Loss: Just above FVG top (Low1) or OB High
+                        if let Some(ob_level) = ob {
+                            signal = signal.with_stop_loss(ob_level * dec!(1.001));
+                        } else {
+                            signal = signal.with_stop_loss(invalidation_level * dec!(1.001));
+                        }
+
+                        return Some(signal);
                     }
                 }
             }
@@ -489,9 +519,10 @@ mod tests {
 
         let fvg = strategy.detect_fvg(&candles);
         assert!(fvg.is_some());
-        let (side, gap) = fvg.unwrap();
+        let (side, gap, invalidation) = fvg.unwrap();
         assert_eq!(side, OrderSide::Buy);
         assert_eq!(gap, dec!(3.0));
+        assert_eq!(invalidation, dec!(102.0)); // High1
     }
 
     #[test]
@@ -519,9 +550,10 @@ mod tests {
 
         let fvg = strategy.detect_fvg(&candles);
         assert!(fvg.is_some());
-        let (side, gap) = fvg.unwrap();
+        let (side, gap, invalidation) = fvg.unwrap();
         assert_eq!(side, OrderSide::Sell);
         assert_eq!(gap, dec!(3.0));
+        assert_eq!(invalidation, dec!(98.0)); // Low1
     }
 
     #[test]

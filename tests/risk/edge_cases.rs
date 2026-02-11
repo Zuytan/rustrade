@@ -75,6 +75,8 @@ async fn test_pdt_protection_boundary() {
         order_type: OrderType::Market,
         reason: "PDT Test".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
+        stop_loss: None,
+        take_profit: None,
     };
 
     proposal_tx.send(proposal).await.unwrap();
@@ -104,6 +106,8 @@ async fn test_pdt_protection_boundary() {
         order_type: OrderType::Market,
         reason: "PDT Test 2".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal2).await.unwrap();
 
@@ -188,6 +192,8 @@ async fn test_max_daily_loss_prevents_trading() {
         order_type: OrderType::Market,
         reason: "Loss Test".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
+        stop_loss: None,
+        take_profit: None,
     };
 
     proposal_tx.send(proposal).await.unwrap();
@@ -270,6 +276,8 @@ async fn test_circuit_breaker_on_drawdown() {
         order_type: OrderType::Market,
         reason: "Drawdown Test".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
+        stop_loss: None,
+        take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 

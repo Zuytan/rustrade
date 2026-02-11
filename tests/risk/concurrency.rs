@@ -111,6 +111,8 @@ async fn test_concurrent_proposals_respect_limits() {
                 order_type: OrderType::Limit,
                 reason: format!("Concurrent test {}", i),
                 timestamp: chrono::Utc::now().timestamp_millis(),
+                stop_loss: None,
+                take_profit: None,
             };
 
             tx.send(proposal).await.ok();
@@ -225,6 +227,8 @@ async fn test_backpressure_drops_excess_proposals() {
             order_type: OrderType::Market,
             reason: "Backpressure test".to_string(),
             timestamp: chrono::Utc::now().timestamp_millis(),
+            stop_loss: None,
+            take_profit: None,
         };
 
         match proposal_tx.try_send(proposal) {

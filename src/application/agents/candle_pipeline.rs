@@ -176,12 +176,14 @@ impl CandlePipeline {
 
     /// Stage 4: Manage trailing stops and check for exit signals
     ///
-    /// Returns Some(OrderSide::Sell) if trailing stop is triggered
+    /// Stage 4: Manage trailing stops and check for exit signals
+    ///
+    /// Returns Some(Signal) if trailing stop is triggered (Side = Sell)
     fn manage_trailing_stops(
         &self,
         ctx: &mut PipelineContext<'_>,
         has_position: bool,
-    ) -> Option<OrderSide> {
+    ) -> Option<crate::application::strategies::Signal> {
         if !has_position {
             return None;
         }
@@ -189,16 +191,23 @@ impl CandlePipeline {
         let atr_decimal = ctx.context.last_features.atr.unwrap_or(Decimal::ZERO);
         let multiplier_decimal = ctx.context.config.trailing_stop_atr_multiplier;
 
-        let signal = ctx.context.position_manager.check_trailing_stop(
+        let signal_side = ctx.context.position_manager.check_trailing_stop(
             ctx.symbol,
             ctx.candle.close,
             atr_decimal,
             multiplier_decimal,
         );
 
+        if let Some(_side) = signal_side {
+            // Convert OrderSide to Signal
+            return Some(crate::application::strategies::Signal::sell(
+                "Trailing Stop Triggered".to_string(),
+            ));
+        }
+
         // Check partial take-profit if trailing stop not triggered
         #[allow(clippy::collapsible_if)]
-        if signal.is_none() && has_position {
+        if signal_side.is_none() && has_position {
             if let Some(_proposal) =
                 super::signal_processor::SignalProcessor::check_partial_take_profit(
                     ctx.context,
@@ -217,7 +226,7 @@ impl CandlePipeline {
             }
         }
 
-        signal
+        None
     }
 
     /// Stage 5: Generate and filter trading signal
@@ -225,7 +234,7 @@ impl CandlePipeline {
         &self,
         ctx: &mut PipelineContext<'_>,
         has_position: bool,
-    ) -> Option<OrderSide> {
+    ) -> Option<crate::application::strategies::Signal> {
         // Build position info from portfolio
         let position = if has_position {
             ctx.portfolio
@@ -275,18 +284,28 @@ impl CandlePipeline {
     async fn evaluate_and_propose(
         &self,
         ctx: &mut PipelineContext<'_>,
-        signal: OrderSide,
+        signal: crate::application::strategies::Signal,
         regime: &MarketRegime,
         has_position: bool,
     ) -> Option<TradeProposal> {
+        // Reuse build_proposal from SignalProcessor for proposal creation part
+        // But TradeEvaluator handles logic?
+        // Wait, trade_evaluator.evaluate_and_propose takes EvaluationInput.
+        // I need to update EvaluationInput to take Signal instead of OrderSide?
+        // Or just map it here?
+
+        // Let's modify EvaluationInput to take Signal?
+        // Checking trade_evaluator.rs... I assume it exists.
+        // To avoid modifying too many files, I can just pass signal.side to EvaluationInput,
         let input = EvaluationInput {
-            signal,
+            signal: signal.side,
             symbol: ctx.symbol,
             price: ctx.candle.close,
             timestamp: ctx.candle.timestamp * 1000,
             regime,
             execution_service: &self.execution_service,
             has_position,
+            strategy_signal: Some(signal.clone()), // I'll add this field
         };
 
         let proposal = self
@@ -297,10 +316,10 @@ impl CandlePipeline {
         // Update position manager state
         ctx.context
             .position_manager
-            .set_pending_order(signal, ctx.candle.timestamp * 1000);
+            .set_pending_order(signal.side, ctx.candle.timestamp * 1000);
 
         // Track entry time for buy signals
-        if signal == OrderSide::Buy {
+        if signal.side == OrderSide::Buy {
             ctx.context.last_entry_time = Some(ctx.candle.timestamp * 1000);
             super::position_lifecycle::initialize_trailing_stop_on_buy(
                 ctx.context,

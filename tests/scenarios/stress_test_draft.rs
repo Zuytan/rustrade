@@ -50,6 +50,8 @@ async fn test_stress_daily_loss_breach_rejects_proposal() {
         order_type: OrderType::Market,
         reason: "stress test".to_string(),
         timestamp: 0,
+        stop_loss: None,
+        take_profit: None,
     };
 
     let portfolio = Portfolio::new();
