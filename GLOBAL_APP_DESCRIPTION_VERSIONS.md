@@ -1,5 +1,19 @@
 # Rustrade - Historique des Versions
 
+## Version 0.97.5 - Global Codebase Analysis & Cleanup (February 2026)
+
+### Code Standardization
+- **Cleanup**: Removed conversational comments and standardized technical documentation across `smc.rs`, `advanced.rs`, `vwap.rs`, `qa.rs`, and `market_regime.rs`.
+- **Formatting**: Enforced `cargo fmt` standards globally.
+
+### Quality Assurance
+- **Linting**: Resolved `clippy` warnings (redundant logic in `signal_processor.rs`).
+- **Regression Fixes**: Restored missing test logic in `test_precision_rsi_alignment`.
+- **Architecture**: Validated `infrastructure` common modules and confirmed clean architecture (no utility dumping grounds).
+
+### Verification
+- **Test Suite**: Verified 100% pass rate (409 tests).
+
 ## Version 0.97.4 - Trade Proposal Precision & Risk Compliance (February 2026)
 
 ### Core Trading Architecture

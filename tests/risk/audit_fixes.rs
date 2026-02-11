@@ -176,6 +176,10 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
 
 #[tokio::test]
 async fn test_pending_order_ttl_cleanup() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .try_init();
+
     // No pause! We rely on real system time for TTL check via chrono::Utc::now()
 
     let mut portfolio = Portfolio::new();
@@ -193,6 +197,10 @@ async fn test_pending_order_ttl_cleanup() {
         pending_order_ttl_ms: Some(100),
         valuation_interval_seconds: 1,
         max_position_size_pct: dec!(1.0),
+        max_daily_loss_pct: dec!(0.50), // Allow 50% loss
+        max_drawdown_pct: dec!(0.50),   // Allow 50% drawdown
+        max_sector_exposure_pct: dec!(1.0),
+        allow_pdt_risk: true, // Allow PDT risk
         ..RiskConfig::default()
     };
 
@@ -242,7 +250,7 @@ async fn test_pending_order_ttl_cleanup() {
         symbol: "TSLA".to_string(),
         side: OrderSide::Buy,
         price: dec!(200.0),
-        quantity: dec!(50.0),
+        quantity: dec!(47.0), // Reduced to 47 * 200 = 9400 < 9500 (10000 - 5% margin)
         order_type: OrderType::Market,
         reason: "Test".to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
@@ -252,7 +260,12 @@ async fn test_pending_order_ttl_cleanup() {
     proposal_tx.send(proposal).await.unwrap();
 
     // 5. Mock Execution (The RiskManager forwards to Order Executor)
-    let order = order_rx.recv().await.unwrap();
+    // We add a timeout to prevent the test from hanging indefinitely if the proposal is rejected
+    let order = tokio::time::timeout(std::time::Duration::from_secs(1), order_rx.recv())
+        .await
+        .expect("Timed out waiting for order - Proposal likely rejected by RiskManager")
+        .expect("Order channel closed unexpectedly");
+
     mock_exec.execute(order).await.unwrap();
 
     // 6. Wait for TTL expiry (TTL = 100ms, Check Interval = 1s)

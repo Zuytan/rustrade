@@ -105,10 +105,9 @@ impl MarketRegimeDetector {
                 // Strong Trending Behavior
                 return Ok(MarketRegime::new(
                     MarketRegimeType::TrendingUp, // Direction needs price action, defaulting to Generic Trend or need direction input
-                    // Actually we need direction. So we might need context or direction passed in.
-                    // For now, let's say TrendingUp/Down is ambiguous from Hurst alone (it just says "Trending").
-                    // We need slope or momentum for direction.
-                    // Let's assume we use this in conjunction with simple slope check.
+                    // Hurst > 0.6 indicates trending behavior, but direction is ambiguous from Hurst alone.
+                    // Direction determination requires additional context (e.g., slope or momentum).
+                    // Current implementation maps to TrendingUp as a generic placeholder for "Trending".
                     (h - dec!(0.5)) * dec!(2.0), // Confidence scales with Hurst
                     Decimal::ZERO,
                     h * dec!(100.0),

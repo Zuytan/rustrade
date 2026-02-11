@@ -95,6 +95,7 @@ fn process(value: Decimal) -> Result<Decimal, ProcessError> {
 
 1. **Clean the code**
    - Remove duplicate code
+   - Remove commented-out code and obsolete comments
    - Improve variable names
    - Simplify complex expressions
 
@@ -154,3 +155,4 @@ pub fn calculate_position_size(
 | `f64` for money | Rounding errors | `Decimal` |
 | Tests without assertions | False positives | At least one assertion per test |
 | Modify tests to pass | Hides bugs | Fix the code |
+| Commented-out code | Clutters codebase | Remove it (use git history) |

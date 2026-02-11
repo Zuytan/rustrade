@@ -129,7 +129,7 @@ impl AdvancedTripleFilterStrategy {
             OrderSide::Sell => {
                 // Sells can happen in weak trends (e.g. stop loss or reversal)
                 // But generally we want to exit if trend breaks.
-                // For now, let's keep it asymmetric like other filters: stricter on Entry.
+                // Asymmetric filtering: stricter on Entry, more permissive on Exit to allow stop-loss/reversals.
                 true
             }
         }

@@ -396,11 +396,9 @@ impl TradingStrategy for SMCStrategy {
 
                         let mut signal = Signal::buy(reason).with_confidence(confidence);
 
-                        // Stop Loss: Just below the FVG bottom (High1 or InvalidationLevel) or OB Low
-                        // If we have an OB, the OB low is usually a better structural stop (typically lower than FVG)
-                        // But we should take the lower of the two to be safe? Or higher?
-                        // Standard SMC: Stop below OB.
-                        // If no OB, stop below FVG.
+                        // Stop Loss Strategy:
+                        // 1. If an Order Block (OB) exists, place stop below the OB (standard SMC).
+                        // 2. If no OB, place stop below the FVG invalidation level.
                         if let Some(ob_level) = ob {
                             // If OB exists, stop goes below OB
                             signal = signal.with_stop_loss(ob_level * dec!(0.999)); // 0.1% buffer

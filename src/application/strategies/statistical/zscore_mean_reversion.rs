@@ -72,12 +72,6 @@ impl ZScoreMeanReversionStrategy {
 
         Some((z_score, mean_d, std_d))
     }
-
-    // Backward compatibility wrapper if needed, or just remove if unused internally
-    #[allow(dead_code)]
-    pub(crate) fn calculate_zscore(&self, ctx: &AnalysisContext) -> Option<Decimal> {
-        self.calculate_stats(ctx).map(|(z, _, _)| z)
-    }
 }
 
 impl Default for ZScoreMeanReversionStrategy {

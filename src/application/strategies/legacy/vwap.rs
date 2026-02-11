@@ -227,7 +227,7 @@ mod tests {
 
         // Midnight is 0.
         // Candle 1 at 100 which is > 0.
-        // Needs start > day_start?
+        // Logic requires start timestamp > day_start for correct daily VWAP calculation.
         // timestamp is 100000. day_start = 100000 - (100000 % 86400) = 86400.
         // So candles must be >= 86400.
 

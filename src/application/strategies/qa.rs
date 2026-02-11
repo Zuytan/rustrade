@@ -444,19 +444,9 @@ fn test_precision_zscore() {
     let strategy = ZScoreMeanReversionStrategy::new(3, dec!(2.0), dec!(0.0));
     let mut candles = VecDeque::new();
 
-    // Fill required min_data_points (20 normally, but strategy clamps to max(20) in constructor? No, lookback.max(20) -> 20 min points.)
-    // Wait, `min_data_points: lookback_period.max(20)` in `new`.
-    // So I need at least 20 candles.
-    // I need the LAST 3 to be 10, 20, 30.
-    // The previous 17 can be anything? No, mean is calculated on `lookback_period` (3).
-    // So if lookback is 3, it takes last 3.
-    // But min_data_points is 20. So I must provide 20 candles.
-
-    // Let's inject 17 candles of 0.0 (ignored by take(3) rev? No wait.)
-    // `prices` = `ctx.candles.iter().rev().take(lookback)`.
-    // So it takes the MOST RECENT candles.
-    // So if I add 17 dummy candles, then 10, 20, 30.
-    // The prices vector will be [30, 20, 10].
+    // We need to provide enough history to satisfy `min_data_points` (20).
+    // The strategy only uses the last `lookback_period` (3) for the Z-Score calculation.
+    // We inject 17 dummy candles followed by the 3 actual data points [10, 20, 30].
 
     for _ in 0..17 {
         candles.push_back(Candle {
@@ -531,8 +521,8 @@ fn test_precision_zscore() {
         feature_set: None,
     };
 
-    let zscore = strategy
-        .calculate_zscore(&ctx)
+    let (zscore, _, _) = strategy
+        .calculate_stats(&ctx)
         .expect("Z-Score should calculate");
 
     // Z-Score with current price in sample:
@@ -555,14 +545,11 @@ fn test_precision_rsi_alignment() {
     let mut candles = VecDeque::new();
     let mut rsi_history = VecDeque::new();
 
-    // Create 20 candles.
-    // Pivot at index 10. Low price.
-    // Current index 19. Lower low price.
-    // Divergence check looks for first low in first half (0..7?).
-    // Lookback 14. Start index = 20 - 14 = 6.
-    // Half = 6 + (14/2) = 13.
-    // First half: 6..13.
-    // Second half: 13..20.
+    // Setup:
+    // - Total history: 20 candles
+    // - Lookback: 14 candles (Start index = 6)
+    // - First Low at index 10 (First half of lookback window)
+    // - Second Low at index 18 (Second half of lookback window)
 
     // Let's set Low at index 10 (First Low).
     // And Low at index 18 (Second Low).
@@ -585,20 +572,9 @@ fn test_precision_rsi_alignment() {
     candles[10].low = dec!(90.0); // First Low
     candles[18].low = dec!(80.0); // Second Low < First Low (Bullish Price)
 
-    // Set RSI at those indices
-    // RSI[10]: We want accurate retrieval.
-    // RSI[18]: Should be > RSI[10].
-
-    // Note: rsi_history index aligns with candles index?
-    // "ctx.candles.len().saturating_sub(ctx.rsi_history.len())" -> Offset.
-    // Here len=20, hist_len=20. Offset 0.
-    // So rsi_history[10] corresponds to candle[10].
-
+    // Set RSI at specific indices for verification
     rsi_history[10] = dec!(30.0);
     rsi_history[18] = dec!(35.0);
-
-    // Set current RSI for analyze input (though find_divergence uses history?)
-    // find_divergence passes rsi_at_second_low.
 
     let ctx = AnalysisContext {
         symbol: "TEST".to_string(),
@@ -636,12 +612,7 @@ fn test_precision_rsi_alignment() {
 
     let div = strategy.find_divergence(&ctx);
     if div.is_none() {
-        // Debug
-        // Maybe failed rsi < 40 check?
-        // RSI at second low (18) is 35.0. < 40. OK.
-        // RSI at first low (10) is 30.0.
-        // 35 > 30. OK.
-        panic!("Should find divergence");
+        panic!("Should find divergence - RSI at second low (35) > RSI at first low (30)");
     }
 
     if let Some(DivergenceType::Bullish {

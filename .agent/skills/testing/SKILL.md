@@ -54,6 +54,22 @@ cargo test
 - A failing test = no commit
 - New tests should cover edge cases
 
+### Async Tests (MANDATORY)
+
+When writing `#[tokio::test]`, preventing infinite hangs is critical:
+
+1. **Always use timeouts** for channel operations (`recv().await`).
+   ```rust
+   // ❌ Potential hang
+   let msg = rx.recv().await.unwrap();
+
+   // ✅ Safe
+   let msg = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+       .await
+       .expect("Timeout waiting for message")?;
+   ```
+2. **Avoid infinite loops** without exit conditions or timeouts.
+
 ### Step 4: Release verification (optional)
 
 ```bash

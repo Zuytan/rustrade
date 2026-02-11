@@ -27,10 +27,6 @@ impl SignalProcessor {
     ///
     /// Delegates to the context's signal generator which applies the trading strategy
     /// to current market conditions and features.
-    /// Generate trading signal from strategy.
-    ///
-    /// Delegates to the context's signal generator which applies the trading strategy
-    /// to current market conditions and features.
     pub fn generate_signal(
         context: &mut SymbolContext,
         symbol: &str,
@@ -283,10 +279,6 @@ impl SignalProcessor {
         None
     }
 }
-
-// Default implementation removed as we need dependencies
-// use crate::application::market_data::spread_cache::SpreadCache;
-// impl Default for SignalProcessor { ... }
 
 #[cfg(test)]
 mod tests {
