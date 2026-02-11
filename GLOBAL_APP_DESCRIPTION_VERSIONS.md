@@ -1,5 +1,20 @@
 # Rustrade - Historique des Versions
 
+## Version 0.97.6 - Risk Manager Optimization & Stability (February 2026)
+
+### Performance & Architecture
+- **Async Correlation**: Decoupled expensive correlation matrix calculations from the hot proposal path. Implemented a background refresh task with `RwLock` caching in `CorrelationService`.
+- **State Unification**: Removed the legacy `risk_state` struct and manual synchronization logic. `RiskManager` now relies exclusively on `PortfolioStateManager` as the single source of truth, eliminating desynchronization risks.
+- **Batch Reconciliation**: Optimized `reconcile_pending_orders` to release expired reservation tokens in batches, improving throughput under load.
+- **Background Volatility**: Moved heavy volatility calculations to a dedicated background task.
+
+### Stability & Quality
+- **Test Suite Hardening**: 
+  - Fixed race conditions in `test_circuit_breaker_triggers_liquidation` by ensuring proper mock market data updates and initialization time.
+  - Resolved a hanging test in `test_sentiment_risk_adjustment` caused by silent rejection in `Offline` mode; added explicit connection status setup and timeouts.
+- **Linting**: Fixed `clippy::collapsible_if` warning in `risk_manager.rs`.
+- **Verification**: Confirmed 100% test pass rate for `application::risk_management`.
+
 ## Version 0.97.5 - Global Codebase Analysis & Cleanup (February 2026)
 
 ### Code Standardization

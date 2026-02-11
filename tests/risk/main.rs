@@ -3,4 +3,5 @@ pub mod circuit_breaker;
 pub mod concurrency;
 pub mod edge_cases;
 pub mod liquidation_retry_tests;
+pub mod risk_manager_tests;
 pub mod service_integration;

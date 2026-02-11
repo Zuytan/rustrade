@@ -1,26 +1,31 @@
 //! Integration tests for RiskManager
 //! Extracted from risk_manager.rs to improve file maintainability
 
+use rustrade::application::market_data::spread_cache::SpreadCache;
+use rustrade::application::monitoring::connection_health_service::ConnectionHealthService;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::commands::RiskCommand;
 use rustrade::application::risk_management::risk_manager::RiskManager;
-use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::config::AssetClass;
 use rustrade::domain::ports::{ExecutionService, MarketDataService, SectorProvider};
 use rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig;
 use rustrade::domain::risk::risk_config::RiskConfig;
 use rustrade::domain::sentiment::{Sentiment, SentimentClassification};
 use rustrade::domain::trading::portfolio::{Portfolio, Position};
-use rustrade::domain::trading::types::{Candle, MarketEvent, Order, OrderSide, OrderType, TradeProposal};
+use rustrade::domain::trading::types::{
+    Candle, MarketEvent, Order, OrderSide, OrderType, TradeProposal,
+};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use rustrade::infrastructure::observability::Metrics;
 
 use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal_macros::dec;
+use rustrade::application::monitoring::connection_health_service::ConnectionStatus;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tracing::info;
 
 // ============================================================================
@@ -34,7 +39,7 @@ struct ConfigurableMockMarketData {
 impl ConfigurableMockMarketData {
     fn new() -> Self {
         Self {
-            prices: Arc::new(Mutex::new(HashMap::new()),
+            prices: Arc::new(Mutex::new(HashMap::new())),
         }
     }
     fn set_price(&self, symbol: &str, price: Decimal) {
@@ -93,7 +98,7 @@ impl SectorProvider for MockSectorProvider {
             .sectors
             .get(symbol)
             .cloned()
-            .unwrap_or_else(|| "Unknown".to_string())
+            .unwrap_or_else(|| "Unknown".to_string()))
     }
 }
 
@@ -118,7 +123,7 @@ async fn test_circuit_breaker_on_market_crash() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
 
     // Setup Market: TSLA @ $100 Initially
     let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -151,7 +156,7 @@ async fn test_circuit_breaker_on_market_crash() {
         None,
         None,
         Arc::new(SpreadCache::new()),
-        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
     )
     .expect("Test config should be valid");
@@ -173,7 +178,7 @@ async fn test_circuit_breaker_on_market_crash() {
         quantity: Decimal::from(10),
         order_type: OrderType::Market,
         reason: "Buy the dip".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
@@ -181,7 +186,7 @@ async fn test_circuit_breaker_on_market_crash() {
 
     // Expect Liquidation Order due to Circuit Breaker
     let liquidation_order =
-        tokio::time::timeout(std::time::Duration::from_millis(200), order_rx.recv())
+        tokio::time::timeout(std::time::Duration::from_millis(2500), order_rx.recv())
             .await
             .expect("Should trigger liquidation")
             .expect("Should receive liquidation order");
@@ -204,12 +209,17 @@ async fn test_buy_approval() {
     let mut port = Portfolio::new();
     port.cash = Decimal::from(1000);
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
     let market_service = Arc::new(MockMarketDataService::new());
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
+    let connection_service = Arc::new(ConnectionHealthService::new());
+    connection_service
+        .set_market_data_status(ConnectionStatus::Online, None)
+        .await;
+
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
@@ -225,7 +235,8 @@ async fn test_buy_approval() {
         None,
         None,
         Arc::new(SpreadCache::new()),
-        Arc::new(ConnectionHealthService::new()),
+        connection_service,
+        Metrics::default(),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -237,13 +248,16 @@ async fn test_buy_approval() {
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
         reason: "Test".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
-    let order = order_rx.recv().await.expect("Should approve");
+    let order = tokio::time::timeout(std::time::Duration::from_millis(2500), order_rx.recv())
+        .await
+        .expect("Should not timeout")
+        .expect("Should approve");
     assert_eq!(order.symbol, "ABC");
 }
 
@@ -254,7 +268,7 @@ async fn test_buy_rejection_insufficient_funds() {
     let mut port = Portfolio::new();
     port.cash = Decimal::from(50); // Less than 100
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
     let market_service = Arc::new(MockMarketDataService::new());
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
@@ -276,6 +290,7 @@ async fn test_buy_rejection_insufficient_funds() {
         None,
         Arc::new(SpreadCache::new()),
         Arc::new(ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -287,7 +302,7 @@ async fn test_buy_rejection_insufficient_funds() {
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
         reason: "Test".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
@@ -314,7 +329,7 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
 
     // Mock Market Data (Need AAPL price for Equity calc)
     let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -341,6 +356,7 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         None,
         Arc::new(SpreadCache::new()),
         Arc::new(ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 
@@ -356,7 +372,7 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         quantity: Decimal::from(50), // $5,000
         order_type: OrderType::Market,
         reason: "Test Buying Power".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
@@ -386,12 +402,17 @@ async fn test_sell_approval() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
     let market_service = Arc::new(MockMarketDataService::new());
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
+    let connection_service = Arc::new(ConnectionHealthService::new());
+    connection_service
+        .set_market_data_status(ConnectionStatus::Online, None)
+        .await;
+
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
@@ -407,7 +428,8 @@ async fn test_sell_approval() {
         None,
         None,
         Arc::new(SpreadCache::new()),
-        Arc::new(ConnectionHealthService::new()),
+        connection_service,
+        Metrics::default(),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -419,13 +441,16 @@ async fn test_sell_approval() {
         quantity: Decimal::from(5), // Sell 5
         order_type: OrderType::Market,
         reason: "Test".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
-    let order = order_rx.recv().await.expect("Should approve");
+    let order = tokio::time::timeout(std::time::Duration::from_millis(2500), order_rx.recv())
+        .await
+        .expect("Should not timeout")
+        .expect("Should approve");
     assert_eq!(order.symbol, "ABC");
 }
 
@@ -445,7 +470,7 @@ async fn test_pdt_protection_rejection() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
 
     // Simulate a BUY today
     exec_service
@@ -456,7 +481,7 @@ async fn test_pdt_protection_rejection() {
             price: Decimal::from(50),
             quantity: Decimal::from(10),
             order_type: OrderType::Limit,
-            status: crate::domain::trading::types::OrderStatus::Filled,
+            status: rustrade::domain::trading::types::OrderStatus::Filled,
             timestamp: Utc::now().timestamp_millis(),
         })
         .await
@@ -488,7 +513,7 @@ async fn test_pdt_protection_rejection() {
         None,
         None,
         Arc::new(SpreadCache::new()),
-        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
     )
     .expect("Test config should be valid");
@@ -537,7 +562,7 @@ async fn test_sector_exposure_limit() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
 
     // Setup Market
     let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -575,7 +600,7 @@ async fn test_sector_exposure_limit() {
         None,
         None,
         Arc::new(SpreadCache::new()),
-        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
     )
     .expect("Test config should be valid");
@@ -591,7 +616,7 @@ async fn test_sector_exposure_limit() {
         price: Decimal::from(200),
         quantity: Decimal::from(100), // 100 * 200 = 20,000
         reason: "Sector Test".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         order_type: OrderType::Market,
         stop_loss: None,
         take_profit: None,
@@ -623,7 +648,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         },
     );
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
 
     // Setup Market
     let market_data = Arc::new(ConfigurableMockMarketData::new());
@@ -633,6 +658,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
     // Config: Max Daily Loss 10% ($2,000)
     let config = RiskConfig {
         max_daily_loss_pct: dec!(0.10),
+        valuation_interval_seconds: 1,
         ..RiskConfig::default()
     };
 
@@ -654,7 +680,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         None,
         None,
         Arc::new(SpreadCache::new()),
-        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
     )
     .expect("Test config should be valid");
@@ -662,10 +688,12 @@ async fn test_circuit_breaker_triggers_liquidation() {
     tokio::spawn(async move { rm.run().await });
 
     // Initialize session (Equity = $20,000)
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    let _ = tracing_subscriber::fmt::try_init();
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
     // CRASH SCENARIO: TSLA Drops to $700 (-30%)
     // Equity drops from $20k to $17k (-15%). This exceeds 10% limit.
+    market_data.set_price("TSLA", Decimal::from(700));
     let proposal = TradeProposal {
         symbol: "TSLA".to_string(),
         side: OrderSide::Buy,
@@ -673,7 +701,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
         reason: "Trying to catch a falling knife".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
@@ -681,7 +709,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
 
     // Expect liquidation order
     let liquidation_order =
-        tokio::time::timeout(std::time::Duration::from_millis(200), order_rx.recv())
+        tokio::time::timeout(std::time::Duration::from_millis(2500), order_rx.recv())
             .await
             .expect("Should return liquidation order")
             .expect("Should have an order");
@@ -699,15 +727,14 @@ async fn test_circuit_breaker_triggers_liquidation() {
         quantity: Decimal::from(1),
         order_type: OrderType::Market,
         reason: "Safe trade".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
     proposal_tx.send(proposal2).await.unwrap();
 
     // Should receive NO orders
-    let res =
-        tokio::time::timeout(std::time::Duration::from_millis(100), order_rx.recv()).await;
+    let res = tokio::time::timeout(std::time::Duration::from_millis(100), order_rx.recv()).await;
     assert!(res.is_err(), "Should timeout because trading is halted");
 }
 
@@ -719,7 +746,7 @@ async fn test_crypto_daily_reset() {
     let mut port = Portfolio::new();
     port.cash = Decimal::from(10000);
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
     let market_service = Arc::new(MockMarketDataService::new());
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
@@ -740,6 +767,7 @@ async fn test_crypto_daily_reset() {
         None,
         Arc::new(SpreadCache::new()),
         Arc::new(ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
 
@@ -747,22 +775,33 @@ async fn test_crypto_daily_reset() {
     let yesterday = Utc::now().date_naive() - chrono::Duration::days(1);
     let yesterday_ts = (Utc::now() - chrono::Duration::days(1)).timestamp();
 
-    rm.state_manager.get_state_mut().reference_date = yesterday;
-    rm.state_manager.get_state_mut().updated_at = yesterday_ts;
-    rm.state_manager.get_state_mut().session_start_equity = Decimal::from(5000);
-    rm.state_manager.get_state_mut().daily_drawdown_reset = false;
+    rm.get_state_mut().reference_date = yesterday;
+    rm.get_state_mut().updated_at = yesterday_ts;
+    rm.get_state_mut().session_start_equity = Decimal::from(5000);
+    rm.get_state_mut().daily_drawdown_reset = false;
 
-    rm.risk_state = rm.state_manager.get_state().clone();
+    // rm.risk_state = rm.state_manager.get_state().clone(); // No longer needed/possible
 
     let current_equity = Decimal::from(10000);
-    rm.check_daily_reset(current_equity);
+    rm.check_daily_reset(current_equity); // Use public method if available, or internal via test? check_daily_reset is private!
+    // check_daily_reset is private in RiskManager.
+    // Tests are external? No, they are integration tests. They can only access public methods.
+    // But this test calls rm.check_daily_reset.
+    // If check_daily_reset is private, this test was ALREADY broken or accessing via some other way?
+    // In original code, check_daily_reset was private "fn check_daily_reset".
+    // So this test file MUST have been a unit test module inside risk_manager.rs originally, OR check_daily_reset was pub(crate).
+    // But here it's in tests/risk/risk_manager_tests.rs.
+    // It seems the test code I see was pasted from somewhere else or intended to be internal.
+    // If check_daily_reset is private, I cannot call it.
+    // I should make it pub(crate) or pub for testing.
 
     assert_eq!(
-        rm.risk_state.session_start_equity, current_equity,
+        rm.get_state().session_start_equity,
+        current_equity,
         "Should reset session equity to current"
     );
     assert_eq!(
-        rm.risk_state.reference_date,
+        rm.get_state().reference_date,
         Utc::now().date_naive(),
         "Should update reset date to today"
     );
@@ -778,7 +817,7 @@ async fn test_sentiment_risk_adjustment() {
     let mut port = Portfolio::new();
     port.cash = Decimal::from(10000);
     let portfolio = Arc::new(RwLock::new(port));
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
     let market_service = Arc::new(MockMarketDataService::new());
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
@@ -787,6 +826,17 @@ async fn test_sentiment_risk_adjustment() {
         max_position_size_pct: dec!(0.10), // 10% normally ($1000)
         ..Default::default()
     };
+
+    let connection_service = Arc::new(
+        rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new(
+        ),
+    );
+    connection_service
+        .set_market_data_status(
+            rustrade::application::monitoring::connection_health_service::ConnectionStatus::Online,
+            None,
+        )
+        .await;
 
     let mut rm = RiskManager::new(
         proposal_rx,
@@ -803,7 +853,7 @@ async fn test_sentiment_risk_adjustment() {
         None,
         None,
         Arc::new(SpreadCache::new()),
-        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        connection_service,
         Metrics::default(),
     )
     .expect("Test config should be valid");
@@ -811,7 +861,7 @@ async fn test_sentiment_risk_adjustment() {
 
     // 1. Inject Sentiment: Extreme Fear (20)
     let sentiment = Sentiment {
-        value: dec!(20.0),
+        value: 20,
         classification: SentimentClassification::from_score(20),
         timestamp: Utc::now(),
         source: "Test".to_string(),
@@ -832,7 +882,7 @@ async fn test_sentiment_risk_adjustment() {
         quantity: Decimal::from_f64(0.01).unwrap(), // $600
         order_type: OrderType::Market,
         reason: "Test Sentiment".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
@@ -847,7 +897,7 @@ async fn test_sentiment_risk_adjustment() {
 
     // 4. Inject Sentiment: Greed (60)
     let sentiment_greed = Sentiment {
-        value: dec!(60.0),
+        value: 60,
         classification: SentimentClassification::from_score(60),
         timestamp: Utc::now(),
         source: "Test".to_string(),
@@ -866,16 +916,16 @@ async fn test_sentiment_risk_adjustment() {
         quantity: Decimal::from_f64(0.01).unwrap(), // $600 < $1000
         order_type: OrderType::Market,
         reason: "Test Sentiment Greed".to_string(),
-        timestamp: dec!(0.0),
+        timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
     };
     proposal_tx.send(proposal2).await.unwrap();
 
     // 6. Verify Acceptance
-    let order = order_rx
-        .recv()
+    let order = tokio::time::timeout(std::time::Duration::from_millis(1000), order_rx.recv())
         .await
+        .expect("Should not timeout")
         .expect("Should be approved in Greed mode");
     assert_eq!(order.symbol, "BTC");
 }
@@ -886,7 +936,7 @@ async fn test_blind_liquidation_panic_mode() {
     let portfolio = Portfolio::new();
     let portfolio = Arc::new(RwLock::new(portfolio));
 
-    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone());
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
     let market_service = Arc::new(MockMarketDataService::new());
 
     let (_proposal_tx, proposal_rx) = mpsc::channel(1);
@@ -929,7 +979,8 @@ async fn test_blind_liquidation_panic_mode() {
         None,
         None,
         Arc::new(SpreadCache::new()),
-        Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+        Metrics::default(),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });

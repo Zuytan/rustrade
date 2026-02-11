@@ -4,30 +4,52 @@ use anyhow::{Context, Result};
 use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{error, info};
 
 pub struct CorrelationService {
     candle_repository: Arc<dyn CandleRepository>,
+    correlation_matrix: Arc<RwLock<HashMap<(String, String), Decimal>>>,
 }
 
 use rust_decimal::Decimal;
 
 impl CorrelationService {
     pub fn new(candle_repository: Arc<dyn CandleRepository>) -> Self {
-        Self { candle_repository }
+        Self {
+            candle_repository,
+            correlation_matrix: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
-    /// Calculate Pearson correlation matrix for a list of symbols
-    /// uses 30 days of historical data
-    pub async fn calculate_correlation_matrix(
-        &self,
-        symbols: &[String],
-    ) -> Result<HashMap<(String, String), Decimal>> {
+    /// Start the background refresh task
+    pub async fn start_background_refresh(self: Arc<Self>, symbols: Vec<String>) {
+        info!("CorrelationService: Starting background refresh task");
+        let service = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Every hour
+            loop {
+                interval.tick().await;
+                if let Err(e) = service.refresh_correlation_matrix(&symbols).await {
+                    error!("CorrelationService: Failed to refresh matrix: {}", e);
+                }
+            }
+        });
+    }
+
+    /// Refresh the correlation matrix explicitly (can be called by background task or manually)
+    pub async fn refresh_correlation_matrix(&self, symbols: &[String]) -> Result<()> {
+        info!(
+            "CorrelationService: Refreshing correlation matrix for {} symbols",
+            symbols.len()
+        );
         let end_ts = chrono::Utc::now().timestamp();
         let start_ts = end_ts - (30 * 24 * 60 * 60); // 30 days
 
         let mut returns = HashMap::new();
 
         for symbol in symbols {
+            // Optimization: We could parallelize this fetch if needed
             let candles = self
                 .candle_repository
                 .get_range(symbol, start_ts, end_ts)
@@ -59,7 +81,46 @@ impl CorrelationService {
             }
         }
 
-        Ok(matrix)
+        // Update cache
+        let mut write_guard = self.correlation_matrix.write().await;
+        *write_guard = matrix;
+        info!("CorrelationService: Matrix updated successfully");
+
+        Ok(())
+    }
+
+    /// Get correlation matrix from cache (Non-blocking / Fast)
+    /// If symbols are not in cache, they will return 0.0 correlation (safe default)
+    pub async fn get_correlation_matrix(
+        &self,
+        symbols: &[String],
+    ) -> Result<HashMap<(String, String), Decimal>> {
+        let cache = self.correlation_matrix.read().await;
+        let mut result = HashMap::new();
+
+        for s1 in symbols {
+            for s2 in symbols {
+                let key = (s1.clone(), s2.clone());
+                if let Some(val) = cache.get(&key) {
+                    result.insert(key, *val);
+                } else if s1 == s2 {
+                    result.insert(key, Decimal::ONE);
+                } else {
+                    // Default to 0 if unknown
+                    result.insert(key, Decimal::ZERO);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    // Deprecated: kept for compatibility if interface requires it, but redirects to get_correlation_matrix
+    pub async fn calculate_correlation_matrix(
+        &self,
+        symbols: &[String],
+    ) -> Result<HashMap<(String, String), Decimal>> {
+        self.get_correlation_matrix(symbols).await
     }
 
     fn calculate_returns(&self, candles: &[Candle]) -> Vec<f64> {

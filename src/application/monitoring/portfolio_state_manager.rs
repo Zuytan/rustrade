@@ -236,6 +236,24 @@ impl PortfolioStateManager {
         }
     }
 
+    /// Release multiple reservations in a single batch (optimization)
+    pub async fn release_reservations(&self, tokens: Vec<ReservationToken>) {
+        if tokens.is_empty() {
+            return;
+        }
+        let mut state = self.current_state.write().await;
+        for token in tokens {
+            if state.reserved_exposure.remove(&token.id).is_some() {
+                info!(
+                    "PortfolioStateManager: Released ${} for {} (token: {})",
+                    token.amount,
+                    token.symbol,
+                    &token.id[..8]
+                );
+            }
+        }
+    }
+
     /// Get total reserved exposure
     pub async fn get_total_reserved(&self) -> Decimal {
         let state = self.current_state.read().await;

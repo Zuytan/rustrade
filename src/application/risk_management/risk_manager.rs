@@ -21,6 +21,7 @@ use crate::domain::risk::filters::{
     sector_exposure_validator::{SectorExposureConfig, SectorExposureValidator},
     sentiment_validator::{SentimentConfig, SentimentValidator},
 };
+
 use crate::domain::risk::state::RiskState;
 use crate::domain::risk::volatility_manager::VolatilityManager; // Added
 use crate::domain::sentiment::Sentiment;
@@ -74,9 +75,6 @@ pub struct RiskManager {
     circuit_breaker_service: CircuitBreakerService, // New
     order_reconciler: OrderReconciler,              // New
 
-    // Legacy State (Deprecated/To be removed)
-    // Kept briefly if needed for transition, but aim to remove usage
-    risk_state: RiskState, // REPLACED BY state_manager
     // pending_orders removed - replaced by order_reconciler
 
     // Runtime flags
@@ -91,7 +89,7 @@ pub struct RiskManager {
     current_prices: HashMap<String, Decimal>,
     // pending_reservations moved to OrderReconciler
     current_sentiment: Option<Sentiment>,
-    risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
+    // risk_state_repository removed (moved to state_manager)
     candle_repository: Option<Arc<dyn CandleRepository>>,
 
     // Services
@@ -220,8 +218,6 @@ impl RiskManager {
             }),
             order_reconciler: OrderReconciler::new(risk_config.pending_order_ttl_ms),
 
-            // Legacy State (Initialized to defaults, will be synced or ignored)
-            risk_state: RiskState::default(),
             // pending_orders removed
             current_prices: HashMap::new(),
             performance_monitor,
@@ -232,7 +228,7 @@ impl RiskManager {
 
             // pending_reservations removed
             current_sentiment: None,
-            risk_state_repository,
+            // risk_state_repository removed
             candle_repository,
             spread_cache,
             connection_health_service,
@@ -243,24 +239,7 @@ impl RiskManager {
 
     /// Persist current risk state to database
     async fn persist_state(&self) {
-        if let Some(repo) = &self.risk_state_repository {
-            let state = RiskState {
-                id: "global".to_string(), // Singleton for now
-                session_start_equity: self.risk_state.session_start_equity,
-                daily_start_equity: self.risk_state.daily_start_equity,
-                equity_high_water_mark: self.risk_state.equity_high_water_mark,
-                consecutive_losses: self.risk_state.consecutive_losses,
-                reference_date: self.risk_state.reference_date,
-                updated_at: Utc::now().timestamp(),
-                daily_drawdown_reset: false, // Default or track it
-            };
-
-            if let Err(e) = repo.save(&state).await {
-                error!("RiskManager: Failed to persist risk state: {}", e);
-            } else {
-                debug!("RiskManager: Risk state persisted successfully.");
-            }
-        }
+        self.state_manager.persist().await;
     }
 
     /// Initialize session tracking with starting equity
@@ -312,19 +291,15 @@ impl RiskManager {
             .initialize_session(&snapshot.portfolio, &mut self.current_prices)
             .await?;
 
-        // Sync to legacy state (will be removed in future)
-        self.risk_state = risk_state;
+        // Sync state manager
+        *self.state_manager.get_state_mut() = risk_state.clone();
 
         info!(
             "RiskManager: Session initialized. Equity: {}, Daily Start: {}, HWM: {}",
-            self.risk_state.session_start_equity,
-            self.risk_state.daily_start_equity,
-            self.risk_state.equity_high_water_mark
+            self.state_manager.get_state().session_start_equity,
+            self.state_manager.get_state().daily_start_equity,
+            self.state_manager.get_state().equity_high_water_mark
         );
-
-        // SYNC Fix: Ensure state_manager is also updated with the initialized state
-        // otherwise update_portfolio_valuation will overwrite self.risk_state with empty state
-        *self.state_manager.get_state_mut() = self.risk_state.clone();
 
         Ok(())
     }
@@ -332,7 +307,7 @@ impl RiskManager {
     /// Check if circuit breaker should trigger; returns level and message when triggered.
     fn check_circuit_breaker(&self, current_equity: Decimal) -> Option<(HaltLevel, String)> {
         self.circuit_breaker_service
-            .check_circuit_breaker(&self.risk_state, current_equity)
+            .check_circuit_breaker(self.state_manager.get_state(), current_equity)
     }
 
     /// Handle real-time order updates to maintain pending state
@@ -344,7 +319,7 @@ impl RiskManager {
     async fn handle_order_update(&mut self, update: OrderUpdate) -> bool {
         let (state_changed, token) = self
             .order_reconciler
-            .handle_order_update(&update, &mut self.risk_state);
+            .handle_order_update(&update, self.state_manager.get_state_mut());
 
         // Release reservation token synchronously in this async context
         if let Some(t) = token {
@@ -368,8 +343,6 @@ impl RiskManager {
 
         // Update High Water Mark via State Manager
         self.state_manager.update(current_equity, Utc::now()).await;
-        // Sync legacy copy
-        self.risk_state = self.state_manager.get_state().clone();
 
         // Check Risks (Async check)
         // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
@@ -400,52 +373,57 @@ impl RiskManager {
         Ok(())
     }
 
-    /// Update volatility manager with latest ATR/Benchmark data
-    pub async fn update_volatility(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    /// Update volatility manager with latest ATR/Benchmark data (Non-blocking)
+    pub async fn update_volatility(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Choose benchmark symbol based on asset class
         let benchmark = match self.asset_class {
             AssetClass::Crypto => "BTC/USDT",
             _ => "SPY",
         };
 
-        // Fetch last 20 daily candles for ATR
-        let now = Utc::now();
-        let start = now - chrono::Duration::days(30); // 30 days to get enough candles
+        let market_service = self.market_service.clone();
+        let volatility_manager = self.volatility_manager.clone();
+        let benchmark_string = benchmark.to_string();
 
-        match self
-            .market_service
-            .get_historical_bars(benchmark, start, now, "1D")
-            .await
-        {
-            Ok(candles) => {
-                if candles.len() < 2 {
-                    return Ok(());
+        // Spawn background task to avoid blocking the event loop with network I/O
+        tokio::spawn(async move {
+            let now = Utc::now();
+            let start = now - chrono::Duration::days(30); // 30 days to get enough candles
+
+            match market_service
+                .get_historical_bars(&benchmark_string, start, now, "1D")
+                .await
+            {
+                Ok(candles) => {
+                    if candles.len() < 2 {
+                        return;
+                    }
+
+                    // Calculate a simple True Range for the latest candle
+                    // TR = Max(H-L, H-Cp, L-Cp)
+                    // For simplicity here, we take H-L
+                    let last = &candles[candles.len() - 1];
+                    let high = last.high.to_f64().unwrap_or(0.0);
+                    let low = last.low.to_f64().unwrap_or(0.0);
+                    let range = high - low;
+
+                    if range > 0.0 {
+                        let mut vm = volatility_manager.write().await;
+                        let range_dec = Decimal::from_f64_retain(range).unwrap_or(Decimal::ZERO);
+                        vm.update(range_dec);
+                        debug!(
+                            "RiskManager: Volatility updated for {}. Latest range: {}, Avg: {}",
+                            benchmark_string,
+                            range_dec,
+                            vm.get_average_volatility()
+                        );
+                    }
                 }
-
-                // Calculate a simple True Range for the latest candle
-                // TR = Max(H-L, H-Cp, L-Cp)
-                // For simplicity here, we take H-L
-                let last = &candles[candles.len() - 1];
-                let high = last.high.to_f64().unwrap_or(0.0);
-                let low = last.low.to_f64().unwrap_or(0.0);
-                let range = high - low;
-
-                if range > 0.0 {
-                    let mut vm = self.volatility_manager.write().await;
-                    let range_dec = Decimal::from_f64_retain(range).unwrap_or(Decimal::ZERO);
-                    vm.update(range_dec);
-                    debug!(
-                        "RiskManager: Volatility updated for {}. Latest range: {}, Avg: {}",
-                        benchmark,
-                        range_dec,
-                        vm.get_average_volatility()
-                    );
+                Err(e) => {
+                    warn!("RiskManager: Failed to fetch volatility data: {}", e);
                 }
             }
-            Err(e) => {
-                warn!("RiskManager: Failed to fetch volatility data: {}", e);
-            }
-        }
+        });
 
         Ok(())
     }
@@ -461,37 +439,27 @@ impl RiskManager {
     }
 
     /// Check if we need to reset session stats (for 24/7 Crypto markets)
-    fn check_daily_reset(&mut self, current_equity: Decimal) -> bool {
+    pub fn check_daily_reset(&mut self, current_equity: Decimal) -> bool {
+        let old_reset = self.state_manager.get_state().daily_drawdown_reset;
+
         // Delegate to RiskStateManager
         self.state_manager.check_daily_reset(current_equity);
 
-        // Sync local legacy state
-        let old_reset = self.risk_state.daily_drawdown_reset;
-        self.risk_state = self.state_manager.get_state().clone();
+        let new_reset = self.state_manager.get_state().daily_drawdown_reset;
 
-        if self.risk_state.daily_drawdown_reset && !old_reset {
+        if new_reset && !old_reset {
             self.daily_pnl = Decimal::ZERO;
             self.circuit_breaker_service.set_halted(HaltLevel::Normal);
             self.metrics.circuit_breaker_status.set(0.0);
             return true;
         }
 
-        // If reference date changed, it was a reset
-        let today = Utc::now().date_naive();
-        if self.asset_class == AssetClass::Crypto && self.risk_state.reference_date == today {
-            // It might have been updated by manager just now.
-            // But we need to know if it CHANGED just now.
-            // We can assume state_manager handles it.
-            // Returning false is safe if manager handles persistence (via update called elsewhere).
-            // But caller expects bool to call persist.
-
-            // Simplification: always return false here and rely on update_portfolio_valuation to persist state changes?
-            // But daily reset happens on proposal too.
-
-            // Check if updated_at is recent?
-            if self.risk_state.updated_at >= Utc::now().timestamp() - 1 {
-                return true;
-            }
+        // Check if reference date changed (handled by state manager logic above, so implied by new_reset usually)
+        // But if we want to be safe about updated_at check:
+        if self.asset_class == AssetClass::Crypto
+            && self.state_manager.get_state().updated_at >= Utc::now().timestamp() - 1
+        {
+            return true;
         }
         false
     }
@@ -500,25 +468,34 @@ impl RiskManager {
     async fn reconcile_pending_orders(&mut self, portfolio: &Portfolio) {
         let tokens = self.order_reconciler.reconcile_pending_orders(portfolio);
 
-        // Release all reservation tokens synchronously in this async context
-        for token in tokens {
-            self.portfolio_state_manager
-                .release_reservation(token)
-                .await;
-        }
+        // Release all reservation tokens in batch
+        self.portfolio_state_manager
+            .release_reservations(tokens)
+            .await;
     }
 
     pub fn is_halted(&self) -> bool {
         self.circuit_breaker_service.is_halted()
     }
 
+    pub fn get_state(&self) -> &RiskState {
+        self.state_manager.get_state()
+    }
+
+    pub fn get_state_mut(&mut self) -> &mut RiskState {
+        self.state_manager.get_state_mut()
+    }
+
     // ============================================================================
     // COMMAND PATTERN HANDLERS
     // ============================================================================
 
-    /// Dispatch command to appropriate handler
-    async fn handle_command(&mut self, cmd: RiskCommand) -> Result<(), Box<dyn std::error::Error>> {
-        match cmd {
+    /// Handle internal commands
+    pub async fn handle_command(
+        &mut self,
+        command: RiskCommand,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match command {
             RiskCommand::OrderUpdate(update) => self.cmd_handle_order_update(update).await,
             RiskCommand::ValuationTick => self.cmd_handle_valuation().await,
             RiskCommand::RefreshPortfolio => self.cmd_handle_refresh().await,
@@ -669,8 +646,8 @@ impl RiskManager {
         let current_equity = snapshot.portfolio.total_equity(&self.current_prices);
 
         // Update high water mark
-        if current_equity > self.risk_state.equity_high_water_mark {
-            self.risk_state.equity_high_water_mark = current_equity;
+        if current_equity > self.state_manager.get_state().equity_high_water_mark {
+            self.state_manager.get_state_mut().equity_high_water_mark = current_equity;
         }
 
         // Check daily reset
@@ -699,7 +676,7 @@ impl RiskManager {
             if !symbols.contains(&proposal.symbol) {
                 symbols.push(proposal.symbol.clone());
             }
-            service.calculate_correlation_matrix(&symbols).await.ok()
+            service.get_correlation_matrix(&symbols).await.ok()
         } else {
             None
         };
@@ -741,7 +718,7 @@ impl RiskManager {
             &snapshot.portfolio,
             current_equity,
             &self.current_prices,
-            &self.risk_state,
+            self.state_manager.get_state(),
             self.current_sentiment.as_ref(),
             correlation_matrix.as_ref(), // Pass pre-calculated matrix
             volatility_multiplier,

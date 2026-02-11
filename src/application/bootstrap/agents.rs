@@ -187,9 +187,17 @@ impl AgentsBootstrap {
             }
         };
 
-        let correlation_service = Some(Arc::new(CorrelationService::new(
+        let correlation_svc = Arc::new(CorrelationService::new(
             persistence.candle_repository.clone(),
-        )));
+        ));
+
+        // Start background refresh task
+        correlation_svc
+            .clone()
+            .start_background_refresh(config.symbols.clone())
+            .await;
+
+        let correlation_service = Some(correlation_svc);
 
         let portfolio_state_manager = Arc::new(
             crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
