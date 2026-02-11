@@ -171,12 +171,22 @@ pub fn build_volume_profile(candles: &VecDeque<Candle>, lookback: usize) -> Volu
     let start_idx = candles.len().saturating_sub(lookback);
 
     for candle in candles.iter().skip(start_idx) {
-        // Use close price as representative price level
-        let price = candle.close;
-        let price_level = price.round_dp(0).to_i64().unwrap_or(0); // Round to nearest integer
         let volume = candle.volume;
+        let high = candle.high.round_dp(0).to_i64().unwrap_or(0);
+        let low = candle.low.round_dp(0).to_i64().unwrap_or(0);
 
-        *levels.entry(price_level).or_insert(Decimal::ZERO) += volume;
+        if high > low {
+            let levels_count = high - low + 1;
+            let vol_per_level = volume / Decimal::from(levels_count);
+
+            for price_level in low..=high {
+                *levels.entry(price_level).or_insert(Decimal::ZERO) += vol_per_level;
+            }
+        } else {
+            // High == Low (Doji or flat)
+            let price_level = candle.close.round_dp(0).to_i64().unwrap_or(0);
+            *levels.entry(price_level).or_insert(Decimal::ZERO) += volume;
+        }
     }
 
     // Find point of control (highest volume level)
@@ -375,26 +385,38 @@ mod tests {
     fn test_volume_profile_hvn_detection() {
         let mut candles = VecDeque::new();
 
-        // Create candles with clustering around 100 and 110
+        // Create candles efficiently
+        // Range 100-105, Volume 1000.
+        // 6 levels (100, 101, 102, 103, 104, 105). Vol/level = 1000/6 = 166.66...
         for i in 0..10 {
-            candles.push_back(create_candle(100.0, 100.0, 1000.0, i));
+            candles.push_back(create_candle(100.0, 105.0, 1000.0, i));
         }
+
+        // Add some localized volume at 110 (Doji-like) to create a clear HVN/POC
         for i in 10..15 {
+            // High=110, Low=110, Vol=500 -> All 500 at 110.
             candles.push_back(create_candle(110.0, 110.0, 500.0, i));
         }
-        for i in 15..17 {
-            candles.push_back(create_candle(105.0, 105.0, 200.0, i));
-        }
+        
+        // Add extra volume at 100.0 to ensure it beats the other levels in the 100-105 cluster
+        // logic: 100.0 is currently tied with 101-105. Adding this will make it #2 after 110.
+        candles.push_back(create_candle(100.0, 100.0, 100.0, 15));
 
         let profile = build_volume_profile(&candles, 20);
 
-        // Point of control should be at 100 (highest volume)
+        // Point of control should be at 110 because it has concentrated volume
+        // 5 * 500 = 2500 at level 110.
+        // Level 100 has 1666.6 + 100 = 1766.6
+        // Levels 101-105 have 1666.6
         use rust_decimal_macros::dec;
-        assert_eq!(profile.point_of_control, dec!(100.0));
+        assert_eq!(profile.point_of_control, dec!(110.0), "POC should be at 110 due to concentration");
 
-        // Should have HVNs
+        // Should have HVNs. Top 20% of 7 levels = 2 levels.
+        // #1: 110 (2500)
+        // #2: 100 (1766)
         assert!(!profile.high_volume_nodes.is_empty());
-        assert!(profile.high_volume_nodes.contains(&dec!(100.0)));
+        assert!(profile.high_volume_nodes.contains(&dec!(110.0)));
+        assert!(profile.high_volume_nodes.contains(&dec!(100.0))); // 100 should now comfortably be #2
     }
 
     #[test]

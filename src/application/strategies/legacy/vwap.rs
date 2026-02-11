@@ -45,11 +45,11 @@ impl VWAPStrategy {
         // This would make VWAP calculation incorrect (it would be a "Rolling VWAP" of available data).
         if let Some(first_candle) = ctx.candles.front().filter(|c| c.timestamp > day_start) {
             tracing::warn!(
-                "VWAP: Insufficient data. First candle ts {} > Day start {}. Cannot calculate accurate Daily VWAP.",
+                "VWAP: Partial data. First candle ts {} > Day start {}. Calculating rolling VWAP from available data.",
                 first_candle.timestamp,
                 day_start
             );
-            return None;
+            // Proceed with calculation using available data instead of returning None
         }
 
         let mut cumulative_tp_vol = Decimal::ZERO;
@@ -314,28 +314,14 @@ mod tests {
     }
 
     #[test]
-    fn test_insufficient_data_check() {
+    fn test_partial_data_calculation() {
         let strategy = VWAPStrategy::default();
 
         // Current time: 100000 (~1 day + 3.7h). Day start: 86400.
         // First candle time: 90000 (valid, > 86400).
-        // BUT if first candle is 86400 + 10 = 86410, it's valid.
-
-        // Scenario: Trading day started at 86400.
-        // We connect at 90000. We fetch 100 candles.
-        // 100 candles * 60s = 6000s = 1.6h.
-        // 90000 - 6000 = 84000.
-        // 84000 < 86400.
-        // So the first candle IN THE LIST is 84000 (yesterday).
-        // calculate_vwap filters out < day_start. So it will use only today's candles.
-        // THIS IS FINE. We have data crossing the boundary.
-
         // Scenario 2: Connecting at 90000. Fetch 10 candles.
-        // Start time = 89400.
-        // 89400 > 86400.
         // We are missing data from 86400 to 89400.
-        // VWAP will be incorrect.
-        // The check `first_candle.timestamp > day_start` should catch this.
+        // VWAP will be a "Rolling VWAP" from 90000. This is allowed now (with warning).
 
         let current_ts = 100000;
         let late_start = 90000;
@@ -348,8 +334,8 @@ mod tests {
 
         let vwap = strategy.calculate_vwap(&ctx);
         assert!(
-            vwap.is_none(),
-            "Should fail due to insufficient history (start > day_start)"
+            vwap.is_some(),
+            "Should calculate partial VWAP even with missing daily history"
         );
     }
 }

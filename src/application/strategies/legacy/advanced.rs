@@ -4,6 +4,7 @@ use crate::domain::trading::types::OrderSide;
 use rust_decimal::Decimal;
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// Advanced Triple Filter Strategy
 ///
@@ -16,8 +17,8 @@ use std::collections::HashMap;
 pub struct AdvancedTripleFilterStrategy {
     sma_strategy: DualSMAStrategy,
     rsi_threshold: Decimal,
-    _signal_confirmation_bars: usize, // Phase 2: require N bars confirmation
-    _last_signals: HashMap<String, (OrderSide, usize)>, // Phase 2: track (signal, count)
+    signal_confirmation_bars: usize, // Phase 2: require N bars confirmation
+    last_signals: Arc<Mutex<HashMap<String, (OrderSide, usize)>>>, // Phase 2: track (signal, count)
     // Risk-based adaptive filters
     macd_requires_rising: bool,
     trend_tolerance_pct: Decimal,
@@ -66,8 +67,8 @@ impl AdvancedTripleFilterStrategy {
                 config.sma_threshold,
             ),
             rsi_threshold: config.rsi_threshold,
-            _signal_confirmation_bars: config.signal_confirmation_bars,
-            _last_signals: HashMap::new(),
+            signal_confirmation_bars: config.signal_confirmation_bars,
+            last_signals: Arc::new(Mutex::new(HashMap::new())),
             macd_requires_rising: config.macd_requires_rising,
             trend_tolerance_pct: config.trend_tolerance_pct,
             macd_min_threshold: config.macd_min_threshold,
@@ -173,6 +174,28 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
         // Existing positions might need to be closed even in weak trend.
 
         let sma_signal = self.sma_strategy.analyze(ctx)?;
+
+        // Phase 2: Signal Confirmation Logic
+        if self.signal_confirmation_bars > 1
+            && let Ok(mut signals_lock) = self.last_signals.lock()
+        {
+            let entry = signals_lock
+                .entry(ctx.symbol.clone())
+                .or_insert((sma_signal.side, 0));
+
+            if entry.0 == sma_signal.side {
+                // Same signal, increment count
+                entry.1 += 1;
+            } else {
+                // Signal flipped, reset
+                *entry = (sma_signal.side, 1);
+            }
+
+            if entry.1 < self.signal_confirmation_bars {
+                // Not enough confirmation yet
+                return None;
+            }
+        }
 
         // Apply filters based on signal type
         match sma_signal.side {

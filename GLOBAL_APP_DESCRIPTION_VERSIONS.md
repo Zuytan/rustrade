@@ -1,5 +1,32 @@
 # Rustrade - Historique des Versions
 
+## Version 0.97.3 - Institutional Strategy Precision (February 2026)
+
+### Strategy Enhancements
+- **Smart Money Concepts (SMC)**: 
+  - **Major Upgrade**: Replaced naive 10-candle MSS lookback with **Swing Point (Fractal)** detection.
+  - **Impact**: drastically reduces false positives by respecting market structure.
+- **Order Flow**: 
+  - **Precision**: Implemented distributed Volume Profile. Volume is now spread across the High-Low range of the candle instead of concentrated at the Close.
+  - **Impact**: Provides much more accurate High Volume Node (HVN) and POC detection.
+
+### Quality
+- **Tests**: Verified Swing Point logic and Volume Distribution with dedicated unit tests.
+- **Linting**: Cleaned up boolean logic in SMC strategy (`is_some_and`).
+
+## Version 0.97.2 - Strategy Integrity Fixes (February 2026)
+
+### Strategy Logic Corrections
+- **VSAP**: Fixed critical data starvation issue where missing daily history blocked calculation. Implemented rolling calculation fallback.
+- **Statistical Momentum**: corrected lookback index off-by-one error to ensuring true N-period momentum calculation.
+- **Advanced Strategy**: Implemented missing signal confirmation logic using thread-safe state to filter noise.
+- **SMC**: Relaxed FVG entry strictness to trigger on wicks (High/Low) touching the zone instead of requiring Close inside.
+
+### Quality
+- **Tests**: Added regression tests for all strategy fixes.
+- **Linting**: Fixed `clippy::collapsible_if` in Advanced strategy.
+
+
 ## Version 0.97.1 - Critical Strategy Fixes & Optimization (February 2026)
 
 ### Strategy Reforms

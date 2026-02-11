@@ -106,8 +106,8 @@ impl SMCStrategy {
 
                         // Check if CURRENT candle (the last one) is in zone
                         if idx == candles.len() - 1 {
-                            // Entry condition: Price CLOSED in zone (Close < Top)
-                            if candle.close <= fvg_top {
+                            // Entry condition: Price TOUCHED zone (Low <= Top)
+                            if candle.low <= fvg_top {
                                 in_zone = true;
                             }
                         }
@@ -155,8 +155,8 @@ impl SMCStrategy {
                         }
 
                         if idx == candles.len() - 1 {
-                            // Entry condition: Price CLOSED in zone (Close > Bottom)
-                            if candle.close >= fvg_bottom {
+                            // Entry condition: Price TOUCHED zone (High >= Bottom)
+                            if candle.high >= fvg_bottom {
                                 in_zone = true;
                             }
                         }
@@ -234,41 +234,105 @@ impl SMCStrategy {
         None
     }
 
+    /// Check if a candle is a Swing High (Fractal High)
+    /// A Swing High is higher than N candles before and N candles after.
+    fn is_swing_high(&self, candles: &VecDeque<Candle>, index: usize, range: usize) -> bool {
+        if index < range || index >= candles.len() - range {
+            return false;
+        }
+        let high = candles[index].high;
+
+        // Check left side
+        for i in 1..=range {
+            if candles[index - i].high >= high {
+                return false;
+            }
+        }
+        // Check right side
+        for i in 1..=range {
+            if candles[index + i].high > high {
+                // Strict inequality on right side to avoid double detection
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Check if a candle is a Swing Low (Fractal Low)
+    /// A Swing Low is lower than N candles before and N candles after.
+    fn is_swing_low(&self, candles: &VecDeque<Candle>, index: usize, range: usize) -> bool {
+        if index < range || index >= candles.len() - range {
+            return false;
+        }
+        let low = candles[index].low;
+
+        // Check left side
+        for i in 1..=range {
+            if candles[index - i].low <= low {
+                return false;
+            }
+        }
+        // Check right side
+        for i in 1..=range {
+            if candles[index + i].low < low {
+                // Strict inequality on right side
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Detect recent meaningful Swing Points (Highs and Lows)
+    /// Returns the most recent Swing High and Swing Low prices found in the lookback period.
+    fn detect_recent_swing_points(
+        &self,
+        candles: &VecDeque<Candle>,
+    ) -> (Option<Decimal>, Option<Decimal>) {
+        let fractal_range = 3; // Standard Williams Fractal uses 2, we use 3 for more significance
+        let lookback = 50.min(candles.len().saturating_sub(fractal_range));
+
+        // Use a persistent notion of structure:
+        // We want the LAST significant swing point before the current price action.
+        // So we iterate backwards from (current - fractal_range)
+
+        let mut last_swing_high = None;
+        let mut last_swing_low = None;
+
+        let start_index = candles.len().saturating_sub(fractal_range + 1);
+        let end_index = candles.len().saturating_sub(lookback);
+
+        // Scan backwards to find the most recent confirmed swings
+        for i in (end_index..=start_index).rev() {
+            if last_swing_high.is_none() && self.is_swing_high(candles, i, fractal_range) {
+                last_swing_high = Some(candles[i].high);
+            }
+            if last_swing_low.is_none() && self.is_swing_low(candles, i, fractal_range) {
+                last_swing_low = Some(candles[i].low);
+            }
+            if last_swing_high.is_some() && last_swing_low.is_some() {
+                break;
+            }
+        }
+
+        (last_swing_high, last_swing_low)
+    }
+
     /// Detect Market Structure Shift (MSS)
-    /// A bullish MSS is confirmed when price closes above the last short-term high.
+    /// A Bullish MSS occurs when price breaks and closes ABOVE the last valid Swing High.
+    /// A Bearish MSS occurs when price breaks and closes BELOW the last valid Swing Low.
     fn detect_mss(&self, candles: &VecDeque<Candle>) -> Option<OrderSide> {
-        if candles.len() < 10 {
+        if candles.len() < 20 {
             return None;
         }
 
-        let curr_close = candles
-            .back()
-            .expect("candles verified non-empty by len() >= 10 check")
-            .close;
+        let curr_close = candles.back()?.close;
+        let (recent_high, recent_low) = self.detect_recent_swing_points(candles);
 
-        // Simplified MSS: check for break of recent 10-candle high/low
-        let mut max_high = Decimal::ZERO;
-        let mut min_low = Decimal::MAX;
-
-        for (i, _candle) in candles
-            .iter()
-            .enumerate()
-            .take(candles.len() - 1)
-            .skip(candles.len() - 10)
-        {
-            let h = candles[i].high;
-            let l = candles[i].low;
-            if h > max_high {
-                max_high = h;
-            }
-            if l < min_low {
-                min_low = l;
-            }
+        if recent_high.is_some_and(|swing_high| curr_close > swing_high) {
+            return Some(OrderSide::Buy);
         }
 
-        if curr_close > max_high {
-            return Some(OrderSide::Buy);
-        } else if curr_close < min_low {
+        if recent_low.is_some_and(|swing_low| curr_close < swing_low) {
             return Some(OrderSide::Sell);
         }
 
@@ -542,14 +606,48 @@ mod tests {
         let strategy = SMCStrategy::new(20, dec!(0.001), dec!(1.0));
         let mut candles = VecDeque::new();
 
-        // Add 9 candles with high around 110
-        for _i in 0..9 {
-            candles.push_back(mock_candle(100.0, 110.0, 90.0, 105.0, 1000.0));
+        // Setup a Swing High pattern
+        // Fractal Range = 3. We need 3 lower, 1 high, 3 lower.
+
+        let base_price = 100.0;
+
+        // 1. Pre-Swing ramp up
+        for i in 0..10 {
+            candles.push_back(mock_candle(
+                base_price + i as f64,
+                base_price + i as f64 + 1.0,
+                base_price + i as f64 - 1.0,
+                base_price + i as f64,
+                1000.0,
+            ));
         }
-        // 10th candle breaks high
-        candles.push_back(mock_candle(110.0, 115.0, 110.0, 114.0, 1000.0));
+
+        // 2. Form Swing High at 120.0
+        // Left side (ascending/lower highs) - already in loop above mostly, but let's be explicit for the fractal range
+        candles.push_back(mock_candle(115.0, 118.0, 114.0, 117.0, 1000.0)); // i-3
+        candles.push_back(mock_candle(117.0, 119.0, 116.0, 118.0, 1000.0)); // i-2
+        candles.push_back(mock_candle(118.0, 119.5, 117.0, 119.0, 1000.0)); // i-1
+
+        // Peak
+        candles.push_back(mock_candle(119.0, 120.0, 118.0, 119.0, 1000.0)); // i (High 120)
+
+        // Right side (lower highs) - critical for confirming the Swing High
+        candles.push_back(mock_candle(119.0, 119.5, 118.0, 118.5, 1000.0)); // i+1
+        candles.push_back(mock_candle(118.5, 119.0, 117.0, 118.0, 1000.0)); // i+2
+        candles.push_back(mock_candle(118.0, 118.5, 116.0, 117.0, 1000.0)); // i+3 -> Swing High confirmed here!
+
+        // 3. Pullback
+        candles.push_back(mock_candle(117.0, 118.0, 116.0, 116.5, 1000.0));
+        candles.push_back(mock_candle(116.5, 117.0, 115.0, 116.0, 1000.0));
+
+        // 4. Break of Structure (MSS) - Close above 120.0
+        candles.push_back(mock_candle(120.0, 121.0, 119.0, 120.5, 1000.0));
 
         let mss = strategy.detect_mss(&candles);
-        assert_eq!(mss, Some(OrderSide::Buy));
+        assert_eq!(
+            mss,
+            Some(OrderSide::Buy),
+            "Should detect Bullish MSS on close above Swing High (120.0)"
+        );
     }
 }
