@@ -59,9 +59,9 @@ impl TradingStrategy for OrderFlowStrategy {
 
         // Bullish stacked imbalances
         if direction == 1 {
-            // Additional confirmation: Cumulative Delta rising
+            // Additional confirmation: OFI Momentum rising (acceleration of buying pressure)
             // Skip the most recent value (ofi_value itself) to avoid self-comparison bias
-            let delta_rising = if ctx.ofi_history.len() > Self::MOMENTUM_LOOKBACK {
+            let ofi_momentum_rising = if ctx.ofi_history.len() > Self::MOMENTUM_LOOKBACK {
                 let recent_avg: Decimal = ctx
                     .ofi_history
                     .iter()
@@ -76,6 +76,9 @@ impl TradingStrategy for OrderFlowStrategy {
                 ctx.ofi_value > Decimal::ZERO
             };
 
+            // True Cumulative Delta check (Volume Delta accumulation)
+            let delta_confirmed = ctx.cumulative_delta > Decimal::ZERO;
+
             // Check if price is near a High Volume Node (support)
             let near_hvn = if let Some(ref profile) = ctx.volume_profile {
                 profile.high_volume_nodes.iter().any(|&hvn| {
@@ -89,12 +92,17 @@ impl TradingStrategy for OrderFlowStrategy {
                 true // No volume profile, allow signal
             };
 
-            if delta_rising && ctx.ofi_value > self.ofi_threshold {
+            if ofi_momentum_rising && delta_confirmed && ctx.ofi_value > self.ofi_threshold {
                 let confidence = if near_hvn { 0.9 } else { 0.7 };
                 return Some(
                     Signal::buy(format!(
-                        "Stacked Bullish OFI (OFI={}, Delta={}, HVN={})",
+                        "Stacked Bullish OFI (OFI={}, Momentum={}, Delta={}, HVN={})",
                         ctx.ofi_value,
+                        if ofi_momentum_rising {
+                            "Rising"
+                        } else {
+                            "Flat"
+                        },
                         ctx.cumulative_delta,
                         if near_hvn { "Yes" } else { "No" }
                     ))
@@ -106,9 +114,9 @@ impl TradingStrategy for OrderFlowStrategy {
         // Bearish stacked imbalances
         // Removed has_position check to allow Short Entry
         if direction == -1 {
-            // Additional confirmation: Cumulative Delta falling
+            // Additional confirmation: OFI Momentum falling
             // Skip the most recent value (ofi_value itself) to avoid self-comparison bias
-            let delta_falling = if ctx.ofi_history.len() > Self::MOMENTUM_LOOKBACK {
+            let ofi_momentum_falling = if ctx.ofi_history.len() > Self::MOMENTUM_LOOKBACK {
                 let recent_avg: Decimal = ctx
                     .ofi_history
                     .iter()
@@ -123,6 +131,9 @@ impl TradingStrategy for OrderFlowStrategy {
                 ctx.ofi_value < Decimal::ZERO // Simple negative check
             };
 
+            // True Cumulative Delta check
+            let delta_confirmed = ctx.cumulative_delta < Decimal::ZERO;
+
             // Check if price is near a High Volume Node (resistance)
             let near_hvn = if let Some(ref profile) = ctx.volume_profile {
                 profile.high_volume_nodes.iter().any(|&hvn| {
@@ -136,12 +147,17 @@ impl TradingStrategy for OrderFlowStrategy {
                 true // No volume profile, allow signal
             };
 
-            if delta_falling && ctx.ofi_value < -self.ofi_threshold {
+            if ofi_momentum_falling && delta_confirmed && ctx.ofi_value < -self.ofi_threshold {
                 let confidence = if near_hvn { 0.9 } else { 0.7 };
                 return Some(
                     Signal::sell(format!(
-                        "Stacked Bearish OFI (OFI={}, Delta={}, HVN={})",
+                        "Stacked Bearish OFI (OFI={}, Momentum={}, Delta={}, HVN={})",
                         ctx.ofi_value,
+                        if ofi_momentum_falling {
+                            "Falling"
+                        } else {
+                            "Flat"
+                        },
                         ctx.cumulative_delta,
                         if near_hvn { "Yes" } else { "No" }
                     ))

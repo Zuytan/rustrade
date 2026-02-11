@@ -186,10 +186,18 @@ impl TradingStrategy for DynamicRegimeStrategy {
                 None
             }
             MarketRegime::StrongTrendDown => {
-                // In strong DOWNTREND, avoid buying even if Golden Cross occurs
-                // (unless we add Shorting logic later)
-                if ctx.has_position && ctx.current_price < ctx.trend_sma {
-                    // Aggressive exit if we somehow have a position
+                // In strong DOWNTREND, allow Shorting
+                if !ctx.has_position && ctx.current_price < ctx.trend_sma {
+                    if ctx.fast_sma < ctx.slow_sma * (Decimal::ONE - self.sma_threshold) {
+                        return Some(Signal::sell(
+                            "Dynamic (Trend Down): Strong downtrend, selling below Trend SMA"
+                                .to_string(),
+                        ));
+                    }
+                }
+                // Avoid buying even if Golden Cross occurs
+                // Aggressive exit if we somehow have a Long position
+                else if ctx.has_position && ctx.current_price < ctx.trend_sma {
                     return Some(Signal::sell(
                         "Dynamic (Trend Down): Strong downtrend, exiting".to_string(),
                     ));
@@ -329,5 +337,28 @@ mod tests {
         if let Some(sig) = signal {
             assert!(sig.reason.contains("Dynamic (Choppy)"));
         }
+    }
+
+    #[test]
+    fn test_strong_trend_down_short_signal() {
+        let strategy = DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
+            fast_period: 20,
+            slow_period: 60,
+            sma_threshold: dec!(0.001),
+            trend_sma_period: 200,
+            rsi_threshold: dec!(75.0),
+            trend_divergence_threshold: dec!(0.005),
+            ..Default::default()
+        });
+        // Strong Downtrend: Price < Trend SMA, Fast < Slow (Death Cross)
+        // Price = 90, Trend = 100, Fast = 90, Slow = 95
+        let ctx = create_test_context(dec!(90.0), dec!(95.0), dec!(90.0), dec!(100.0), false);
+
+        let signal = strategy.analyze(&ctx);
+
+        assert!(signal.is_some(), "Should signal Short in strong downtrend");
+        let sig = signal.unwrap();
+        assert!(matches!(sig.side, OrderSide::Sell));
+        assert!(sig.reason.contains("Dynamic (Trend Down)"));
     }
 }

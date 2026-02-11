@@ -1,5 +1,22 @@
 # Rustrade - Historique des Versions
 
+## Version 0.97.1 - Critical Strategy Fixes & Optimization (February 2026)
+
+### Strategy Reforms
+- **Order Flow Strategy**: 
+  - **Critical Fix**: Resolved semantic confusion between OFI Momentum and Cumulative Delta.
+  - **Enhancement**: Added strict `cumulative_delta > 0` confirmation for Buy signals (and vice versa).
+- **Smart Money Concepts (SMC)**: 
+  - **Performance**: Optimized average volume calculation from O(N) to O(1) (running window of 50 candles).
+  - **Efficiency**: Limited Order Block search depth to configured lookback.
+- **Dynamic Regime**: 
+  - **New Feature**: Enabled **Short Selling** logic in `StrongTrendDown` regime (previously Long-only).
+  - **Condition**: Triggers Sell on Death Cross + Price < Trend SMA.
+
+### Quality & Verification
+- **Formatting**: Applied `cargo fmt` fixes to `order_flow.rs` and `smc.rs`.
+- **Tests**: Validated new Short logic in Dynamic strategy; regression tests passed.
+
 ## Version 0.97.0 - Strategy Mathematical Fixes & Quality (February 2026)
 
 ### Strategy Mathematical Audit & Fixes (12 corrections)

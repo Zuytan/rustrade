@@ -182,23 +182,30 @@ impl SMCStrategy {
             return None;
         }
 
-        // Calculate Average Volume for context
+        // Calculate Average Volume for context (Last 50 candles max)
+        let vol_lookback = 50.min(candles.len().saturating_sub(1));
         let total_vol: Decimal = candles
             .iter()
-            .take(candles.len() - 1)
+            .rev()
+            .skip(1) // Skip current candle (incomplete)
+            .take(vol_lookback)
             .map(|c| c.volume)
             .sum();
-        let avg_vol = if candles.len() > 1 {
-            total_vol / Decimal::from(candles.len() as i64 - 1)
+
+        let avg_vol = if vol_lookback > 0 {
+            total_vol / Decimal::from(vol_lookback)
         } else {
             Decimal::ZERO
         };
         let vol_threshold = avg_vol * self.volume_multiplier;
 
+        // Limit search depth to ob_lookback
+        let start_index = candles.len().saturating_sub(self.ob_lookback).max(1);
+
         match side {
             OrderSide::Buy => {
                 // Find last bearish candle followed by bullish candles
-                for i in (1..candles.len() - 1).rev() {
+                for i in (start_index..candles.len() - 1).rev() {
                     let curr = &candles[i];
                     let next = &candles[i + 1]; // Impulsive candle
 
@@ -212,7 +219,7 @@ impl SMCStrategy {
                 }
             }
             OrderSide::Sell => {
-                for i in (1..candles.len() - 1).rev() {
+                for i in (start_index..candles.len() - 1).rev() {
                     let curr = &candles[i];
                     let next = &candles[i + 1];
                     if curr.close > curr.open && next.close < next.open {
