@@ -344,6 +344,7 @@ fn decode_genome(
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
         ensemble_weights: None,
+        ensemble_voting_threshold: dec!(0.5),
     }
 }
 
@@ -614,6 +615,7 @@ impl GridSearchOptimizer {
                                                                     orderflow_stacked_count: 3,
                                                                     orderflow_volume_profile_lookback: 100,
                                                                     ensemble_weights: None,
+                                                                    ensemble_voting_threshold: dec!(0.5),
                                                                 });
                                                             }
                                                         }
@@ -1496,6 +1498,7 @@ mod tests {
                 trailing_stop_atr_multiplier: dec!(3.0),
                 atr_period: 14,
                 rsi_threshold: dec!(65.0),
+                ensemble_voting_threshold: dec!(0.5),
                 trend_riding_exit_buffer_pct: dec!(0.03),
                 mean_reversion_rsi_exit: dec!(50.0),
                 mean_reversion_bb_period: 20,

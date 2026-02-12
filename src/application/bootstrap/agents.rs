@@ -339,6 +339,7 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
         ensemble_weights: None,
+        ensemble_voting_threshold: config.ensemble_voting_threshold,
     }
 }
 

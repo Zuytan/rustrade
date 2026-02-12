@@ -126,6 +126,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         simulation_latency_jitter_ms: 0,
         simulation_slippage_volatility: dec!(0.0),
         use_real_market_data: false,
+        ensemble_voting_threshold: dec!(0.5),
     });
 
     config.mode = Mode::Mock;

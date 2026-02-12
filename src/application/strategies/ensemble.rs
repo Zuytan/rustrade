@@ -90,7 +90,9 @@ impl EnsembleStrategy {
                 ("SMC".to_string(), 0.3),
             ])
         };
-        Self::with_weights(strategies, 0.50, weights)
+        // Use configured threshold (defaults to 0.5 if not set, or adjusted by risk)
+        let threshold = config.ensemble_voting_threshold.try_into().unwrap_or(0.5);
+        Self::with_weights(strategies, threshold, weights)
     }
 }
 

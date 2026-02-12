@@ -126,6 +126,7 @@ pub struct Config {
     pub signal_confirmation_bars: usize,
     pub take_profit_pct: Decimal,
     pub profit_target_multiplier: Decimal,
+    pub ensemble_voting_threshold: Decimal,
 
     // ... (Risk fields)
     pub max_positions: usize,
@@ -240,6 +241,7 @@ impl Config {
             signal_confirmation_bars: strategy.signal_confirmation_bars,
             take_profit_pct: strategy.take_profit_pct,
             profit_target_multiplier: strategy.profit_target_multiplier,
+            ensemble_voting_threshold: strategy.ensemble_voting_threshold,
 
             // ... (Risk mappings)
             max_positions: risk.max_positions,

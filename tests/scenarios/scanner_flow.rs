@@ -112,6 +112,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         orderflow_stacked_count: 3,
         orderflow_volume_profile_lookback: 100,
         ensemble_weights: Default::default(),
+        ensemble_voting_threshold: dec!(0.5),
     };
 
     let strategy = Arc::new(DualSMAStrategy::new(2, 3, dec!(0.0)));

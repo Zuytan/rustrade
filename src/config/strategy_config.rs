@@ -74,6 +74,9 @@ pub struct StrategyEnvConfig {
 
     // ML Configuration
     pub enable_ml_data_collection: bool,
+
+    // Ensemble Configuration
+    pub ensemble_voting_threshold: Decimal,
 }
 
 impl StrategyEnvConfig {
@@ -197,6 +200,10 @@ impl StrategyEnvConfig {
                 .unwrap_or_else(|_| "false".to_string())
                 .parse::<bool>()
                 .unwrap_or(false),
+            ensemble_voting_threshold: Self::parse_decimal(
+                "ENSEMBLE_VOTING_THRESHOLD",
+                dec!(0.50),
+            )?,
         })
     }
 

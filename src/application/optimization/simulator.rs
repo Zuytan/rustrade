@@ -193,7 +193,14 @@ impl Simulator {
                 spread_cache: Arc::new(
                     crate::application::market_data::spread_cache::SpreadCache::new(),
                 ),
-                connection_health_service: Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+                connection_health_service: {
+                    let health = Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new());
+                    health.set_market_data_status(
+                        crate::application::monitoring::connection_health_service::ConnectionStatus::Online,
+                        Some("Simulation Started".to_string())
+                    ).await;
+                    health
+                },
             },
         );
 
@@ -324,8 +331,15 @@ impl Simulator {
                 timestamp: prop.timestamp,
             };
 
-            self.execution_service.execute(order.clone()).await?;
-            executed_trades.push(order);
+            if let Err(e) = self.execution_service.execute(order.clone()).await {
+                tracing::warn!(
+                    "Simulator: Failed to execute order (id={}): {}",
+                    order.id,
+                    e
+                );
+            } else {
+                executed_trades.push(order);
+            }
         }
 
         // Wait for components to finish

@@ -1,5 +1,19 @@
 # Rustrade - Historique des Versions
 
+## Version 0.97.7 - Ensemble Strategy Optimization & QA (February 2026)
+
+### Strategy Optimization
+- **Ensemble Strategy**: Implemented dynamic voting thresholds based on `RiskAppetite`.
+  - **Conservative (Risk 1-2)**: High threshold (0.60) for maximum safety.
+  - **Balanced (Risk 5-6)**: Standard threshold (0.50) for optimal risk/reward (0.47% return, 0.04% DD).
+  - **Aggressive (Risk 9)**: Low threshold (0.30) for high-frequency trading (2.19% return, 3.54% DD).
+- **Configuration**: Exposed `ensemble_voting_threshold` in `config` and `AnalystConfig`.
+
+### Quality Assurance
+- **Test Suite**: Fixed 10+ compilation errors in `optimizer.rs`, `scanner_flow.rs`, `trading_flow.rs`, and `analyst_tests.rs` caused by missing configuration fields.
+- **Formatting**: Resolved trailing whitespace in `simulator.rs`.
+- **Linting**: Verified codebase is free of clippy warnings.
+
 ## Version 0.97.6 - Risk Manager Optimization & Stability (February 2026)
 
 ### Performance & Architecture

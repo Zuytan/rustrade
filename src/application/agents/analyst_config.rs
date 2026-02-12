@@ -72,6 +72,7 @@ pub struct AnalystConfig {
     pub orderflow_stacked_count: usize,
     pub orderflow_volume_profile_lookback: usize,
     pub ensemble_weights: Option<std::collections::HashMap<String, f64>>,
+    pub ensemble_voting_threshold: Decimal,
 }
 
 impl Default for AnalystConfig {
@@ -132,6 +133,7 @@ impl Default for AnalystConfig {
             orderflow_stacked_count: 3,
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: None,
+            ensemble_voting_threshold: dec!(0.5),
         }
     }
 }
@@ -194,6 +196,7 @@ impl From<crate::config::Config> for AnalystConfig {
             orderflow_stacked_count: 3,
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: None,
+            ensemble_voting_threshold: config.ensemble_voting_threshold,
         }
     }
 }
@@ -223,6 +226,21 @@ impl AnalystConfig {
 
         // Conservative: more confirmation bars => fewer trades. Aggressive: 1 bar => same as before.
         self.signal_confirmation_bars = appetite.calculate_signal_confirmation_bars();
+
+        // Adjust Ensemble Consensus Threshold based on Risk Score
+        // Score 1-2 (Conservative): 0.60 (Requires higher consensus, majority+)
+        // Score 3-4: 0.55
+        // Score 5-6 (Moderate): 0.50 (Standard majority)
+        // Score 7-8: 0.40
+        // Score 9 (Aggressive): 0.30 (Loose consensus)
+        self.ensemble_voting_threshold = match appetite.score() {
+            1..=2 => dec!(0.60),
+            3..=4 => dec!(0.55),
+            5..=6 => dec!(0.50),
+            7..=8 => dec!(0.40),
+            9 => dec!(0.30),
+            _ => dec!(0.50), // Fallback
+        };
 
         self.risk_appetite_score = Some(appetite.score());
     }
