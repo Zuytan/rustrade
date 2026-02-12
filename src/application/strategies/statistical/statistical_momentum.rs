@@ -42,7 +42,8 @@ impl StatisticalMomentumStrategy {
             return None;
         }
 
-        if ctx.atr <= Decimal::ZERO {
+        let atr = ctx.atr?;
+        if atr <= Decimal::ZERO {
             return None; // Invalid ATR
         }
 
@@ -52,21 +53,24 @@ impl StatisticalMomentumStrategy {
 
         // Normalized Momentum = (Current - Past) / ATR
         let raw_momentum = ctx.current_price - past_price;
-        let normalized_momentum = raw_momentum / ctx.atr;
+        let normalized_momentum = raw_momentum / atr;
 
         Some(normalized_momentum)
     }
 
-    /// Check if trend confirmation is satisfied
     fn check_trend_confirmation(&self, ctx: &AnalysisContext, is_bullish: bool) -> bool {
         if !self.trend_confirmation {
             return true; // No confirmation required
         }
 
-        if is_bullish {
-            ctx.current_price > ctx.trend_sma
+        if let Some(trend_sma) = ctx.trend_sma {
+            if is_bullish {
+                ctx.current_price > trend_sma
+            } else {
+                ctx.current_price < trend_sma
+            }
         } else {
-            ctx.current_price < ctx.trend_sma
+            false // No trend data = no confirmation
         }
     }
 }
@@ -96,13 +100,13 @@ impl TradingStrategy for StatisticalMomentumStrategy {
             let excess = (mom_f64 - th_f64) / th_f64.max(0.01);
             let confidence = (0.5 + (excess * 0.3)).min(0.95);
 
-            // Volatility-based Stop Loss: 2.0 ATR below entry
+            let atr = ctx.atr.unwrap_or(Decimal::ONE);
             use rust_decimal_macros::dec;
-            let stop_loss = ctx.current_price - (ctx.atr * dec!(2.0));
+            let stop_loss = ctx.current_price - (atr * dec!(2.0));
 
             return Some(
                 Signal::buy(format!(
-                    "StatMomentum: Strong upward momentum ({} ATR), Price {} > Trend {}",
+                    "StatMomentum: Buying - Strong upward momentum ({} ATR), Price {} > Trend {:?}",
                     momentum, ctx.current_price, ctx.trend_sma
                 ))
                 .with_confidence(confidence)
@@ -128,12 +132,12 @@ impl TradingStrategy for StatisticalMomentumStrategy {
             }
 
             // Exit if trend breaks (price below trend SMA). Confidence scales with distance below.
-            if self.trend_confirmation && ctx.current_price < ctx.trend_sma {
-                let distance_pct = if ctx.trend_sma > Decimal::ZERO {
-                    ((ctx.trend_sma - ctx.current_price) / ctx.trend_sma)
-                        .to_f64()
-                        .unwrap_or(0.0)
-                        * 100.0
+            if let Some(trend_sma) = ctx
+                .trend_sma
+                .filter(|&t| self.trend_confirmation && ctx.current_price < t)
+            {
+                let distance_pct = if trend_sma > Decimal::ZERO {
+                    ((trend_sma - ctx.current_price) / trend_sma).to_f64()? * 100.0
                 } else {
                     0.0
                 };
@@ -141,7 +145,7 @@ impl TradingStrategy for StatisticalMomentumStrategy {
                 return Some(
                     Signal::sell(format!(
                         "StatMomentum: Trend break (Price {} < Trend {})",
-                        ctx.current_price, ctx.trend_sma
+                        ctx.current_price, trend_sma
                     ))
                     .with_confidence(confidence),
                 );
@@ -191,19 +195,19 @@ mod tests {
             symbol: "TEST".to_string(),
             current_price: d_price,
             price_f64: price,
-            fast_sma: Decimal::ZERO,
-            slow_sma: Decimal::ZERO,
-            trend_sma: d_trend_sma,
-            rsi: dec!(50.0),
-            macd_value: Decimal::ZERO,
-            macd_signal: Decimal::ZERO,
-            macd_histogram: Decimal::ZERO,
+            fast_sma: Some(Decimal::ZERO),
+            slow_sma: Some(Decimal::ZERO),
+            trend_sma: Some(d_trend_sma),
+            rsi: Some(dec!(50.0)),
+            macd_value: Some(Decimal::ZERO),
+            macd_signal: Some(Decimal::ZERO),
+            macd_histogram: Some(Decimal::ZERO),
             last_macd_histogram: None,
-            atr: d_atr,
-            bb_lower: Decimal::ZERO,
-            bb_middle: Decimal::ZERO,
-            bb_upper: Decimal::ZERO,
-            adx: dec!(25.0),
+            atr: Some(d_atr),
+            bb_lower: Some(Decimal::ZERO),
+            bb_middle: Some(Decimal::ZERO),
+            bb_upper: Some(Decimal::ZERO),
+            adx: Some(dec!(25.0)),
             has_position,
             position: None,
             timestamp: 0,

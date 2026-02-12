@@ -104,6 +104,10 @@ impl ExecutionService for MockExecution {
         Ok(())
     }
 
+    async fn cancel_all_orders(&self) -> Result<()> {
+        Ok(())
+    }
+
     async fn subscribe_order_updates(
         &self,
     ) -> Result<tokio::sync::broadcast::Receiver<rustrade::domain::ports::OrderUpdate>> {

@@ -17,6 +17,9 @@ mod smc;
 #[cfg(test)]
 mod qa;
 
+#[cfg(test)]
+mod tests;
+
 // Re-export legacy strategies with deprecation warnings
 #[allow(deprecated)]
 pub use legacy::{

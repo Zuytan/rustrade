@@ -50,11 +50,13 @@ async fn test_standard_strategy_execution_synthetic() {
     }
 
     // 2. Configure Simulator
-    let mut config = AnalystConfig::default();
-    config.strategy_mode = rustrade::domain::market::strategy_config::StrategyMode::Standard;
-    // Ensure thresholds are reachable
-    config.sma_threshold = dec!(0.001); // 0.1%
-    config.risk_appetite_score = Some(5);
+    let config = AnalystConfig {
+        strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+        // Ensure thresholds are reachable
+        sma_threshold: dec!(0.001), // 0.1%
+        risk_appetite_score: Some(5),
+        ..Default::default()
+    };
 
     // Mock Execution Service
     let portfolio = rustrade::domain::trading::portfolio::Portfolio::new();

@@ -482,6 +482,14 @@ impl ExecutionService for MockExecutionService {
         Ok(())
     }
 
+    async fn cancel_all_orders(&self) -> Result<()> {
+        info!("MockExecution: Cancelling all orders");
+        // Clear internal list or mark as cancelled?
+        // For simplicity in mock, we just log.
+        // If we want to be strict, we'd update status of all open orders.
+        Ok(())
+    }
+
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
         Ok(self.order_update_sender.subscribe())
     }

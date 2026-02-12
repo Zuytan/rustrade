@@ -80,8 +80,13 @@ impl AdvancedTripleFilterStrategy {
         match side {
             OrderSide::Buy => {
                 // Apply tolerance: price > trend_sma * (1 - tolerance)
-                let adjusted_trend = ctx.trend_sma * (Decimal::ONE - self.trend_tolerance_pct);
-                ctx.current_price > adjusted_trend
+                // Safely handle Option
+                if let Some(trend) = ctx.trend_sma {
+                    let adjusted_trend = trend * (Decimal::ONE - self.trend_tolerance_pct);
+                    ctx.current_price > adjusted_trend
+                } else {
+                    false // No trend data -> deny buy by default? Or allow? Safer to deny.
+                }
             }
             OrderSide::Sell => {
                 // For sell: allow if price breaks below trend (or always allow sells)
@@ -94,7 +99,11 @@ impl AdvancedTripleFilterStrategy {
         match side {
             OrderSide::Buy => {
                 // Don't buy if RSI is too high (overbought)
-                ctx.rsi < self.rsi_threshold
+                if let Some(rsi) = ctx.rsi {
+                    rsi < self.rsi_threshold
+                } else {
+                    false // Missing RSI -> deny
+                }
             }
             OrderSide::Sell => {
                 // No RSI restriction on sells
@@ -105,7 +114,14 @@ impl AdvancedTripleFilterStrategy {
 
     fn macd_filter(&self, ctx: &AnalysisContext) -> bool {
         // Check minimum threshold first
-        if ctx.macd_histogram < self.macd_min_threshold {
+        // Handle Option
+        let macd_hist = if let Some(h) = ctx.macd_histogram {
+            h
+        } else {
+            return false;
+        };
+
+        if macd_hist < self.macd_min_threshold {
             return false;
         }
 
@@ -113,7 +129,7 @@ impl AdvancedTripleFilterStrategy {
         if self.macd_requires_rising
             && let Some(prev_hist) = ctx.last_macd_histogram
         {
-            return ctx.macd_histogram > prev_hist;
+            return macd_hist > prev_hist;
         }
 
         // Passed all checks
@@ -124,7 +140,11 @@ impl AdvancedTripleFilterStrategy {
         match side {
             OrderSide::Buy => {
                 // Require strong trend for buying
-                ctx.adx > self.adx_threshold
+                if let Some(adx) = ctx.adx {
+                    adx > self.adx_threshold
+                } else {
+                    false // Missing ADX -> deny
+                }
             }
             OrderSide::Sell => {
                 // Sells can happen in weak trends (e.g. stop loss or reversal)
@@ -202,7 +222,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
             OrderSide::Buy => {
                 if !self.adx_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
-                        "AdvancedFilter [{}]: BUY BLOCKED - Weak Trend (ADX={} <= threshold={})",
+                        "AdvancedFilter [{}]: BUY BLOCKED - Weak Trend (ADX={:?} <= threshold={})",
                         ctx.symbol,
                         ctx.adx,
                         self.adx_threshold
@@ -222,7 +242,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                 // All filters must pass for buy signals
                 if !self.trend_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
-                        "AdvancedFilter [{}]: BUY BLOCKED - Trend Filter (price={} <= trend_sma={})",
+                        "AdvancedFilter [{}]: BUY BLOCKED - Trend Filter (price={} <= trend_sma={:?})",
                         ctx.symbol,
                         ctx.current_price,
                         ctx.trend_sma
@@ -232,7 +252,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
 
                 if !self.rsi_filter(ctx, OrderSide::Buy) {
                     tracing::info!(
-                        "AdvancedFilter [{}]: BUY BLOCKED - RSI Filter (rsi={} >= threshold={})",
+                        "AdvancedFilter [{}]: BUY BLOCKED - RSI Filter (rsi={:?} >= threshold={})",
                         ctx.symbol,
                         ctx.rsi,
                         self.rsi_threshold
@@ -242,18 +262,19 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
 
                 if !self.macd_filter(ctx) {
                     tracing::info!(
-                        "AdvancedFilter [{}]: BUY BLOCKED - MACD Filter (hist={}, rising={})",
+                        "AdvancedFilter [{}]: BUY BLOCKED - MACD Filter (hist={:?}, rising={})",
                         ctx.symbol,
                         ctx.macd_histogram,
                         ctx.last_macd_histogram
-                            .map(|prev| ctx.macd_histogram > prev)
+                            .zip(ctx.macd_histogram)
+                            .map(|(prev, current)| current > prev)
                             .unwrap_or(false)
                     );
                     return None;
                 }
 
                 Some(Signal::buy(format!(
-                    "Advanced Buy: SMA Cross + Filters OK (RSI={}, Trend={}, MACD={})",
+                    "Advanced Buy: SMA Cross + Filters OK (RSI={:?}, Trend={:?}, MACD={:?})",
                     ctx.rsi, ctx.trend_sma, ctx.macd_histogram
                 )))
             }
@@ -265,7 +286,7 @@ impl TradingStrategy for AdvancedTripleFilterStrategy {
                 }
 
                 Some(Signal::sell(format!(
-                    "Advanced Sell: SMA Cross confirmed (RSI={}, MACD={})",
+                    "Advanced Sell: SMA Cross confirmed (RSI={:?}, MACD={:?})",
                     ctx.rsi, ctx.macd_histogram
                 )))
             }
@@ -289,19 +310,19 @@ mod tests {
             symbol: "TEST".to_string(),
             current_price: dec!(105.0),
             price_f64: 105.0,
-            fast_sma: dec!(104.0),
-            slow_sma: dec!(100.0),
-            trend_sma: dec!(100.0),
-            rsi: dec!(50.0),
-            macd_value: dec!(0.5),
-            macd_signal: dec!(0.3),
-            macd_histogram: dec!(0.2),
+            fast_sma: Some(dec!(104.0)),
+            slow_sma: Some(dec!(100.0)),
+            trend_sma: Some(dec!(100.0)),
+            rsi: Some(dec!(50.0)),
+            macd_value: Some(dec!(0.5)),
+            macd_signal: Some(dec!(0.3)),
+            macd_histogram: Some(dec!(0.2)),
             last_macd_histogram: Some(dec!(0.1)),
-            atr: Decimal::ONE,
-            bb_lower: Decimal::ZERO,
-            bb_upper: Decimal::ZERO,
-            bb_middle: Decimal::ZERO,
-            adx: dec!(26.0), // Strong trend by default
+            atr: Some(Decimal::ONE),
+            bb_lower: Some(Decimal::ZERO),
+            bb_upper: Some(Decimal::ZERO),
+            bb_middle: Some(Decimal::ZERO),
+            adx: Some(dec!(26.0)), // Strong trend by default
             has_position: false,
             position: None,
             timestamp: 0,
@@ -360,7 +381,7 @@ mod tests {
             adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.rsi = dec!(80.0); // Overbought
+        ctx.rsi = Some(dec!(80.0)); // Overbought
 
         let signal = strategy.analyze(&ctx);
 
@@ -404,7 +425,7 @@ mod tests {
             adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.macd_histogram = dec!(-0.1); // Negative
+        ctx.macd_histogram = Some(dec!(-0.1)); // Negative
 
         let signal = strategy.analyze(&ctx);
 
@@ -426,8 +447,8 @@ mod tests {
             adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.fast_sma = dec!(98.0); // Below slow SMA
-        ctx.slow_sma = dec!(100.0);
+        ctx.fast_sma = Some(dec!(98.0)); // Below slow SMA
+        ctx.slow_sma = Some(dec!(100.0));
         ctx.has_position = true;
 
         let signal = strategy.analyze(&ctx);
@@ -452,17 +473,17 @@ mod tests {
             adx_threshold: dec!(25.0),
         });
         let mut ctx = create_test_context();
-        ctx.adx = dec!(20.0); // Weak trend (< 25.0)
+        ctx.adx = Some(dec!(20.0)); // Weak trend (< 25.0)
 
         // Ensure others pass
         ctx.current_price = dec!(105.0);
-        ctx.trend_sma = dec!(100.0);
-        ctx.rsi = dec!(50.0);
-        ctx.macd_histogram = dec!(0.5);
+        ctx.trend_sma = Some(dec!(100.0));
+        ctx.rsi = Some(dec!(50.0));
+        ctx.macd_histogram = Some(dec!(0.5));
 
         // Force SMA cross signal
-        ctx.fast_sma = dec!(101.0);
-        ctx.slow_sma = dec!(100.0); // Golden cross
+        ctx.fast_sma = Some(dec!(101.0));
+        ctx.slow_sma = Some(dec!(100.0)); // Golden cross
 
         let signal = strategy.analyze(&ctx);
 

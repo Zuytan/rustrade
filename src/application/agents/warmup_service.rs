@@ -5,7 +5,7 @@ use crate::domain::repositories::StrategyRepository;
 use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::Candle;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
+
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
@@ -147,25 +147,25 @@ impl WarmupService {
                         symbol: symbol.to_string(),
                         current_price: candle.close,
                         price_f64: 0.0,
-                        fast_sma: Decimal::ZERO,
-                        slow_sma: Decimal::ZERO,
-                        trend_sma: Decimal::ZERO,
-                        rsi: fs.rsi.unwrap_or(dec!(50.0)),
-                        macd_value: fs.macd_line.unwrap_or(Decimal::ZERO), // using macd_line as value
-                        macd_signal: fs.macd_signal.unwrap_or(Decimal::ZERO),
-                        macd_histogram: fs.macd_hist.unwrap_or(Decimal::ZERO),
-                        last_macd_histogram: context.last_macd_histogram,
-                        atr: Decimal::ZERO,
-                        bb_lower: Decimal::ZERO,
-                        bb_upper: Decimal::ZERO,
-                        bb_middle: Decimal::ZERO,
-                        adx: fs.adx.unwrap_or(Decimal::ZERO),
+                        fast_sma: None,
+                        slow_sma: None,
+                        trend_sma: None,
+                        rsi: fs.rsi,
+                        macd_value: fs.macd_line, // using macd_line as value
+                        macd_signal: fs.macd_signal,
+                        macd_histogram: fs.macd_hist,
+                        last_macd_histogram: context.last_macd_histogram, // Preserve this if possible, or use None
+                        atr: None,
+                        bb_lower: None,
+                        bb_upper: None,
+                        bb_middle: None,
+                        adx: fs.adx,
                         has_position: false,
                         position: None,
                         timestamp: candle.timestamp,
                         candles: std::collections::VecDeque::new(), // optimizing: don't clone history for warmup
                         rsi_history: std::collections::VecDeque::new(),
-                        ofi_value: fs.ofi.unwrap_or(Decimal::ZERO),
+                        ofi_value: fs.ofi.unwrap_or(Decimal::ZERO), // OFI might need to be 0 if unknown, or None? Context def has plain Decimal for ofi_value
                         cumulative_delta: fs.cumulative_delta.unwrap_or(Decimal::ZERO),
                         volume_profile: None,
                         ofi_history: std::collections::VecDeque::new(),

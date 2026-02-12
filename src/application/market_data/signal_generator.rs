@@ -49,19 +49,19 @@ impl SignalGenerator {
             symbol: symbol.to_string(),
             current_price: price,
             price_f64,
-            fast_sma: features.sma_20.unwrap_or(Decimal::ZERO), // Using SMA 20 as fast
-            slow_sma: features.sma_50.unwrap_or(Decimal::ZERO), // Using SMA 50 as slow
-            trend_sma: features.sma_200.unwrap_or(Decimal::ZERO),
-            rsi: features.rsi.unwrap_or(Decimal::ZERO),
-            macd_value: features.macd_line.unwrap_or(Decimal::ZERO),
-            macd_signal: features.macd_signal.unwrap_or(Decimal::ZERO),
-            macd_histogram: features.macd_hist.unwrap_or(Decimal::ZERO),
+            fast_sma: features.sma_20, // Using SMA 20 as fast
+            slow_sma: features.sma_50, // Using SMA 50 as slow
+            trend_sma: features.sma_200,
+            rsi: features.rsi,
+            macd_value: features.macd_line,
+            macd_signal: features.macd_signal,
+            macd_histogram: features.macd_hist,
             last_macd_histogram: previous_macd_histogram,
-            atr: features.atr.unwrap_or(Decimal::ZERO),
-            bb_lower: features.bb_lower.unwrap_or(Decimal::ZERO),
-            bb_upper: features.bb_upper.unwrap_or(Decimal::ZERO),
-            bb_middle: features.bb_middle.unwrap_or(Decimal::ZERO),
-            adx: features.adx.unwrap_or(Decimal::ZERO),
+            atr: features.atr,
+            bb_lower: features.bb_lower,
+            bb_upper: features.bb_upper,
+            bb_middle: features.bb_middle,
+            adx: features.adx,
             has_position,
             position,
             timestamp,
@@ -211,10 +211,10 @@ mod tests {
             .expect("Context should be captured");
 
         assert_eq!(ctx.symbol, "BTC");
-        assert_eq!(ctx.rsi, dec!(70.0));
-        assert_eq!(ctx.macd_value, dec!(1.5));
-        assert_eq!(ctx.bb_upper, dec!(105.0));
-        assert_eq!(ctx.adx, dec!(30.0));
+        assert_eq!(ctx.rsi, Some(dec!(70.0)));
+        assert_eq!(ctx.macd_value, Some(dec!(1.5)));
+        assert_eq!(ctx.bb_upper, Some(dec!(105.0)));
+        assert_eq!(ctx.adx, Some(dec!(30.0)));
         assert_eq!(ctx.ofi_value, dec!(0.5));
         assert_eq!(ctx.cumulative_delta, dec!(1000.0));
     }

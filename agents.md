@@ -29,6 +29,7 @@ To ensure consistency, every Agent **MUST** start a task by:
 ### Code Quality
 - **NEVER** use `f64` for money calculations → use `rust_decimal::Decimal`
 - **NEVER** use `.unwrap()` in production code → use proper error handling (`?`, `match`, `.expect()` with context)
+- **NEVER** use default 0.0 values (e.g. `unwrap_or(0.0)`) → use `Option` and propagate `None`
 - **ALWAYS** write tests BEFORE implementation (TDD)
 - **ALWAYS** update documentation after significant changes
 - **ALWAYS** perform a critical self-review after implementation

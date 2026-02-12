@@ -322,6 +322,50 @@ impl ExecutionService for BinanceExecutionService {
         anyhow::bail!("BinanceExecutionService::cancel_order requires symbol - not implemented");
     }
 
+    async fn cancel_all_orders(&self) -> Result<()> {
+        // 1. Fetch all open orders
+        let open_orders = self.get_open_orders().await?;
+        if open_orders.is_empty() {
+            return Ok(());
+        }
+
+        // 2. Identify unique symbols
+        let symbols: std::collections::HashSet<String> =
+            open_orders.into_iter().map(|o| o.symbol).collect();
+
+        // 3. Cancel for each symbol
+        for symbol in symbols {
+            // Need to denormalize if normalized? get_open_orders returns normalized?
+            // Yes, get_open_orders returns normalized. cancel endpoint needs API format.
+            let api_symbol = denormalize_crypto_symbol(&symbol);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+            let query_string = format!("symbol={}&timestamp={}", api_symbol, timestamp);
+            let signature = self.sign_request(&query_string);
+            let signed_query = format!("{}&signature={}", query_string, signature);
+
+            let url = format!("{}/api/v3/openOrders?{}", self.base_url, signed_query);
+
+            let response = self
+                .client
+                .delete(&url)
+                .header("X-MBX-APIKEY", &self.api_key)
+                .send()
+                .await
+                .context(format!("Failed to cancel orders for {}", symbol))?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await.unwrap_or_default();
+                warn!("Binance cancel all for {} failed: {}", symbol, error_text);
+                // Continue to next symbol? Or fail?
+                // Best effort: log and continue
+            } else {
+                info!("Binance orders for {} cancelled.", symbol);
+            }
+        }
+        Ok(())
+    }
+
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
         // Known limitation: User Data Stream is not implemented; order status updates rely on polling.
         // Priority: Medium/Low - Current strategy relies on polling/REST. Stream needed only for HFT or high-concurrency needs.

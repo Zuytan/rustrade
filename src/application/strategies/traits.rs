@@ -2,6 +2,8 @@ use crate::domain::market::order_flow::VolumeProfile;
 use crate::domain::market::timeframe::Timeframe;
 use crate::domain::trading::types::{Candle, OrderSide};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
+
 use std::collections::{HashMap, VecDeque};
 
 /// Features for a specific timeframe
@@ -36,21 +38,21 @@ pub struct AnalysisContext {
     pub price_f64: f64,
 
     // SMA state (primary timeframe)
-    pub fast_sma: Decimal,
-    pub slow_sma: Decimal,
-    pub trend_sma: Decimal,
+    pub fast_sma: Option<Decimal>,
+    pub slow_sma: Option<Decimal>,
+    pub trend_sma: Option<Decimal>,
 
     // Technical indicators (primary timeframe)
-    pub rsi: Decimal,
-    pub macd_value: Decimal,
-    pub macd_signal: Decimal,
-    pub macd_histogram: Decimal,
+    pub rsi: Option<Decimal>,
+    pub macd_value: Option<Decimal>,
+    pub macd_signal: Option<Decimal>,
+    pub macd_histogram: Option<Decimal>,
     pub last_macd_histogram: Option<Decimal>,
-    pub atr: Decimal,
-    pub bb_lower: Decimal,
-    pub bb_upper: Decimal,
-    pub bb_middle: Decimal,
-    pub adx: Decimal,
+    pub atr: Option<Decimal>,
+    pub bb_lower: Option<Decimal>,
+    pub bb_upper: Option<Decimal>,
+    pub bb_middle: Option<Decimal>,
+    pub adx: Option<Decimal>,
 
     // Position state
     pub has_position: bool,
@@ -176,21 +178,29 @@ impl AnalysisContext {
     /// Calculate multi-timeframe trend strength (0.0 to 1.0)
     ///
     /// Returns the percentage of timeframes showing bullish trend
-    pub fn multi_timeframe_trend_strength(&self) -> f64 {
+    pub fn multi_timeframe_trend_strength(&self) -> Decimal {
         let Some(ref tf_features) = self.timeframe_features else {
             // No multi-timeframe data, use primary timeframe
-            return if self.current_price > self.trend_sma {
-                1.0
+            return if let Some(trend_sma) = self.trend_sma {
+                if self.current_price > trend_sma {
+                    Decimal::from(1)
+                } else {
+                    Decimal::from(0)
+                }
             } else {
-                0.0
+                Decimal::from(0) // No trend SMA available
             };
         };
 
         if tf_features.is_empty() {
-            return if self.current_price > self.trend_sma {
-                1.0
+            return if let Some(trend_sma) = self.trend_sma {
+                if self.current_price > trend_sma {
+                    Decimal::from(1)
+                } else {
+                    Decimal::from(0)
+                }
             } else {
-                0.0
+                Decimal::from(0)
             };
         }
 
@@ -198,10 +208,12 @@ impl AnalysisContext {
         let mut total_count = 0;
 
         // Check primary timeframe
-        if self.current_price > self.trend_sma {
-            bullish_count += 1;
+        if let Some(trend_sma) = self.trend_sma {
+            if self.current_price > trend_sma {
+                bullish_count += 1;
+            }
+            total_count += 1;
         }
-        total_count += 1;
 
         // Check each higher timeframe
         for features in tf_features.values() {
@@ -213,18 +225,22 @@ impl AnalysisContext {
             }
         }
 
-        bullish_count as f64 / total_count as f64
+        if total_count == 0 {
+            Decimal::ZERO
+        } else {
+            Decimal::from_f64(bullish_count as f64 / total_count as f64).unwrap_or(Decimal::ZERO)
+        }
     }
 
     /// Check if all enabled timeframes show bullish trend
     pub fn all_timeframes_bullish(&self) -> bool {
-        self.multi_timeframe_trend_strength() >= 1.0
+        self.multi_timeframe_trend_strength() >= Decimal::ONE
     }
 
     /// Get ADX from highest available timeframe for regime detection
     pub fn get_highest_timeframe_adx(&self) -> Decimal {
         let Some(ref tf_features) = self.timeframe_features else {
-            return self.adx;
+            return self.adx.unwrap_or(Decimal::ZERO);
         };
 
         // Try to get ADX from highest timeframe (1Day > 4Hour > 1Hour > ...)
@@ -242,7 +258,7 @@ impl AnalysisContext {
         }
 
         // Fall back to primary timeframe
-        self.adx
+        self.adx.unwrap_or(Decimal::ZERO)
     }
 }
 

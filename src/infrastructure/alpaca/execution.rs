@@ -429,6 +429,33 @@ impl ExecutionService for AlpacaExecutionService {
         Ok(())
     }
 
+    #[instrument(skip(self))]
+    async fn cancel_all_orders(&self) -> Result<()> {
+        let _latency = LatencyGuard::new(
+            self.metrics
+                .api_latency_seconds
+                .with_label_values(&["Alpaca", "v2/orders_cancel_all"]),
+        );
+        let url = format!("{}/v2/orders", self.base_url);
+
+        let response = self
+            .client
+            .delete(&url)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .send()
+            .await
+            .context("Failed to cancel all orders")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Alpaca cancel all orders failed: {}", error_text);
+        }
+
+        info!("AlpacaExecution: All orders cancelled successfully.");
+        Ok(())
+    }
+
     async fn get_today_orders(&self) -> Result<Vec<Order>> {
         let url = format!("{}/v2/orders", self.base_url);
         let url_with_query = build_url_with_query(&url, &[("status", "all"), ("limit", "100")]);

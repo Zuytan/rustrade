@@ -54,14 +54,14 @@ impl MLStrategy {
             fs.clone()
         } else {
             FeatureSet {
-                rsi: Some(ctx.rsi),
-                macd_line: Some(ctx.macd_value),
-                macd_signal: Some(ctx.macd_signal),
-                macd_hist: Some(ctx.macd_histogram),
-                bb_upper: Some(ctx.bb_upper),
-                bb_lower: Some(ctx.bb_lower),
-                bb_middle: Some(ctx.bb_middle),
-                atr: Some(ctx.atr),
+                rsi: ctx.rsi,
+                macd_line: ctx.macd_value,
+                macd_signal: ctx.macd_signal,
+                macd_hist: ctx.macd_histogram,
+                bb_upper: ctx.bb_upper,
+                bb_lower: ctx.bb_lower,
+                bb_middle: ctx.bb_middle,
+                atr: ctx.atr,
                 hurst_exponent: ctx.hurst_exponent,
                 skewness: ctx.skewness,
                 momentum_normalized: ctx.momentum_normalized,

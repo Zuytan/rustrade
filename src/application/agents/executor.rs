@@ -290,6 +290,9 @@ mod tests {
         async fn cancel_order(&self, _order_id: &str) -> Result<()> {
             Ok(())
         }
+        async fn cancel_all_orders(&self) -> Result<()> {
+            Ok(())
+        }
         async fn subscribe_order_updates(
             &self,
         ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
@@ -315,6 +318,9 @@ mod tests {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
         async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+            Err(anyhow::anyhow!("Simulated Failure"))
+        }
+        async fn cancel_all_orders(&self) -> Result<()> {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
         async fn subscribe_order_updates(

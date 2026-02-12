@@ -1,5 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.97.8 - Military Grade Safety & shutdown (February 2026)
+
+### Safety Net & Reliability
+- **No Default Zero Policy**: Removed all instances of `unwrap_or(0.0)` in critical strategy paths. Replaced with strict `Option<Decimal>` propagation to prevent silent failures on missing data.
+- **Graceful Shutdown**: Implemented `SignalHandler` to trap Ctrl+C and SIGTERM.
+  - **Risk Cleanup**: Automatically cancels all open orders (`cancel_all_orders`) upon shutdown signal to prevent orphaned risk.
+  - **State Persistence**: Ensures risk state is saved before process termination.
+
+### Quality Assurance
+- **Strict Compliance**: Added "No Default 0.0" rule to `AGENTS.md`.
+- **Zero Warnings**: Resolved all clippy warnings, including `collapsible_if` in strategies and `field_reassign_with_default` in tests.
+- **Verification**: Confirmed 100% pass rate for Unit, Integration, and Doc tests.
+
 ## Version 0.97.7 - Ensemble Strategy Optimization & QA (February 2026)
 
 ### Strategy Optimization

@@ -19,36 +19,37 @@ impl MeanReversionStrategy {
 
 impl TradingStrategy for MeanReversionStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
-        // Ensure we have valid data (bands are not 0.0)
-        if ctx.bb_upper == Decimal::ZERO || ctx.bb_lower == Decimal::ZERO {
-            return None;
-        }
-
         // Buy Condition: Oversold Deep Value
         // Price below lower band AND RSI < 30
         use rust_decimal_macros::dec;
-        if ctx.current_price < ctx.bb_lower && ctx.rsi < dec!(30.0) {
+        let bb_lower = ctx.bb_lower?;
+        let bb_middle = ctx.bb_middle?;
+        // bb_upper isn't strictly needed for buy, but let's be safe if we need it later or for symmetry
+        // logic only uses lower and middle and rsi
+        let rsi = ctx.rsi?;
+
+        if ctx.current_price < bb_lower && rsi < dec!(30.0) {
             return Some(Signal::buy(format!(
                 "MeanReversion: Price {} < LowerBB {} & RSI {} < 30",
-                ctx.current_price, ctx.bb_lower, ctx.rsi
+                ctx.current_price, bb_lower, rsi
             )));
         }
 
         // Sell Condition: Reverted to Mean OR Overbought
         if ctx.has_position {
             // 1. Reverted to Mean (Middle Band)
-            if ctx.current_price > ctx.bb_middle {
+            if ctx.current_price > bb_middle {
                 return Some(Signal::sell(format!(
                     "MeanReversion: Reverted to Mean (Price {} > MiddleBB {})",
-                    ctx.current_price, ctx.bb_middle
+                    ctx.current_price, bb_middle
                 )));
             }
 
             // 2. RSI Overbought Protection (in case it blasts through mean without closing)
-            if ctx.rsi > self.rsi_exit_threshold {
+            if rsi > self.rsi_exit_threshold {
                 return Some(Signal::sell(format!(
                     "MeanReversion: RSI Overbought (RSI {} > {})",
-                    ctx.rsi, self.rsi_exit_threshold
+                    rsi, self.rsi_exit_threshold
                 )));
             }
         }
@@ -81,19 +82,19 @@ mod tests {
             symbol: "TEST".to_string(),
             current_price: Decimal::from_f64(price).unwrap(),
             price_f64: price,
-            fast_sma: Decimal::ZERO,
-            slow_sma: Decimal::ZERO,
-            trend_sma: Decimal::ZERO,
-            rsi: Decimal::from_f64(rsi).unwrap(),
-            macd_value: Decimal::ZERO,
-            macd_signal: Decimal::ZERO,
-            macd_histogram: Decimal::ZERO,
+            fast_sma: Some(Decimal::ZERO),
+            slow_sma: Some(Decimal::ZERO),
+            trend_sma: Some(Decimal::ZERO),
+            rsi: Some(Decimal::from_f64(rsi).unwrap()),
+            macd_value: Some(Decimal::ZERO),
+            macd_signal: Some(Decimal::ZERO),
+            macd_histogram: Some(Decimal::ZERO),
             last_macd_histogram: None,
-            atr: Decimal::ONE,
-            bb_lower: Decimal::from_f64(lower).unwrap(),
-            bb_middle: Decimal::from_f64(middle).unwrap(),
-            bb_upper: Decimal::from_f64(upper).unwrap(),
-            adx: Decimal::ZERO,
+            atr: Some(Decimal::ONE),
+            bb_lower: Some(Decimal::from_f64(lower).unwrap()),
+            bb_middle: Some(Decimal::from_f64(middle).unwrap()),
+            bb_upper: Some(Decimal::from_f64(upper).unwrap()),
+            adx: Some(Decimal::ZERO),
             has_position: has_pos,
             position: None,
             timestamp: 0,

@@ -100,17 +100,16 @@ impl TradingStrategy for VWAPStrategy {
         let deviation = (ctx.current_price - vwap) / vwap;
 
         // Buy: Price significantly below VWAP AND RSI indicates oversold
-        if !ctx.has_position
-            && deviation < -self.deviation_threshold_pct
-            && ctx.rsi < self.rsi_oversold
-        {
+        if let Some(rsi) = ctx.rsi.filter(|&r| {
+            !ctx.has_position && deviation < -self.deviation_threshold_pct && r < self.rsi_oversold
+        }) {
             return Some(
                 Signal::buy(format!(
                     "VWAP: Price {} is {}% below VWAP {}, RSI {} < {}",
                     ctx.current_price,
                     deviation * dec!(100.0),
                     vwap,
-                    ctx.rsi,
+                    rsi,
                     self.rsi_oversold
                 ))
                 .with_confidence(0.80),
@@ -133,11 +132,11 @@ impl TradingStrategy for VWAPStrategy {
             }
 
             // 2. RSI overbought
-            if ctx.rsi > self.rsi_overbought {
+            if let Some(rsi) = ctx.rsi.filter(|&r| r > self.rsi_overbought) {
                 return Some(
                     Signal::sell(format!(
                         "VWAP: RSI {} > {} (overbought) near VWAP {}",
-                        ctx.rsi, self.rsi_overbought, vwap
+                        rsi, self.rsi_overbought, vwap
                     ))
                     .with_confidence(0.70),
                 );
@@ -189,19 +188,19 @@ mod tests {
             symbol: "TEST".to_string(),
             current_price: d_price,
             price_f64: price,
-            fast_sma: Decimal::ZERO,
-            slow_sma: Decimal::ZERO,
-            trend_sma: Decimal::ZERO,
-            rsi: d_rsi,
-            macd_value: Decimal::ZERO,
-            macd_signal: Decimal::ZERO,
-            macd_histogram: Decimal::ZERO,
+            fast_sma: Some(Decimal::ZERO),
+            slow_sma: Some(Decimal::ZERO),
+            trend_sma: Some(Decimal::ZERO),
+            rsi: Some(d_rsi),
+            macd_value: Some(Decimal::ZERO),
+            macd_signal: Some(Decimal::ZERO),
+            macd_histogram: Some(Decimal::ZERO),
             last_macd_histogram: None,
-            atr: Decimal::ONE,
-            bb_lower: Decimal::ZERO,
-            bb_middle: Decimal::ZERO,
-            bb_upper: Decimal::ZERO,
-            adx: dec!(25.0),
+            atr: Some(Decimal::ONE),
+            bb_lower: Some(Decimal::ZERO),
+            bb_middle: Some(Decimal::ZERO),
+            bb_upper: Some(Decimal::ZERO),
+            adx: Some(dec!(25.0)),
             has_position,
             position: None,
             timestamp: candles.back().map(|c| c.timestamp).unwrap_or(100000),

@@ -355,8 +355,14 @@ impl TradingStrategy for SMCStrategy {
             match side {
                 OrderSide::Buy => {
                     // Bullish Bias if MSS is bullish or price is above SMA
-                    let structure_bullish =
-                        mss == Some(OrderSide::Buy) || ctx.current_price > ctx.trend_sma;
+                    // Check trend_sma safely
+                    let trend_bullish = if let Some(trend) = ctx.trend_sma {
+                        ctx.current_price > trend
+                    } else {
+                        false // Fallback or strict mode? Let's say false (no trend conf)
+                    };
+
+                    let structure_bullish = mss == Some(OrderSide::Buy) || trend_bullish;
 
                     if structure_bullish {
                         // OFI Validation: Require positive OFI for bullish signals (when threshold > 0)
@@ -411,8 +417,13 @@ impl TradingStrategy for SMCStrategy {
                     }
                 }
                 OrderSide::Sell => {
-                    let structure_bearish =
-                        mss == Some(OrderSide::Sell) || ctx.current_price < ctx.trend_sma;
+                    let trend_bearish = if let Some(trend) = ctx.trend_sma {
+                        ctx.current_price < trend
+                    } else {
+                        false
+                    };
+
+                    let structure_bearish = mss == Some(OrderSide::Sell) || trend_bearish;
 
                     if structure_bearish {
                         // OFI Validation: Require negative OFI for bearish signals (when threshold > 0)

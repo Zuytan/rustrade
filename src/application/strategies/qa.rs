@@ -19,19 +19,19 @@ impl ContextBuilder {
                 symbol: "QA_TEST".to_string(),
                 current_price: d_price,
                 price_f64: price,
-                fast_sma: d_price,
-                slow_sma: d_price,
-                trend_sma: d_price,
-                rsi: dec!(50.0),
-                macd_value: Decimal::ZERO,
-                macd_signal: Decimal::ZERO,
-                macd_histogram: Decimal::ZERO,
+                fast_sma: Some(d_price),
+                slow_sma: Some(d_price),
+                trend_sma: Some(d_price),
+                rsi: Some(dec!(50.0)),
+                macd_value: Some(Decimal::ZERO),
+                macd_signal: Some(Decimal::ZERO),
+                macd_histogram: Some(Decimal::ZERO),
                 last_macd_histogram: None,
-                atr: dec!(1.0),
-                bb_lower: d_price * dec!(0.98),
-                bb_middle: d_price,
-                bb_upper: d_price * dec!(1.02),
-                adx: dec!(25.0),
+                atr: Some(dec!(1.0)),
+                bb_lower: Some(d_price * dec!(0.98)),
+                bb_middle: Some(d_price),
+                bb_upper: Some(d_price * dec!(1.02)),
+                adx: Some(dec!(25.0)),
                 has_position: false,
                 position: None,
                 timestamp: 100000,
@@ -52,24 +52,24 @@ impl ContextBuilder {
     }
 
     fn with_sma(mut self, fast: f64, slow: f64, trend: f64) -> Self {
-        self.ctx.fast_sma = Decimal::from_f64(fast).unwrap();
-        self.ctx.slow_sma = Decimal::from_f64(slow).unwrap();
-        self.ctx.trend_sma = Decimal::from_f64(trend).unwrap();
+        self.ctx.fast_sma = Some(Decimal::from_f64(fast).unwrap());
+        self.ctx.slow_sma = Some(Decimal::from_f64(slow).unwrap());
+        self.ctx.trend_sma = Some(Decimal::from_f64(trend).unwrap());
         self
     }
 
     fn with_rsi(mut self, rsi: f64) -> Self {
-        self.ctx.rsi = Decimal::from_f64(rsi).unwrap();
+        self.ctx.rsi = Some(Decimal::from_f64(rsi).unwrap());
         self
     }
 
     fn with_adx(mut self, adx: f64) -> Self {
-        self.ctx.adx = Decimal::from_f64(adx).unwrap();
+        self.ctx.adx = Some(Decimal::from_f64(adx).unwrap());
         self
     }
 
     fn with_macd(mut self, hist: f64) -> Self {
-        self.ctx.macd_histogram = Decimal::from_f64(hist).unwrap();
+        self.ctx.macd_histogram = Some(Decimal::from_f64(hist).unwrap());
         self
     }
 
@@ -330,19 +330,19 @@ fn test_precision_vwap() {
         symbol: "TEST".to_string(),
         current_price: dec!(101.0),
         price_f64: 101.0,
-        fast_sma: Decimal::ZERO,
-        slow_sma: Decimal::ZERO,
-        trend_sma: Decimal::ZERO,
-        rsi: dec!(50.0),
-        macd_value: Decimal::ZERO,
-        macd_signal: Decimal::ZERO,
-        macd_histogram: Decimal::ZERO,
+        fast_sma: Some(Decimal::ZERO),
+        slow_sma: Some(Decimal::ZERO),
+        trend_sma: Some(Decimal::ZERO),
+        rsi: Some(dec!(50.0)),
+        macd_value: Some(Decimal::ZERO),
+        macd_signal: Some(Decimal::ZERO),
+        macd_histogram: Some(Decimal::ZERO),
         last_macd_histogram: None,
-        atr: Decimal::ONE,
-        bb_lower: Decimal::ZERO,
-        bb_middle: Decimal::ZERO,
-        bb_upper: Decimal::ZERO,
-        adx: Decimal::ZERO,
+        atr: Some(Decimal::ONE),
+        bb_lower: Some(Decimal::ZERO),
+        bb_middle: Some(Decimal::ZERO),
+        bb_upper: Some(Decimal::ZERO),
+        adx: Some(Decimal::ZERO),
         has_position: false,
         position: None,
         timestamp: ts_start + 120,
@@ -491,19 +491,19 @@ fn test_precision_zscore() {
         symbol: "TEST".to_string(),
         current_price: dec!(40.0),
         price_f64: 40.0,
-        fast_sma: Decimal::ZERO,
-        slow_sma: Decimal::ZERO,
-        trend_sma: Decimal::ZERO,
-        rsi: dec!(50.0),
-        macd_value: Decimal::ZERO,
-        macd_signal: Decimal::ZERO,
-        macd_histogram: Decimal::ZERO,
+        fast_sma: Some(Decimal::ZERO),
+        slow_sma: Some(Decimal::ZERO),
+        trend_sma: Some(Decimal::ZERO),
+        rsi: Some(dec!(50.0)),
+        macd_value: Some(Decimal::ZERO),
+        macd_signal: Some(Decimal::ZERO),
+        macd_histogram: Some(Decimal::ZERO),
         last_macd_histogram: None,
-        atr: Decimal::ONE,
-        bb_lower: Decimal::ZERO,
-        bb_middle: Decimal::ZERO,
-        bb_upper: Decimal::ZERO,
-        adx: Decimal::ZERO,
+        atr: Some(Decimal::ONE),
+        bb_lower: Some(Decimal::ZERO),
+        bb_middle: Some(Decimal::ZERO),
+        bb_upper: Some(Decimal::ZERO),
+        adx: Some(Decimal::ZERO),
         has_position: false,
         position: None,
         timestamp: 0,
@@ -580,19 +580,19 @@ fn test_precision_rsi_alignment() {
         symbol: "TEST".to_string(),
         current_price: dec!(80.0),
         price_f64: 80.0,
-        fast_sma: Decimal::ZERO,
-        slow_sma: Decimal::ZERO,
-        trend_sma: Decimal::ZERO,
-        rsi: dec!(35.0),
-        macd_value: Decimal::ZERO,
-        macd_signal: Decimal::ZERO,
-        macd_histogram: Decimal::ZERO,
+        fast_sma: Some(Decimal::ZERO),
+        slow_sma: Some(Decimal::ZERO),
+        trend_sma: Some(Decimal::ZERO),
+        rsi: Some(dec!(35.0)),
+        macd_value: Some(Decimal::ZERO),
+        macd_signal: Some(Decimal::ZERO),
+        macd_histogram: Some(Decimal::ZERO),
         last_macd_histogram: None,
-        atr: Decimal::ONE,
-        bb_lower: Decimal::ZERO,
-        bb_middle: Decimal::ZERO,
-        bb_upper: Decimal::ZERO,
-        adx: Decimal::ZERO,
+        atr: Some(Decimal::ONE),
+        bb_lower: Some(Decimal::ZERO),
+        bb_middle: Some(Decimal::ZERO),
+        bb_upper: Some(Decimal::ZERO),
+        adx: Some(Decimal::ZERO),
         has_position: false,
         position: None,
         timestamp: 0,

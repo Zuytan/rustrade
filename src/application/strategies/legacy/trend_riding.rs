@@ -29,25 +29,29 @@ impl TrendRidingStrategy {
 
 impl TradingStrategy for TrendRidingStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
-        let fast = ctx.fast_sma;
-        let slow = ctx.slow_sma;
+        let fast = ctx.fast_sma?;
+        let slow = ctx.slow_sma?;
+        let trend = ctx.trend_sma?;
 
         // Buy: Golden cross above trend SMA
-        if fast > slow * (Decimal::ONE + self.sma_threshold) && ctx.current_price > ctx.trend_sma {
+        if fast > slow * (Decimal::ONE + self.sma_threshold) && ctx.current_price > trend {
             return Some(Signal::buy(format!(
                 "TrendRiding: Golden Cross above Trend (price={}, trend={})",
-                ctx.current_price, ctx.trend_sma
+                ctx.current_price, trend
             )));
         }
 
         // Sell: Price drops below trend SMA with buffer
         if ctx.has_position {
-            let exit_threshold = ctx.trend_sma * (Decimal::ONE - self.exit_buffer_pct);
-            if ctx.current_price < exit_threshold {
-                return Some(Signal::sell(format!(
-                    "TrendRiding: Price below trend buffer (price={}, threshold={})",
-                    ctx.current_price, exit_threshold
-                )));
+            // Check if trend exists (should if we bought, but safe check)
+            if let Some(trend) = ctx.trend_sma {
+                let exit_threshold = trend * (Decimal::ONE - self.exit_buffer_pct);
+                if ctx.current_price < exit_threshold {
+                    return Some(Signal::sell(format!(
+                        "TrendRiding: Price below trend buffer (price={}, threshold={})",
+                        ctx.current_price, exit_threshold
+                    )));
+                }
             }
         }
 
@@ -77,19 +81,19 @@ mod tests {
             symbol: "TEST".to_string(),
             current_price: price,
             price_f64: 0.0,
-            fast_sma,
-            slow_sma,
-            trend_sma,
-            rsi: dec!(50.0),
-            macd_value: Decimal::ZERO,
-            macd_signal: Decimal::ZERO,
-            macd_histogram: Decimal::ZERO,
+            fast_sma: Some(fast_sma),
+            slow_sma: Some(slow_sma),
+            trend_sma: Some(trend_sma),
+            rsi: Some(dec!(50.0)),
+            macd_value: Some(Decimal::ZERO),
+            macd_signal: Some(Decimal::ZERO),
+            macd_histogram: Some(Decimal::ZERO),
             last_macd_histogram: None,
-            atr: Decimal::ONE,
-            bb_lower: Decimal::ZERO,
-            bb_middle: Decimal::ZERO,
-            bb_upper: Decimal::ZERO,
-            adx: Decimal::ZERO,
+            atr: Some(Decimal::ONE),
+            bb_lower: Some(Decimal::ZERO),
+            bb_middle: Some(Decimal::ZERO),
+            bb_upper: Some(Decimal::ZERO),
+            adx: Some(Decimal::ZERO),
             has_position,
             position: None,
             timestamp: 0,

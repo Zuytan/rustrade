@@ -2,7 +2,9 @@ use anyhow::Result;
 use rust_decimal_macros::dec;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
+
+pub mod shutdown_service;
 
 use crate::application::bootstrap::{
     agents::AgentsBootstrap,
@@ -17,6 +19,7 @@ use crate::application::{
     monitoring::performance_monitoring_service::PerformanceMonitoringService,
     optimization::adaptive_optimization_service::AdaptiveOptimizationService,
     risk_management::commands::RiskCommand,
+    system::shutdown_service::ShutdownService, // Import ShutdownService
 };
 use crate::config::Config;
 use crate::infrastructure::observability::Metrics;
@@ -152,6 +155,28 @@ impl Application {
             self.metrics.clone(),
         )
         .await?;
+
+        // Initialize and Start Shutdown Service
+        let shutdown_service = Arc::new(ShutdownService::new(
+            self.execution_service.clone(),
+            self.risk_state_repository.clone(),
+            self.portfolio.clone(),
+        ));
+
+        let service_clone = shutdown_service.clone();
+        tokio::spawn(async move {
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => {
+                    info!("Received Ctrl+C signal.");
+                    service_clone.shutdown().await;
+                    info!("Shutdown sequence completed. Exiting.");
+                    std::process::exit(0);
+                }
+                Err(err) => {
+                    error!("Unable to listen for shutdown signal: {}", err);
+                }
+            }
+        });
 
         Ok(SystemHandle {
             sentinel_cmd_tx: agents.sentinel_cmd_tx,
