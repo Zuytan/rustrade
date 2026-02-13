@@ -228,7 +228,7 @@ mod tests {
         let mut metrics = HashMap::new();
         metrics.insert("queue".to_string(), "5".to_string());
 
-        let statuses = vec![
+        let statuses = [
             AgentStatus {
                 name: "Agent A".to_string(),
                 health: HealthStatus::Healthy,
