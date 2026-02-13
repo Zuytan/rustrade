@@ -1,5 +1,15 @@
 # Rustrade - Historique des Versions
 
+## Version 0.98.1 - Critical Boot Stability Fix (February 2026)
+
+### Stability & Safety
+- **Liquidation Panic Fix**: Resolved a critical issue where the `LiquidationService` would panic and attempt to sell assets at $0 on boot if market data was missing.
+- **Circuit Breaker Safeguard**: Implemented a safeguard in `RiskManager` to skip Circuit Breaker checks (Drawdown/Daily Loss) until valid market prices are available for **ALL** open positions. This prevents false positive wipeouts during startup or network interruptions.
+
+### Quality Assurance
+- **Regression Testing**: Added `tests/drawdown_integration.rs` to verify that missing prices are safely ignored while real market crashes still trigger liquidation.
+- **Linting**: Fixed unused variables in integration tests.
+
 ## Version 0.98.0 - Security Hardening & Robustness (February 2026)
 
 ### Critical Infrastructure

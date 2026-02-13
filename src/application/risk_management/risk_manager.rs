@@ -333,7 +333,7 @@ impl RiskManager {
     /// Delegates to PortfolioValuationService for valuation updates
     pub async fn update_portfolio_valuation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Delegate valuation to PortfolioValuationService
-        let (_portfolio, current_equity) = self
+        let (portfolio, current_equity) = self
             .portfolio_valuation_service
             .update_portfolio_valuation(&mut self.current_prices)
             .await?;
@@ -348,19 +348,47 @@ impl RiskManager {
         // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
         // Check Risks (Async check)
         // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
-        if !self.circuit_breaker_service.is_halted()
-            && let Some((level, reason)) = self.check_circuit_breaker(current_equity)
-        {
-            tracing::error!(
-                "RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED ({:?}): {}",
-                level,
-                reason
-            );
-            self.circuit_breaker_service.set_halted(level);
-            self.metrics.circuit_breaker_status.set(1.0);
-            self.liquidate_portfolio(&reason).await;
-        } else if !self.circuit_breaker_service.is_halted() {
-            self.metrics.circuit_breaker_status.set(0.0);
+        // Check Risks (Async check)
+        // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
+        if !self.circuit_breaker_service.is_halted() {
+            // SAFEGUARD: Ensure we have prices for ALL positions before running circuit breaker.
+            // If we fall back to average_price in total_equity, we might trigger a false drawdown
+            // if the asset has appreciated significantly since entry.
+            // (e.g. HWM based on $150, but we use AvgPrice $100 -> -33% Drawdown -> PANIC)
+            // Note: portfolio is not returned by update_portfolio_valuation but we can get it from state manager
+            // actually update_portfolio_valuation returns (Portfolio, Decimal) based on my reading of lines 336-339
+            // Wait, looking at lines 336-339 in the original file view:
+            // let (_portfolio, current_equity) = self...
+            // So I need to capture the portfolio variable.
+
+            let has_missing_prices = portfolio
+                .positions
+                .keys()
+                .any(|symbol| !self.current_prices.contains_key(symbol));
+
+            if has_missing_prices {
+                // Log warning but DO NOT trigger circuit breaker
+                let missing: Vec<_> = portfolio
+                    .positions
+                    .keys()
+                    .filter(|s| !self.current_prices.contains_key(*s))
+                    .collect();
+                tracing::warn!(
+                    "RiskManager: Skipping Circuit Breaker check due to missing prices for: {:?}",
+                    missing
+                );
+            } else if let Some((level, reason)) = self.check_circuit_breaker(current_equity) {
+                tracing::error!(
+                    "RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED ({:?}): {}",
+                    level,
+                    reason
+                );
+                self.circuit_breaker_service.set_halted(level);
+                self.metrics.circuit_breaker_status.set(1.0);
+                self.liquidate_portfolio(&reason).await;
+            } else {
+                self.metrics.circuit_breaker_status.set(0.0);
+            }
         }
 
         // Capture performance snapshot if monitor available
