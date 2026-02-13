@@ -20,14 +20,12 @@ impl Default for RetryConfig {
     }
 }
 
-pub struct OrderRetryStrategy {
-    #[allow(dead_code)] // Will be used for future stateful retry logic
-    retry_config: RetryConfig,
-}
+#[derive(Default)]
+pub struct OrderRetryStrategy {}
 
 impl OrderRetryStrategy {
-    pub fn new(retry_config: RetryConfig) -> Self {
-        Self { retry_config }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Create a liquidation order, preferring Limit orders if possible.

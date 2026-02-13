@@ -1,4 +1,3 @@
-use crate::application::monitoring::connection_health_service::ConnectionHealthService;
 use crate::domain::market::market_regime::MarketRegimeDetector;
 use crate::domain::performance::calculator;
 use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
@@ -22,8 +21,6 @@ pub struct PerformanceMonitoringService {
 
     portfolio: Arc<RwLock<Portfolio>>,
     trade_repository: Arc<dyn TradeRepository>,
-    #[allow(dead_code)] // Will be used in future metrics exposure
-    connection_health_service: Arc<ConnectionHealthService>,
 }
 
 impl PerformanceMonitoringService {
@@ -34,7 +31,6 @@ impl PerformanceMonitoringService {
 
         portfolio: Arc<RwLock<Portfolio>>,
         trade_repository: Arc<dyn TradeRepository>,
-        connection_health_service: Arc<ConnectionHealthService>,
         regime_window_size: usize,
     ) -> Self {
         Self {
@@ -44,7 +40,6 @@ impl PerformanceMonitoringService {
             regime_detector: MarketRegimeDetector::new(regime_window_size, dec!(25.0), dec!(2.0)), // Defaults, should come from config
             portfolio,
             trade_repository,
-            connection_health_service,
         }
     }
 

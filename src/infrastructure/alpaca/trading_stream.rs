@@ -47,10 +47,9 @@ enum StreamMessage {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+
 struct AuthData {
     status: String,
-    action: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,16 +58,9 @@ struct ListeningData {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+
 struct TradeUpdateData {
-    event: String,
     order: AlpacaOrderData,
-    #[serde(default)]
-    price: Option<f64>,
-    #[serde(default)]
-    qty: Option<f64>,
-    #[serde(default)]
-    timestamp: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -59,7 +59,6 @@ impl ServicesBootstrap {
                 market_service.clone(),
                 portfolio.clone(),
                 persistence.order_repository.clone(),
-                connection_health_service.clone(),
                 config.regime_detection_window,
             )))
         } else {

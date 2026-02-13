@@ -46,7 +46,6 @@ pub struct AnalystDependencies {
     pub agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
-#[allow(dead_code)] // candle_repository and trade_evaluator used indirectly by pipeline
 pub struct Analyst {
     market_rx: Receiver<MarketEvent>,
     proposal_tx: Sender<TradeProposal>,
@@ -167,10 +166,7 @@ impl Analyst {
             default_strategy,
             config,
             symbol_states: HashMap::new(),
-            candle_aggregator: CandleAggregator::new(
-                dependencies.candle_repository.clone(),
-                dependencies.spread_cache.clone(),
-            ),
+            candle_aggregator: CandleAggregator::new(dependencies.candle_repository.clone()),
             win_rate_provider,
             trade_evaluator,
             pipeline,

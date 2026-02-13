@@ -1,7 +1,6 @@
-use crate::application::market_data::spread_cache::SpreadCache;
 use crate::domain::repositories::CandleRepository;
 use crate::domain::trading::types::Candle;
-use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
+use chrono::{DateTime, TimeZone, Timelike, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
@@ -94,23 +93,15 @@ pub struct CandleAggregator {
     builders: HashMap<String, CandleBuilder>,
     /// Last confirmed close price per symbol (used for cross-candle outlier filtering)
     last_close: HashMap<String, Decimal>,
-    _timeframe: Duration, // e.g., 1 minute
     repository: Option<Arc<dyn CandleRepository>>,
-    #[allow(dead_code)]
-    spread_cache: Arc<SpreadCache>, // Store real-time bid/ask spreads
 }
 
 impl CandleAggregator {
-    pub fn new(
-        repository: Option<Arc<dyn CandleRepository>>,
-        spread_cache: Arc<SpreadCache>,
-    ) -> Self {
+    pub fn new(repository: Option<Arc<dyn CandleRepository>>) -> Self {
         Self {
             builders: HashMap::new(),
             last_close: HashMap::new(),
-            _timeframe: Duration::minutes(1),
             repository,
-            spread_cache,
         }
     }
 
@@ -252,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_candle_aggregation_realistic_prices() {
-        let mut agg = CandleAggregator::new(None, Arc::new(SpreadCache::new()));
+        let mut agg = CandleAggregator::new(None);
         let symbol = "BTC/USD";
 
         // Realistic BTC prices: ~$68,000 with <1% intra-minute moves
@@ -312,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_outlier_rejection_within_candle() {
-        let mut agg = CandleAggregator::new(None, Arc::new(SpreadCache::new()));
+        let mut agg = CandleAggregator::new(None);
         let symbol = "BTC/USD";
 
         let base_ts = Utc
@@ -347,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_outlier_rejection_cross_candle() {
-        let mut agg = CandleAggregator::new(None, Arc::new(SpreadCache::new()));
+        let mut agg = CandleAggregator::new(None);
         let symbol = "ETH/USD";
 
         // Build and complete a first candle
@@ -382,7 +373,7 @@ mod tests {
 
     #[test]
     fn test_normal_prices_not_rejected() {
-        let mut agg = CandleAggregator::new(None, Arc::new(SpreadCache::new()));
+        let mut agg = CandleAggregator::new(None);
         let symbol = "BTC/USD";
 
         let t0 = Utc

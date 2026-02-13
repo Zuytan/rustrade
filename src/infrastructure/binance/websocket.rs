@@ -9,10 +9,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, warn};
 
 pub struct BinanceWebSocketManager {
-    #[allow(dead_code)]
-    api_key: String,
     ws_url: String,
-    spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
     event_tx: broadcast::Sender<MarketEvent>,
     subscribed_symbols: Arc<RwLock<Vec<String>>>,
     // Handle for the active WebSocket task to allow cancellation
@@ -20,19 +17,13 @@ pub struct BinanceWebSocketManager {
 }
 
 impl BinanceWebSocketManager {
-    pub fn new(
-        api_key: String,
-        ws_url: String,
-        spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
-    ) -> Self {
+    pub fn new(ws_url: String) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
         let subscribed_symbols = Arc::new(RwLock::new(Vec::new()));
         let task_handle = Arc::new(tokio::sync::Mutex::new(None));
 
         Self {
-            api_key,
             ws_url,
-            spread_cache,
             event_tx,
             subscribed_symbols,
             task_handle,
@@ -60,10 +51,8 @@ impl BinanceWebSocketManager {
         let symbols_clone = symbols.clone();
         let ws_url = self.ws_url.clone();
         let event_tx = self.event_tx.clone();
-        let spread_cache = self.spread_cache.clone();
-
         let handle = tokio::spawn(async move {
-            Self::run_websocket(ws_url, symbols_clone, event_tx, spread_cache).await;
+            Self::run_websocket(ws_url, symbols_clone, event_tx).await;
         });
 
         *handle_guard = Some(handle);
@@ -83,13 +72,12 @@ impl BinanceWebSocketManager {
         ws_url: String,
         symbols: Vec<String>,
         event_tx: broadcast::Sender<MarketEvent>,
-        spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
     ) {
         let mut backoff = 1;
         const MAX_BACKOFF: u64 = 60;
 
         loop {
-            match Self::connect_and_stream(&ws_url, &symbols, &event_tx, &spread_cache).await {
+            match Self::connect_and_stream(&ws_url, &symbols, &event_tx).await {
                 Ok(_) => {
                     info!("Binance WebSocket connection closed gracefully");
                     // Prevent rapid reconnect loop if server closes connection repeatedly
@@ -112,7 +100,6 @@ impl BinanceWebSocketManager {
         ws_url: &str,
         symbols: &[String],
         event_tx: &broadcast::Sender<MarketEvent>,
-        spread_cache: &Arc<crate::application::market_data::spread_cache::SpreadCache>,
     ) -> Result<()> {
         if symbols.is_empty() {
             warn!("No symbols to subscribe to, skipping WebSocket connection");
@@ -219,7 +206,7 @@ impl BinanceWebSocketManager {
         while let Some(msg_result) = read.next().await {
             match msg_result {
                 Ok(Message::Text(text)) => {
-                    if let Err(e) = Self::handle_message(&text, event_tx, spread_cache) {
+                    if let Err(e) = Self::handle_message(&text, event_tx) {
                         // Don't error on "result": null (subscription response)
                         if !text.contains("\"result\":null") {
                             warn!("Failed to handle Binance message: {}", e);
@@ -255,11 +242,7 @@ impl BinanceWebSocketManager {
         Ok(())
     }
 
-    fn handle_message(
-        text: &str,
-        event_tx: &broadcast::Sender<MarketEvent>,
-        _spread_cache: &Arc<crate::application::market_data::spread_cache::SpreadCache>,
-    ) -> Result<()> {
+    fn handle_message(text: &str, event_tx: &broadcast::Sender<MarketEvent>) -> Result<()> {
         #[derive(Debug, Deserialize)]
         struct StreamMessage {
             stream: String,

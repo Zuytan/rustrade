@@ -15,7 +15,6 @@ pub struct Portfolio {
     pub synchronized: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct Position {
     pub symbol: String,

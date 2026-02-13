@@ -731,60 +731,6 @@ fn backtest_result_to_opt_result_impl(
 }
 
 impl GridSearchOptimizer {
-    /// Run optimization on a single parameter configuration (fetches bars each time).
-    /// Kept for single-period or external use; run_optimization uses evaluate_config_with_bars.
-    #[allow(dead_code)]
-    async fn evaluate_config(
-        &self,
-        config: AnalystConfig,
-        symbol: &str,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<OptimizationResult> {
-        let execution_service = (self.execution_service_factory)();
-        let simulator = Simulator::new(self.market_data.clone(), execution_service, config.clone());
-        let result = simulator.run(symbol, start, end).await?;
-        Ok(Self::backtest_result_to_opt_result(config, result))
-    }
-
-    /// Evaluate one config using pre-fetched bars (train + test). Returns (train_result, test_result).
-    /// Kept for single-threaded use; run_optimization uses evaluate_one_with_bars in parallel.
-    #[allow(dead_code)]
-    async fn evaluate_config_with_bars(
-        &self,
-        config: AnalystConfig,
-        symbol: &str,
-        prefetched: &PrefetchedBars,
-    ) -> Result<(OptimizationResult, OptimizationResult)> {
-        let exec_train = (self.execution_service_factory)();
-        let sim_train = Simulator::new(self.market_data.clone(), exec_train, config.clone());
-        let result_train = sim_train
-            .run_with_bars(
-                symbol,
-                &prefetched.train_bars,
-                prefetched.train_start,
-                prefetched.train_end,
-                Some(prefetched.spy_train.clone()),
-            )
-            .await?;
-
-        let exec_test = (self.execution_service_factory)();
-        let sim_test = Simulator::new(self.market_data.clone(), exec_test, config.clone());
-        let result_test = sim_test
-            .run_with_bars(
-                symbol,
-                &prefetched.test_bars,
-                prefetched.test_start,
-                prefetched.test_end,
-                Some(prefetched.spy_test.clone()),
-            )
-            .await?;
-
-        let train_opt = Self::backtest_result_to_opt_result(config.clone(), result_train);
-        let test_opt = Self::backtest_result_to_opt_result(config, result_test);
-        Ok((train_opt, test_opt))
-    }
-
     /// One evaluation with pre-fetched bars (for parallel run). Takes owned/Arc args so it can be spawned.
     async fn evaluate_one_with_bars(
         market_data: Arc<dyn MarketDataService>,

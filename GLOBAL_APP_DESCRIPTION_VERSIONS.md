@@ -1,5 +1,22 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.1 - Dead Code Cleanup & Quality Assurance (February 2026)
+
+### Optimization & Cleanup
+- **Comprehensive Dead Code Removal**: Removed all remaining `#[allow(dead_code)]` attributes and associated unused functions, fields, and imports.
+- **Service Refactoring**:
+    - **CandleAggregator**: Removed redundant `_timeframe` and `_spread_cache`.
+    - **SignalGenerator**: Removed unused `_sma_threshold` parameter and legacy signal methods.
+    - **DataCollector**: Removed unused `_history_size` field.
+    - **BinanceWebSocketManager**: Completely removed `spread_cache` dependency as it was not utilized in the crypto data pipeline.
+    - **Bootstrap**: Cleaned up `spawn_listener` signature by removing unused `_config`.
+- **API Struct Resilience**: Cleaned up `AlpacaAsset`, `AlpacaOrder`, `AlpacaAccount`, and `AlternativeMe` response structs by removing unused JSON fields, reducing memory footprint.
+
+### Quality Assurance
+- **Strict Compliance**: Verified workspace-wide health with zero `clippy` warnings (strictly enforced `-D warnings`).
+- **Regression Testing**: All 157 unit and integration tests passed, ensuring core trading logic remains intact after the refactoring.
+- **Pre-Commit Validation**: Integrated `cargo fmt`, `cargo clippy`, and `cargo test` into a unified pre-commit check.
+
 ## Version 0.99.0 - Architecture & Metrics Tab & Scanner Fix (February 2026)
 
 ### Observability & UI

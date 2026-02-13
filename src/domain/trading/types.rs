@@ -88,7 +88,6 @@ impl fmt::Display for OrderType {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TradeProposal {
     pub symbol: String,
@@ -102,7 +101,6 @@ pub struct TradeProposal {
     pub take_profit: Option<Decimal>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Order {
     pub id: String,

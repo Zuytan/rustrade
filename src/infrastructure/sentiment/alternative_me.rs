@@ -10,16 +10,12 @@ use tracing::info;
 #[derive(Debug, Deserialize)]
 struct AlternativeMeResponse {
     data: Vec<AlternativeMeData>,
-    _name: Option<String>,
-    _metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
 struct AlternativeMeData {
     value: String,
-    _value_classification: String,
     timestamp: String,
-    _time_until_update: Option<String>,
 }
 
 pub struct AlternativeMeSentimentProvider {

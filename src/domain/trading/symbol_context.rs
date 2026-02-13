@@ -79,10 +79,7 @@ impl SymbolContext {
             config: config.clone(),
             last_features: FeatureSet::default(),
             regime_detector: MarketRegimeDetector::new(20, dec!(25.0), dec!(2.0)),
-            expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(
-                dec!(1.5),
-                win_rate_provider,
-            )),
+            expectancy_evaluator: Box::new(MarketExpectancyEvaluator::new(win_rate_provider)),
             taken_profit: false,
             last_entry_time: None,
             min_hold_time_ms,

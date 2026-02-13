@@ -55,7 +55,6 @@ impl ServiceFactory {
                             Arc::new(
                                 BinanceMarketDataService::builder()
                                     .api_key(config.binance_api_key.clone())
-                                    .api_secret(config.binance_secret_key.clone())
                                     .base_url(config.binance_base_url.clone())
                                     .ws_url(config.binance_ws_url.clone())
                                     .build(),
@@ -146,7 +145,6 @@ impl ServiceFactory {
             Mode::Binance => {
                 let market_service = BinanceMarketDataService::builder()
                     .api_key(config.binance_api_key.clone())
-                    .api_secret(config.binance_secret_key.clone())
                     .base_url(config.binance_base_url.clone())
                     .ws_url(config.binance_ws_url.clone())
                     .candle_repository(candle_repo)

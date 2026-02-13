@@ -974,8 +974,6 @@ impl MarketDataService for AlpacaMarketDataService {
 
 #[derive(Debug, Deserialize)]
 struct AlpacaAsset {
-    #[allow(dead_code)]
-    symbol: String,
     #[serde(default)]
     sector: String,
 }
@@ -1033,9 +1031,6 @@ mod response_parser {
     #[derive(Debug, Deserialize)]
     pub struct Mover {
         pub symbol: String,
-        #[serde(default)]
-        #[allow(dead_code)]
-        pub price: f64,
     }
 
     pub fn parse_movers(json: Value) -> Result<Vec<Mover>> {

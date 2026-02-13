@@ -31,8 +31,7 @@ use tracing::{debug, info, warn};
 pub struct BinanceMarketDataService {
     client: ClientWithMiddleware,
     api_key: String,
-    #[allow(dead_code)]
-    api_secret: String,
+
     base_url: String,
     ws_manager: Arc<BinanceWebSocketManager>,
     spread_cache: Arc<SpreadCache>,
@@ -55,7 +54,7 @@ impl BinanceMarketDataService {
 #[derive(Default)]
 pub struct BinanceMarketDataServiceBuilder {
     api_key: Option<String>,
-    api_secret: Option<String>,
+
     base_url: Option<String>,
     ws_url: Option<String>,
     candle_repository: Option<Option<Arc<dyn CandleRepository>>>,
@@ -64,11 +63,6 @@ pub struct BinanceMarketDataServiceBuilder {
 impl BinanceMarketDataServiceBuilder {
     pub fn api_key(mut self, api_key: String) -> Self {
         self.api_key = Some(api_key);
-        self
-    }
-
-    pub fn api_secret(mut self, api_secret: String) -> Self {
-        self.api_secret = Some(api_secret);
         self
     }
 
@@ -89,7 +83,6 @@ impl BinanceMarketDataServiceBuilder {
 
     pub fn build(self) -> BinanceMarketDataService {
         let api_key = self.api_key.expect("api_key is required");
-        let api_secret = self.api_secret.expect("api_secret is required");
         let base_url = self.base_url.expect("base_url is required");
         let ws_url = self.ws_url.expect("ws_url is required");
         let candle_repository = self.candle_repository.flatten();
@@ -97,11 +90,7 @@ impl BinanceMarketDataServiceBuilder {
         let client = HttpClientFactory::create_client();
 
         let spread_cache = Arc::new(SpreadCache::new());
-        let ws_manager = Arc::new(BinanceWebSocketManager::new(
-            api_key.clone(),
-            ws_url,
-            spread_cache.clone(),
-        ));
+        let ws_manager = Arc::new(BinanceWebSocketManager::new(ws_url));
 
         let circuit_breaker = Arc::new(CircuitBreaker::new(
             "BinanceMarketData",
@@ -113,7 +102,6 @@ impl BinanceMarketDataServiceBuilder {
         BinanceMarketDataService {
             client,
             api_key,
-            api_secret,
             base_url,
             ws_manager,
             spread_cache,

@@ -5,7 +5,7 @@
 
 use crate::application::market_data::spread_cache::SpreadCache;
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
-use crate::application::risk_management::order_retry_strategy::{OrderRetryStrategy, RetryConfig};
+use crate::application::risk_management::order_retry_strategy::OrderRetryStrategy;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::trading::types::{Order, OrderSide};
 use rust_decimal::Decimal;
@@ -41,7 +41,7 @@ impl LiquidationService {
             order_tx,
             portfolio_state_manager,
             market_service,
-            order_retry_strategy: OrderRetryStrategy::new(RetryConfig::default()),
+            order_retry_strategy: OrderRetryStrategy::new(),
             spread_cache,
         }
     }

@@ -22,8 +22,7 @@ pub struct AlpacaExecutionService {
     api_secret: String,
     base_url: String,
     trading_stream: Arc<AlpacaTradingStream>,
-    #[allow(dead_code)] // Used in background polling task
-    circuit_breaker: Arc<crate::infrastructure::core::circuit_breaker::CircuitBreaker>,
+
     portfolio: Arc<RwLock<crate::domain::trading::portfolio::Portfolio>>, // Renamed from portfolio_cache and now injected
     metrics: Metrics,
 }
@@ -179,7 +178,7 @@ impl AlpacaExecutionService {
             api_secret,
             base_url,
             trading_stream,
-            circuit_breaker,
+
             portfolio,
             metrics,
         }
@@ -209,8 +208,6 @@ struct AlpacaOrderResponse {
 
 #[derive(Debug, Deserialize)]
 struct AlpacaAccount {
-    #[allow(dead_code)]
-    cash: String,
     buying_power: String,
     #[serde(default)]
     daytrade_count: i64,
@@ -231,8 +228,7 @@ struct AlpacaOrder {
     symbol: String,
     side: String,
     qty: String,
-    #[allow(dead_code)]
-    filled_qty: Option<String>,
+
     filled_avg_price: Option<String>,
     created_at: String,
 }

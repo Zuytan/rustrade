@@ -1,5 +1,5 @@
 use crate::application::strategies::{AnalysisContext, PositionInfo, TradingStrategy};
-use crate::domain::trading::types::{FeatureSet, OrderSide};
+use crate::domain::trading::types::FeatureSet;
 use rust_decimal::Decimal;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -30,7 +30,6 @@ impl SignalGenerator {
         timestamp: i64,
         features: &FeatureSet,
         strategy: &Arc<dyn TradingStrategy>,
-        _sma_threshold: Decimal, // Unused
         has_position: bool,
         position: Option<PositionInfo>,
         previous_macd_histogram: Option<Decimal>, // Previous MACD histogram
@@ -96,49 +95,13 @@ impl SignalGenerator {
     }
 
     // Legacy method removed/unused
-    #[allow(dead_code)]
-    fn check_sma_crossover(&mut self, features: &FeatureSet, threshold: f64) -> Option<OrderSide> {
-        // Keep code for now to avoid breaking other legacy refs if any, but unused here
-        let fast = features.ema_fast.or(features.sma_20)?;
-        let slow = features.ema_slow.or(features.sma_50)?;
-
-        let threshold_dec = Decimal::from_f64_retain(threshold).unwrap_or(Decimal::ZERO);
-        let is_definitively_above = fast > slow * (Decimal::ONE + threshold_dec);
-        let is_definitively_below = fast < slow * (Decimal::ONE - threshold_dec);
-
-        match self.last_was_above {
-            None => {
-                if is_definitively_above {
-                    self.last_was_above = Some(true);
-                } else if is_definitively_below {
-                    self.last_was_above = Some(false);
-                }
-                None
-            }
-            Some(true) => {
-                if is_definitively_below {
-                    self.last_was_above = Some(false);
-                    Some(OrderSide::Sell)
-                } else {
-                    None
-                }
-            }
-            Some(false) => {
-                if is_definitively_above {
-                    self.last_was_above = Some(true);
-                    Some(OrderSide::Buy)
-                } else {
-                    None
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::application::strategies::{AnalysisContext, Signal, TradingStrategy};
+    use crate::domain::trading::types::OrderSide;
     use rust_decimal_macros::dec;
     use std::sync::Mutex;
 
@@ -191,7 +154,6 @@ mod tests {
             1234567890,
             &features,
             &(strategy.clone() as Arc<dyn TradingStrategy>),
-            dec!(0.0),
             false,
             None,
             None,
@@ -236,7 +198,6 @@ mod tests {
             0,
             &features,
             &(strategy as Arc<dyn TradingStrategy>),
-            dec!(0.0),
             false,
             None,
             None,
@@ -267,7 +228,6 @@ mod tests {
             0,
             &features,
             &(strategy as Arc<dyn TradingStrategy>),
-            dec!(0.0),
             false,
             None,
             None,

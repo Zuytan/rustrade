@@ -79,7 +79,6 @@ impl StrategySelector {
 
     /// Alternative: Select Ensemble mode for maximum robustness
     /// (combines multiple strategies with voting)
-    #[allow(dead_code)]
     pub fn select_ensemble_strategy(
         config: &AnalystConfig,
     ) -> (StrategyMode, Arc<dyn TradingStrategy>) {

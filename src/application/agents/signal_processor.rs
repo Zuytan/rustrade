@@ -41,7 +41,6 @@ impl SignalProcessor {
             timestamp,
             &context.last_features,
             &context.strategy,
-            context.config.sma_threshold,
             has_position,
             position,
             context.last_macd_histogram,
@@ -286,9 +285,6 @@ mod tests {
     use crate::application::optimization::win_rate_provider::StaticWinRateProvider;
     use crate::application::strategies::StrategyFactory;
     use crate::domain::market::strategy_config::StrategyMode;
-    use crate::domain::trading::types::Candle;
-    use rust_decimal::Decimal;
-
     use rust_decimal_macros::dec;
 
     fn create_test_context() -> SymbolContext {
@@ -298,20 +294,6 @@ mod tests {
         let timeframes = vec![crate::domain::market::timeframe::Timeframe::OneMin];
 
         SymbolContext::new(config, strategy, win_rate_provider, timeframes)
-    }
-
-    #[allow(dead_code)]
-    fn create_test_candle(symbol: &str, price: f64) -> Candle {
-        let price_dec = Decimal::from_f64_retain(price).unwrap();
-        Candle {
-            symbol: symbol.to_string(),
-            open: price_dec,
-            high: price_dec * dec!(1.01),
-            low: price_dec * dec!(0.99),
-            close: price_dec,
-            volume: dec!(1000.0),
-            timestamp: 1000,
-        }
     }
 
     #[test]

@@ -7,7 +7,7 @@ use tokio::fs;
 use tracing::info;
 
 /// Singleton database wrapper
-#[allow(dead_code)]
+
 #[derive(Clone)]
 pub struct Database {
     pub pool: SqlitePool,

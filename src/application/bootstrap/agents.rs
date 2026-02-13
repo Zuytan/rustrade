@@ -264,7 +264,6 @@ impl AgentsBootstrap {
 
         // Listener Agent
         spawn_listener(
-            config,
             analyst_cmd_tx.clone(),
             news_broadcast_tx.clone(),
             agent_registry.clone(),
@@ -466,7 +465,6 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
 }
 
 fn spawn_listener(
-    _config: &Config,
     logger_analyst_tx: mpsc::Sender<AnalystCommand>,
     news_tx_for_listener: broadcast::Sender<NewsEvent>,
     agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,

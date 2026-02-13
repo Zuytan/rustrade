@@ -336,19 +336,6 @@ impl PerformanceMetrics {
         (alpha, beta)
     }
 
-    #[allow(dead_code)]
-    fn build_equity_curve(trades: &[Trade], initial_equity: Decimal) -> Vec<Decimal> {
-        let mut curve = vec![initial_equity];
-        let mut current_equity = initial_equity;
-
-        for trade in trades {
-            current_equity += trade.pnl;
-            curve.push(current_equity);
-        }
-
-        curve
-    }
-
     fn calculate_max_drawdown(equity_curve: &[Decimal]) -> f64 {
         let mut max_dd = 0.0;
         let mut peak = Decimal::ZERO;

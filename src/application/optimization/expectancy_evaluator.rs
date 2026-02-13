@@ -5,20 +5,12 @@ use rust_decimal::Decimal;
 use std::sync::Arc;
 
 pub struct MarketExpectancyEvaluator {
-    #[allow(dead_code)]
-    min_reward_risk_ratio: Decimal,
     win_rate_provider: Arc<dyn WinRateProvider>,
 }
 
 impl MarketExpectancyEvaluator {
-    pub fn new(
-        min_reward_risk_ratio: Decimal,
-        win_rate_provider: Arc<dyn WinRateProvider>,
-    ) -> Self {
-        Self {
-            min_reward_risk_ratio,
-            win_rate_provider,
-        }
+    pub fn new(win_rate_provider: Arc<dyn WinRateProvider>) -> Self {
+        Self { win_rate_provider }
     }
 
     async fn calculate_win_prob(&self, symbol: &str, regime: &MarketRegime) -> Decimal {

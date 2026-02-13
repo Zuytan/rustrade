@@ -8,7 +8,6 @@ use tracing::error;
 pub struct DataCollector {
     buffer: VecDeque<PendingDataPoint>,
     output_path: PathBuf,
-    _history_size: usize,
 }
 
 struct PendingDataPoint {
@@ -27,7 +26,6 @@ impl DataCollector {
         Self {
             buffer: VecDeque::new(),
             output_path,
-            _history_size: 20,
         }
     }
 

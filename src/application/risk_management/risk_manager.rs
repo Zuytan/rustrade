@@ -6,7 +6,8 @@ use crate::application::risk_management::order_reconciler::{OrderReconciler, Pen
 use crate::application::risk_management::pipeline::validation_pipeline::RiskValidationPipeline;
 use crate::application::risk_management::portfolio_valuation_service::PortfolioValuationService;
 use crate::application::risk_management::session_manager::SessionManager;
-use crate::application::risk_management::state::pending_orders_tracker::PendingOrdersTracker;
+
+use crate::application::market_data::spread_cache::SpreadCache;
 use crate::application::risk_management::state::risk_state_manager::RiskStateManager;
 use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
 use crate::domain::repositories::{CandleRepository, RiskStateRepository};
@@ -63,10 +64,8 @@ pub struct RiskManager {
 
     // NEW Architecture Components
     validation_pipeline: RiskValidationPipeline,
-    #[allow(dead_code)]
+
     state_manager: RiskStateManager,
-    #[allow(dead_code)]
-    pending_orders_tracker: PendingOrdersTracker,
 
     // Extracted Services
     session_manager: SessionManager,
@@ -93,8 +92,6 @@ pub struct RiskManager {
     candle_repository: Option<Arc<dyn CandleRepository>>,
 
     // Services
-    #[allow(dead_code)] // Reserved for LiquidationService panic-mode exits (blind liquidation)
-    spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
     metrics: Metrics,
     agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
@@ -115,7 +112,7 @@ impl RiskManager {
         correlation_service: Option<Arc<CorrelationService>>,
         risk_state_repository: Option<Arc<dyn RiskStateRepository>>,
         candle_repository: Option<Arc<dyn CandleRepository>>,
-        spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
+        spread_cache: Arc<SpreadCache>,
         connection_health_service: Arc<ConnectionHealthService>,
         metrics: Metrics,
         agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
@@ -168,7 +165,6 @@ impl RiskManager {
             Decimal::ZERO, // Initialized later in initialize_session
         );
 
-        let pending_orders_tracker = PendingOrdersTracker::new();
         let volatility_manager = Arc::new(RwLock::new(VolatilityManager::new(
             risk_config.volatility_config.clone(),
         )));
@@ -206,7 +202,6 @@ impl RiskManager {
             // New Components
             validation_pipeline,
             state_manager,
-            pending_orders_tracker,
             risk_config: risk_config.clone(), // Fix move error
 
             // Extracted Services
@@ -232,7 +227,7 @@ impl RiskManager {
             current_sentiment: None,
             // risk_state_repository removed
             candle_repository,
-            spread_cache,
+
             connection_health_service,
             last_quote_timestamp: Utc::now().timestamp(),
             metrics,
