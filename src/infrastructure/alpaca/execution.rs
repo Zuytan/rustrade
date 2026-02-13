@@ -393,7 +393,7 @@ impl ExecutionService for AlpacaExecutionService {
     }
 
     #[instrument(skip(self))]
-    async fn cancel_order(&self, order_id: &str) -> Result<()> {
+    async fn cancel_order(&self, order_id: &str, _symbol: &str) -> Result<()> {
         let _latency = LatencyGuard::new(
             self.metrics
                 .api_latency_seconds

@@ -316,10 +316,33 @@ impl ExecutionService for BinanceExecutionService {
         Ok(orders)
     }
 
-    async fn cancel_order(&self, _order_id: &str) -> Result<()> {
-        // Note: Binance requires symbol for order cancellation
-        // For now, return error (can be enhanced to store symbol mapping)
-        anyhow::bail!("BinanceExecutionService::cancel_order requires symbol - not implemented");
+    async fn cancel_order(&self, order_id: &str, symbol: &str) -> Result<()> {
+        let api_symbol = denormalize_crypto_symbol(symbol);
+        let timestamp = chrono::Utc::now().timestamp_millis();
+        let query_string = format!(
+            "symbol={}&orderId={}&timestamp={}",
+            api_symbol, order_id, timestamp
+        );
+        let signature = self.sign_request(&query_string);
+        let signed_query = format!("{}&signature={}", query_string, signature);
+
+        let url = format!("{}/api/v3/order?{}", self.base_url, signed_query);
+
+        let response = self
+            .client
+            .delete(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
+            .await
+            .context(format!("Failed to cancel order {}", order_id))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Binance cancel order failed: {}", error_text);
+        }
+
+        info!("Binance order {} cancelled successfully.", order_id);
+        Ok(())
     }
 
     async fn cancel_all_orders(&self) -> Result<()> {

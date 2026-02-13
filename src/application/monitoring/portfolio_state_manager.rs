@@ -78,7 +78,7 @@ impl ReservationToken {
 /// #     }
 /// #     async fn get_today_orders(&self) -> anyhow::Result<Vec<rustrade::domain::trading::types::Order>> { Ok(vec![]) }
 /// #     async fn get_open_orders(&self) -> anyhow::Result<Vec<rustrade::domain::trading::types::Order>> { Ok(vec![]) }
-/// #     async fn cancel_order(&self, _: &str) -> anyhow::Result<()> { Ok(()) }
+/// #     async fn cancel_order(&self, _: &str, _: &str) -> anyhow::Result<()> { Ok(()) }
 /// #     async fn cancel_all_orders(&self) -> anyhow::Result<()> { Ok(()) }
 /// #     async fn subscribe_order_updates(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<rustrade::domain::ports::OrderUpdate>> {
 /// #         let (tx, _) = tokio::sync::broadcast::channel(1);
@@ -299,7 +299,7 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn cancel_order(&self, _order_id: &str) -> anyhow::Result<()> {
+        async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> anyhow::Result<()> {
             Ok(())
         }
 

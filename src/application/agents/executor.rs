@@ -287,7 +287,7 @@ mod tests {
         async fn get_open_orders(&self) -> Result<Vec<Order>> {
             Ok(Vec::new())
         }
-        async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+        async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
             Ok(())
         }
         async fn cancel_all_orders(&self) -> Result<()> {
@@ -317,7 +317,7 @@ mod tests {
         async fn get_open_orders(&self) -> Result<Vec<Order>> {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
-        async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+        async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
         async fn cancel_all_orders(&self) -> Result<()> {

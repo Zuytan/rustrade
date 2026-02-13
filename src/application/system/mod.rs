@@ -157,10 +157,23 @@ impl Application {
         .await?;
 
         // Initialize and Start Shutdown Service
+        let flatten_on_exit = std::env::var("FLATTEN_ON_EXIT")
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(false);
+
+        let shutdown_config =
+            crate::application::system::shutdown_service::EmergencyShutdownConfig {
+                flatten_on_exit,
+                liquidation_timeout_ms: 10000,
+            };
+
         let shutdown_service = Arc::new(ShutdownService::new(
             self.execution_service.clone(),
             self.risk_state_repository.clone(),
             self.portfolio.clone(),
+            self.market_service.clone(),
+            self.spread_cache.clone(),
+            shutdown_config,
         ));
 
         let service_clone = shutdown_service.clone();

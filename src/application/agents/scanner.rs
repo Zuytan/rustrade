@@ -174,8 +174,8 @@ mod tests {
         async fn get_open_orders(&self) -> Result<Vec<Order>> {
             unimplemented!()
         }
-        async fn cancel_order(&self, _order_id: &str) -> Result<()> {
-            unimplemented!()
+        async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
+            Ok(())
         }
         async fn cancel_all_orders(&self) -> Result<()> {
             Ok(())

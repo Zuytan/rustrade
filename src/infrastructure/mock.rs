@@ -478,7 +478,7 @@ impl ExecutionService for MockExecutionService {
         Ok(vec![])
     }
 
-    async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+    async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
         Ok(())
     }
 

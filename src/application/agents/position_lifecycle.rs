@@ -60,7 +60,7 @@ pub async fn manage_pending_orders(
                             "PositionLifecycle [{}]: Cancelling orphaned order {}...",
                             symbol, order.id
                         );
-                        if let Err(e) = execution_service.cancel_order(&order.id).await {
+                        if let Err(e) = execution_service.cancel_order(&order.id, symbol).await {
                             error!(
                                 "PositionLifecycle [{}]: Failed to cancel order {}: {}",
                                 symbol, order.id, e

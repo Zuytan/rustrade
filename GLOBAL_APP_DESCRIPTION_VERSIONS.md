@@ -1,5 +1,16 @@
 # Rustrade - Historique des Versions
 
+## Version 0.98.0 - Security Hardening & Robustness (February 2026)
+
+### Critical Infrastructure
+- **Binance Compatibility**: Updated `ExecutionService::cancel_order` to require `symbol`, fixing a critical API mismatch for Binance order cancellations.
+- **Mock Corrections**: Updated all test mocks to align with the new execution trait signature.
+
+### Safety Mechanisms
+- **Shutdown Safety**: Implemented "Flatten on Shutdown" capability in `ShutdownService`, allowing the bot to optionally liquidate all positions before exiting (controlled via `EmergencyShutdownConfig`).
+- **Robust Liquidation**: Added exponential backoff retry logic to `LiquidationService` to ensure emergency orders are executed even under network stress.
+- **Blind Market Actions**: Fallback to "Blind Market Orders" if limit orders fail repeatedly during emergencies.
+
 ## Version 0.97.8 - Military Grade Safety & shutdown (February 2026)
 
 ### Safety Net & Reliability

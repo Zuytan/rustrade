@@ -100,7 +100,7 @@ impl ExecutionService for MockExecution {
         Ok(vec![])
     }
 
-    async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+    async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
         Ok(())
     }
 
@@ -251,7 +251,7 @@ async fn test_liquidation_service_integration() {
     let spread_cache = Arc::new(SpreadCache::new());
 
     let liquidation_service = LiquidationService::new(
-        order_tx,
+        Some(order_tx),
         portfolio_manager.clone(),
         market.clone(),
         spread_cache.clone(),
@@ -319,7 +319,7 @@ async fn test_service_composition_full_workflow() {
     );
 
     let liquidation_service = LiquidationService::new(
-        order_tx,
+        Some(order_tx),
         portfolio_manager.clone(),
         market.clone(),
         spread_cache.clone(),

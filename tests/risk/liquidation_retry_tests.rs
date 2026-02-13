@@ -64,7 +64,7 @@ impl ExecutionService for StatefulMockExecution {
         Ok(vec![])
     }
 
-    async fn cancel_order(&self, _order_id: &str) -> Result<()> {
+    async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
         Ok(())
     }
 
@@ -110,7 +110,7 @@ async fn test_smart_liquidation_uses_limit_when_spread_available() {
     // 3. Setup Liquidation Service
     let (order_tx, mut order_rx) = mpsc::channel(10);
     let service = LiquidationService::new(
-        order_tx,
+        Some(order_tx),
         portfolio_manager.clone(),
         Arc::new(MockMarketService),
         spread_cache.clone(),
@@ -163,7 +163,7 @@ async fn test_smart_liquidation_falls_back_to_market_when_no_spread() {
     // 3. Setup Liquidation Service
     let (order_tx, mut order_rx) = mpsc::channel(10);
     let service = LiquidationService::new(
-        order_tx,
+        Some(order_tx),
         portfolio_manager.clone(),
         Arc::new(MockMarketService),
         spread_cache.clone(),
@@ -215,7 +215,7 @@ async fn test_panic_mode_forces_market_order() {
     // 3. Setup Liquidation Service
     let (order_tx, mut order_rx) = mpsc::channel(10);
     let service = LiquidationService::new(
-        order_tx,
+        Some(order_tx),
         portfolio_manager.clone(),
         Arc::new(MockMarketService),
         spread_cache.clone(),
