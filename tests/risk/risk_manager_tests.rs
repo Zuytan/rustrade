@@ -158,6 +158,7 @@ async fn test_circuit_breaker_on_market_crash() {
         Arc::new(SpreadCache::new()),
         Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
+        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
     )
     .expect("Test config should be valid");
 
@@ -237,6 +238,11 @@ async fn test_buy_approval() {
         Arc::new(SpreadCache::new()),
         connection_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -291,6 +297,11 @@ async fn test_buy_rejection_insufficient_funds() {
         Arc::new(SpreadCache::new()),
         Arc::new(ConnectionHealthService::new()),
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -357,6 +368,11 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         Arc::new(SpreadCache::new()),
         Arc::new(ConnectionHealthService::new()),
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 
@@ -430,6 +446,11 @@ async fn test_sell_approval() {
         Arc::new(SpreadCache::new()),
         connection_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -515,6 +536,7 @@ async fn test_pdt_protection_rejection() {
         Arc::new(SpreadCache::new()),
         Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
+        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
     )
     .expect("Test config should be valid");
 
@@ -602,6 +624,7 @@ async fn test_sector_exposure_limit() {
         Arc::new(SpreadCache::new()),
         Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
+        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -682,6 +705,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         Arc::new(SpreadCache::new()),
         Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
+        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
     )
     .expect("Test config should be valid");
 
@@ -768,6 +792,11 @@ async fn test_crypto_daily_reset() {
         Arc::new(SpreadCache::new()),
         Arc::new(ConnectionHealthService::new()),
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 
@@ -855,6 +884,11 @@ async fn test_sentiment_risk_adjustment() {
         Arc::new(SpreadCache::new()),
         connection_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -981,6 +1015,7 @@ async fn test_blind_liquidation_panic_mode() {
         Arc::new(SpreadCache::new()),
         Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
         Metrics::default(),
+        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });

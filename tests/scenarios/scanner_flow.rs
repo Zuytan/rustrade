@@ -33,6 +33,11 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
     initial_portfolio.cash = Decimal::from(10000); // Plenty of cash
     let portfolio_lock = Arc::new(RwLock::new(initial_portfolio));
     let execution_service = Arc::new(MockExecutionService::new(portfolio_lock.clone()));
+    let agent_registry = Arc::new(
+        rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+            rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        ),
+    );
 
     // 1. Setup Sentinel with EMPTY initial symbols
     let mut sentinel = Sentinel::new(
@@ -41,6 +46,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         vec![],
         Some(sentinel_cmd_rx),
         create_online_health_service().await,
+        agent_registry.clone(),
     );
 
     // 2. Setup MarketScanner (Dynamic Mode)
@@ -50,6 +56,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         sentinel_cmd_tx,
         Duration::from_millis(100),
         true, // Enabled
+        agent_registry.clone(),
     );
 
     // 3. Setup Analyst
@@ -134,6 +141,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
             ),
             ui_candle_tx: None,
             connection_health_service: create_online_health_service().await,
+            agent_registry: agent_registry.clone(),
         },
     );
 

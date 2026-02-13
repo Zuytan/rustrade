@@ -30,6 +30,7 @@ pub enum DashboardView {
     Dashboard,
     Charts,
     Analytics,
+    Architecture,
     Settings,
 }
 
@@ -39,6 +40,7 @@ impl DashboardView {
             DashboardView::Dashboard => "📊",
             DashboardView::Charts => "📈",
             DashboardView::Analytics => "🔬",
+            DashboardView::Architecture => "🏗️",
             DashboardView::Settings => "⚙️",
         }
     }
@@ -48,6 +50,7 @@ impl DashboardView {
             DashboardView::Dashboard => i18n.t("nav_dashboard").to_string(),
             DashboardView::Charts => i18n.t("nav_charts").to_string(),
             DashboardView::Analytics => i18n.t("nav_analytics").to_string(),
+            DashboardView::Architecture => "Architecture".to_string(), // i18n.t("nav_architecture").to_string()
             DashboardView::Settings => i18n.t("nav_settings").to_string(),
         }
     }
@@ -288,6 +291,7 @@ pub fn render_sidebar(
             DashboardView::Dashboard,
             DashboardView::Charts,
             DashboardView::Analytics,
+            DashboardView::Architecture,
             DashboardView::Settings,
         ];
 

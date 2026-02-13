@@ -1,5 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.0 - Architecture & Metrics Tab & Scanner Fix (February 2026)
+
+### Observability & UI
+- **Architecture & Metrics Tab**: New UI tab visualization for system architecture, agent health, and real-time metrics.
+- **Agent Status Registry**: Centralized, thread-safe registry for monitoring agent health and metrics.
+- **Prometheus Integration**: Automatic export of agent health status (`agent_up`) and heartbeat timestamps (`agent_last_heartbeat`).
+
+### Reliability & Fixes
+- **MarketScanner Heartbeat**: Decoupled heartbeat reporting from scan interval, preventing false "dead" status during long scans.
+- **Agent Heartbeats**: Updated all major agents (`Sentinel`, `OrderThrottler`, `RiskManager`, etc.) to report regular heartbeats.
+- **OrderThrottler**: Now reports queue size metrics.
+- **Executor**: Resolved `clippy::too-many-arguments` warning.
+
 ## Version 0.98.1 - Critical Boot Stability Fix (February 2026)
 
 ### Stability & Safety

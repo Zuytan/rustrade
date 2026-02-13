@@ -28,6 +28,7 @@ pub struct Sentinel {
     health_service: Arc<ConnectionHealthService>,
     heartbeat: StreamHealthMonitor,
     last_heal_attempt: Option<std::time::Instant>,
+    agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 impl Sentinel {
@@ -35,8 +36,9 @@ impl Sentinel {
         market_service: Arc<dyn MarketDataService>,
         market_tx: Sender<MarketEvent>,
         symbols: Vec<String>,
-        cmd_rx: Option<Receiver<SentinelCommand>>,
-        health_service: Arc<ConnectionHealthService>,
+        command_rx: Option<Receiver<SentinelCommand>>,
+        connection_health_service: Arc<ConnectionHealthService>,
+        agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Self {
         // Crypto threshold: 10s for silence
         let heartbeat = StreamHealthMonitor::new("Sentinel", Duration::from_secs(10));
@@ -45,10 +47,11 @@ impl Sentinel {
             market_service,
             market_tx,
             symbols,
-            cmd_rx,
-            health_service,
+            cmd_rx: command_rx,
+            health_service: connection_health_service,
             heartbeat,
             last_heal_attempt: None,
+            agent_registry,
         }
     }
 
@@ -81,6 +84,7 @@ impl Sentinel {
         };
 
         let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(2));
+        let mut agent_health_check_interval = tokio::time::interval(Duration::from_secs(5));
 
         loop {
             tokio::select! {
@@ -147,7 +151,18 @@ impl Sentinel {
                     }
                 }
 
+                // 5. Periodic Agent Health Check
+                _ = agent_health_check_interval.tick() => {
+                     self.agent_registry
+                        .update_heartbeat(
+                            "Sentinel",
+                            crate::application::monitoring::agent_status::HealthStatus::Healthy,
+                        )
+                        .await;
+                }
+
                 // Only poll cmd_rx if it exists
+
                 maybe_cmd = async {
                     if let Some(rx) = &mut self.cmd_rx {
                         rx.recv().await
@@ -299,6 +314,7 @@ mod tests {
             vec!["ETH/USD".to_string()],
             None,
             Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            Arc::new(crate::application::monitoring::agent_status::AgentStatusRegistry::new(crate::infrastructure::observability::Metrics::new().unwrap())),
         );
 
         tokio::spawn(async move {

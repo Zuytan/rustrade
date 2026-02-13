@@ -12,6 +12,7 @@ pub struct ListenerAgent {
     analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
     /// Optional broadcast sender to forward news events to UI
     news_broadcast_tx: Option<broadcast::Sender<NewsEvent>>,
+    agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 impl ListenerAgent {
@@ -19,12 +20,14 @@ impl ListenerAgent {
         news_service: Arc<dyn NewsDataService>,
         config: ListenerConfig,
         analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
+        agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Self {
         Self {
             news_service,
             config,
             analyst_cmd_tx,
             news_broadcast_tx: None,
+            agent_registry,
         }
     }
 
@@ -34,12 +37,14 @@ impl ListenerAgent {
         config: ListenerConfig,
         analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
         news_broadcast_tx: broadcast::Sender<NewsEvent>,
+        agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Self {
         Self {
             news_service,
             config,
             analyst_cmd_tx,
             news_broadcast_tx: Some(news_broadcast_tx),
+            agent_registry,
         }
     }
 
@@ -49,7 +54,31 @@ impl ListenerAgent {
         let mut reconnect_attempts = 0;
         const MAX_BACKOFF_MS: u64 = 60000;
 
+        // Initial Heartbeat
+        self.agent_registry
+            .update_heartbeat(
+                "Listener",
+                crate::application::monitoring::agent_status::HealthStatus::Healthy,
+            )
+            .await;
+
         loop {
+            // Heartbeat check (simple implementation inside the loop)
+            // Note: This loop blocks on news_rx.recv() below, so this heartbeat only updates
+            // when a connection cycle starts/restarts or an event is received if we were to put it after recv.
+            // Ideally, the ListenerAgent should have a select! with a ticker like other agents.
+            // Refactoring to use select! for consistent heartbeats.
+            self.agent_registry
+                .update_heartbeat(
+                    "Listener",
+                    if reconnect_attempts > 0 {
+                        crate::application::monitoring::agent_status::HealthStatus::Degraded
+                    } else {
+                        crate::application::monitoring::agent_status::HealthStatus::Healthy
+                    },
+                )
+                .await;
+
             reconnect_attempts += 1;
             let backoff_ms =
                 (1000 * (2_u64.pow(reconnect_attempts.min(6) - 1))).min(MAX_BACKOFF_MS);
@@ -59,10 +88,24 @@ impl ListenerAgent {
                 tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
             }
 
+            // Mark as Starting/Degraded during reconnection
+            self.agent_registry
+                .update_heartbeat(
+                    "Listener",
+                    crate::application::monitoring::agent_status::HealthStatus::Degraded,
+                )
+                .await;
+
             let mut news_rx = match self.news_service.subscribe_news().await {
                 Ok(rx) => {
                     info!("Successfully subscribed to news service.");
                     reconnect_attempts = 0; // Reset on success
+                    self.agent_registry
+                        .update_heartbeat(
+                            "Listener",
+                            crate::application::monitoring::agent_status::HealthStatus::Healthy,
+                        )
+                        .await;
                     rx
                 }
                 Err(e) => {
@@ -71,18 +114,37 @@ impl ListenerAgent {
                 }
             };
 
-            while let Some(event) = news_rx.recv().await {
-                info!("Received news event: {} - {}", event.source, event.title);
+            let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(5));
 
-                // Forward to UI broadcast if available
-                if let Some(tx) = &self.news_broadcast_tx {
-                    let _ = tx.send(event.clone());
+            loop {
+                tokio::select! {
+                     _ = heartbeat_interval.tick() => {
+                        self.agent_registry.update_heartbeat(
+                            "Listener",
+                            crate::application::monitoring::agent_status::HealthStatus::Healthy
+                        ).await;
+                     }
+
+                     maybe_event = news_rx.recv() => {
+                         match maybe_event {
+                             Some(event) => {
+                                info!("Received news event: {} - {}", event.source, event.title);
+
+                                // Forward to UI broadcast if available
+                                if let Some(tx) = &self.news_broadcast_tx {
+                                    let _ = tx.send(event.clone());
+                                }
+
+                                self.process_event(&event).await;
+                             }
+                             None => {
+                                 warn!("Listener Agent news stream ended. Re-establishing...");
+                                 break; // Break inner loop to reconnect
+                             }
+                         }
+                     }
                 }
-
-                self.process_event(&event).await;
             }
-
-            warn!("Listener Agent news stream ended. Re-establishing...");
         }
     }
 
@@ -171,7 +233,12 @@ mod tests {
             }],
         };
 
-        let agent = ListenerAgent::new(news_service, config, analyst_cmd_tx);
+        let agent_registry = Arc::new(
+            crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                crate::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        );
+        let agent = ListenerAgent::new(news_service, config, analyst_cmd_tx, agent_registry);
 
         // Spawn agent
         tokio::spawn(async move {

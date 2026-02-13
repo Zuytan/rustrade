@@ -83,6 +83,11 @@ async fn test_concurrent_proposals_respect_limits() {
         Arc::new(SpreadCache::new()),
         health_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 
@@ -204,6 +209,11 @@ async fn test_backpressure_drops_excess_proposals() {
         Arc::new(SpreadCache::new()),
         health_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 

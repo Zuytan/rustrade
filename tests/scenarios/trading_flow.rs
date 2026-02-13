@@ -297,6 +297,11 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         metrics: services.metrics.clone(),
         persistence,
         services,
+        agent_registry: std::sync::Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     };
 
     // 4. Run Application (BACKGROUND)

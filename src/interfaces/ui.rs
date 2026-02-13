@@ -1,7 +1,7 @@
 use crate::application::agents::user_agent::UserAgent;
 use crate::interfaces::dashboard_components::{
     activity_feed::render_logs_panel, analytics_view::render_analytics_view,
-    chart_panel::render_chart_panel,
+    architecture_view::render_architecture_view, chart_panel::render_chart_panel,
 };
 use eframe::egui;
 impl eframe::App for UserAgent {
@@ -68,6 +68,9 @@ impl eframe::App for UserAgent {
 
                 crate::interfaces::ui_components::DashboardView::Analytics => {
                     render_analytics_view(ui, self);
+                }
+                crate::interfaces::ui_components::DashboardView::Architecture => {
+                    render_architecture_view(ui, self);
                 }
                 crate::interfaces::ui_components::DashboardView::Settings => {
                     // Check if crypto mode for symbol selector

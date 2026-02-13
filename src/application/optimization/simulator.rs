@@ -201,6 +201,11 @@ impl Simulator {
                     ).await;
                     health
                 },
+                agent_registry: Arc::new(
+                    crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                        crate::infrastructure::observability::Metrics::new().unwrap(),
+                    ),
+                ),
             },
         );
 

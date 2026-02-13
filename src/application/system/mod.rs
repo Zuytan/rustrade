@@ -45,6 +45,7 @@ pub struct SystemHandle {
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
     pub metrics: Metrics,
+    pub agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 pub struct Application {
@@ -70,6 +71,7 @@ pub struct Application {
     pub risk_state_repository: Arc<dyn RiskStateRepository>,
     pub connection_health_service: Arc<ConnectionHealthService>,
     pub metrics: Metrics,
+    pub agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 impl Application {
@@ -84,6 +86,10 @@ impl Application {
         // 1. Initialize Metrics & Persistence
         let metrics = Metrics::new()?;
         let persistence = PersistenceBootstrap::init().await?;
+
+        let agent_registry = Arc::new(
+            crate::application::monitoring::agent_status::AgentStatusRegistry::new(metrics.clone()),
+        );
 
         // 3. Initialize Services (needs Persistence and Portfolio)
         let services =
@@ -119,6 +125,7 @@ impl Application {
             metrics: metrics.clone(),
             persistence,
             services,
+            agent_registry,
         })
     }
 
@@ -153,6 +160,7 @@ impl Application {
             self.portfolio.clone(),
             self.connection_health_service.clone(),
             self.metrics.clone(),
+            self.agent_registry.clone(),
         )
         .await?;
 
@@ -204,6 +212,7 @@ impl Application {
             strategy_mode: self.config.strategy_mode,
             risk_appetite: self.config.risk_appetite,
             metrics: self.metrics.clone(),
+            agent_registry: self.agent_registry.clone(),
         })
     }
 }

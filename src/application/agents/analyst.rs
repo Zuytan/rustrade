@@ -43,6 +43,7 @@ pub struct AnalystDependencies {
     pub ui_candle_tx: Option<broadcast::Sender<Candle>>,
     pub spread_cache: Arc<SpreadCache>,
     pub connection_health_service: Arc<ConnectionHealthService>,
+    pub agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 #[allow(dead_code)] // candle_repository and trade_evaluator used indirectly by pipeline
@@ -67,6 +68,7 @@ pub struct Analyst {
     ui_candle_tx: Option<broadcast::Sender<Candle>>,
     health_service: Arc<ConnectionHealthService>,
     market_data_online: bool,
+    agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 impl Analyst {
@@ -183,6 +185,7 @@ impl Analyst {
             ui_candle_tx: dependencies.ui_candle_tx,
             health_service: dependencies.connection_health_service,
             market_data_online: true, // Default to true, will be updated by run loop
+            agent_registry: dependencies.agent_registry,
         }
     }
 
@@ -227,8 +230,38 @@ impl Analyst {
             initial_status, self.market_data_online
         );
 
+        // Initial Heartbeat
+        self.agent_registry
+            .update_heartbeat(
+                "Analyst",
+                crate::application::monitoring::agent_status::HealthStatus::Healthy,
+            )
+            .await;
+
+        let mut health_check_interval = tokio::time::interval(std::time::Duration::from_secs(5));
+
         loop {
             tokio::select! {
+                _ = health_check_interval.tick() => {
+                    self.agent_registry
+                        .update_heartbeat(
+                            "Analyst",
+                            if self.market_data_online {
+                                crate::application::monitoring::agent_status::HealthStatus::Healthy
+                            } else {
+                                crate::application::monitoring::agent_status::HealthStatus::Degraded
+                            },
+                        )
+                        .await;
+
+                    self.agent_registry
+                        .update_metric(
+                            "Analyst",
+                            "active_symbols",
+                            self.symbol_states.len().to_string()
+                        )
+                        .await;
+                }
                 res = self.market_rx.recv() => {
                     match res {
                         Some(event) => {

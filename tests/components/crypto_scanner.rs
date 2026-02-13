@@ -56,6 +56,12 @@ async fn test_crypto_scanner_integration() {
     // Create command channel
     let (cmd_tx, mut cmd_rx) = mpsc::channel(10);
 
+    let agent_registry = std::sync::Arc::new(
+        rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+            rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        ),
+    );
+
     // Create scanner
     let scanner = MarketScanner::new(
         market_service as Arc<dyn rustrade::domain::ports::MarketDataService>,
@@ -63,6 +69,7 @@ async fn test_crypto_scanner_integration() {
         cmd_tx,
         Duration::from_secs(10), // Short interval for testing
         true,                    // enabled
+        agent_registry,
     );
 
     // Start scanner in background

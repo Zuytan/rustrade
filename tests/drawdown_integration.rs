@@ -159,6 +159,12 @@ async fn test_circuit_breaker_skipped_on_missing_prices() {
         ),
     );
 
+    let agent_registry = std::sync::Arc::new(
+        rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+            rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        ),
+    );
+
     // Create RiskManager
     let mut risk_manager = RiskManager::new(
         proposal_rx,
@@ -177,6 +183,7 @@ async fn test_circuit_breaker_skipped_on_missing_prices() {
         spread_cache,
         health_service,
         Metrics::default(), // Assuming default works, or mock it
+        agent_registry,
     )
     .unwrap();
 

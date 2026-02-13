@@ -96,6 +96,7 @@ pub struct RiskManager {
     #[allow(dead_code)] // Reserved for LiquidationService panic-mode exits (blind liquidation)
     spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
     metrics: Metrics,
+    agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 impl RiskManager {
@@ -117,6 +118,7 @@ impl RiskManager {
         spread_cache: Arc<crate::application::market_data::spread_cache::SpreadCache>,
         connection_health_service: Arc<ConnectionHealthService>,
         metrics: Metrics,
+        agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Result<Self, RiskConfigError> {
         // Validate configuration
         risk_config
@@ -234,6 +236,7 @@ impl RiskManager {
             connection_health_service,
             last_quote_timestamp: Utc::now().timestamp(),
             metrics,
+            agent_registry,
         })
     }
 
@@ -942,8 +945,40 @@ impl RiskManager {
         // events broadcast between iterations are permanently lost.
         let mut health_rx = self.connection_health_service.subscribe();
 
+        let mut agent_health_check_interval =
+            tokio::time::interval(std::time::Duration::from_secs(5));
+
+        // Initial Heartbeat
+        self.agent_registry
+            .update_heartbeat(
+                "RiskManager",
+                crate::application::monitoring::agent_status::HealthStatus::Healthy,
+            )
+            .await;
+
         loop {
             tokio::select! {
+                _ = agent_health_check_interval.tick() => {
+                    self.agent_registry
+                        .update_heartbeat(
+                            "RiskManager",
+                            if self.is_halted() {
+                                crate::application::monitoring::agent_status::HealthStatus::Degraded
+                            } else {
+                                crate::application::monitoring::agent_status::HealthStatus::Healthy
+                            },
+                        )
+                        .await;
+
+                    self.agent_registry
+                         .update_metric(
+                             "RiskManager",
+                             "circuit_breaker",
+                             if self.is_halted() { "HALTED" } else { "NORMAL" }.to_string()
+                         )
+                         .await;
+                }
+
                 // Periodic volatility refresh
                 _ = vol_interval.tick() => {
                     if let Err(e) = self.update_volatility().await {

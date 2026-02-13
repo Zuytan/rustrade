@@ -56,6 +56,7 @@ impl AgentsBootstrap {
         portfolio: Arc<RwLock<Portfolio>>,
         connection_health_service: Arc<ConnectionHealthService>,
         metrics: Metrics,
+        agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Result<AgentsHandle> {
         info!("Initializing Agents...");
 
@@ -80,6 +81,7 @@ impl AgentsBootstrap {
             config.symbols.clone(),
             Some(sentinel_cmd_rx),
             connection_health_service.clone(),
+            agent_registry.clone(),
         );
 
         // 2. Market Scanner
@@ -91,6 +93,7 @@ impl AgentsBootstrap {
             sentinel_cmd_tx.clone(),
             scanner_interval,
             config.dynamic_symbol_mode,
+            agent_registry.clone(),
         );
 
         // 3. Analyst
@@ -118,6 +121,7 @@ impl AgentsBootstrap {
                 ui_candle_tx: Some(candle_tx),
                 spread_cache: services.spread_cache.clone(),
                 connection_health_service: connection_health_service.clone(),
+                agent_registry: agent_registry.clone(),
             },
         );
 
@@ -223,11 +227,16 @@ impl AgentsBootstrap {
             services.spread_cache.clone(),
             connection_health_service.clone(),
             metrics.clone(),
+            agent_registry.clone(),
         )?;
 
         // 5. Order Throttler & Executor
-        let mut order_throttler =
-            OrderThrottler::new(order_rx, throttled_order_tx, config.max_orders_per_minute);
+        let mut order_throttler = OrderThrottler::new(
+            order_rx,
+            throttled_order_tx,
+            config.max_orders_per_minute,
+            agent_registry.clone(),
+        );
 
         let retry_config = crate::application::risk_management::order_retry_strategy::RetryConfig {
             limit_timeout_ms: config.pending_order_ttl_ms.unwrap_or(5000) as u64,
@@ -242,6 +251,7 @@ impl AgentsBootstrap {
             retry_config,
             connection_health_service.clone(),
             config.create_fee_model(),
+            agent_registry.clone(),
         );
 
         // SPAWN TASKS
@@ -253,7 +263,12 @@ impl AgentsBootstrap {
         tokio::spawn(async move { executor.run().await });
 
         // Listener Agent
-        spawn_listener(config, analyst_cmd_tx.clone(), news_broadcast_tx.clone());
+        spawn_listener(
+            config,
+            analyst_cmd_tx.clone(),
+            news_broadcast_tx.clone(),
+            agent_registry.clone(),
+        );
 
         // Sentiment Polling
         spawn_sentiment_poller(
@@ -452,8 +467,9 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
 
 fn spawn_listener(
     _config: &Config,
-    listener_analyst_tx: mpsc::Sender<AnalystCommand>,
+    logger_analyst_tx: mpsc::Sender<AnalystCommand>,
     news_tx_for_listener: broadcast::Sender<NewsEvent>,
+    agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 ) {
     tokio::spawn(async move {
         info!("Starting Listener Agent...");
@@ -500,8 +516,9 @@ fn spawn_listener(
         let listener = ListenerAgent::with_news_broadcast(
             news_service,
             config,
-            listener_analyst_tx,
+            logger_analyst_tx, // Fixed variable name matching
             news_tx_for_listener,
+            agent_registry,
         );
         listener.run().await;
     });

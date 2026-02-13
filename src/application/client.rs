@@ -122,4 +122,10 @@ impl SystemClient {
     pub fn risk_appetite(&self) -> Option<crate::domain::risk::risk_appetite::RiskAppetite> {
         self.handle.risk_appetite
     }
+
+    pub fn agent_registry(
+        &self,
+    ) -> std::sync::Arc<crate::application::monitoring::agent_status::AgentStatusRegistry> {
+        self.handle.agent_registry.clone()
+    }
 }

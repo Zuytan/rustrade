@@ -56,6 +56,11 @@ async fn test_pdt_protection_boundary() {
         Arc::new(SpreadCache::new()),
         health_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 
@@ -166,6 +171,11 @@ async fn test_max_daily_loss_prevents_trading() {
         Arc::new(SpreadCache::new()),
         health_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 
@@ -251,6 +261,11 @@ async fn test_circuit_breaker_on_drawdown() {
         Arc::new(SpreadCache::new()),
         health_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 

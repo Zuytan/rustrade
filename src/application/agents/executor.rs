@@ -24,9 +24,11 @@ pub struct Executor {
     order_monitor: Arc<OrderMonitor>,
     health_service: Arc<ConnectionHealthService>,
     fee_model: Arc<dyn FeeModel>,
+    agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 impl Executor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         execution_service: Arc<dyn ExecutionService>,
         order_rx: Receiver<Order>,
@@ -35,6 +37,7 @@ impl Executor {
         retry_config: RetryConfig,
         health_service: Arc<ConnectionHealthService>,
         fee_model: Arc<dyn FeeModel>,
+        agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Self {
         Self {
             execution_service,
@@ -44,6 +47,7 @@ impl Executor {
             order_monitor: Arc::new(OrderMonitor::new(retry_config)),
             health_service,
             fee_model,
+            agent_registry,
         }
     }
 
@@ -54,6 +58,15 @@ impl Executor {
         }
 
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(5));
+
+        // Initial Heartbeat
+        self.agent_registry
+            .update_heartbeat(
+                "Executor",
+                crate::application::monitoring::agent_status::HealthStatus::Healthy,
+            )
+            .await;
 
         loop {
             tokio::select! {
@@ -62,6 +75,14 @@ impl Executor {
                 }
                 _ = interval.tick() => {
                     self.check_timeouts().await;
+                }
+                _ = heartbeat_interval.tick() => {
+                    self.agent_registry
+                        .update_heartbeat(
+                            "Executor",
+                            crate::application::monitoring::agent_status::HealthStatus::Healthy,
+                        )
+                        .await;
                 }
             }
         }
@@ -346,6 +367,11 @@ mod tests {
             RetryConfig::default(),
             Arc::new(ConnectionHealthService::new()),
             fee_model,
+            Arc::new(
+                crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    crate::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         );
         tokio::spawn(async move { executor.run().await });
 
@@ -385,6 +411,11 @@ mod tests {
             RetryConfig::default(),
             Arc::new(ConnectionHealthService::new()),
             fee_model,
+            Arc::new(
+                crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    crate::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         );
         tokio::spawn(async move { executor.run().await });
 

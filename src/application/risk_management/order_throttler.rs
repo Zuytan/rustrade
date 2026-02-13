@@ -11,7 +11,10 @@ pub struct OrderThrottler {
     max_orders_per_minute: u32,
     window_duration: Duration, // Configurable for testing
     recent_orders: VecDeque<Instant>,
+
     queued_orders: VecDeque<Order>,
+    agent_registry:
+        std::sync::Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 impl OrderThrottler {
@@ -19,12 +22,16 @@ impl OrderThrottler {
         order_rx: Receiver<Order>,
         throttled_order_tx: Sender<Order>,
         max_orders_per_minute: u32,
+        agent_registry: std::sync::Arc<
+            crate::application::monitoring::agent_status::AgentStatusRegistry,
+        >,
     ) -> Self {
         Self::with_window(
             order_rx,
             throttled_order_tx,
             max_orders_per_minute,
             Duration::from_secs(60),
+            agent_registry,
         )
     }
 
@@ -33,6 +40,9 @@ impl OrderThrottler {
         throttled_order_tx: Sender<Order>,
         max_orders_per_minute: u32,
         window_duration: Duration,
+        agent_registry: std::sync::Arc<
+            crate::application::monitoring::agent_status::AgentStatusRegistry,
+        >,
     ) -> Self {
         Self {
             order_rx,
@@ -41,6 +51,7 @@ impl OrderThrottler {
             window_duration,
             recent_orders: VecDeque::new(),
             queued_orders: VecDeque::new(),
+            agent_registry,
         }
     }
 
@@ -53,9 +64,36 @@ impl OrderThrottler {
         let mut tick_interval = time::interval(Duration::from_millis(100));
         tick_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
+        let mut heartbeat_interval = time::interval(Duration::from_secs(5));
+
+        // Initial Heartbeat
+        self.agent_registry
+            .update_heartbeat(
+                "OrderThrottler",
+                crate::application::monitoring::agent_status::HealthStatus::Healthy,
+            )
+            .await;
+
         loop {
             tokio::select! {
                 biased; // Process in order: tick first, then new orders
+
+                _ = heartbeat_interval.tick() => {
+                    self.agent_registry
+                        .update_heartbeat(
+                            "OrderThrottler",
+                            crate::application::monitoring::agent_status::HealthStatus::Healthy,
+                        )
+                        .await;
+
+                    self.agent_registry
+                         .update_metric(
+                             "OrderThrottler",
+                             "queued_orders",
+                             self.queued_orders.len().to_string()
+                         )
+                         .await;
+                }
 
                 // Periodic tick to process queued orders
                 _ = tick_interval.tick() => {
@@ -163,8 +201,18 @@ mod tests {
         let (order_tx, order_rx) = mpsc::channel(10);
         let (throttled_tx, mut throttled_rx) = mpsc::channel(10);
 
-        let mut throttler =
-            OrderThrottler::with_window(order_rx, throttled_tx, 5, Duration::from_secs(1));
+        let agent_registry = std::sync::Arc::new(
+            crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                crate::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        );
+        let mut throttler = OrderThrottler::with_window(
+            order_rx,
+            throttled_tx,
+            5,
+            Duration::from_secs(1),
+            agent_registry,
+        );
 
         tokio::spawn(async move {
             throttler.run().await;
@@ -189,8 +237,19 @@ mod tests {
         let (order_tx, order_rx) = mpsc::channel(10);
         let (throttled_tx, mut throttled_rx) = mpsc::channel(10);
 
-        let mut throttler =
-            OrderThrottler::with_window(order_rx, throttled_tx, 2, Duration::from_secs(1));
+        let agent_registry = std::sync::Arc::new(
+            crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                crate::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        );
+
+        let mut throttler = OrderThrottler::with_window(
+            order_rx,
+            throttled_tx,
+            2,
+            Duration::from_secs(1),
+            agent_registry,
+        );
 
         tokio::spawn(async move {
             throttler.run().await;
@@ -218,8 +277,18 @@ mod tests {
         let (order_tx, order_rx) = mpsc::channel(10);
         let (throttled_tx, mut throttled_rx) = mpsc::channel(10);
 
-        let mut throttler =
-            OrderThrottler::with_window(order_rx, throttled_tx, 2, Duration::from_secs(1));
+        let agent_registry = std::sync::Arc::new(
+            crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                crate::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        );
+        let mut throttler = OrderThrottler::with_window(
+            order_rx,
+            throttled_tx,
+            2,
+            Duration::from_secs(1),
+            agent_registry,
+        );
 
         tokio::spawn(async move {
             throttler.run().await;
@@ -240,11 +309,17 @@ mod tests {
         let (order_tx, order_rx) = mpsc::channel(20);
         let (throttled_tx, mut throttled_rx) = mpsc::channel(20);
 
+        let agent_registry = std::sync::Arc::new(
+            crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                crate::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        );
         let mut throttler = OrderThrottler::with_window(
             order_rx,
             throttled_tx,
             3,
             Duration::from_secs(1), // 1-second window for testing
+            agent_registry,
         );
 
         tokio::spawn(async move {
@@ -281,8 +356,18 @@ mod tests {
         let (order_tx, order_rx) = mpsc::channel(100);
         let (throttled_tx, mut throttled_rx) = mpsc::channel(100);
 
-        let mut throttler =
-            OrderThrottler::with_window(order_rx, throttled_tx, 5, Duration::from_secs(1));
+        let agent_registry = std::sync::Arc::new(
+            crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                crate::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        );
+        let mut throttler = OrderThrottler::with_window(
+            order_rx,
+            throttled_tx,
+            5,
+            Duration::from_secs(1),
+            agent_registry,
+        );
 
         tokio::spawn(async move {
             throttler.run().await;
@@ -322,11 +407,17 @@ mod tests {
         let (throttled_tx, mut throttled_rx) = mpsc::channel(100);
 
         let limit = 5;
+        let agent_registry = std::sync::Arc::new(
+            crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                crate::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        );
         let mut throttler = OrderThrottler::with_window(
             order_rx,
             throttled_tx,
             limit,
             Duration::from_secs(1), // 1-second window for testing
+            agent_registry,
         );
 
         tokio::spawn(async move {

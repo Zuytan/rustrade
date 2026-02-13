@@ -42,6 +42,10 @@ pub struct Metrics {
     pub drawdown_current: GenericGauge<AtomicF64>,
     /// Trades today
     pub trades_today: CounterVec,
+    /// Agent status (1=Online, 0=Offline)
+    pub agent_up: GaugeVec,
+    /// Agent last heartbeat timestamp
+    pub agent_last_heartbeat: GaugeVec,
 }
 
 impl Metrics {
@@ -152,6 +156,21 @@ impl Metrics {
         )?;
         registry.register(Box::new(trades_today.clone()))?;
 
+        let agent_up = GaugeVec::new(
+            Opts::new("rustrade_agent_up", "Agent status (1=Online, 0=Offline)"),
+            &["agent"],
+        )?;
+        registry.register(Box::new(agent_up.clone()))?;
+
+        let agent_last_heartbeat = GaugeVec::new(
+            Opts::new(
+                "rustrade_agent_last_heartbeat",
+                "Agent last heartbeat timestamp",
+            ),
+            &["agent"],
+        )?;
+        registry.register(Box::new(agent_last_heartbeat.clone()))?;
+
         Ok(Self {
             registry: Arc::new(registry),
             portfolio_value_usd,
@@ -169,6 +188,8 @@ impl Metrics {
             win_rate_current,
             drawdown_current,
             trades_today,
+            agent_up,
+            agent_last_heartbeat,
         })
     }
 

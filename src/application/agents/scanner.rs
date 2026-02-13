@@ -11,6 +11,7 @@ pub struct MarketScanner {
     sentinel_cmd_tx: Sender<SentinelCommand>,
     scan_interval: Duration,
     is_enabled: bool,
+    agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
 impl MarketScanner {
@@ -20,6 +21,7 @@ impl MarketScanner {
         sentinel_cmd_tx: Sender<SentinelCommand>,
         scan_interval: Duration,
         is_enabled: bool,
+        agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Self {
         Self {
             market_service,
@@ -27,6 +29,7 @@ impl MarketScanner {
             sentinel_cmd_tx,
             scan_interval,
             is_enabled,
+            agent_registry,
         }
     }
 
@@ -36,70 +39,93 @@ impl MarketScanner {
             return;
         }
 
-        info!("MarketScanner started. Interval: {:?}", self.scan_interval);
+        info!(
+            "MarketScanner started. Scan Interval: {:?}",
+            self.scan_interval
+        );
 
-        let mut interval = time::interval(self.scan_interval);
+        let mut scan_interval = time::interval(self.scan_interval);
         // The first tick completes immediately
-        interval.tick().await;
+        scan_interval.tick().await;
+
+        let mut heartbeat_interval = time::interval(Duration::from_secs(5));
+
+        // Initial Heartbeat
+        self.agent_registry
+            .update_heartbeat(
+                "Scanner",
+                crate::application::monitoring::agent_status::HealthStatus::Healthy,
+            )
+            .await;
 
         loop {
-            // 1. Get Top Movers
-            let mut symbols = match self.market_service.get_top_movers().await {
-                Ok(s) => {
-                    info!("MarketScanner: Top movers found: {:?}", s);
-                    s
+            tokio::select! {
+                _ = heartbeat_interval.tick() => {
+                    self.agent_registry
+                        .update_heartbeat(
+                            "Scanner",
+                            crate::application::monitoring::agent_status::HealthStatus::Healthy,
+                        )
+                        .await;
                 }
-                Err(e) => {
-                    error!("MarketScanner: Failed to fetch top movers: {}", e);
-                    vec![]
-                }
-            };
 
-            // 2. Get Portfolio Holdings
-            match self.execution_service.get_portfolio().await {
-                Ok(portfolio) => {
-                    let held_symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
-                    if !held_symbols.is_empty() {
-                        info!("MarketScanner: Including held symbols: {:?}", held_symbols);
-                        for sym in held_symbols {
-                            if !symbols.contains(&sym) {
-                                symbols.push(sym);
+                _ = scan_interval.tick() => {
+                    // 1. Get Top Movers
+                    let mut symbols = match self.market_service.get_top_movers().await {
+                        Ok(s) => {
+                            info!("MarketScanner: Top movers found: {:?}", s);
+                             self.agent_registry
+                                .update_metric("Scanner", "top_movers_count", s.len().to_string())
+                                .await;
+                            s
+                        }
+                        Err(e) => {
+                            error!("MarketScanner: Failed to fetch top movers: {}", e);
+                            vec![]
+                        }
+                    };
+
+                    // 2. Get Portfolio Holdings
+                    match self.execution_service.get_portfolio().await {
+                        Ok(portfolio) => {
+                            let held_symbols: Vec<String> = portfolio.positions.keys().cloned().collect();
+                            if !held_symbols.is_empty() {
+                                info!("MarketScanner: Including held symbols: {:?}", held_symbols);
+                                for sym in held_symbols {
+                                    if !symbols.contains(&sym) {
+                                        symbols.push(sym);
+                                    }
+                                }
                             }
                         }
+                        Err(e) => {
+                            error!(
+                                "MarketScanner: Failed to fetch portfolio to preserve held assets: {}",
+                                e
+                            );
+                        }
+                    }
+
+                    // 3. Send Update
+                    if !symbols.is_empty() {
+                        info!(
+                            "MarketScanner: Sending {} symbols to Sentinel: {:?}",
+                            symbols.len(),
+                            symbols
+                        );
+                        if let Err(e) = self
+                            .sentinel_cmd_tx
+                            .send(SentinelCommand::UpdateSymbols(symbols))
+                            .await
+                        {
+                            error!("MarketScanner: Failed to update Sentinel: {}", e);
+                            break;
+                        }
+                    } else {
+                        warn!("MarketScanner: No top movers found, nothing to send to Sentinel");
                     }
                 }
-                Err(e) => {
-                    error!(
-                        "MarketScanner: Failed to fetch portfolio to preserve held assets: {}",
-                        e
-                    );
-                    // Decide if we should continue?
-                    // If we fail to get portfolio, we might risk dropping surveillance on held assets.
-                    // But we still have movers. Let's proceed with warning.
-                }
             }
-
-            // 3. Send Update
-            if !symbols.is_empty() {
-                info!(
-                    "MarketScanner: Sending {} symbols to Sentinel: {:?}",
-                    symbols.len(),
-                    symbols
-                );
-                if let Err(e) = self
-                    .sentinel_cmd_tx
-                    .send(SentinelCommand::UpdateSymbols(symbols))
-                    .await
-                {
-                    error!("MarketScanner: Failed to update Sentinel: {}", e);
-                    break;
-                }
-            } else {
-                warn!("MarketScanner: No top movers found, nothing to send to Sentinel");
-            }
-
-            // Wait for next interval
-            interval.tick().await;
         }
     }
 }
@@ -227,6 +253,11 @@ mod tests {
             cmd_tx,
             Duration::from_millis(100),
             true,
+            Arc::new(
+                crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    crate::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         );
 
         tokio::spawn(async move {

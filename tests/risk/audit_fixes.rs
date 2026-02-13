@@ -86,6 +86,11 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         Arc::new(SpreadCache::new()),
         health_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 
@@ -235,6 +240,11 @@ async fn test_pending_order_ttl_cleanup() {
         Arc::new(SpreadCache::new()),
         health_service,
         Metrics::default(),
+        Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     )
     .expect("Test config should be valid");
 

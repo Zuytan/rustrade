@@ -73,6 +73,11 @@ async fn test_immediate_warmup() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
@@ -197,6 +202,11 @@ async fn test_golden_cross() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
@@ -327,6 +337,11 @@ async fn test_prevent_short_selling() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
@@ -471,6 +486,11 @@ async fn test_sell_signal_with_position() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
@@ -610,6 +630,11 @@ async fn test_dynamic_quantity_scaling() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
@@ -774,6 +799,11 @@ async fn test_multi_symbol_isolation() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
@@ -932,6 +962,11 @@ async fn test_advanced_strategy_trend_filter() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
@@ -1089,6 +1124,11 @@ async fn test_risk_based_quantity_calculation() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
@@ -1172,6 +1212,11 @@ async fn test_news_intelligence_filters() {
         ui_candle_tx: None,
         spread_cache: Arc::new(SpreadCache::new()),
         connection_health_service: create_online_health_service().await,
+        agent_registry: Arc::new(
+            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+            ),
+        ),
     };
 
     let mut analyst = Analyst::new(market_rx, cmd_rx, proposal_tx, config, strategy, deps);
@@ -1303,6 +1348,11 @@ async fn test_trailing_stop_suppresses_sell_signal() {
             ui_candle_tx: None,
             spread_cache: Arc::new(SpreadCache::new()),
             connection_health_service: create_online_health_service().await,
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
+            ),
         },
     );
 
