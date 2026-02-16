@@ -1,5 +1,24 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.2 - Alpaca Equity Fix & Timestamp Unification (February 2026)
+
+### Critical Fix
+- **Alpaca Equity Calculation**: Fixed a critical bug where `buying_power` (margin-adjusted, includes leverage) was used as `cash` in portfolio state. This caused massive phantom drawdowns when orders were placed, incorrectly triggering the circuit breaker. Now uses the actual `cash` field from Alpaca's account API.
+
+### Risk Management Safeguards
+- **Startup Grace Period**: Added a 60-second grace period to `RiskManager` to skip emergency liquidations during the initial stabilization phase after startup.
+- **HWM Variance Threshold**: Lowered `SessionManager` HWM variance threshold from 50% to 10% to prevent phantom liquidations from stale states.
+- **Missing Price Protection**: Circuit breaker checks are now skipped when market prices are missing for held positions, preventing false liquidations on boot.
+
+### Timestamp Unification
+- **Millisecond Standard**: Unified all internal timestamps (`Candle`, `Order`, `Trade`) to milliseconds, removing inconsistent second-based conversions in `CandleAggregator`, `BinanceMarketDataService`, and `AlpacaMarketDataService`.
+- **TradeFilter**: Added graceful handling for disabled hold times (`min_hold_time_ms = 0`).
+
+### Code Quality
+- **Clippy**: Fixed `collapsible_if` in `analyst.rs` startup recovery logic.
+- **Test Suite**: Updated 5 integration tests to align with new startup grace period and HWM threshold. Added `skip_startup_grace_period()` helper for circuit breaker tests.
+- **Dead Code**: Removed unused `buying_power` field from `AlpacaAccount`.
+
 ## Version 0.99.1 - Dead Code Cleanup & Quality Assurance (February 2026)
 
 ### Optimization & Cleanup

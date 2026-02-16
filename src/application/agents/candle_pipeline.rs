@@ -215,6 +215,8 @@ impl CandlePipeline {
                     ctx.candle.close,
                     ctx.candle.timestamp * 1000,
                     ctx.portfolio.map(|p| &p.positions),
+                    ctx.context.last_entry_time,
+                    ctx.context.min_hold_time_ms,
                 )
             {
                 debug!(
@@ -301,7 +303,7 @@ impl CandlePipeline {
             signal: signal.side,
             symbol: ctx.symbol,
             price: ctx.candle.close,
-            timestamp: ctx.candle.timestamp * 1000,
+            timestamp: ctx.candle.timestamp,
             regime,
             execution_service: &self.execution_service,
             has_position,
@@ -316,11 +318,11 @@ impl CandlePipeline {
         // Update position manager state
         ctx.context
             .position_manager
-            .set_pending_order(signal.side, ctx.candle.timestamp * 1000);
+            .set_pending_order(signal.side, ctx.candle.timestamp);
 
         // Track entry time for buy signals
         if signal.side == OrderSide::Buy {
-            ctx.context.last_entry_time = Some(ctx.candle.timestamp * 1000);
+            ctx.context.last_entry_time = Some(ctx.candle.timestamp);
             super::position_lifecycle::initialize_trailing_stop_on_buy(
                 ctx.context,
                 ctx.candle.close,

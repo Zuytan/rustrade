@@ -492,8 +492,7 @@ impl BinanceMarketDataService {
                             return None;
                         }
 
-                        let timestamp_ms = arr[0].as_i64()?;
-                        let timestamp = timestamp_ms / 1000;
+                        let timestamp = arr[0].as_i64()?;
 
                         let open = arr[1].as_str()?.parse::<f64>().ok()?;
                         let high = arr[2].as_str()?.parse::<f64>().ok()?;

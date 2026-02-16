@@ -297,7 +297,7 @@ impl AgentsBootstrap {
 fn create_analyst_config(config: &Config) -> AnalystConfig {
     use rust_decimal_macros::dec;
 
-    AnalystConfig {
+    let mut analyst_config = AnalystConfig {
         fast_sma_period: config.fast_sma_period,
         slow_sma_period: config.slow_sma_period,
         max_positions: config.max_positions,
@@ -354,7 +354,14 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
         orderflow_volume_profile_lookback: 100,
         ensemble_weights: None,
         ensemble_voting_threshold: config.ensemble_voting_threshold,
+    };
+
+    // Apply risk appetite settings if present to override base values
+    if let Some(ref appetite) = config.risk_appetite {
+        analyst_config.apply_risk_appetite(appetite);
     }
+
+    analyst_config
 }
 
 fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn TradingStrategy> {

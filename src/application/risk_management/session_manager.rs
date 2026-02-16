@@ -103,20 +103,22 @@ impl SessionManager {
                         0.0
                     };
 
-                    if variance > 0.5 {
+                    if variance > 0.1 {
                         warn!(
-                            "SessionManager: Detected significant equity discrepancy (Variance: {:.1}%). \
+                            "SessionManager: Detected equity discrepancy (Variance: {:.1}%). \
                             Persisted HWM: {}, Current Equity: {}. \
-                            Assuming new account/environment and RESETTING risk state.",
+                            Assuming environment change or stale peak and RESETTING risk state.",
                             variance * 100.0,
                             state.equity_high_water_mark,
                             initial_equity
                         );
-                        // Reset happens automatically by NOT overwriting risk_state with loaded values
-                        // We just persist the fresh state
+                        // Reset HWM to current reality
+                        risk_state.equity_high_water_mark = initial_equity;
+                        risk_state.session_start_equity = initial_equity;
+                        risk_state.daily_start_equity = initial_equity;
                         self.persist_state(&risk_state).await;
                     } else {
-                        // Restore HWM and Consecutive Losses always
+                        // Restore HWM and Consecutive Losses for minor discrepancies
                         risk_state.equity_high_water_mark = state.equity_high_water_mark;
                         risk_state.consecutive_losses = state.consecutive_losses;
 
@@ -325,7 +327,7 @@ mod tests {
         let manager = SessionManager::new(Some(repo), market);
 
         let mut portfolio = Portfolio::new();
-        portfolio.cash = Decimal::from(10000); // 10k vs 12k HWM => Variance ~16% (OK)
+        portfolio.cash = Decimal::from(11000); // 11k vs 12k HWM => Variance ~8% (OK)
         let mut current_prices = HashMap::new();
 
         let state = manager

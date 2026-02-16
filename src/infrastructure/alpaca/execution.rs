@@ -112,7 +112,7 @@ impl AlpacaExecutionService {
                     // Use buying_power instead of cash - it reflects funds actually available
                     // for new orders (subtracts pending order values)
                     let cash = account_resp
-                        .buying_power
+                        .cash
                         .parse::<Decimal>()
                         .unwrap_or(Decimal::ZERO);
 
@@ -208,7 +208,7 @@ struct AlpacaOrderResponse {
 
 #[derive(Debug, Deserialize)]
 struct AlpacaAccount {
-    buying_power: String,
+    cash: String,
     #[serde(default)]
     daytrade_count: i64,
 }

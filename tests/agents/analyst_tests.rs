@@ -11,6 +11,7 @@ use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, mpsc};
 
 static INIT: Once = Once::new();
+const BASE_TS: i64 = 1739528936000;
 
 #[allow(dead_code)]
 fn setup_logging() {
@@ -225,7 +226,7 @@ async fn test_golden_cross() {
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
             volume: Decimal::new(100, 0),
-            timestamp: i as i64,
+            timestamp: BASE_TS + (i as i64) * 600000,
         };
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();
@@ -360,7 +361,7 @@ async fn test_prevent_short_selling() {
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
             volume: Decimal::new(100, 0),
-            timestamp: i as i64,
+            timestamp: BASE_TS + (i as i64) * 600000,
         };
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();
@@ -508,7 +509,7 @@ async fn test_sell_signal_with_position() {
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
             volume: Decimal::new(100, 0),
-            timestamp: i as i64,
+            timestamp: BASE_TS + (i as i64) * 600000,
         };
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();
@@ -658,7 +659,7 @@ async fn test_dynamic_quantity_scaling() {
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
             volume: Decimal::new(100, 0),
-            timestamp: i as i64,
+            timestamp: BASE_TS + (i as i64) * 600000,
         };
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();
@@ -835,7 +836,7 @@ async fn test_multi_symbol_isolation() {
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
             volume: Decimal::new(100, 0),
-            timestamp: i as i64,
+            timestamp: BASE_TS + (i as i64) * 600000,
         };
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();
@@ -986,7 +987,7 @@ async fn test_advanced_strategy_trend_filter() {
             low: Decimal::from_f64_retain(*p).unwrap(),
             close: Decimal::from_f64_retain(*p).unwrap(),
             volume: Decimal::new(100, 0),
-            timestamp: i as i64,
+            timestamp: BASE_TS + (i as i64) * 600000,
         };
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();

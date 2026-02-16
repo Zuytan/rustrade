@@ -83,7 +83,7 @@ impl CandleBuilder {
             low: self.low,
             close: self.close,
             volume: self.volume,
-            timestamp: self.start_time.timestamp(),
+            timestamp: self.start_time.timestamp_millis(),
         }
     }
 }
@@ -297,7 +297,7 @@ mod tests {
             candle.timestamp,
             Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
                 .unwrap()
-                .timestamp()
+                .timestamp_millis()
         );
     }
 

@@ -64,6 +64,7 @@ impl TradeFilter {
         min_hold_time_ms: i64,
     ) -> bool {
         if signal == OrderSide::Sell
+            && min_hold_time_ms > 0
             && let Some(entry_time) = last_entry_time
         {
             let hold_duration_ms = timestamp - entry_time;

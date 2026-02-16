@@ -31,6 +31,7 @@ use crate::domain::trading::types::{Order, OrderSide, TradeProposal};
 use chrono::Utc;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock; // Added
@@ -94,6 +95,7 @@ pub struct RiskManager {
     // Services
     metrics: Metrics,
     agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
+    startup_time: i64,
 }
 
 impl RiskManager {
@@ -232,6 +234,7 @@ impl RiskManager {
             last_quote_timestamp: Utc::now().timestamp(),
             metrics,
             agent_registry,
+            startup_time: Utc::now().timestamp(),
         })
     }
 
@@ -383,7 +386,16 @@ impl RiskManager {
                 );
                 self.circuit_breaker_service.set_halted(level);
                 self.metrics.circuit_breaker_status.set(1.0);
-                self.liquidate_portfolio(&reason).await;
+
+                // Grace Period: skip emergency liquidation during first 60 seconds
+                if Utc::now().timestamp() - self.startup_time < 60 {
+                    warn!(
+                        "RiskManager: CIRCUIT BREAKER TRIGGERED ({:?}) during startup grace period. skipping liquidation for stabilization.",
+                        level
+                    );
+                } else {
+                    self.liquidate_portfolio(&reason).await;
+                }
             } else {
                 self.metrics.circuit_breaker_status.set(0.0);
             }
@@ -510,6 +522,11 @@ impl RiskManager {
 
     pub fn get_state_mut(&mut self) -> &mut RiskState {
         self.state_manager.get_state_mut()
+    }
+
+    /// Skip the startup grace period (for tests that need immediate circuit breaker behavior)
+    pub fn skip_startup_grace_period(&mut self) {
+        self.startup_time = 0; // Set to epoch so grace period check always passes
     }
 
     // ============================================================================
@@ -689,7 +706,16 @@ impl RiskManager {
             );
             self.circuit_breaker_service.set_halted(level);
             self.metrics.circuit_breaker_status.set(1.0);
-            self.liquidate_portfolio(&reason).await;
+
+            // Grace Period: skip emergency liquidation during first 60 seconds
+            if Utc::now().timestamp() - self.startup_time < 60 {
+                warn!(
+                    "RiskManager: CIRCUIT BREAKER TRIGGERED ({:?}) during startup grace period. skipping liquidation for stabilization.",
+                    level
+                );
+            } else {
+                self.liquidate_portfolio(&reason).await;
+            }
             return Ok(());
         }
 
@@ -972,6 +998,71 @@ impl RiskManager {
                              if self.is_halted() { "HALTED" } else { "NORMAL" }.to_string()
                          )
                          .await;
+
+                    // Add granular risk metrics
+                    let state = self.state_manager.get_state();
+                    let current_equity = self.portfolio_state_manager.get_snapshot().await.portfolio.total_equity(&self.current_prices);
+
+                    // Drawdown
+                    let drawdown = if state.equity_high_water_mark > rust_decimal::Decimal::ZERO {
+                        (state.equity_high_water_mark - current_equity) / state.equity_high_water_mark
+                    } else {
+                        rust_decimal::Decimal::ZERO
+                    };
+                    self.agent_registry
+                        .update_metric("RiskManager", "drawdown", format!("{:.2}%", drawdown * rust_decimal_macros::dec!(100)))
+                        .await;
+
+                    // Daily Loss
+                    let daily_loss = if state.session_start_equity > rust_decimal::Decimal::ZERO {
+                        (state.session_start_equity - current_equity) / state.session_start_equity
+                    } else {
+                        rust_decimal::Decimal::ZERO
+                    };
+                    self.agent_registry
+                        .update_metric("RiskManager", "daily_loss", format!("{:.2}%", daily_loss * rust_decimal_macros::dec!(100)))
+                        .await;
+
+                    // Metrics
+                    let snapshot = self.portfolio_state_manager.get_snapshot().await;
+                    let current_prices = self.current_prices.clone();
+                    let current_equity = snapshot.portfolio.total_equity(&current_prices);
+                    let drawdown = if state.equity_high_water_mark > Decimal::ZERO {
+                        (state.equity_high_water_mark - current_equity) / state.equity_high_water_mark * dec!(100.0)
+                    } else {
+                        Decimal::ZERO
+                    };
+
+                    let daily_loss = if state.session_start_equity > Decimal::ZERO {
+                        (state.session_start_equity - current_equity) / state.session_start_equity * dec!(100.0)
+                    } else {
+                        Decimal::ZERO
+                    };
+
+                    self.agent_registry
+                        .update_metric("RiskManager", "drawdown", format!("{:.2}%", drawdown))
+                        .await;
+
+                    self.agent_registry
+                        .update_metric("RiskManager", "daily_loss", format!("{:.2}%", daily_loss))
+                        .await;
+
+                    // Halt Level
+                    let level = self.circuit_breaker_service.halt_level();
+                    self.agent_registry
+                        .update_metric("RiskManager", "halt_level", format!("{:?}", level))
+                        .await;
+
+                    // Consecutive Losses
+                    self.agent_registry
+                        .update_metric("RiskManager", "consecutive_losses", state.consecutive_losses.to_string())
+                        .await;
+
+                    // Circuit Breaker Status (Binary for easier detection)
+                    let is_halted = level == HaltLevel::Reduced || level == HaltLevel::FullHalt;
+                    self.agent_registry
+                        .update_metric("RiskManager", "circuit_breaker", if is_halted { "HALTED".to_string() } else { "NORMAL".to_string() })
+                        .await;
                 }
 
                 // Periodic volatility refresh

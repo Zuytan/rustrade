@@ -162,6 +162,9 @@ async fn test_circuit_breaker_on_market_crash() {
     )
     .expect("Test config should be valid");
 
+    // Bypass startup grace period so circuit breaker triggers immediately
+    rm.skip_startup_grace_period();
+
     // Run RiskManager in background
     tokio::spawn(async move { rm.run().await });
 
@@ -708,6 +711,9 @@ async fn test_circuit_breaker_triggers_liquidation() {
         Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
     )
     .expect("Test config should be valid");
+
+    // Bypass startup grace period so circuit breaker triggers immediately
+    rm.skip_startup_grace_period();
 
     tokio::spawn(async move { rm.run().await });
 

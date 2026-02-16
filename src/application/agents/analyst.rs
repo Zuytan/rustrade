@@ -11,9 +11,7 @@ use crate::application::strategies::TradingStrategy;
 use crate::application::agents::trade_evaluator::TradeEvaluator;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
-use crate::domain::trading::types::Candle;
-use crate::domain::trading::types::OrderStatus;
-use crate::domain::trading::types::{MarketEvent, TradeProposal};
+use crate::domain::trading::types::{Candle, MarketEvent, OrderSide, OrderStatus, TradeProposal};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -323,7 +321,19 @@ impl Analyst {
                     if let Some(context) = self.symbol_states.get_mut(&order_update.symbol) {
                          // If order is Filled or Canceled, we clear the pending state immediately
                          match order_update.status {
-                             OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => {
+                             OrderStatus::Filled => {
+                                 info!(
+                                     order_id = %order_update.order_id,
+                                     symbol = %order_update.symbol,
+                                     side = ?order_update.side,
+                                     "Analyst: Order FILLED. Updating last_entry_time."
+                                 );
+                                 context.position_manager.clear_pending();
+                                 if order_update.side == OrderSide::Buy {
+                                     context.last_entry_time = Some(order_update.timestamp.timestamp_millis());
+                                 }
+                             }
+                             OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => {
                                  info!(
                                      order_id = %order_update.order_id,
                                      symbol = %order_update.symbol,
@@ -501,6 +511,48 @@ impl Analyst {
             self.warmup_service
                 .warmup_context(&mut context, symbol, end_time)
                 .await;
+
+            // --- STARTUP RECOVERY: Restore last_entry_time for existing positions ---
+            if let Ok(portfolio) = self.execution_service.get_portfolio().await
+                && let Some(_pos) = portfolio
+                    .positions
+                    .get(symbol)
+                    .filter(|p| p.quantity > Decimal::ZERO)
+            {
+                debug!(
+                    "Analyst [{}]: Recovering entry time for existing position...",
+                    symbol
+                );
+                // Try to find the last filled buy order from today
+                if let Ok(orders) = self.execution_service.get_today_orders().await {
+                    let last_buy = orders
+                        .iter()
+                        .filter(|o| {
+                            o.symbol == symbol
+                                && o.side == OrderSide::Buy
+                                && o.status == OrderStatus::Filled
+                        })
+                        .max_by_key(|o| o.timestamp);
+
+                    if let Some(order) = last_buy {
+                        context.last_entry_time = Some(order.timestamp);
+                        info!(
+                            "Analyst [{}]: Recovered last_entry_time: {} (from today's orders)",
+                            symbol,
+                            context.last_entry_time.unwrap()
+                        );
+                    } else {
+                        // If no order today, we use current time as a safety buffer
+                        // to prevent immediate flip on bot restart.
+                        context.last_entry_time = Some(chrono::Utc::now().timestamp_millis());
+                        warn!(
+                            "Analyst [{}]: No buy order found today for existing position. Using current time as safety buffer for min_hold_time.",
+                            symbol
+                        );
+                    }
+                }
+            }
+            // -----------------------------------------------------------------------
 
             self.symbol_states.insert(symbol.to_string(), context);
         }

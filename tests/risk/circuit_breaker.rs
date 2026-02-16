@@ -79,6 +79,9 @@ async fn test_circuit_breaker_triggers_on_crash() {
     )
     .expect("Test config should be valid");
 
+    // Bypass startup grace period so circuit breaker triggers immediately
+    risk_manager.skip_startup_grace_period();
+
     // Run RiskManager in background
     tokio::spawn(async move {
         risk_manager.run().await;

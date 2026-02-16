@@ -234,10 +234,25 @@ impl SignalProcessor {
         portfolio_positions: Option<
             &std::collections::HashMap<String, crate::domain::trading::portfolio::Position>,
         >,
+        last_entry_time: Option<i64>,
+        min_hold_time_ms: i64,
     ) -> Option<TradeProposal> {
         if context.taken_profit {
             return None;
         }
+
+        // --- ENFORCE MIN HOLD TIME ---
+        if let Some(entry_time) = last_entry_time {
+            let hold_duration_ms = timestamp - entry_time;
+            if hold_duration_ms < min_hold_time_ms {
+                return None;
+            }
+        } else {
+            // If we have a position but no entry time, we treat it as "just entered"
+            // to be safe (Startup Amnesia guard).
+            return None;
+        }
+        // -----------------------------
 
         let positions = portfolio_positions?;
         let pos = positions.get(symbol)?;

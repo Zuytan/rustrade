@@ -779,8 +779,8 @@ impl MarketDataService for AlpacaMarketDataService {
         const MIN_REQUIRED_BARS: usize = 200;
 
         if let Some(repo) = &self.candle_repository {
-            let start_ts = start.timestamp();
-            let end_ts = end.timestamp();
+            let start_ts = start.timestamp_millis();
+            let end_ts = end.timestamp_millis();
 
             match repo.get_range(symbol, start_ts, end_ts).await {
                 Ok(cached_candles) => {
@@ -824,7 +824,7 @@ impl MarketDataService for AlpacaMarketDataService {
                                                 &bar.timestamp,
                                             )
                                             .unwrap_or_default()
-                                            .timestamp();
+                                            .timestamp_millis();
 
                                             let candle = crate::domain::trading::types::Candle {
                                                 symbol: symbol.to_string(),
@@ -855,7 +855,7 @@ impl MarketDataService for AlpacaMarketDataService {
                                                 &bar.timestamp,
                                             )
                                             .unwrap_or_default()
-                                            .timestamp();
+                                            .timestamp_millis();
 
                                             all_candles.push(
                                                 crate::domain::trading::types::Candle {
@@ -923,7 +923,7 @@ impl MarketDataService for AlpacaMarketDataService {
                     .map(|b| {
                         let timestamp = chrono::DateTime::parse_from_rfc3339(&b.timestamp)
                             .unwrap_or_default()
-                            .timestamp();
+                            .timestamp_millis();
 
                         crate::domain::trading::types::Candle {
                             symbol: symbol.to_string(),
@@ -949,8 +949,8 @@ impl MarketDataService for AlpacaMarketDataService {
             }
             Err(e) => {
                 if let Some(repo) = &self.candle_repository {
-                    let start_ts = start.timestamp();
-                    let end_ts = end.timestamp();
+                    let start_ts = start.timestamp_millis();
+                    let end_ts = end.timestamp_millis();
 
                     if let Ok(cached_candles) = repo.get_range(symbol, start_ts, end_ts).await
                         && !cached_candles.is_empty()

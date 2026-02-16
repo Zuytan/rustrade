@@ -22,6 +22,9 @@ pub fn render_architecture_view(ui: &mut egui::Ui, agent: &UserAgent) {
         // 1. System Overview Metrics
         render_system_metrics(ui, &statuses);
 
+        // 1.5 Global Halt Status
+        render_global_halt_status(ui, &statuses);
+
         ui.add_space(DesignSystem::SPACING_LARGE);
         ui.separator();
         ui.add_space(DesignSystem::SPACING_LARGE);
@@ -129,20 +132,38 @@ fn render_agent_card(ui: &mut egui::Ui, status: &AgentStatus) {
         HealthStatus::Starting => DesignSystem::INFO,
     };
 
-    let border_color = if status.health == HealthStatus::Dead {
+    // Detect specialized Risk status
+    let is_halted = status
+        .metrics
+        .get("circuit_breaker")
+        .map(|v| v == "HALTED")
+        .unwrap_or(false);
+    let halt_level = status.metrics.get("halt_level");
+
+    let border_color = if is_halted {
+        DesignSystem::DANGER
+    } else if halt_level.map(|l| l != "Normal").unwrap_or(false) {
+        DesignSystem::WARNING
+    } else if status.health == HealthStatus::Dead {
         DesignSystem::DANGER
     } else {
         DesignSystem::BORDER_SUBTLE
     };
 
+    let bg_color = if is_halted {
+        DesignSystem::DANGER.linear_multiply(0.1)
+    } else {
+        DesignSystem::BG_CARD
+    };
+
     egui::Frame::NONE
-        .fill(DesignSystem::BG_CARD)
+        .fill(bg_color)
         .corner_radius(DesignSystem::ROUNDING_MEDIUM)
         .stroke(egui::Stroke::new(1.0, border_color))
         .inner_margin(16.0)
         .show(ui, |ui| {
             ui.set_width(300.0);
-            ui.set_height(180.0); // Fixed height for uniformity
+            ui.set_min_height(180.0); // Changed to min_height for expansion
 
             ui.vertical(|ui| {
                 // Header
@@ -186,34 +207,70 @@ fn render_agent_card(ui: &mut egui::Ui, status: &AgentStatus) {
 
                 ui.add_space(DesignSystem::SPACING_MEDIUM);
 
-                // Custom Metrics
-                if !status.metrics.is_empty() {
-                    ui.label(
-                        egui::RichText::new("Metrics:")
-                            .size(12.0)
-                            .strong()
-                            .color(DesignSystem::TEXT_SECONDARY),
-                    );
-                    for (key, value) in &status.metrics {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(format!("{}:", key))
-                                    .size(11.0)
-                                    .color(DesignSystem::TEXT_SECONDARY),
-                            );
-                            ui.label(egui::RichText::new(value).size(11.0).code());
+                // Specialized Risk Information
+                if status.name == "RiskManager" && (is_halted || halt_level.is_some()) {
+                    ui.add_space(8.0);
+                    egui::Frame::NONE
+                        .fill(DesignSystem::BG_WINDOW)
+                        .corner_radius(DesignSystem::ROUNDING_SMALL)
+                        .inner_margin(8.0)
+                        .show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                if let Some(drawdown) = status.metrics.get("drawdown") {
+                                    render_kv(ui, "Drawdown", drawdown, DesignSystem::DANGER);
+                                }
+                                if let Some(loss) = status.metrics.get("daily_loss") {
+                                    render_kv(ui, "Daily Loss", loss, DesignSystem::WARNING);
+                                }
+                                if let Some(level) = halt_level {
+                                    render_kv(ui, "Halt Level", level, DesignSystem::TEXT_PRIMARY);
+                                }
+                                if let Some(losses) = status.metrics.get("consecutive_losses") {
+                                    render_kv(ui, "Cons. Losses", losses, DesignSystem::DANGER);
+                                }
+                            });
                         });
-                    }
-                } else {
-                    ui.label(
-                        egui::RichText::new("No active metrics")
-                            .size(12.0)
-                            .italics()
-                            .color(DesignSystem::TEXT_MUTED),
-                    );
                 }
             });
         });
+}
+
+fn render_kv(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("{}: ", key))
+                .size(11.0)
+                .color(DesignSystem::TEXT_SECONDARY),
+        );
+        ui.label(egui::RichText::new(value).size(11.0).strong().color(color));
+    });
+}
+
+fn render_global_halt_status(ui: &mut egui::Ui, statuses: &[AgentStatus]) {
+    let is_any_halted = statuses.iter().any(|s| {
+        s.metrics
+            .get("circuit_breaker")
+            .map(|v| v == "HALTED")
+            .unwrap_or(false)
+    });
+
+    if is_any_halted {
+        ui.add_space(DesignSystem::SPACING_MEDIUM);
+        egui::Frame::NONE
+            .fill(DesignSystem::DANGER.linear_multiply(0.15))
+            .corner_radius(DesignSystem::ROUNDING_SMALL)
+            .stroke(egui::Stroke::new(1.0, DesignSystem::DANGER))
+            .inner_margin(DesignSystem::SPACING_MEDIUM)
+            .show(ui, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("⚠ SYSTEM HALTED ⚠").size(16.0).strong().color(DesignSystem::DANGER));
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new("Circuit breaker triggered. Manual intervention or risk cool-down required.").size(13.0).color(DesignSystem::TEXT_PRIMARY));
+                    });
+                });
+            });
+    }
 }
 
 #[cfg(test)]

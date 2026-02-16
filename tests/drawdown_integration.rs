@@ -206,6 +206,8 @@ async fn test_circuit_breaker_skipped_on_missing_prices() {
         state.equity_high_water_mark = dec!(3000);
         state.session_start_equity = dec!(3000); // To avoid daily loss trigger if checks were loose
     }
+    // Bypass startup grace period so circuit breaker can trigger liquidation immediately
+    risk_manager.skip_startup_grace_period();
 
     // 3. Test: Update Valuation with NO Prices
     // MarketData has empty hashmap.

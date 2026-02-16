@@ -364,7 +364,7 @@ async fn test_session_manager_daily_reset() {
         id: "global".to_string(),
         session_start_equity: Decimal::from(10000),
         daily_start_equity: Decimal::from(10000),
-        equity_high_water_mark: Decimal::from(12000),
+        equity_high_water_mark: Decimal::from(10500), // 5% above current equity (within 10% threshold)
         consecutive_losses: 2,
         reference_date: yesterday,
         updated_at: chrono::Utc::now().timestamp(),
@@ -393,7 +393,7 @@ async fn test_session_manager_daily_reset() {
         .expect("Should initialize");
 
     // Verify: HWM and consecutive losses restored, but daily equity reset
-    assert_eq!(state.equity_high_water_mark, Decimal::from(12000));
+    assert_eq!(state.equity_high_water_mark, Decimal::from(10500));
     assert_eq!(state.consecutive_losses, 2);
     assert_eq!(state.reference_date, chrono::Utc::now().date_naive());
 }
