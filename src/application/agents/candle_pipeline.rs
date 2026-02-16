@@ -14,11 +14,11 @@
 //! 6. **Trade Evaluation** - Validate and create trade proposals
 
 use crate::application::agents::trade_evaluator::{EvaluationInput, TradeEvaluator};
+use crate::application::trading::symbol_context::SymbolContext;
 use crate::domain::market::market_regime::MarketRegime;
 use crate::domain::ports::ExecutionService;
 use crate::domain::repositories::CandleRepository;
 use crate::domain::trading::portfolio::Portfolio;
-use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::{Candle, OrderSide, TradeProposal};
 use rust_decimal::Decimal;
 use std::sync::Arc;

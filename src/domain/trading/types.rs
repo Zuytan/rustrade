@@ -23,8 +23,8 @@ pub enum OrderStatus {
     PartiallyFilled,
     Filled,
     DoneForDay,
+    #[serde(alias = "Cancelled")]
     Canceled,
-    Cancelled, // Alias for Canceled
     Replaced,
     PendingCancel,
     Stopped,

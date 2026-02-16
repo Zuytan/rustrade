@@ -22,7 +22,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::application::ml::data_collector::DataCollector;
 
-use crate::domain::trading::symbol_context::SymbolContext;
+use crate::application::trading::symbol_context::SymbolContext;
 
 pub use crate::application::agents::analyst_config::AnalystConfig;
 

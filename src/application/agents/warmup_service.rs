@@ -1,8 +1,8 @@
 use crate::application::strategies::{StrategyFactory, TradingStrategy};
+use crate::application::trading::symbol_context::SymbolContext;
 use crate::domain::market::market_regime::MarketRegime;
 use crate::domain::ports::MarketDataService;
 use crate::domain::repositories::StrategyRepository;
-use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::Candle;
 use rust_decimal::Decimal;
 

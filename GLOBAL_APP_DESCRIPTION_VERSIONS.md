@@ -1,5 +1,27 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.3 - Architecture & Finance Audit Fixes (February 2026)
+
+### Critical Finance Corrections
+- **CAGR Annualization**: Replaced linear extrapolation with Compound Annual Growth Rate formula in `PerformanceMetrics`. Example: 5% return over 30 days now correctly shows 79.6% CAGR (vs 60.8% linear).
+- **Timestamp Normalization**: Fixed inconsistent timestamp units (ms vs s) in equity curve and days-in-market calculations. Trade timestamps now consistently normalized from milliseconds to seconds for comparison with daily closes.
+- **Sharpe Ratio**: Corrected variance calculation to use sample variance (n-1, Bessel's correction) instead of population variance (n), aligning with financial industry standard.
+- **Sortino Ratio**: Fixed downside deviation to divide by total N instead of negative N only, preventing overpenalization of downside risk.
+
+### Architecture Cleanup
+- **DDD Compliance**: Moved `SymbolContext` from `domain/trading/` to `application/trading/` to fix Domain-Driven Design violation. Updated 10 import statements across agent files.
+- **Dead Code Removal**: Deleted unused `fees.rs` module (zero imports confirmed). Kept `fee_model.rs` which is actively used by 10+ files.
+- **OrderStatus Unification**: Removed duplicate `Cancelled` variant, keeping only `Canceled` with serde alias for backward JSON compatibility. Updated 3 usage sites.
+
+### Code Quality
+- **Floating Point Safety**: Replaced `!= 0.0` comparisons with `abs() > f64::EPSILON` in `PerformanceEvaluator` for robust floating-point checks.
+- **Documentation**: Added warning comments to portfolio fallback behavior when current prices are unavailable.
+
+### Validation
+- **Zero Warnings**: `cargo clippy --all-targets -- -D warnings` passes cleanly.
+- **Test Suite**: All 127+ tests passing (unit, integration, doc tests).
+- **Files Changed**: 16 modified, 1 deleted, 1 moved.
+
 ## Version 0.99.2 - Alpaca Equity Fix & Timestamp Unification (February 2026)
 
 ### Critical Fix

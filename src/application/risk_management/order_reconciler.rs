@@ -92,7 +92,7 @@ impl OrderReconciler {
                         );
                     }
                 }
-                OrderStatus::Cancelled
+                OrderStatus::Canceled
                 | OrderStatus::Rejected
                 | OrderStatus::Expired
                 | OrderStatus::Suspended => {
@@ -104,7 +104,7 @@ impl OrderReconciler {
             // Cleanup only non-fill terminal states — return token for caller to release
             if matches!(
                 update.status,
-                OrderStatus::Cancelled | OrderStatus::Rejected | OrderStatus::Expired
+                OrderStatus::Canceled | OrderStatus::Rejected | OrderStatus::Expired
             ) {
                 let token = self.remove_order(&update.client_order_id);
                 return (state_changed, token);

@@ -54,6 +54,8 @@ impl Portfolio {
                 equity += position.quantity * current_price;
             } else {
                 // If no current price available, use average price (conservative)
+                // WARNING: This may hide significant losses if market has moved.
+                // Caller should ensure prices are provided for all held positions.
                 equity += position.quantity * position.average_price;
             }
         }

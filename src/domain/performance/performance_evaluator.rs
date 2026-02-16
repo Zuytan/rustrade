@@ -37,14 +37,14 @@ impl PerformanceEvaluator {
 
         // 2. Check Sharpe Ratio
         // Only evaluate if we have meaningful data (e.g. non-zero)
-        if snapshot.sharpe_rolling_30d != 0.0
+        if snapshot.sharpe_rolling_30d.abs() > f64::EPSILON
             && snapshot.sharpe_rolling_30d < self.thresholds.min_sharpe
         {
             return Some(TriggerReason::PoorPerformance);
         }
 
         // 3. Check Win Rate
-        if snapshot.win_rate_rolling_30d != 0.0
+        if snapshot.win_rate_rolling_30d.abs() > f64::EPSILON
             && snapshot.win_rate_rolling_30d < self.thresholds.min_win_rate
         {
             return Some(TriggerReason::PoorPerformance);

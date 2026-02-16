@@ -3,10 +3,10 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::application::agents::signal_processor::SignalProcessor;
+use crate::application::trading::symbol_context::SymbolContext;
 use crate::application::trading::trade_filter::TradeFilter;
 use crate::domain::market::market_regime::MarketRegime;
 use crate::domain::ports::ExecutionService;
-use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 
 /// Service responsible for evaluating trade signals and generating proposals.

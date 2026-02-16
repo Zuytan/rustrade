@@ -226,7 +226,7 @@ impl AlpacaTradingStream {
             "new" => OrderStatus::Pending,
             "filled" => OrderStatus::Filled,
             "partially_filled" => OrderStatus::PartiallyFilled,
-            "canceled" => OrderStatus::Cancelled,
+            "canceled" => OrderStatus::Canceled,
             "rejected" => OrderStatus::Rejected,
             _ => OrderStatus::Pending,
         };

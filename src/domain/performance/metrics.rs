@@ -150,8 +150,9 @@ impl PerformanceMetrics {
             let mut unrealized_pnl = Decimal::ZERO;
 
             for trade in trades {
-                let entry_ts = trade.entry_timestamp;
-                let exit_ts = trade.exit_timestamp.unwrap_or(i64::MAX);
+                // Trade timestamps are in milliseconds, normalize to seconds for comparison
+                let entry_ts = trade.entry_timestamp / 1000;
+                let exit_ts = trade.exit_timestamp.map(|t| t / 1000).unwrap_or(i64::MAX);
 
                 if exit_ts <= *ts {
                     // Trade closed before or on this day -> Realized
@@ -183,9 +184,16 @@ impl PerformanceMetrics {
             0.0
         };
 
-        // Annualized return
-        let annualized_return_pct = if period_days > 0.0 {
-            total_return_pct * (365.0 / period_days)
+        // Annualized return using CAGR (Compound Annual Growth Rate)
+        let annualized_return_pct = if period_days > 0.0 && initial_equity > Decimal::ZERO {
+            let total_return_frac =
+                total_return.to_f64().unwrap_or(0.0) / initial_equity.to_f64().unwrap_or(1.0);
+            let years = period_days / 365.0;
+            if years > 0.0 && total_return_frac > -1.0 {
+                ((1.0 + total_return_frac).powf(1.0 / years) - 1.0) * 100.0
+            } else {
+                0.0
+            }
         } else {
             0.0
         };
@@ -379,17 +387,18 @@ impl PerformanceMetrics {
     }
 
     fn calculate_sharpe_ratio(returns: &[f64]) -> f64 {
-        if returns.is_empty() {
+        if returns.len() < 2 {
             return 0.0;
         }
 
         let mean_return = returns.iter().sum::<f64>() / returns.len() as f64;
 
+        // Use sample variance (n-1) instead of population variance (n)
         let variance = returns
             .iter()
             .map(|r| (r - mean_return).powi(2))
             .sum::<f64>()
-            / returns.len() as f64;
+            / (returns.len() - 1) as f64;
 
         let std_dev = variance.sqrt();
 
@@ -420,8 +429,9 @@ impl PerformanceMetrics {
             };
         }
 
+        // Standard Sortino: divide by total N, not just negative N
         let downside_variance =
-            downside_returns.iter().map(|r| r.powi(2)).sum::<f64>() / downside_returns.len() as f64;
+            downside_returns.iter().map(|r| r.powi(2)).sum::<f64>() / returns.len() as f64;
 
         let downside_dev = downside_variance.sqrt();
 
@@ -459,12 +469,13 @@ impl PerformanceMetrics {
         for trade in trades {
             if let Some(exit_ts) = trade.exit_timestamp {
                 let duration = exit_ts - trade.entry_timestamp;
-                total_seconds += duration;
+                // Trade timestamps are in milliseconds, convert to seconds
+                total_seconds += duration / 1000;
             }
         }
 
-        // Convert milliseconds to days
-        (total_seconds as f64) / (1000.0 * 60.0 * 60.0 * 24.0)
+        // Convert seconds to days
+        (total_seconds as f64) / (60.0 * 60.0 * 24.0)
     }
 }
 

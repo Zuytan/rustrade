@@ -1,5 +1,5 @@
+use crate::application::trading::symbol_context::SymbolContext;
 use crate::domain::ports::ExecutionService;
-use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::{OrderSide, OrderType, TradeProposal};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;

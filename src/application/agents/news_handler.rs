@@ -6,9 +6,9 @@
 //! Extracted from [`Analyst`] to reduce module complexity.
 
 use crate::application::agents::analyst_config::AnalystConfig;
+use crate::application::trading::symbol_context::SymbolContext;
 use crate::domain::listener::NewsSignal;
 use crate::domain::ports::ExecutionService;
-use crate::domain::trading::symbol_context::SymbolContext;
 use crate::domain::trading::types::{OrderSide, TradeProposal};
 use rust_decimal::Decimal;
 use std::sync::Arc;
@@ -224,8 +224,8 @@ mod tests {
     use crate::application::agents::analyst_config::AnalystConfig;
     use crate::application::optimization::win_rate_provider::StaticWinRateProvider;
     use crate::application::strategies::DualSMAStrategy;
+    use crate::application::trading::symbol_context::SymbolContext;
     use crate::domain::listener::NewsSentiment;
-    use crate::domain::trading::symbol_context::SymbolContext;
 
     fn create_test_context() -> SymbolContext {
         let config = AnalystConfig::default();

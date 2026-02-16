@@ -4,10 +4,10 @@
 //! Extracted from [`Analyst`] to reduce module complexity.
 
 use crate::application::agents::analyst_config::AnalystConfig;
+use crate::application::trading::symbol_context::SymbolContext;
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
 use crate::domain::repositories::CandleRepository;
 use crate::domain::risk::risk_appetite::RiskAppetite;
-use crate::domain::trading::symbol_context::SymbolContext;
 use std::sync::Arc;
 use tracing::info;
 

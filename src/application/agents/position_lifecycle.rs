@@ -7,8 +7,8 @@
 //!
 //! Extracted from [`Analyst`] to reduce module complexity.
 
+use crate::application::trading::symbol_context::SymbolContext;
 use crate::domain::ports::ExecutionService;
-use crate::domain::trading::symbol_context::SymbolContext;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::sync::Arc;
@@ -190,7 +190,7 @@ mod tests {
     use crate::application::agents::analyst_config::AnalystConfig;
     use crate::application::optimization::win_rate_provider::StaticWinRateProvider;
     use crate::application::strategies::DualSMAStrategy;
-    use crate::domain::trading::symbol_context::SymbolContext;
+    use crate::application::trading::symbol_context::SymbolContext;
     use rust_decimal_macros::dec;
     use std::sync::Arc;
 
