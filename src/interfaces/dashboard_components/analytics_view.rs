@@ -131,16 +131,30 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                                 ui.label(egui::RichText::new(agent.i18n.t("monte_carlo_title")).size(16.0).strong());
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     if ui.button(egui::RichText::new(agent.i18n.t("run_simulation")).strong()).clicked() {
-                                        // Trigger simulation
-                                        let (avg_win, avg_loss) = agent.calculate_trade_statistics();
+                                        let mut historical_returns: Vec<rust_decimal::Decimal> = vec![];
+                                        if let Ok(pf) = agent.portfolio.try_read() {
+                                            for trade in &pf.trade_history {
+                                                if trade.exit_price.is_some() {
+                                                    let entry_val = trade.entry_price * trade.quantity;
+                                                    let pnl_val = trade.pnl;
+                                                    if entry_val > rust_decimal::Decimal::ZERO {
+                                                        historical_returns.push(pnl_val / entry_val);
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Fallback realistic distribution if no trades exist yet
+                                        if historical_returns.is_empty() {
+                                            use rust_decimal_macros::dec;
+                                            historical_returns = vec![dec!(0.02), dec!(0.01), dec!(-0.015), dec!(-0.01), dec!(0.03), dec!(-0.02)];
+                                        }
 
                                         let config = crate::domain::performance::monte_carlo::MonteCarloConfig {
                                             iterations: 10000,
                                             steps: 100,
                                             initial_equity: agent.calculate_total_value(),
-                                            win_rate: agent.calculate_win_rate().to_f64().unwrap_or(0.0) / 100.0,
-                                            avg_win_pct: avg_win.to_f64().unwrap_or(0.02),
-                                            avg_loss_pct: avg_loss.to_f64().unwrap_or(0.015),
+                                            historical_returns,
                                         };
                                         agent.monte_carlo_result = Some(crate::domain::performance::monte_carlo::MonteCarloEngine::simulate(&config));
                                     }
@@ -151,7 +165,7 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
 
                             if let Some(res) = &agent.monte_carlo_result {
                                 ui.columns(4, |cols| {
-                                    render_mini_metric(&mut cols[0], agent.i18n.t("prob_profit").to_string(), &format!("{:.1}%", res.probability_of_profit * 100.0), DesignSystem::SUCCESS);
+                                    render_mini_metric(&mut cols[0], agent.i18n.t("prob_profit").to_string(), &format!("{:.1}%", res.probability_of_profit.to_f64().unwrap_or(0.0) * 100.0), DesignSystem::SUCCESS);
                                     render_mini_metric(&mut cols[1], agent.i18n.t("expected_dd").to_string(), &format!("{:.1}%", res.max_drawdown_mean * 100.0), DesignSystem::DANGER);
                                     render_mini_metric(&mut cols[2], agent.i18n.t("final_equity").to_string(), &format!("${:.0}", res.final_equity_median.to_f64().unwrap_or(0.0)), DesignSystem::TEXT_PRIMARY);
                                     render_mini_metric(&mut cols[3], "95% Range".to_string(), &format!("${:.0} - ${:.0}", res.percentile_5.to_f64().unwrap_or(0.0), res.percentile_95.to_f64().unwrap_or(0.0)), DesignSystem::TEXT_SECONDARY);

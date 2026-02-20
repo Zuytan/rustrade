@@ -273,12 +273,17 @@ impl PerformanceMetrics {
             );
             let (_a, b, _) = Stats::alpha_beta(&returns, &benchmark_returns);
             // Re-annualize alpha matching existing behavior
-            let benchmark_annual_pct = benchmark_returns.iter().sum::<f64>()
-                / benchmark_returns.len().max(1) as f64
-                * 252.0
-                * 100.0;
-            let alpha_ann = annualized_return_pct - (b * benchmark_annual_pct);
-            (alpha_ann, b, 0.0)
+            let sum_returns: Decimal = benchmark_returns.iter().sum();
+            let n_b_returns = Decimal::from(benchmark_returns.len().max(1));
+            let benchmark_annual =
+                sum_returns / n_b_returns * Decimal::from(252) * Decimal::from(100);
+
+            let alpha_ann = Decimal::from_f64_retain(annualized_return_pct)
+                .unwrap_or(Decimal::ZERO)
+                - (b * benchmark_annual);
+            let alpha_f64 = alpha_ann.to_f64().unwrap_or(0.0);
+            let beta_f64 = b.to_f64().unwrap_or(0.0);
+            (alpha_f64, beta_f64, 0.0)
         } else {
             (0.0, 0.0, 0.0)
         };
@@ -287,7 +292,7 @@ impl PerformanceMetrics {
             total_return,
             total_return_pct,
             annualized_return_pct,
-            sharpe_ratio,
+            sharpe_ratio: sharpe_ratio.to_f64().unwrap_or(0.0),
             sortino_ratio,
             calmar_ratio,
             alpha,
@@ -338,15 +343,20 @@ impl PerformanceMetrics {
         max_dd
     }
 
-    fn calculate_sortino_ratio(returns: &[f64]) -> f64 {
+    fn calculate_sortino_ratio(returns: &[Decimal]) -> f64 {
         if returns.is_empty() {
             return 0.0;
         }
 
-        let mean_return = returns.iter().sum::<f64>() / returns.len() as f64;
+        let sum_returns: Decimal = returns.iter().sum();
+        let mean_return = sum_returns.to_f64().unwrap_or(0.0) / returns.len() as f64;
 
         // Only consider downside deviation (negative returns)
-        let downside_returns: Vec<f64> = returns.iter().filter(|&&r| r < 0.0).copied().collect();
+        let downside_returns: Vec<f64> = returns
+            .iter()
+            .filter(|&&r| r < Decimal::ZERO)
+            .map(|r| r.to_f64().unwrap_or(0.0))
+            .collect();
 
         if downside_returns.is_empty() {
             return if mean_return > 0.0 {

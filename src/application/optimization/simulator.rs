@@ -39,10 +39,15 @@ impl Simulator {
     /// Returns (alpha, beta, correlation)
     /// Formula: strategy_return = alpha + beta * benchmark_return + error
     fn calculate_alpha_beta(
-        strategy_returns: &[f64],
-        benchmark_returns: &[f64],
+        strategy_returns: &[Decimal],
+        benchmark_returns: &[Decimal],
     ) -> (f64, f64, f64) {
-        Stats::alpha_beta(strategy_returns, benchmark_returns)
+        let (a, b, c) = Stats::alpha_beta(strategy_returns, benchmark_returns);
+        (
+            a.to_f64().unwrap_or(0.0),
+            b.to_f64().unwrap_or(0.0),
+            c.to_f64().unwrap_or(0.0),
+        )
     }
     pub fn new(
         market_data: Arc<dyn MarketDataService>,
@@ -365,22 +370,22 @@ impl Simulator {
             // Calculate daily returns for strategy
             let mut strategy_returns = Vec::new();
             for i in 1..daily_closes.len() {
-                let prev_price = daily_closes[i - 1].1.to_f64().unwrap_or(1.0);
-                let curr_price = daily_closes[i].1.to_f64().unwrap_or(1.0);
-                if prev_price > 0.0 {
+                let prev_price = daily_closes[i - 1].1;
+                let curr_price = daily_closes[i].1;
+                if prev_price > Decimal::ZERO {
                     strategy_returns.push((curr_price - prev_price) / prev_price);
                 }
             }
 
             // Build SPY daily close map
-            let mut spy_daily_map: std::collections::BTreeMap<String, f64> =
+            let mut spy_daily_map: std::collections::BTreeMap<String, Decimal> =
                 std::collections::BTreeMap::new();
             for bar in spy_bars_ref {
                 let dt = chrono::DateTime::from_timestamp(bar.timestamp, 0)
                     .unwrap_or_default()
                     .with_timezone(&Utc);
                 let date_key = dt.format("%Y-%m-%d").to_string();
-                spy_daily_map.insert(date_key, bar.close.to_f64().unwrap_or(0.0));
+                spy_daily_map.insert(date_key, bar.close);
             }
 
             // Calculate SPY daily returns aligned with strategy dates
@@ -399,7 +404,7 @@ impl Simulator {
 
                 if let (Some(&prev_spy), Some(&curr_spy)) =
                     (spy_daily_map.get(&prev_dt), spy_daily_map.get(&curr_dt))
-                    && prev_spy > 0.0
+                    && prev_spy > Decimal::ZERO
                 {
                     benchmark_returns.push((curr_spy - prev_spy) / prev_spy);
                 }
@@ -486,8 +491,18 @@ mod tests {
         // Strategy returns: 1%, 2%, -1%, 3%
         // Benchmark returns: 0.5%, 1%, -0.5%, 1.5%
         // Expected: Beta ~= 2.0 (strategy is twice as volatile as benchmark)
-        let strategy_returns = vec![0.01, 0.02, -0.01, 0.03];
-        let benchmark_returns = vec![0.005, 0.01, -0.005, 0.015];
+        let strategy_returns = vec![
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(0.02).unwrap_or_default(),
+            Decimal::from_f64_retain(-0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(0.03).unwrap_or_default(),
+        ];
+        let benchmark_returns = vec![
+            Decimal::from_f64_retain(0.005).unwrap_or_default(),
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(-0.005).unwrap_or_default(),
+            Decimal::from_f64_retain(0.015).unwrap_or_default(),
+        ];
 
         let (alpha, beta, correlation) =
             Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
@@ -513,8 +528,18 @@ mod tests {
     #[test]
     fn test_alpha_beta_with_excess_return() {
         // Strategy consistently beats benchmark
-        let strategy_returns = vec![0.02, 0.03, 0.01, 0.04];
-        let benchmark_returns = vec![0.01, 0.01, 0.01, 0.01];
+        let strategy_returns = vec![
+            Decimal::from_f64_retain(0.02).unwrap_or_default(),
+            Decimal::from_f64_retain(0.03).unwrap_or_default(),
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(0.04).unwrap_or_default(),
+        ];
+        let benchmark_returns = vec![
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+        ];
 
         let (alpha, _beta, _correlation) =
             Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);
@@ -530,8 +555,18 @@ mod tests {
     #[test]
     fn test_alpha_beta_negative_correlation() {
         // Strategy moves opposite to benchmark
-        let strategy_returns = vec![0.01, -0.01, 0.02, -0.02];
-        let benchmark_returns = vec![-0.01, 0.01, -0.02, 0.02];
+        let strategy_returns = vec![
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(-0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(0.02).unwrap_or_default(),
+            Decimal::from_f64_retain(-0.02).unwrap_or_default(),
+        ];
+        let benchmark_returns = vec![
+            Decimal::from_f64_retain(-0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(0.01).unwrap_or_default(),
+            Decimal::from_f64_retain(-0.02).unwrap_or_default(),
+            Decimal::from_f64_retain(0.02).unwrap_or_default(),
+        ];
 
         let (_alpha, _beta, correlation) =
             Simulator::calculate_alpha_beta(&strategy_returns, &benchmark_returns);

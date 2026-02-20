@@ -275,6 +275,16 @@ pub fn normalize_crypto_symbol(symbol: &str) -> Result<String, String> {
         return Err("Cannot normalize empty symbol".to_string());
     }
 
+    // Handle ambiguous symbols ending in 'T' that trade in 'USD' instead of 'TUSD'
+    match symbol {
+        "DOTUSD" => return Ok("DOT/USD".to_string()),
+        "BATUSD" => return Ok("BAT/USD".to_string()),
+        "FETUSD" => return Ok("FET/USD".to_string()),
+        "GRTUSD" => return Ok("GRT/USD".to_string()),
+        "APTUSD" => return Ok("APT/USD".to_string()),
+        _ => {}
+    }
+
     // Try to match known quote currencies (longest first to prefer USDT over USD)
     for quote in CRYPTO_QUOTE_CURRENCIES {
         if symbol.ends_with(quote) && symbol.len() > quote.len() {
@@ -372,6 +382,12 @@ mod tests {
         // Should prefer USDT (4 chars) over USD (3 chars)
         assert_eq!(normalize_crypto_symbol("BTCUSDT").unwrap(), "BTC/USDT");
         // Not BTCU/SDT or BTC/USD
+    }
+
+    #[test]
+    fn test_normalize_ambiguous_symbols() {
+        assert_eq!(normalize_crypto_symbol("DOTUSD").unwrap(), "DOT/USD");
+        assert_eq!(normalize_crypto_symbol("BATUSD").unwrap(), "BAT/USD");
     }
 
     #[test]

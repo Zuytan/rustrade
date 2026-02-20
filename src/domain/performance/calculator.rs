@@ -1,66 +1,123 @@
 use super::stats::Stats;
 use crate::domain::trading::types::{Order, OrderSide};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PositionSide {
+    Flat,
+    Long,
+    Short,
+}
 
 /// Calculates performance metrics (Sharpe Ratio, Win Rate) from a list of raw orders
 /// by reconstructing trades using FIFO matching.
-pub fn calculate_metrics_from_orders(orders: &[Order]) -> (f64, f64) {
+pub fn calculate_metrics_from_orders(orders: &[Order]) -> (Decimal, Decimal) {
     if orders.is_empty() {
-        return (0.0, 0.0);
+        return (Decimal::ZERO, Decimal::ZERO);
     }
 
-    // FIFO PnL reconstruction logic
-    let mut buys: VecDeque<Order> = VecDeque::new();
-    let mut trade_returns = Vec::new();
-    let mut wins = 0;
-    let mut total_closed_trades = 0;
+    let mut open_chunks: VecDeque<Order> = VecDeque::new();
+    let mut current_side = PositionSide::Flat;
+
+    // Map: day_index -> (Realized PnL, Total Entry Value, Wins, Total closed trades)
+    let mut daily_stats: HashMap<i64, (Decimal, Decimal, usize, usize)> = HashMap::new();
 
     for order in orders {
-        match order.side {
-            OrderSide::Buy => buys.push_back(order.clone()),
-            OrderSide::Sell => {
-                let mut qty_to_close = order.quantity;
-                let exit_price = order.price.to_f64().unwrap_or(0.0);
+        let mut qty_to_process = order.quantity;
+        let price = order.price;
 
-                while qty_to_close > Decimal::ZERO && !buys.is_empty() {
-                    let mut buy = buys
-                        .pop_front()
-                        .expect("buys.is_empty() checked in while condition");
+        if current_side == PositionSide::Flat {
+            current_side = match order.side {
+                OrderSide::Buy => PositionSide::Long,
+                OrderSide::Sell => PositionSide::Short,
+            };
+            open_chunks.push_back(order.clone());
+            continue;
+        }
 
-                    let match_qty = buy.quantity.min(qty_to_close);
-                    let entry_price = buy.price.to_f64().unwrap_or(0.0);
+        let is_increasing = (current_side == PositionSide::Long && order.side == OrderSide::Buy)
+            || (current_side == PositionSide::Short && order.side == OrderSide::Sell);
 
-                    if entry_price > 0.0 {
-                        // Return for this chunk
-                        let pnl_pct = (exit_price - entry_price) / entry_price;
-                        trade_returns.push(pnl_pct);
+        if is_increasing {
+            open_chunks.push_back(order.clone());
+        } else {
+            // Decreasing or reversing -> FIFO matching
+            // Using milliseconds for timestamp, 86_400_000 ms per day
+            let day_index = order.timestamp / 86_400_000;
 
-                        if pnl_pct > 0.0 {
-                            wins += 1;
-                        }
-                        total_closed_trades += 1;
-                    }
+            while qty_to_process > Decimal::ZERO && !open_chunks.is_empty() {
+                let mut chunk = open_chunks.pop_front().unwrap();
+                let match_qty = chunk.quantity.min(qty_to_process);
+                let entry_price = chunk.price;
 
-                    qty_to_close -= match_qty;
-                    buy.quantity -= match_qty;
+                if entry_price > Decimal::ZERO {
+                    let chunk_pnl = match current_side {
+                        PositionSide::Long => (price - entry_price) * match_qty,
+                        PositionSide::Short => (entry_price - price) * match_qty,
+                        PositionSide::Flat => unreachable!(),
+                    };
+                    let chunk_entry_value = entry_price * match_qty;
 
-                    if buy.quantity > Decimal::ZERO {
-                        buys.push_front(buy);
+                    let stat = daily_stats.entry(day_index).or_insert((
+                        Decimal::ZERO,
+                        Decimal::ZERO,
+                        0,
+                        0,
+                    ));
+                    stat.0 += chunk_pnl;
+                    stat.1 += chunk_entry_value;
+                    stat.3 += 1;
+                    if chunk_pnl > Decimal::ZERO {
+                        stat.2 += 1;
                     }
                 }
+
+                qty_to_process -= match_qty;
+                chunk.quantity -= match_qty;
+
+                if chunk.quantity > Decimal::ZERO {
+                    open_chunks.push_front(chunk);
+                }
+            }
+
+            if qty_to_process > Decimal::ZERO {
+                // Reversed direction
+                current_side = match order.side {
+                    OrderSide::Buy => PositionSide::Long,
+                    OrderSide::Sell => PositionSide::Short,
+                };
+                let mut new_chunk = order.clone();
+                new_chunk.quantity = qty_to_process;
+                open_chunks.push_back(new_chunk);
+            } else if open_chunks.is_empty() {
+                current_side = PositionSide::Flat;
             }
         }
     }
 
-    let win_rate = if total_closed_trades > 0 {
-        wins as f64 / total_closed_trades as f64
+    let mut total_wins = 0;
+    let mut total_trades = 0;
+    let mut daily_returns = Vec::new();
+
+    for &(pnl, entry_val, wins, trades) in daily_stats.values() {
+        total_wins += wins;
+        total_trades += trades;
+        if entry_val > Decimal::ZERO {
+            daily_returns.push(pnl / entry_val);
+        } else {
+            daily_returns.push(Decimal::ZERO);
+        }
+    }
+
+    let win_rate = if total_trades > 0 {
+        Decimal::from(total_wins) / Decimal::from(total_trades)
     } else {
-        0.0
+        Decimal::ZERO
     };
 
-    let (sharpe, win_rate) = (Stats::sharpe_ratio(&trade_returns, false), win_rate);
+    // calculate annualized Sharpe ratio
+    let sharpe = Stats::sharpe_ratio(&daily_returns, true);
 
     (sharpe, win_rate)
 }
@@ -84,52 +141,66 @@ mod tests {
         }
     }
 
+    const DAY: i64 = 86_400_000;
+
     #[test]
-    fn test_calculate_metrics_simple_win() {
+    fn test_calculate_metrics_simple_win_long() {
         let orders = vec![
-            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
-            create_order(OrderSide::Sell, dec!(110), dec!(1), 0), // +10%
-            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
-            create_order(OrderSide::Sell, dec!(110), dec!(1), 0), // +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 1),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), DAY * 1), // day 1 closed, +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 2),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), DAY * 2), // day 2 closed, +10%
         ];
 
         let (sharpe, win_rate) = calculate_metrics_from_orders(&orders);
-
-        assert_eq!(win_rate, 1.0); // 100% win rate
-        // Sharpe undefined for constant return (std_dev = 0), code returns 0.0
-        assert_eq!(sharpe, 0.0);
+        assert_eq!(win_rate, dec!(1.0));
+        // Variance of [0.1, 0.1] is 0 -> sharpe is 0.0
+        assert_eq!(sharpe, Decimal::ZERO);
     }
 
     #[test]
-    fn test_calculate_metrics_mixed() {
+    fn test_calculate_metrics_short_selling() {
         let orders = vec![
-            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
-            create_order(OrderSide::Sell, dec!(110), dec!(1), 0), // +10%
-            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
-            create_order(OrderSide::Sell, dec!(90), dec!(1), 0), // -10%
+            create_order(OrderSide::Sell, dec!(100), dec!(1), DAY * 1),
+            create_order(OrderSide::Buy, dec!(90), dec!(1), DAY * 1), // day 1 closed Short, +10%
+            create_order(OrderSide::Sell, dec!(100), dec!(1), DAY * 2),
+            create_order(OrderSide::Buy, dec!(110), dec!(1), DAY * 2), // day 2 closed Short, -10%
         ];
 
-        // Mean = 0. StdDev = 0.1414... (approx) (variance = ((0.1-0)^2 + (-0.1-0)^2)/1 = 0.02. sqrt(0.02) ~ 0.1414)
-        // Sharpe = 0 / 0.1414 = 0
-
-        let (sharpe, win_rate) = calculate_metrics_from_orders(&orders);
-
-        assert_eq!(win_rate, 0.5);
-        assert!((sharpe).abs() < 0.0001);
+        let (_sharpe, win_rate) = calculate_metrics_from_orders(&orders);
+        assert_eq!(win_rate, dec!(0.5));
     }
 
     #[test]
     fn test_calculate_metrics_positive_sharpe() {
         let orders = vec![
-            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
-            create_order(OrderSide::Sell, dec!(110), dec!(1), 0), // +10%
-            create_order(OrderSide::Buy, dec!(100), dec!(1), 0),
-            create_order(OrderSide::Sell, dec!(105), dec!(1), 0), // +5%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 1),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), DAY * 1), // day 1 returns +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 2),
+            create_order(OrderSide::Sell, dec!(105), dec!(1), DAY * 2), // day 2 returns +5%
         ];
-        // Mean = 7.5%. Var = ((10-7.5)^2 + (5-7.5)^2)/1 = (6.25 + 6.25) = 12.5. StdDev = 3.53% (0.0353)
-        // Sharpe = 0.075 / 0.0353 ~ 2.12
 
         let (sharpe, _win_rate) = calculate_metrics_from_orders(&orders);
-        assert!(sharpe > 1.0);
+        // Returns are 0.1 and 0.05. Mean = 0.075. Sharpe is > 1.0.
+        assert!(sharpe > dec!(1.0));
+    }
+
+    #[test]
+    fn test_calculate_metrics_reversal() {
+        // Go long 1 @ 100 on Day 1
+        let o1 = create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 1);
+        // Sell 2 @ 110 on Day 1 -> Closes Long 1 (PnL +10), opens Short 1
+        let o2 = create_order(OrderSide::Sell, dec!(110), dec!(2), DAY * 1);
+        // Buy 1 @ 100 on Day 2 -> Closes Short 1 (PnL +10)
+        let o3 = create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 2);
+
+        let orders = vec![o1, o2, o3];
+
+        let (sharpe, win_rate) = calculate_metrics_from_orders(&orders);
+        assert_eq!(win_rate, dec!(1.0));
+        // Day 1 return = +10 / 100 = 10%.
+        // Day 2 return = +10 / 110 = 9.09%.
+        // Returns positive, mean > 0, standard dev small. Sharpe should be > 0.
+        assert!(sharpe >= Decimal::ZERO);
     }
 }

@@ -15,7 +15,7 @@ use rust_decimal::Decimal;
 
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -659,7 +659,7 @@ impl UserAgent {
             crate::domain::performance::metrics::PerformanceMetrics::calculate(
                 &pf.trade_history,
                 initial_equity,
-                pf.total_equity(&HashMap::new()), // Approximation without live prices
+                self.calculate_total_value(), // Approximation with live prices via strategy_info
                 period_days,
             )
         } else {

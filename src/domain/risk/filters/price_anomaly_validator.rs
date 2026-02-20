@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 use tracing::debug;
 
 use crate::domain::risk::filters::validator_trait::{
@@ -12,7 +12,7 @@ use crate::domain::trading::types::Candle;
 #[derive(Debug, Clone)]
 pub struct PriceAnomalyConfig {
     /// Maximum allowed price deviation from SMA as percentage (e.g., 0.05 = 5%)
-    pub max_deviation_pct: f64,
+    pub max_deviation_pct: Decimal,
 
     /// Lookback period in candles for SMA calculation (default: 5 for 5-minute SMA with 1-min candles)
     pub lookback_candles: usize,
@@ -21,8 +21,8 @@ pub struct PriceAnomalyConfig {
 impl Default for PriceAnomalyConfig {
     fn default() -> Self {
         Self {
-            max_deviation_pct: 0.05, // 5% threshold
-            lookback_candles: 5,     // 5 candles = 5 minutes with 1-min timeframe
+            max_deviation_pct: dec!(0.05), // 5% threshold
+            lookback_candles: 5,           // 5 candles = 5 minutes with 1-min timeframe
         }
     }
 }
@@ -67,14 +67,14 @@ impl PriceAnomalyValidator {
             return None; // Cannot calculate deviation with zero or negative SMA
         }
 
-        let deviation = ((price - sma) / sma).abs().to_f64().unwrap_or(0.0);
+        let deviation = ((price - sma) / sma).abs();
 
         if deviation > self.config.max_deviation_pct {
             return Some(format!(
                 "Price anomaly detected: {:.2}% deviation from {}-candle SMA (limit: {:.2}%) [Price: {}, SMA: {}]",
-                deviation * 100.0,
+                deviation * dec!(100),
                 self.config.lookback_candles,
-                self.config.max_deviation_pct * 100.0,
+                self.config.max_deviation_pct * dec!(100),
                 price,
                 sma
             ));
@@ -157,14 +157,14 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, &price)| {
-                let dec_price = Decimal::from_f64_retain(price).unwrap();
+                let dec_price = Decimal::from_f64_retain(price).unwrap_or(Decimal::ZERO);
                 Candle {
                     symbol: "BTC/USD".to_string(),
                     open: dec_price,
                     high: dec_price,
                     low: dec_price,
                     close: dec_price,
-                    volume: Decimal::from_f64_retain(1000.0).unwrap(),
+                    volume: Decimal::from_f64_retain(1000.0).unwrap_or(Decimal::ZERO),
                     timestamp: i as i64 * 60000, // 1 minute apart
                 }
             })

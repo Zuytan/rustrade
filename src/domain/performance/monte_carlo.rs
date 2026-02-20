@@ -8,9 +8,7 @@ pub struct MonteCarloConfig {
     pub iterations: usize,
     pub steps: usize,
     pub initial_equity: Decimal,
-    pub win_rate: f64,
-    pub avg_win_pct: f64,
-    pub avg_loss_pct: f64,
+    pub historical_returns: Vec<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +17,7 @@ pub struct MonteCarloResult {
     pub final_equity_median: Decimal,
     pub percentile_5: Decimal,
     pub percentile_95: Decimal,
-    pub probability_of_profit: f64,
+    pub probability_of_profit: Decimal,
     pub max_drawdown_mean: f64,
 }
 
@@ -32,52 +30,84 @@ impl MonteCarloEngine {
         let mut max_drawdowns = Vec::with_capacity(config.iterations);
         let mut profitable_runs = 0;
 
+        let has_returns = !config.historical_returns.is_empty();
+
         for _ in 0..config.iterations {
-            let mut current_equity = config.initial_equity.to_f64().unwrap_or(0.0);
+            let mut current_equity = config.initial_equity;
             let mut peak_equity = current_equity;
             let mut max_dd = 0.0;
 
             for _ in 0..config.steps {
-                let is_win = rng.random_bool(config.win_rate);
-                let pnl_pct = if is_win {
-                    config.avg_win_pct
+                let pnl_pct = if has_returns {
+                    let idx = rng.random_range(0..config.historical_returns.len());
+                    config.historical_returns[idx]
                 } else {
-                    -config.avg_loss_pct
+                    Decimal::ZERO
                 };
 
-                current_equity *= 1.0 + pnl_pct;
+                current_equity *= Decimal::ONE + pnl_pct;
 
                 if current_equity > peak_equity {
                     peak_equity = current_equity;
-                } else {
+                } else if peak_equity > Decimal::ZERO {
                     let dd = (peak_equity - current_equity) / peak_equity;
-                    if dd > max_dd {
-                        max_dd = dd;
+                    if dd.to_f64().unwrap_or(0.0) > max_dd {
+                        max_dd = dd.to_f64().unwrap_or(0.0);
                     }
                 }
             }
 
             final_equities.push(current_equity);
             max_drawdowns.push(max_dd);
-            if current_equity > config.initial_equity.to_f64().unwrap_or(0.0) {
+            if current_equity > config.initial_equity {
                 profitable_runs += 1;
             }
         }
 
         final_equities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        let mean: f64 = final_equities.iter().sum::<f64>() / config.iterations as f64;
-        let median = final_equities[config.iterations / 2];
-        let p5 = final_equities[config.iterations * 5 / 100];
-        let p95 = final_equities[config.iterations * 95 / 100];
-        let prob_profit = profitable_runs as f64 / config.iterations as f64;
-        let mean_dd: f64 = max_drawdowns.iter().sum::<f64>() / config.iterations as f64;
+        let mean: Decimal = if config.iterations > 0 {
+            let sum: Decimal = final_equities.iter().sum();
+            sum / Decimal::from(config.iterations)
+        } else {
+            config.initial_equity
+        };
+
+        let median = if config.iterations > 0 {
+            final_equities[config.iterations / 2]
+        } else {
+            mean
+        };
+
+        let p5 = if config.iterations > 0 {
+            final_equities[config.iterations * 5 / 100]
+        } else {
+            mean
+        };
+
+        let p95 = if config.iterations > 0 {
+            final_equities[config.iterations * 95 / 100]
+        } else {
+            mean
+        };
+
+        let prob_profit = if config.iterations > 0 {
+            Decimal::from(profitable_runs) / Decimal::from(config.iterations)
+        } else {
+            Decimal::ZERO
+        };
+
+        let mean_dd: f64 = if config.iterations > 0 {
+            max_drawdowns.iter().sum::<f64>() / config.iterations as f64
+        } else {
+            0.0
+        };
 
         MonteCarloResult {
-            final_equity_mean: Decimal::from_f64_retain(mean).unwrap_or_default(),
-            final_equity_median: Decimal::from_f64_retain(median).unwrap_or_default(),
-            percentile_5: Decimal::from_f64_retain(p5).unwrap_or_default(),
-            percentile_95: Decimal::from_f64_retain(p95).unwrap_or_default(),
+            final_equity_mean: mean,
+            final_equity_median: median,
+            percentile_5: p5,
+            percentile_95: p95,
             probability_of_profit: prob_profit,
             max_drawdown_mean: mean_dd,
         }
@@ -89,20 +119,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_monte_carlo_basic() {
+    fn test_monte_carlo_historical() {
+        use rust_decimal_macros::dec;
         let config = MonteCarloConfig {
             iterations: 1000,
             steps: 50,
             initial_equity: Decimal::from(10000),
-            win_rate: 0.6,
-            avg_win_pct: 0.02,
-            avg_loss_pct: 0.015,
+            historical_returns: vec![
+                dec!(0.02),
+                dec!(0.01),
+                dec!(-0.015),
+                dec!(0.03),
+                dec!(-0.01),
+            ],
         };
 
         let result = MonteCarloEngine::simulate(&config);
 
-        assert!(result.probability_of_profit > 0.5);
+        assert!(result.probability_of_profit > dec!(0.5));
         assert!(result.final_equity_mean > config.initial_equity);
-        assert!(result.max_drawdown_mean >= 0.0);
+        assert!(result.max_drawdown_mean > 0.0);
+    }
+
+    #[test]
+    fn test_monte_carlo_empty_returns() {
+        let config = MonteCarloConfig {
+            iterations: 10,
+            steps: 5,
+            initial_equity: Decimal::from(10000),
+            historical_returns: vec![],
+        };
+
+        let result = MonteCarloEngine::simulate(&config);
+
+        assert_eq!(result.probability_of_profit, Decimal::ZERO);
+        assert_eq!(result.final_equity_mean, config.initial_equity);
+        assert_eq!(result.max_drawdown_mean, 0.0);
     }
 }

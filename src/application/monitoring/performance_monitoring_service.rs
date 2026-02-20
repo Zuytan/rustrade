@@ -129,8 +129,12 @@ impl PerformanceMonitoringService {
         }
 
         // Delegate to domain utility
-        calculator::calculate_metrics_from_orders(
+        let (sharpe_dec, win_dec) = calculator::calculate_metrics_from_orders(
             &relevant_orders.into_iter().cloned().collect::<Vec<_>>(),
+        );
+        (
+            sharpe_dec.to_f64().unwrap_or(0.0),
+            win_dec.to_f64().unwrap_or(0.0),
         )
     }
 }
