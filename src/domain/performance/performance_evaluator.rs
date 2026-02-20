@@ -1,5 +1,6 @@
 use crate::domain::optimization::reoptimization_trigger::TriggerReason;
 use crate::domain::performance::performance_snapshot::PerformanceSnapshot;
+use rust_decimal::prelude::ToPrimitive;
 
 /// Configuration thresholds for performance evaluation
 pub struct EvaluationThresholds {
@@ -31,7 +32,8 @@ impl PerformanceEvaluator {
     /// Check if current metrics trigger re-optimization
     pub fn evaluate(&self, snapshot: &PerformanceSnapshot) -> Option<TriggerReason> {
         // 1. Check Drawdown
-        if snapshot.drawdown_pct > self.thresholds.max_drawdown {
+        let drawdown_f64 = snapshot.drawdown_pct.to_f64().unwrap_or(0.0);
+        if drawdown_f64 > self.thresholds.max_drawdown {
             return Some(TriggerReason::DrawdownLimit);
         }
 
@@ -71,7 +73,7 @@ mod tests {
         let snapshot = PerformanceSnapshot::new(
             "TEST".to_string(),
             Decimal::new(10000, 0),
-            0.15, // 15% drawdown
+            rust_decimal_macros::dec!(0.15), // 15% drawdown
             1.0,
             0.5,
             MarketRegimeType::TrendingUp,
@@ -94,7 +96,7 @@ mod tests {
         let snapshot = PerformanceSnapshot::new(
             "TEST".to_string(),
             Decimal::new(10000, 0),
-            0.05,
+            rust_decimal_macros::dec!(0.05),
             0.8, // Low Sharpe
             0.5,
             MarketRegimeType::TrendingUp,

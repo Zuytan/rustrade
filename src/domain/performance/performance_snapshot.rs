@@ -10,7 +10,7 @@ pub struct PerformanceSnapshot {
     pub symbol: String,
     pub timestamp: DateTime<Utc>,
     pub equity: Decimal,
-    pub drawdown_pct: f64,
+    pub drawdown_pct: Decimal,
     pub sharpe_rolling_30d: f64,
     pub win_rate_rolling_30d: f64,
     pub regime: MarketRegimeType,
@@ -20,7 +20,7 @@ impl PerformanceSnapshot {
     pub fn new(
         symbol: String,
         equity: Decimal,
-        drawdown_pct: f64,
+        drawdown_pct: Decimal,
         sharpe_rolling_30d: f64,
         win_rate_rolling_30d: f64,
         regime: MarketRegimeType,

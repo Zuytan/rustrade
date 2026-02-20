@@ -716,7 +716,7 @@ fn backtest_result_to_opt_result_impl(
         params: config,
         sharpe_ratio: Decimal::from_f64_retain(metrics.sharpe_ratio).unwrap_or(Decimal::ZERO),
         total_return: result.total_return_pct,
-        max_drawdown: Decimal::from_f64_retain(metrics.max_drawdown_pct).unwrap_or(Decimal::ZERO),
+        max_drawdown: metrics.max_drawdown_pct,
         win_rate: Decimal::from_f64_retain(metrics.win_rate).unwrap_or(Decimal::ZERO),
         total_trades: metrics.total_trades,
         objective_score: Decimal::ZERO,

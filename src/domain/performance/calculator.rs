@@ -146,8 +146,8 @@ mod tests {
     #[test]
     fn test_calculate_metrics_simple_win_long() {
         let orders = vec![
-            create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 1),
-            create_order(OrderSide::Sell, dec!(110), dec!(1), DAY * 1), // day 1 closed, +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), DAY),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), DAY), // day 1 closed, +10%
             create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 2),
             create_order(OrderSide::Sell, dec!(110), dec!(1), DAY * 2), // day 2 closed, +10%
         ];
@@ -161,8 +161,8 @@ mod tests {
     #[test]
     fn test_calculate_metrics_short_selling() {
         let orders = vec![
-            create_order(OrderSide::Sell, dec!(100), dec!(1), DAY * 1),
-            create_order(OrderSide::Buy, dec!(90), dec!(1), DAY * 1), // day 1 closed Short, +10%
+            create_order(OrderSide::Sell, dec!(100), dec!(1), DAY),
+            create_order(OrderSide::Buy, dec!(90), dec!(1), DAY), // day 1 closed Short, +10%
             create_order(OrderSide::Sell, dec!(100), dec!(1), DAY * 2),
             create_order(OrderSide::Buy, dec!(110), dec!(1), DAY * 2), // day 2 closed Short, -10%
         ];
@@ -174,8 +174,8 @@ mod tests {
     #[test]
     fn test_calculate_metrics_positive_sharpe() {
         let orders = vec![
-            create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 1),
-            create_order(OrderSide::Sell, dec!(110), dec!(1), DAY * 1), // day 1 returns +10%
+            create_order(OrderSide::Buy, dec!(100), dec!(1), DAY),
+            create_order(OrderSide::Sell, dec!(110), dec!(1), DAY), // day 1 returns +10%
             create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 2),
             create_order(OrderSide::Sell, dec!(105), dec!(1), DAY * 2), // day 2 returns +5%
         ];
@@ -188,9 +188,9 @@ mod tests {
     #[test]
     fn test_calculate_metrics_reversal() {
         // Go long 1 @ 100 on Day 1
-        let o1 = create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 1);
+        let o1 = create_order(OrderSide::Buy, dec!(100), dec!(1), DAY);
         // Sell 2 @ 110 on Day 1 -> Closes Long 1 (PnL +10), opens Short 1
-        let o2 = create_order(OrderSide::Sell, dec!(110), dec!(2), DAY * 1);
+        let o2 = create_order(OrderSide::Sell, dec!(110), dec!(2), DAY);
         // Buy 1 @ 100 on Day 2 -> Closes Short 1 (PnL +10)
         let o3 = create_order(OrderSide::Buy, dec!(100), dec!(1), DAY * 2);
 

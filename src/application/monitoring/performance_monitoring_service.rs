@@ -89,7 +89,7 @@ impl PerformanceMonitoringService {
         let snapshot = PerformanceSnapshot::new(
             symbol.to_string(),
             equity,
-            drawdown_pct.to_f64().unwrap_or(0.0),
+            drawdown_pct,
             sharpe_30d,
             win_rate_30d,
             market_regime.regime_type,

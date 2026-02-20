@@ -23,21 +23,27 @@ pub enum RiskViolation {
     #[error("Position size limit exceeded for {symbol}: {current_pct:.2}% > {max_pct:.2}%")]
     PositionSizeLimit {
         symbol: String,
-        current_pct: f64,
-        max_pct: f64,
+        current_pct: Decimal,
+        max_pct: Decimal,
     },
 
     #[error("Daily loss limit breached: {loss_pct:.2}% > {limit_pct:.2}%")]
-    DailyLossLimit { loss_pct: f64, limit_pct: f64 },
+    DailyLossLimit {
+        loss_pct: Decimal,
+        limit_pct: Decimal,
+    },
 
     #[error("Maximum drawdown exceeded: {drawdown_pct:.2}% > {max_pct:.2}%")]
-    MaxDrawdown { drawdown_pct: f64, max_pct: f64 },
+    MaxDrawdown {
+        drawdown_pct: Decimal,
+        max_pct: Decimal,
+    },
 
     #[error("Sector exposure limit for {sector}: {current_pct:.2}% > {max_pct:.2}%")]
     SectorExposureLimit {
         sector: String,
-        current_pct: f64,
-        max_pct: f64,
+        current_pct: Decimal,
+        max_pct: Decimal,
     },
 
     #[error("PDT protection: {day_trades} day trades with equity ${equity} < $25,000")]
@@ -87,8 +93,8 @@ mod tests {
     fn test_risk_violation_formatting() {
         let violation = RiskViolation::PositionSizeLimit {
             symbol: "AAPL".to_string(),
-            current_pct: 15.5,
-            max_pct: 10.0,
+            current_pct: rust_decimal_macros::dec!(15.5),
+            max_pct: rust_decimal_macros::dec!(10.0),
         };
 
         let msg = violation.to_string();

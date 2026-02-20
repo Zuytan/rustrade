@@ -1,5 +1,6 @@
 use crate::application::monitoring::empirical_win_rate_provider::EmpiricalWinRateProvider;
 use crate::domain::performance::metrics::PerformanceMetrics;
+use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -57,7 +58,7 @@ pub struct StrategyMetrics {
     pub sharpe_ratio: f64,
     pub win_rate: f64,
     pub profit_factor: f64,
-    pub max_drawdown_pct: f64,
+    pub max_drawdown_pct: rust_decimal::Decimal,
     pub total_trades: usize,
 }
 
@@ -202,16 +203,17 @@ impl StrategyValidator {
         }
 
         // Check 5: Maximum drawdown
-        if metrics.max_drawdown_pct <= self.thresholds.max_drawdown_pct {
+        let drawdown_f64 = metrics.max_drawdown_pct.to_f64().unwrap_or(0.0);
+        if drawdown_f64 <= self.thresholds.max_drawdown_pct {
             passed_checks.push(format!(
                 "Max drawdown: {:.1}% <= {:.1}% maximum",
-                metrics.max_drawdown_pct * 100.0,
+                drawdown_f64 * 100.0,
                 self.thresholds.max_drawdown_pct * 100.0
             ));
         } else {
             failed_checks.push(format!(
                 "EXCESSIVE DRAWDOWN: {:.1}% > {:.1}% maximum",
-                metrics.max_drawdown_pct * 100.0,
+                drawdown_f64 * 100.0,
                 self.thresholds.max_drawdown_pct * 100.0
             ));
         }
@@ -387,7 +389,7 @@ mod tests {
 
         let metrics = PerformanceMetrics {
             sharpe_ratio: 1.5,
-            max_drawdown_pct: 0.15,
+            max_drawdown_pct: dec!(0.15),
             ..Default::default()
         };
 
@@ -411,7 +413,7 @@ mod tests {
 
         let metrics = PerformanceMetrics {
             sharpe_ratio: 0.5, // Below threshold
-            max_drawdown_pct: 0.10,
+            max_drawdown_pct: dec!(0.10),
             ..Default::default()
         };
 
@@ -441,7 +443,7 @@ mod tests {
 
         let metrics = PerformanceMetrics {
             sharpe_ratio: 2.0, // Good Sharpe
-            max_drawdown_pct: 0.10,
+            max_drawdown_pct: dec!(0.10),
             ..Default::default()
         };
 
@@ -483,7 +485,7 @@ mod tests {
 
         let metrics = PerformanceMetrics {
             sharpe_ratio: 0.7,
-            max_drawdown_pct: 0.25,
+            max_drawdown_pct: dec!(0.25),
             ..Default::default()
         };
 

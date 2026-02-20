@@ -36,9 +36,8 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
             "#,
         )
         .bind(&snapshot.symbol)
-        .bind(snapshot.timestamp.timestamp())
         .bind(snapshot.equity.to_f64().unwrap_or(0.0)) // Storing Decimal as REAL/f64 for simplicity in stats
-        .bind(snapshot.drawdown_pct)
+        .bind(snapshot.drawdown_pct.to_f64().unwrap_or(0.0))
         .bind(snapshot.sharpe_rolling_30d)
         .bind(snapshot.win_rate_rolling_30d)
         .bind(snapshot.regime.to_string())
@@ -68,13 +67,14 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
             };
 
             let equity_f64: f64 = row.try_get("equity")?;
+            let drawdown_pct_f64: f64 = row.try_get("drawdown_pct")?;
 
             Ok(Some(PerformanceSnapshot {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
                 timestamp: parse_timestamp(row.try_get("timestamp")?)?,
                 equity: Decimal::from_f64_retain(equity_f64).unwrap_or_default(),
-                drawdown_pct: row.try_get("drawdown_pct")?,
+                drawdown_pct: Decimal::from_f64_retain(drawdown_pct_f64).unwrap_or_default(),
                 sharpe_rolling_30d: row.try_get("sharpe_rolling_30d")?,
                 win_rate_rolling_30d: row.try_get("win_rate_rolling_30d")?,
                 regime: market_regime,
@@ -105,13 +105,14 @@ impl PerformanceSnapshotRepository for SqlitePerformanceSnapshotRepository {
             };
 
             let equity_f64: f64 = row.try_get("equity")?;
+            let drawdown_pct_f64: f64 = row.try_get("drawdown_pct")?;
 
             snapshots.push(PerformanceSnapshot {
                 id: Some(row.try_get("id")?),
                 symbol: row.try_get("symbol")?,
                 timestamp: parse_timestamp(row.try_get("timestamp")?)?,
                 equity: Decimal::from_f64_retain(equity_f64).unwrap_or_default(),
-                drawdown_pct: row.try_get("drawdown_pct")?,
+                drawdown_pct: Decimal::from_f64_retain(drawdown_pct_f64).unwrap_or_default(),
                 sharpe_rolling_30d: row.try_get("sharpe_rolling_30d")?,
                 win_rate_rolling_30d: row.try_get("win_rate_rolling_30d")?,
                 regime: market_regime,

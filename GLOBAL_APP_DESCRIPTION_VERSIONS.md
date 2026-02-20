@@ -1,5 +1,11 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.5 - Financial Types Precision & Validation Fixes (February 2026)
+
+### Security & Accuracy
+- **Decimal Migrations**: Migrated all critical performance and risk limits from `f64` to `rust_decimal::Decimal` for calculations, including drawdowns, exposures, and returns. This eliminates floating point errors that could lead to imprecise liquidation.
+- **Bug Fix**: Replaced unsafe `.unwrap()` calls in `PriceAnomalyValidator` and `PerformanceSnapshotRepository` with safe fallback logic.
+
 ## Version 0.99.4 - Financial Consolidation & Risk Manager Cleanup (February 2026)
 
 ### Critical Finance Corrections

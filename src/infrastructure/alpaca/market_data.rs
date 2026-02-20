@@ -695,7 +695,11 @@ impl MarketDataService for AlpacaMarketDataService {
                     symbols.clone()
                 };
 
-                let url = format!("{}/v2/stocks/snapshots", self.data_base_url);
+                let url = if is_crypto {
+                    format!("{}/v1beta3/crypto/us/snapshots", self.data_base_url)
+                } else {
+                    format!("{}/v2/stocks/snapshots", self.data_base_url)
+                };
                 let symbols_param = api_symbols.join(",");
                 let url_with_query = build_url_with_query(&url, &[("symbols", &symbols_param)]);
 

@@ -2,6 +2,7 @@ use super::stats::Stats;
 use crate::domain::trading::types::Trade;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 
 /// Comprehensive performance metrics for a trading strategy
 ///
@@ -11,8 +12,8 @@ use rust_decimal::prelude::ToPrimitive;
 pub struct PerformanceMetrics {
     // Returns
     pub total_return: Decimal,
-    pub total_return_pct: f64,
-    pub annualized_return_pct: f64,
+    pub total_return_pct: Decimal,
+    pub annualized_return_pct: Decimal,
 
     // Risk-Adjusted Returns
     pub sharpe_ratio: f64,
@@ -24,8 +25,8 @@ pub struct PerformanceMetrics {
     pub beta: f64,
 
     // Drawdown
-    pub max_drawdown: f64,
-    pub max_drawdown_pct: f64,
+    pub max_drawdown: Decimal,
+    pub max_drawdown_pct: Decimal,
 
     // Trade Statistics
     pub total_trades: usize,
@@ -49,7 +50,7 @@ pub struct PerformanceMetrics {
     // Exposure
     pub total_days: f64,
     pub days_in_market: f64,
-    pub exposure_pct: f64,
+    pub exposure_pct: Decimal,
 }
 
 impl PerformanceMetrics {
@@ -180,9 +181,9 @@ impl PerformanceMetrics {
 
         let total_return = final_equity - initial_equity;
         let total_return_pct = if initial_equity > Decimal::ZERO {
-            (total_return.to_f64().unwrap_or(0.0) / initial_equity.to_f64().unwrap_or(1.0)) * 100.0
+            (total_return / initial_equity) * dec!(100)
         } else {
-            0.0
+            Decimal::ZERO
         };
 
         // Annualized return using CAGR (Compound Annual Growth Rate)
@@ -191,12 +192,13 @@ impl PerformanceMetrics {
                 total_return.to_f64().unwrap_or(0.0) / initial_equity.to_f64().unwrap_or(1.0);
             let years = period_days / 365.0;
             if years > 0.0 && total_return_frac > -1.0 {
-                ((1.0 + total_return_frac).powf(1.0 / years) - 1.0) * 100.0
+                let ann_f64 = ((1.0 + total_return_frac).powf(1.0 / years) - 1.0) * 100.0;
+                Decimal::from_f64_retain(ann_f64).unwrap_or(Decimal::ZERO)
             } else {
-                0.0
+                Decimal::ZERO
             }
         } else {
-            0.0
+            Decimal::ZERO
         };
 
         // Standard Stats
@@ -248,23 +250,25 @@ impl PerformanceMetrics {
 
         // Time Series Metrics (Sharpe, Drawdown)
         let max_drawdown_pct = Self::calculate_max_drawdown(&daily_equity);
-        let max_drawdown = max_drawdown_pct * initial_equity.to_f64().unwrap_or(0.0) / 100.0;
+        let max_drawdown = (max_drawdown_pct / dec!(100)) * initial_equity;
 
         let returns = Stats::calculate_returns(&daily_equity);
         let sharpe_ratio = Stats::sharpe_ratio(&returns, true); // Annualize
         let sortino_ratio = Self::calculate_sortino_ratio(&returns);
 
-        let calmar_ratio = if max_drawdown_pct.abs() > 0.01 {
-            annualized_return_pct / max_drawdown_pct.abs()
+        let mdp_f64 = max_drawdown_pct.to_f64().unwrap_or(0.0);
+        let calmar_ratio = if mdp_f64.abs() > 0.01 {
+            annualized_return_pct.to_f64().unwrap_or(0.0) / mdp_f64.abs()
         } else {
             0.0
         };
 
         let days_in_market = Self::calculate_days_in_market(trades);
         let exposure_pct = if period_days > 0.0 {
-            (days_in_market / period_days) * 100.0
+            Decimal::from_f64_retain((days_in_market / period_days) * 100.0)
+                .unwrap_or(Decimal::ZERO)
         } else {
-            0.0
+            Decimal::ZERO
         };
 
         let (alpha, beta, _) = if let Some(benchmark_prices) = benchmark_daily_prices {
@@ -278,9 +282,7 @@ impl PerformanceMetrics {
             let benchmark_annual =
                 sum_returns / n_b_returns * Decimal::from(252) * Decimal::from(100);
 
-            let alpha_ann = Decimal::from_f64_retain(annualized_return_pct)
-                .unwrap_or(Decimal::ZERO)
-                - (b * benchmark_annual);
+            let alpha_ann = annualized_return_pct - (b * benchmark_annual);
             let alpha_f64 = alpha_ann.to_f64().unwrap_or(0.0);
             let beta_f64 = b.to_f64().unwrap_or(0.0);
             (alpha_f64, beta_f64, 0.0)
@@ -317,8 +319,8 @@ impl PerformanceMetrics {
             exposure_pct,
         }
     }
-    fn calculate_max_drawdown(equity_curve: &[Decimal]) -> f64 {
-        let mut max_dd = 0.0;
+    fn calculate_max_drawdown(equity_curve: &[Decimal]) -> Decimal {
+        let mut max_dd = Decimal::ZERO;
         let mut peak = Decimal::ZERO;
 
         for &equity in equity_curve {
@@ -327,13 +329,9 @@ impl PerformanceMetrics {
             }
 
             if peak > Decimal::ZERO {
-                let drawdown_pct = (equity - peak)
-                    .checked_div(peak)
-                    .and_then(|d| d.to_f64())
-                    .unwrap_or(0.0)
-                    * 100.0;
+                let drawdown_pct = ((equity - peak) / peak) * dec!(100);
                 // Cap at -100% (equity can't lose more than 100% of capital)
-                let drawdown_pct = drawdown_pct.max(-100.0);
+                let drawdown_pct = drawdown_pct.max(dec!(-100));
                 if drawdown_pct < max_dd {
                     max_dd = drawdown_pct;
                 }
@@ -600,6 +598,6 @@ mod tests {
 
         println!("Sharpe: {}", metrics.sharpe_ratio);
         // assert!(metrics.sharpe_ratio > 0.0); // Check output
-        assert_eq!(metrics.max_drawdown, 0.0);
+        assert_eq!(metrics.max_drawdown, Decimal::ZERO);
     }
 }
