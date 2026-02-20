@@ -268,12 +268,6 @@ impl RiskManager {
 
             if attempts > 60 {
                 // ~60 seconds timeout
-                crate::infrastructure::core::circuit_breaker::CircuitBreaker::new(
-                    "PortfolioSync",
-                    1,
-                    1,
-                    std::time::Duration::from_secs(1),
-                );
                 warn!(
                     "RiskManager: Portfolio synchronization timed out. Proceeding with potentially stale data."
                 );
@@ -313,10 +307,6 @@ impl RiskManager {
 
     /// Handle real-time order updates to maintain pending state
     /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
-    /// Handle real-time order updates to maintain pending state
-    /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
-    /// Handle real-time order updates to maintain pending state
-    /// Returns true if risk state (e.g. consecutive losses) changed and needs persistence.
     async fn handle_order_update(&mut self, update: OrderUpdate) -> bool {
         let (state_changed, token) = self
             .order_reconciler
@@ -345,10 +335,6 @@ impl RiskManager {
         // Update High Water Mark via State Manager
         self.state_manager.update(current_equity, Utc::now()).await;
 
-        // Check Risks (Async check)
-        // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
-        // Check Risks (Async check)
-        // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
         // Check Risks (Async check)
         // Only trigger circuit breaker if not already halted (prevents duplicate liquidations)
         if !self.circuit_breaker_service.is_halted() {
@@ -437,22 +423,29 @@ impl RiskManager {
                         return;
                     }
 
-                    // Calculate a simple True Range for the latest candle
-                    // TR = Max(H-L, H-Cp, L-Cp)
-                    // For simplicity here, we take H-L
+                    // Calculate proper True Range (TR)
+                    // TR = Max(H-L, |H-Cp|, |L-Cp|)
                     let last = &candles[candles.len() - 1];
+                    let prev_close = candles[candles.len() - 2]
+                        .close
+                        .to_f64()
+                        .unwrap_or_else(|| last.open.to_f64().unwrap_or(0.0));
+
                     let high = last.high.to_f64().unwrap_or(0.0);
                     let low = last.low.to_f64().unwrap_or(0.0);
-                    let range = high - low;
 
-                    if range > 0.0 {
+                    let tr = (high - low)
+                        .max((high - prev_close).abs())
+                        .max((low - prev_close).abs());
+
+                    if tr > 0.0 {
                         let mut vm = volatility_manager.write().await;
-                        let range_dec = Decimal::from_f64_retain(range).unwrap_or(Decimal::ZERO);
-                        vm.update(range_dec);
+                        let tr_dec = Decimal::from_f64_retain(tr).unwrap_or(Decimal::ZERO);
+                        vm.update(tr_dec);
                         debug!(
-                            "RiskManager: Volatility updated for {}. Latest range: {}, Avg: {}",
+                            "RiskManager: Volatility updated for {}. Latest TR: {}, Avg: {}",
                             benchmark_string,
-                            range_dec,
+                            tr_dec,
                             vm.get_average_volatility()
                         );
                     }

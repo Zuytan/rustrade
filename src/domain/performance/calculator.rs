@@ -1,3 +1,4 @@
+use super::stats::Stats;
 use crate::domain::trading::types::{Order, OrderSide};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -59,23 +60,7 @@ pub fn calculate_metrics_from_orders(orders: &[Order]) -> (f64, f64) {
         0.0
     };
 
-    let sharpe = if trade_returns.len() > 1 {
-        let mean: f64 = trade_returns.iter().sum::<f64>() / trade_returns.len() as f64;
-        let variance: f64 = trade_returns
-            .iter()
-            .map(|r| (r - mean).powi(2))
-            .sum::<f64>()
-            / (trade_returns.len() - 1) as f64;
-        let std_dev = variance.sqrt();
-
-        if std_dev > 0.00001 {
-            mean / std_dev
-        } else {
-            0.0
-        }
-    } else {
-        0.0
-    };
+    let (sharpe, win_rate) = (Stats::sharpe_ratio(&trade_returns, false), win_rate);
 
     (sharpe, win_rate)
 }

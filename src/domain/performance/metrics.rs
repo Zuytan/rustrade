@@ -1,3 +1,4 @@
+use super::stats::Stats;
 use crate::domain::trading::types::Trade;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
@@ -249,8 +250,8 @@ impl PerformanceMetrics {
         let max_drawdown_pct = Self::calculate_max_drawdown(&daily_equity);
         let max_drawdown = max_drawdown_pct * initial_equity.to_f64().unwrap_or(0.0) / 100.0;
 
-        let returns = Self::calculate_returns(&daily_equity);
-        let sharpe_ratio = Self::calculate_sharpe_ratio(&returns);
+        let returns = Stats::calculate_returns(&daily_equity);
+        let sharpe_ratio = Stats::sharpe_ratio(&returns, true); // Annualize
         let sortino_ratio = Self::calculate_sortino_ratio(&returns);
 
         let calmar_ratio = if max_drawdown_pct.abs() > 0.01 {
@@ -266,10 +267,20 @@ impl PerformanceMetrics {
             0.0
         };
 
-        let (alpha, beta) = if let Some(benchmark_prices) = benchmark_daily_prices {
-            Self::calculate_alpha_beta(&returns, benchmark_prices, annualized_return_pct)
+        let (alpha, beta, _) = if let Some(benchmark_prices) = benchmark_daily_prices {
+            let benchmark_returns = Stats::calculate_returns(
+                &benchmark_prices.iter().map(|(_, p)| *p).collect::<Vec<_>>(),
+            );
+            let (_a, b, _) = Stats::alpha_beta(&returns, &benchmark_returns);
+            // Re-annualize alpha matching existing behavior
+            let benchmark_annual_pct = benchmark_returns.iter().sum::<f64>()
+                / benchmark_returns.len().max(1) as f64
+                * 252.0
+                * 100.0;
+            let alpha_ann = annualized_return_pct - (b * benchmark_annual_pct);
+            (alpha_ann, b, 0.0)
         } else {
-            (0.0, 0.0)
+            (0.0, 0.0, 0.0)
         };
 
         Self {
@@ -301,49 +312,6 @@ impl PerformanceMetrics {
             exposure_pct,
         }
     }
-
-    /// Beta = Cov(strategy_returns, benchmark_returns) / Var(benchmark_returns).
-    /// Alpha (annualized) = strategy_annual_return - beta * benchmark_annual_return.
-    fn calculate_alpha_beta(
-        strategy_returns: &[f64],
-        benchmark_daily_prices: &[(i64, Decimal)],
-        annualized_return_pct: f64,
-    ) -> (f64, f64) {
-        if strategy_returns.is_empty() || benchmark_daily_prices.len() < 2 {
-            return (0.0, 0.0);
-        }
-        let bench_returns: Vec<f64> = (1..benchmark_daily_prices.len())
-            .filter_map(|i| {
-                let prev = benchmark_daily_prices[i - 1].1.to_f64()?;
-                let curr = benchmark_daily_prices[i].1.to_f64()?;
-                if prev > 0.0 {
-                    Some((curr - prev) / prev)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let n = strategy_returns.len().min(bench_returns.len()) as f64;
-        if n < 2.0 {
-            return (0.0, 0.0);
-        }
-        let s = &strategy_returns[..n as usize];
-        let b = &bench_returns[..n as usize];
-        let mean_s = s.iter().sum::<f64>() / n;
-        let mean_b = b.iter().sum::<f64>() / n;
-        let cov = s
-            .iter()
-            .zip(b.iter())
-            .map(|(si, bi)| (si - mean_s) * (bi - mean_b))
-            .sum::<f64>()
-            / (n - 1.0);
-        let var_b = b.iter().map(|bi| (bi - mean_b).powi(2)).sum::<f64>() / (n - 1.0);
-        let beta = if var_b > 0.0 { cov / var_b } else { 0.0 };
-        let benchmark_annual_pct = mean_b * 252.0 * 100.0;
-        let alpha = annualized_return_pct - (beta * benchmark_annual_pct);
-        (alpha, beta)
-    }
-
     fn calculate_max_drawdown(equity_curve: &[Decimal]) -> f64 {
         let mut max_dd = 0.0;
         let mut peak = Decimal::ZERO;
@@ -368,47 +336,6 @@ impl PerformanceMetrics {
         }
 
         max_dd
-    }
-
-    fn calculate_returns(equity_curve: &[Decimal]) -> Vec<f64> {
-        let mut returns = Vec::new();
-
-        for i in 1..equity_curve.len() {
-            let prev = equity_curve[i - 1].to_f64().unwrap_or(1.0);
-            let curr = equity_curve[i].to_f64().unwrap_or(1.0);
-
-            if prev > 0.0 {
-                let ret = (curr - prev) / prev;
-                returns.push(ret);
-            }
-        }
-
-        returns
-    }
-
-    fn calculate_sharpe_ratio(returns: &[f64]) -> f64 {
-        if returns.len() < 2 {
-            return 0.0;
-        }
-
-        let mean_return = returns.iter().sum::<f64>() / returns.len() as f64;
-
-        // Use sample variance (n-1) instead of population variance (n)
-        let variance = returns
-            .iter()
-            .map(|r| (r - mean_return).powi(2))
-            .sum::<f64>()
-            / (returns.len() - 1) as f64;
-
-        let std_dev = variance.sqrt();
-
-        if std_dev > 0.0 {
-            // Annualize: mean * sqrt(252) / std_dev
-            // Assuming risk-free rate = 0 for simplicity
-            mean_return * (252.0_f64).sqrt() / std_dev
-        } else {
-            0.0
-        }
     }
 
     fn calculate_sortino_ratio(returns: &[f64]) -> f64 {

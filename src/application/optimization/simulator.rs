@@ -5,6 +5,7 @@ use crate::domain::trading::types::{Candle, Order};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
+use crate::domain::performance::stats::Stats;
 use crate::domain::repositories::CandleRepository;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
@@ -41,51 +42,7 @@ impl Simulator {
         strategy_returns: &[f64],
         benchmark_returns: &[f64],
     ) -> (f64, f64, f64) {
-        if strategy_returns.len() != benchmark_returns.len() || strategy_returns.is_empty() {
-            return (0.0, 0.0, 0.0);
-        }
-
-        let n = strategy_returns.len() as f64;
-
-        // Calculate means
-        let mean_strategy: f64 = strategy_returns.iter().sum::<f64>() / n;
-        let mean_benchmark: f64 = benchmark_returns.iter().sum::<f64>() / n;
-
-        // Calculate covariance and variance
-        let mut covariance = 0.0;
-        let mut variance_benchmark = 0.0;
-        let mut variance_strategy = 0.0;
-
-        for i in 0..strategy_returns.len() {
-            let diff_strategy = strategy_returns[i] - mean_strategy;
-            let diff_benchmark = benchmark_returns[i] - mean_benchmark;
-            covariance += diff_strategy * diff_benchmark;
-            variance_benchmark += diff_benchmark * diff_benchmark;
-            variance_strategy += diff_strategy * diff_strategy;
-        }
-
-        covariance /= n;
-        variance_benchmark /= n;
-        variance_strategy /= n;
-
-        // Beta = Cov(strategy, benchmark) / Var(benchmark)
-        let beta = if variance_benchmark > 0.0 {
-            covariance / variance_benchmark
-        } else {
-            0.0
-        };
-
-        // Alpha = mean_strategy - beta * mean_benchmark
-        let alpha = mean_strategy - beta * mean_benchmark;
-
-        // Correlation = Cov / (StdDev_strategy * StdDev_benchmark)
-        let correlation = if variance_benchmark > 0.0 && variance_strategy > 0.0 {
-            covariance / (variance_benchmark.sqrt() * variance_strategy.sqrt())
-        } else {
-            0.0
-        };
-
-        (alpha, beta, correlation)
+        Stats::alpha_beta(strategy_returns, benchmark_returns)
     }
     pub fn new(
         market_data: Arc<dyn MarketDataService>,

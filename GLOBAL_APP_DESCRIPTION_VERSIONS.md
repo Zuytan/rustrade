@@ -1,5 +1,23 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.4 - Financial Consolidation & Risk Manager Cleanup (February 2026)
+
+### Critical Finance Corrections
+- **Shared Stats Module**: Centralized all financial calculations (Sharpe, Sortino, Alpha, Beta) into a new `Stats` utility in `domain/performance/stats.rs`. Standardized on sample variance (n-1) across the entire project.
+- **Safe Portfolio Valuation**: Implemented `total_equity_strict()` in `Portfolio` to prevent silent fallbacks to average price when market data is missing. Added `tracing::warn!` to the legacy `total_equity()` method.
+- **Volatility Variance Fix**: Standardized `calculate_realized_volatility` to use sample variance (n-1) and added a guard for insufficient data (< 2 periods).
+
+### Architecture & Code Quality
+- **RiskManager Refactoring**:
+    - Removed redundant/dead `CircuitBreaker` initialization in `initialize_session`.
+    - Consolidated triplicate documentation comments for `handle_order_update` and circuit breaker checks.
+    - Improved True Range (TR) formula to use proper `Max(H-L, |H-Cp|, |L-Cp|)` instead of simplified `H-L`.
+- **Refactoring**: Updated `PerformanceMetrics`, `Simulator`, and `Calculator` to use the centralized `Stats` core, reducing code duplication and mathematical drift.
+
+### Validation
+- **Zero Warnings**: Verified with `cargo clippy --all-targets -- -D warnings`.
+- **Full Test Suite**: 415 tests passing, including new stats unit tests and strict equity integration tests.
+
 ## Version 0.99.3 - Architecture & Finance Audit Fixes (February 2026)
 
 ### Critical Finance Corrections

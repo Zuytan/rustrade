@@ -16,14 +16,14 @@ pub fn calculate_realized_volatility(prices: &[f64], periods_per_year: f64) -> O
         }
     }
 
-    if returns.is_empty() {
+    if returns.len() < 2 {
         return None;
     }
 
     // Calculate mean return
     let mean: f64 = returns.iter().sum::<f64>() / returns.len() as f64;
 
-    // Calculate variance
+    // Calculate variance (using sample variance n-1)
     let variance: f64 = returns
         .iter()
         .map(|r| {
@@ -31,7 +31,7 @@ pub fn calculate_realized_volatility(prices: &[f64], periods_per_year: f64) -> O
             diff * diff
         })
         .sum::<f64>()
-        / returns.len() as f64;
+        / (returns.len() - 1) as f64;
 
     // Standard deviation (volatility per period)
     let std_dev = variance.sqrt();

@@ -45,6 +45,24 @@ impl Default for Portfolio {
 }
 
 impl Portfolio {
+    /// Strict version: returns None if ANY position lacks a current price.
+    /// This prevents misleading total equity values during data gaps.
+    pub fn total_equity_strict(
+        &self,
+        current_prices: &HashMap<String, Decimal>,
+    ) -> Option<Decimal> {
+        let mut equity = self.cash;
+
+        for (symbol, position) in &self.positions {
+            if let Some(&current_price) = current_prices.get(symbol) {
+                equity += position.quantity * current_price;
+            } else {
+                return None;
+            }
+        }
+        Some(equity)
+    }
+
     /// Calculate total equity (cash + unrealized position value)
     pub fn total_equity(&self, current_prices: &HashMap<String, Decimal>) -> Decimal {
         let mut equity = self.cash;
@@ -56,6 +74,11 @@ impl Portfolio {
                 // If no current price available, use average price (conservative)
                 // WARNING: This may hide significant losses if market has moved.
                 // Caller should ensure prices are provided for all held positions.
+                tracing::warn!(
+                    "Portfolio: Missing current price for {}, falling back to average price ({}) for equity calculation",
+                    symbol,
+                    position.average_price
+                );
                 equity += position.quantity * position.average_price;
             }
         }
