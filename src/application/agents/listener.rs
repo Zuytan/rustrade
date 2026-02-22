@@ -207,7 +207,12 @@ mod tests {
     #[async_trait::async_trait]
     impl NewsDataService for TestNewsService {
         async fn subscribe_news(&self) -> Result<mpsc::Receiver<NewsEvent>> {
-            Ok(self.rx.lock().await.take().unwrap())
+            Ok(self
+                .rx
+                .lock()
+                .await
+                .take()
+                .expect("Command receiver must be initialized at startup"))
         }
     }
 
@@ -255,12 +260,14 @@ mod tests {
             timestamp: Utc::now(),
             sentiment_score: None,
         };
-        news_tx.send(event).await.unwrap();
+        if let Err(e) = news_tx.send(event).await {
+            tracing::error!("Failed to forward news event to channel: {}", e);
+        }
 
         // Check command
         let cmd = analyst_cmd_rx.recv().await;
         assert!(cmd.is_some());
-        match cmd.unwrap() {
+        match cmd.expect("Command must be present in test channel") {
             crate::application::agents::analyst::AnalystCommand::ProcessNews(signal) => {
                 assert_eq!(signal.symbol, "TEST/USD");
                 assert_eq!(

@@ -385,13 +385,14 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: 0,
         };
-        tx.send(order).await.unwrap();
+        tx.send(order).await.expect("Failed to send order in test");
 
         // Allow update
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let p = portfolio.read().await;
         assert_eq!(p.cash, Decimal::from(800)); // 1000 - (100*2) - 0 fees
+        assert!(p.positions.contains_key("ABC"), "Position ABC should exist");
         assert_eq!(p.positions.get("ABC").unwrap().quantity, Decimal::from(2));
     }
 
@@ -429,7 +430,7 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: 0,
         };
-        tx.send(order).await.unwrap();
+        tx.send(order).await.expect("Failed to send order in test");
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 

@@ -1,5 +1,19 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.6 - Audit Fixes & Code Quality (February 2026)
+
+### Reliability & Resilience
+- **Alpaca Validation Fix**: Fixed a critical symbol formatting error (`BTCUSD does not match ^[A-Z]+/[A-Z]+$`) preventing Crypto startup. The Alpaca v1beta3 API strictly requires `BASE/QUOTE` format.
+- **Panic Removal**: Enforced the zero `.unwrap()` internal rule across the application layer. Cleaned up dangerous panics in `Executor` and `Listener` channel forwarding.
+
+### Architecture & Hygiene
+- **Zero-Warning Strictness**: Addressed clippy warnings for unused structures and fields. 
+- **Dead Code Cleanup**: Cleaned up internal structs (`CandleAggregator`, `PerformanceMonitoringService`) by removing unused caching fields (`spread_cache`, `connection_health_service`) strictly without any `allow(dead_code)` directives.
+
+### Validation
+- **Strict Compliance**: Verified with `cargo clippy --all-targets -- -D warnings` (0 warnings).
+- **Test Suite**: 100% test pass rate.
+
 ## Version 0.99.5 - Financial Types Precision & Validation Fixes (February 2026)
 
 ### Security & Accuracy

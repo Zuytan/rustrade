@@ -686,14 +686,7 @@ impl MarketDataService for AlpacaMarketDataService {
         self.circuit_breaker
             .call(async move {
                 let is_crypto = symbols.iter().any(|s| s.contains('/'));
-                let api_symbols: Vec<String> = if is_crypto {
-                    symbols
-                        .iter()
-                        .map(|s| crate::domain::trading::types::denormalize_crypto_symbol(s))
-                        .collect()
-                } else {
-                    symbols.clone()
-                };
+                let api_symbols: Vec<String> = symbols.clone();
 
                 let url = if is_crypto {
                     format!("{}/v1beta3/crypto/us/snapshots", self.data_base_url)
@@ -730,10 +723,20 @@ impl MarketDataService for AlpacaMarketDataService {
                     prev_daily_bar: Option<AlpacaBar>,
                 }
 
-                let resp: std::collections::HashMap<String, Snapshot> = response
+                let json_val: serde_json::Value = response
                     .json()
                     .await
                     .context("Failed to parse Alpaca snapshots response")?;
+
+                let resp: std::collections::HashMap<String, Snapshot> = if is_crypto {
+                    if let Some(snapshots_obj) = json_val.get("snapshots") {
+                        serde_json::from_value(snapshots_obj.clone()).unwrap_or_default()
+                    } else {
+                        std::collections::HashMap::new()
+                    }
+                } else {
+                    serde_json::from_value(json_val).unwrap_or_default()
+                };
 
                 let mut prices = std::collections::HashMap::new();
 
