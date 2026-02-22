@@ -179,6 +179,20 @@ Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) 
 - Testing requirements
 - Pull request process
 
+### Trading Code Review ⚠️
+
+If you're contributing **trading strategies or risk management logic**, you must follow strict financial safety rules. See:
+
+- **[Trading Code Review Guidelines](REVIEW_GUIDELINES.md)** - Complete review requirements
+- **[Review Examples](docs/REVIEW_EXAMPLES.md)** - Examples of violations and correct patterns
+- **Review Script**: Run `./scripts/review_trading_code.sh` before submitting your PR
+
+**Critical Rules**:
+- ✅ Use `rust_decimal::Decimal` for all monetary calculations (NO `f64`/`f32`)
+- ✅ Define stop losses for all trade signals
+- ✅ Implement dynamic, risk-based position sizing
+- ✅ Strategies must only return `Signal`, NOT execute orders directly
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
