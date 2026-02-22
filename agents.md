@@ -65,6 +65,7 @@ This project uses modular skills in `.agent/skills/`.
 | `critical-review` | After implementation, self-critique of work quality |
 | `benchmarking` | Strategy validation, performance metrics, backtesting |
 | `trading-best-practices` | Before new strategies, quarterly reviews, staying current |
+| `trading-code-review` | **PR reviews for trading code, enforce financial safety rules** |
 | `ui-design` | Creating/modifying UI components, layouts, styling |
 | `spec-management` | Impact analysis, architecture constraints, updating specs |
 

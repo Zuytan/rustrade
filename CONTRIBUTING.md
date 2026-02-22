@@ -86,6 +86,10 @@ When adding features:
    cargo clippy -- -D warnings
    cargo test
    ```
+5. **For trading strategies/risk management**: Run the trading code review script:
+   ```bash
+   ./scripts/review_trading_code.sh
+   ```
 
 ### PR Guidelines
 
@@ -93,6 +97,20 @@ When adding features:
 - **Write clear descriptions** - Explain what and why
 - **Reference issues** - Use `Fixes #123` or `Relates to #456`
 - **Update documentation** - If adding user-facing features
+
+### Trading Code Review Requirements ⚠️
+
+**If your PR modifies trading strategies, risk management, or financial calculations**, it must pass additional strict review requirements:
+
+- ✅ Use `rust_decimal::Decimal` for ALL monetary calculations (NO f64/f32)
+- ✅ Implement dynamic risk-based position sizing (NO hardcoded quantities)
+- ✅ Define strict stop losses for all trade signals
+- ✅ Strategies must only return `Signal`, NOT execute orders directly
+- ✅ Include comprehensive unit and integration tests
+
+See **[REVIEW_GUIDELINES.md](REVIEW_GUIDELINES.md)** for complete requirements.
+
+Your PR will be automatically checked by the `trading-review.yml` GitHub Action.
 
 ### Commit Messages
 

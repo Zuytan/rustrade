@@ -1,0 +1,202 @@
+name: Trading Code Review
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'src/application/strategies/**'
+      - 'src/application/risk_management/**'
+      - 'src/application/agents/**'
+      - 'src/domain/trading/**'
+      - 'src/domain/risk/**'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  financial-safety-check:
+    name: Financial Safety Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check for f64/f32 in financial code
+        id: float_check
+        run: |
+          echo "# Financial Safety Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for f64/f32 usage in trading/financial code
+          FLOAT_FILES=$(grep -r -n -E "(: f64|: f32|-> f64|-> f32)" \
+            src/application/strategies/ \
+            src/domain/trading/ \
+            src/domain/risk/ \
+            2>/dev/null || true)
+          
+          if [ ! -z "$FLOAT_FILES" ]; then
+            echo "## ⛔ CRITICAL BLOCKER: Float types found in financial code" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rule**: NEVER use f64/f32 for financial calculations. Use rust_decimal::Decimal instead." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$FLOAT_FILES" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⛔ This PR CANNOT be merged until all f64/f32 types are replaced with Decimal." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "✅ No f64/f32 usage detected in financial code" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check for hardcoded quantities
+        id: hardcode_check
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Position Sizing Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Look for hardcoded numeric quantities (simplified check)
+          HARDCODED=$(grep -r -n -E "quantity.*=.*Decimal::from\([0-9]+\)" \
+            src/application/strategies/ \
+            2>/dev/null || true)
+          
+          if [ ! -z "$HARDCODED" ]; then
+            echo "🟡 **WARNING**: Potential hardcoded quantities detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$HARDCODED" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Recommendation**: Ensure position sizing is dynamic and risk-based." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No obvious hardcoded quantities found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check for .unwrap() in production code
+        id: unwrap_check
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Error Handling Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for .unwrap() usage (excluding test files)
+          UNWRAPS=$(find src/application/strategies src/domain/trading src/domain/risk \
+            -name "*.rs" ! -name "*test*.rs" ! -name "*tests.rs" \
+            -exec grep -Hn "\.unwrap()" {} \; 2>/dev/null || true)
+          
+          if [ ! -z "$UNWRAPS" ]; then
+            echo "🟡 **WARNING**: .unwrap() found in production code" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$UNWRAPS" | head -20 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Recommendation**: Use proper error handling with ? or .expect() with context." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No .unwrap() usage in production code" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check for stop loss implementation
+        id: stop_loss_check
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Risk Management Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check if strategies use with_stop_loss
+          STOP_LOSS_USAGE=$(grep -r -n "with_stop_loss" \
+            src/application/strategies/ \
+            2>/dev/null || true)
+          
+          if [ -z "$STOP_LOSS_USAGE" ]; then
+            echo "🟡 **WARNING**: No stop loss implementation detected in modified strategies" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Requirement**: All trading signals MUST include stop loss levels using .with_stop_loss()" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Stop loss implementation detected" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  architecture-check:
+    name: Architecture Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check strategy isolation
+        run: |
+          echo "# Architecture Compliance Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check if strategies try to execute orders directly
+          DIRECT_EXEC=$(grep -r -n -E "(place_order|execute_order|submit_order)" \
+            src/application/strategies/ \
+            2>/dev/null || true)
+          
+          if [ ! -z "$DIRECT_EXEC" ]; then
+            echo "## ⛔ CRITICAL BLOCKER: Direct order execution in strategy" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rule**: Strategies MUST NOT execute trades directly. They should only return Signal." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$DIRECT_EXEC" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "✅ No direct order execution in strategies" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  test-coverage:
+    name: Test Coverage Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Check test files exist
+        run: |
+          echo "# Test Coverage Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for test modules in strategy files
+          STRATEGY_FILES=$(find src/application/strategies -name "*.rs" -type f | wc -l)
+          TEST_MODULES=$(grep -r "#\[cfg(test)\]" src/application/strategies/ | wc -l)
+          
+          echo "- Strategy files: $STRATEGY_FILES" >> $GITHUB_STEP_SUMMARY
+          echo "- Test modules found: $TEST_MODULES" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ $TEST_MODULES -eq 0 ]; then
+            echo "🟡 **WARNING**: No test modules found in strategies" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Requirement**: All strategies should include unit tests." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Test modules present" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  review-summary:
+    name: Generate Review Summary
+    runs-on: ubuntu-latest
+    needs: [financial-safety-check, architecture-check, test-coverage]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Create review summary
+        run: |
+          echo "# 🔍 Trading Code Review Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This PR has been automatically reviewed for trading best practices." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Review Guidelines" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "For detailed review requirements, see [REVIEW_GUIDELINES.md](../blob/${{ github.head_ref }}/REVIEW_GUIDELINES.md)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Manual Review Required" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "A human reviewer must still verify:" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Quantitative integrity (no overfitting)" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] No look-ahead bias" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Transaction costs included in backtests" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Edge cases properly tested" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Risk parameters are reasonable" >> $GITHUB_STEP_SUMMARY
