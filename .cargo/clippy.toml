@@ -1,0 +1,38 @@
+# Clippy configuration for Rustrade trading system
+# Enforces financial safety and code quality rules
+
+# Deny these lints - they are critical for financial systems
+[lints.clippy]
+# Memory safety
+unnecessary_unwrap = "deny"
+panic = "deny"
+expect_used = "warn"
+unwrap_used = "warn"
+
+# Floating point - critical for financial calculations
+float_arithmetic = "warn"
+float_cmp = "deny"
+float_cmp_const = "deny"
+
+# Numeric safety
+cast_precision_loss = "warn"
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+integer_division = "warn"
+
+# Code quality
+cognitive_complexity = "warn"
+too_many_arguments = "warn"
+large_enum_variant = "warn"
+
+# Documentation
+missing_docs_in_private_items = "allow"  # Too strict for private code
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+
+# Performance in hot paths
+inefficient_to_string = "warn"
+unnecessary_clone = "warn"
+
+[lints.rust]
+unsafe_code = "warn"
