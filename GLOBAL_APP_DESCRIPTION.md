@@ -126,7 +126,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
   - **Binance**: `common.rs`, `market_data.rs`, `execution.rs`, `sector_provider.rs`, `websocket.rs`
   - **Alpaca**: Similar modular structure for consistency
   - **OANDA**: `client.rs` (sector provider only; market data and execution to be added)
-- **Cost Modeling**: Unified `FeeModel` handles commission and slippage calculations for accurate simulation.
+- **Cost Modeling**: Unified `FeeModel` handles commission and slippage calculations. Includes `FundingRateFeeModel` composited over `ConstantFeeModel` for accurate crypto funding cost simulation.
 
 ### UI Architecture
 - **Component-Based**: UI is organized into reusable components:
@@ -142,8 +142,8 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 ## 7. Performance & Verification
 
 - **Simulator & Optimization**:
-  - Detailed backtesting engine capable of replaying historical data (including specific crash scenarios) to verify strategy logic and metrics (Alpha, Beta, Sharpe).
-  - **Walk-Forward Backtesting**: Train/test window splitting for out-of-sample Sharpe and overfitting detection.
+  - Detailed backtesting engine capable of replaying historical data (including specific crash scenarios) to verify strategy logic and metrics (Alpha, Beta, Sharpe, Calmar, Omega).
+  - **Walk-Forward Backtesting**: Train/test window splitting for out-of-sample Sharpe and overfitting detection. Includes advanced **Block Bootstrap Monte Carlo** sampling to preserve autocorrelation and volatility clustering for robust downside risk assessment.
   - **Parallel Execution**: Leverages `Rayon` for multi-threaded backtesting, delivering massive speedups on multi-core CPU architectures.
 - **Quality Assurance**:
   - All financial calculations use `rust_decimal::Decimal`; `f64` is used only for pure statistics or UI display.

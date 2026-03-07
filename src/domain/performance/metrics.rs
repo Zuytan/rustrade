@@ -19,6 +19,7 @@ pub struct PerformanceMetrics {
     pub sharpe_ratio: f64,
     pub sortino_ratio: f64,
     pub calmar_ratio: f64,
+    pub omega_ratio: f64,
 
     // Benchmark-relative (when benchmark_returns provided)
     pub alpha: f64,
@@ -255,6 +256,7 @@ impl PerformanceMetrics {
         let returns = Stats::calculate_returns(&daily_equity);
         let sharpe_ratio = Stats::sharpe_ratio(&returns, true); // Annualize
         let sortino_ratio = Self::calculate_sortino_ratio(&returns);
+        let omega_ratio = Self::calculate_omega_ratio(&returns, Decimal::ZERO);
 
         let mdp_f64 = max_drawdown_pct.to_f64().unwrap_or(0.0);
         let calmar_ratio = if mdp_f64.abs() > 0.01 {
@@ -297,6 +299,7 @@ impl PerformanceMetrics {
             sharpe_ratio: sharpe_ratio.to_f64().unwrap_or(0.0),
             sortino_ratio,
             calmar_ratio,
+            omega_ratio,
             alpha,
             beta,
             max_drawdown,
@@ -375,6 +378,34 @@ impl PerformanceMetrics {
         } else {
             0.0
         }
+    }
+
+    fn calculate_omega_ratio(returns: &[Decimal], threshold: Decimal) -> f64 {
+        if returns.is_empty() {
+            return 0.0;
+        }
+
+        let mut positive_sum = Decimal::ZERO;
+        let mut negative_sum = Decimal::ZERO;
+
+        for &r in returns {
+            let diff = r - threshold;
+            if diff > Decimal::ZERO {
+                positive_sum += diff;
+            } else if diff < Decimal::ZERO {
+                negative_sum += diff.abs();
+            }
+        }
+
+        if negative_sum == Decimal::ZERO {
+            if positive_sum > Decimal::ZERO {
+                return f64::INFINITY;
+            } else {
+                return 0.0;
+            }
+        }
+
+        (positive_sum / negative_sum).to_f64().unwrap_or(0.0)
     }
 
     fn calculate_consecutive_streaks(trades: &[Trade]) -> (usize, usize) {
@@ -599,5 +630,58 @@ mod tests {
         println!("Sharpe: {}", metrics.sharpe_ratio);
         // assert!(metrics.sharpe_ratio > 0.0); // Check output
         assert_eq!(metrics.max_drawdown, Decimal::ZERO);
+    }
+
+    #[test]
+    fn test_advanced_ratios() {
+        let returns = vec![dec!(0.05), dec!(-0.02), dec!(0.03), dec!(-0.01), dec!(0.04)];
+
+        // Omega ratio with 0 threshold: sum(pos) / sum(abs(neg))
+        // pos: 0.05 + 0.03 + 0.04 = 0.12
+        // neg: |-0.02| + |-0.01| = 0.03
+        // omega: 0.12 / 0.03 = 4.0
+
+        let omega = PerformanceMetrics::calculate_omega_ratio(&returns, Decimal::ZERO);
+        assert!((omega - 4.0).abs() < 1e-6);
+
+        // Test calmar ratio logic through calculate_time_series_metrics
+        // Create an equity curve with a known drawdown and return
+        // Start: 1000
+        // Day 1: 1500 (+50%)
+        // Day 2: 750 (50% drawdown from peak 1500)
+        // Day 3: 2000 (End equity, return = 100%, 3 days period)
+
+        let trades = vec![Trade {
+            id: "1".to_string(),
+            symbol: "AAPL".to_string(),
+            side: OrderSide::Buy,
+            entry_price: dec!(100),
+            exit_price: Some(dec!(200)),
+            quantity: dec!(10),
+            pnl: dec!(1000), // 100% gain on 1000 equity
+            entry_timestamp: 1_000_000,
+            exit_timestamp: Some(30_000_000_000),
+            strategy_used: None,
+            regime_detected: None,
+            entry_reason: None,
+            exit_reason: None,
+            slippage: None,
+            fees: dec!(0),
+        }];
+
+        // Initial equity: 1000
+        let daily_closes = vec![
+            (1_000, dec!(150)),      // Unrealized: (150-100)*10 = 500. Total equity = 1500
+            (16_000_000, dec!(75)), // Unrealized: (75-100)*10 = -250. Total equity = 750. Drawdown from 1500 = -50%
+            (32_000_000, dec!(200)), // Trade closed at 30,000,000. Realized: 1000. Total equity = 2000
+        ];
+
+        // 3 days period = 1500 to 3500 = 2000 seconds -> Wait, period_days = 2000 / 86400 = 0.0231 days
+        // Annualized return will be astronomically high.
+        let metrics =
+            PerformanceMetrics::calculate_time_series_metrics(&trades, &daily_closes, dec!(1000));
+
+        assert_eq!(metrics.max_drawdown_pct, dec!(-50.0));
+        assert!(metrics.calmar_ratio > 0.0); // Should be very high positive number
     }
 }

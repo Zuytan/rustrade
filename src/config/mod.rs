@@ -302,9 +302,10 @@ impl Config {
                 self.commission_per_share,
                 self.slippage_pct,
             )),
+            // Alpaca crypto: maker 0.15%, taker 0.25% (fallback — real fees fetched via API)
             AssetClass::Crypto => std::sync::Arc::new(TieredFeeModel::new(
-                Decimal::ZERO,
-                self.commission_per_share,
+                rust_decimal_macros::dec!(0.0015),
+                rust_decimal_macros::dec!(0.0025),
                 self.slippage_pct,
             )),
         }

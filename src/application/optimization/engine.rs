@@ -22,9 +22,11 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
+use crate::domain::ports::MarketDataService;
+
 /// High-level optimization engine that encapsulates service setup and execution.
 pub struct OptimizeEngine {
-    market_service: Arc<AlpacaMarketDataService>,
+    market_service: Arc<dyn MarketDataService>,
     base_config: Config,
 }
 
@@ -61,9 +63,20 @@ impl OptimizeEngine {
         );
 
         Ok(Self {
-            market_service,
+            market_service: market_service as Arc<dyn MarketDataService>,
             base_config,
         })
+    }
+
+    /// Creates a new OptimizeEngine with an injected MarketDataService (useful for testing or other brokers).
+    pub fn with_market_service(
+        market_service: Arc<dyn MarketDataService>,
+        base_config: Config,
+    ) -> Self {
+        Self {
+            market_service,
+            base_config,
+        }
     }
 
     /// Runs parameter optimization for a single symbol using a genetic algorithm.

@@ -233,6 +233,13 @@ struct AlpacaOrder {
     created_at: String,
 }
 
+/// Detailed order response from GET /v2/orders/{id}, includes commission
+#[derive(Debug, Deserialize)]
+struct AlpacaOrderDetail {
+    #[serde(default)]
+    commission: Option<String>,
+}
+
 #[async_trait]
 impl ExecutionService for AlpacaExecutionService {
     #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side))]
@@ -510,5 +517,48 @@ impl ExecutionService for AlpacaExecutionService {
 
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
         Ok(self.trading_stream.subscribe())
+    }
+
+    #[instrument(skip(self))]
+    async fn get_order_fees(&self, order_id: &str) -> Result<Option<Decimal>> {
+        let url = format!("{}/v2/orders/{}", self.base_url, order_id);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .send()
+            .await
+            .context("Failed to fetch order detail for fee retrieval")?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            tracing::warn!(
+                "AlpacaExecution: Fee retrieval failed for order {}: {}",
+                order_id,
+                error_text
+            );
+            return Ok(None); // Graceful degradation: fall back to model estimate
+        }
+
+        let detail: AlpacaOrderDetail = response
+            .json()
+            .await
+            .context("Failed to parse order detail for fee retrieval")?;
+
+        let fees = detail
+            .commission
+            .as_deref()
+            .and_then(|c| c.parse::<Decimal>().ok());
+
+        if let Some(ref f) = fees {
+            info!(
+                "AlpacaExecution: Real broker fees for order {}: ${}",
+                order_id, f
+            );
+        }
+
+        Ok(fees)
     }
 }

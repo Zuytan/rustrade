@@ -1,12 +1,13 @@
 [package]
 name = "rustrade"
-version = "0.99.6"
+version = "0.99.7"
 edition = "2024"
 default-run = "rustrade"
 
 [features]
-default = ["ui"]
+default = ["ui", "legacy-strategies"]
 ui = ["dep:eframe", "dep:egui", "dep:egui_plot"]
+legacy-strategies = []
 
 [[bin]]
 name = "rustrade"

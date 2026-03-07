@@ -4,3 +4,4 @@ pub mod architecture_view;
 pub mod chart_panel;
 pub mod metrics_card;
 pub mod news_feed;
+pub mod symbol_card;

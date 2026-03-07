@@ -113,8 +113,25 @@ impl Executor {
                 // Track for retry monitoring if applicable
                 self.order_monitor.track_order(order.clone()).await;
 
-                // 2. Update Internal State (Optimistic)
-                self.update_portfolio(&order, false).await;
+                // 2. Retrieve real broker fees (non-blocking, graceful fallback)
+                let real_fees = match self.execution_service.get_order_fees(&order.id).await {
+                    Ok(fees) => {
+                        if let Some(ref f) = fees {
+                            info!("Executor: Real broker fees for {}: ${}", order.id, f);
+                        }
+                        fees
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Executor: Fee retrieval failed for {}: {}, using model estimate",
+                            order.id, e
+                        );
+                        None
+                    }
+                };
+
+                // 3. Update Internal State (Optimistic) with real or estimated fees
+                self.update_portfolio(&order, false, real_fees).await;
                 info!("Executor: Order {} sent to exchange.", order.id);
 
                 // Update persisted status to 'New' (now officially on the exchange)
@@ -213,7 +230,12 @@ impl Executor {
     }
 
     #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side))]
-    async fn update_portfolio(&self, order: &Order, is_reversal: bool) {
+    async fn update_portfolio(
+        &self,
+        order: &Order,
+        is_reversal: bool,
+        real_fees: Option<rust_decimal::Decimal>,
+    ) {
         let mut portfolio =
             match tokio::time::timeout(std::time::Duration::from_secs(2), self.portfolio.write())
                 .await
@@ -226,10 +248,25 @@ impl Executor {
             };
 
         let cost = order.price * order.quantity;
-        let trade_cost = self
-            .fee_model
-            .calculate_cost(order.quantity, order.price, order.side);
-        let fees = trade_cost.total_impact;
+
+        // Use real broker fees if available, otherwise fall back to model estimate
+        let fees = if let Some(broker_fees) = real_fees {
+            info!(
+                "Executor: Using real broker fees: ${} for order {}",
+                broker_fees, order.id
+            );
+            broker_fees
+        } else {
+            let trade_cost = self
+                .fee_model
+                .calculate_cost(order.quantity, order.price, order.side);
+            let estimated = trade_cost.total_impact;
+            info!(
+                "Executor: No broker fees, using model estimate: ${} for order {}",
+                estimated, order.id
+            );
+            estimated
+        };
 
         match order.side {
             OrderSide::Buy => {

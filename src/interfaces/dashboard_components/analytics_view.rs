@@ -155,6 +155,7 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                                             steps: 100,
                                             initial_equity: agent.calculate_total_value(),
                                             historical_returns,
+                                            block_size: 5,
                                         };
                                         agent.monte_carlo_result = Some(crate::domain::performance::monte_carlo::MonteCarloEngine::simulate(&config));
                                     }

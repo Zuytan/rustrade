@@ -1,7 +1,9 @@
 // Legacy strategies (DEPRECATED - use statistical/ or microstructure/ instead)
+#[cfg(feature = "legacy-strategies")]
 pub mod legacy;
 
 // Modern strategies
+#[cfg(feature = "legacy-strategies")]
 mod dynamic;
 mod ensemble;
 pub mod statistical; // Modern statistical strategies
@@ -22,12 +24,14 @@ mod tests;
 
 // Re-export legacy strategies with deprecation warnings
 #[allow(deprecated)]
+#[cfg(feature = "legacy-strategies")]
 pub use legacy::{
     AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, BreakoutStrategy, DualSMAStrategy,
     MeanReversionStrategy, MomentumDivergenceStrategy, TrendRidingStrategy, VWAPStrategy,
 };
 
 // Modern strategies
+#[cfg(feature = "legacy-strategies")]
 pub use dynamic::{DynamicRegimeConfig, DynamicRegimeStrategy};
 pub use ensemble::EnsembleStrategy;
 pub use ml_strategy::MLStrategy;

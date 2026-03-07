@@ -9,6 +9,7 @@ pub struct MonteCarloConfig {
     pub steps: usize,
     pub initial_equity: Decimal,
     pub historical_returns: Vec<Decimal>,
+    pub block_size: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,24 +38,43 @@ impl MonteCarloEngine {
             let mut peak_equity = current_equity;
             let mut max_dd = 0.0;
 
-            for _ in 0..config.steps {
-                let pnl_pct = if has_returns {
-                    let idx = rng.random_range(0..config.historical_returns.len());
-                    config.historical_returns[idx]
+            let mut steps_taken = 0;
+            let block_size = config.block_size.max(1);
+            let n_returns = if has_returns {
+                config.historical_returns.len()
+            } else {
+                1
+            };
+
+            while steps_taken < config.steps {
+                let start_idx = if has_returns {
+                    rng.random_range(0..n_returns)
                 } else {
-                    Decimal::ZERO
+                    0
                 };
 
-                current_equity *= Decimal::ONE + pnl_pct;
+                let current_block_size = std::cmp::min(block_size, config.steps - steps_taken);
 
-                if current_equity > peak_equity {
-                    peak_equity = current_equity;
-                } else if peak_equity > Decimal::ZERO {
-                    let dd = (peak_equity - current_equity) / peak_equity;
-                    if dd.to_f64().unwrap_or(0.0) > max_dd {
-                        max_dd = dd.to_f64().unwrap_or(0.0);
+                for offset in 0..current_block_size {
+                    let pnl_pct = if has_returns {
+                        let idx = (start_idx + offset) % n_returns;
+                        config.historical_returns[idx]
+                    } else {
+                        Decimal::ZERO
+                    };
+
+                    current_equity *= Decimal::ONE + pnl_pct;
+
+                    if current_equity > peak_equity {
+                        peak_equity = current_equity;
+                    } else if peak_equity > Decimal::ZERO {
+                        let dd = (peak_equity - current_equity) / peak_equity;
+                        if dd.to_f64().unwrap_or(0.0) > max_dd {
+                            max_dd = dd.to_f64().unwrap_or(0.0);
+                        }
                     }
                 }
+                steps_taken += current_block_size;
             }
 
             final_equities.push(current_equity);
@@ -132,6 +152,7 @@ mod tests {
                 dec!(0.03),
                 dec!(-0.01),
             ],
+            block_size: 5,
         };
 
         let result = MonteCarloEngine::simulate(&config);
@@ -148,6 +169,7 @@ mod tests {
             steps: 5,
             initial_equity: Decimal::from(10000),
             historical_returns: vec![],
+            block_size: 5,
         };
 
         let result = MonteCarloEngine::simulate(&config);

@@ -241,6 +241,11 @@ impl Simulator {
         let max_drawdown_pct = Decimal::new(-50, 0); // -50% max loss
 
         while let Some(prop) = proposal_rx.recv().await {
+            println!(
+                "Simulator received proposal: {:?} {} {} @ {} for {}",
+                prop.side, prop.quantity, prop.symbol, prop.price, prop.reason
+            );
+
             // Circuit Breaker: Check equity before executing
             if let Ok(portfolio) = self.execution_service.get_portfolio().await {
                 let current_equity = portfolio.cash

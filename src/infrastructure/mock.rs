@@ -428,7 +428,39 @@ impl ExecutionService for MockExecutionService {
                     .fee_model
                     .calculate_cost(sell_qty, execution_price, order.side)
                     .fee;
-                port.cash += sell_proceeds - sell_commission;
+
+                // Calculate hold time and funding cost
+                let last_buy = if let Ok(orders) =
+                    tokio::time::timeout(std::time::Duration::from_millis(500), self.orders.read())
+                        .await
+                {
+                    orders
+                        .iter()
+                        .rev()
+                        .find(|o| {
+                            o.symbol == order.symbol
+                                && o.side == crate::domain::trading::types::OrderSide::Buy
+                        })
+                        .cloned()
+                } else {
+                    None
+                };
+
+                let hold_time_ms = if let Some(buy_order) = last_buy {
+                    (order.timestamp - buy_order.timestamp).max(0)
+                } else {
+                    0
+                };
+                use rust_decimal_macros::dec;
+                let hold_time_hours = rust_decimal::Decimal::from(hold_time_ms) / dec!(3600000.0);
+
+                let funding_cost = self.fee_model.calculate_funding_cost(
+                    sell_qty,
+                    execution_price,
+                    hold_time_hours,
+                );
+
+                port.cash += sell_proceeds - sell_commission - funding_cost;
                 let pos = port.positions.entry(order.symbol.clone()).or_insert(
                     crate::domain::trading::portfolio::Position {
                         symbol: order.symbol.clone(),
@@ -451,6 +483,7 @@ impl ExecutionService for MockExecutionService {
             filled_qty: order.quantity,
             filled_avg_price: Some(execution_price),
             timestamp: chrono::Utc::now(),
+            fees: Some(commission), // We can also include funding cost here if needed, but OrderUpdate typically tracks explicit trade commission
         });
 
         info!(

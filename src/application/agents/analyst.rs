@@ -401,7 +401,7 @@ impl Analyst {
     #[instrument(skip(self, candle), fields(symbol = %candle.symbol))]
     async fn process_candle(&mut self, candle: crate::domain::trading::types::Candle) {
         let symbol = candle.symbol.clone();
-        let timestamp = candle.timestamp * 1000;
+        let timestamp = candle.timestamp; // already in milliseconds
 
         // --- RESILIENCE GUARD ---
         if !self.market_data_online {
@@ -419,7 +419,7 @@ impl Analyst {
         }
 
         // 1. Ensure symbol context is initialized
-        let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp, 0)
+        let timestamp_dt = chrono::DateTime::from_timestamp(candle.timestamp / 1000, 0)
             .unwrap_or_default()
             .with_timezone(&chrono::Utc);
 

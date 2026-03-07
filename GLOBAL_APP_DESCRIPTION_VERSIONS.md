@@ -1,5 +1,24 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.7 - Phase 8 Refactoring, Performance & Legacy Cleanup (March 2026)
+
+### Architecture & UI Cleanup
+- **UI Modularization**: Split the monolithic `ui_components.rs` and `dashboard.rs` into manageable submodules (`settings_state.rs`, `settings_view.rs`, `sidebar.rs`, `symbol_card.rs`).
+- **Legacy Strategy Flags**: Moved older strategies behind a new `legacy-strategies` feature flag in `Cargo.toml`.
+- **OptimizeEngine Decoupling**: Refactored `OptimizeEngine` to accept an `Arc<dyn MarketDataService>` interface rather than implicitly depending on `AlpacaMarketDataService`.
+
+### Performance & Metrics
+- **Calmar & Omega Ratios**: Added calculate logic for Calmar Ratio (Annualized Return / Max Drawdown) and Omega Ratio.
+- **Multi-Objective Optimization**: Adjusted `calculate_objective_score` to use a multi-criteria Pareto-inspired approach with a penalty for low trade counts.
+
+### Risk Modeling & Simulation
+- **Block Bootstrap Monte Carlo**: Upgraded `MonteCarloEngine` to support Block Bootstrap sampling, preserving autocorrelation and volatility clustering.
+- **Funding Rate Model**: Implemented `FundingRateFeeModel` for accurate crypto backtesting costs.
+- **E2E Simulation Pipeline**: Created a complete end-to-end integration test to thoroughly validate the full simulator lifecycle.
+
+### Code Hygiene
+- **Dead Code Cleanup**: Resolved 20+ dead code warnings and unused variables across the codebase (`cargo clippy` is fully clean).
+
 ## Version 0.99.6 - Audit Fixes & Code Quality (February 2026)
 
 ### Reliability & Resilience

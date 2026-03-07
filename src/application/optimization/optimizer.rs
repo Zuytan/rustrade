@@ -372,12 +372,29 @@ impl OptimizationResult {
     /// Calculate a weighted objective score for ranking configurations
     /// Higher is better
     pub fn calculate_objective_score(&mut self) {
-        // Composite score favoring high Sharpe, return, and win rate
-        // while penalizing high drawdown
-        self.objective_score = (self.sharpe_ratio * dec!(0.4))
-            + (self.total_return / dec!(100.0) * dec!(0.3))
-            + (self.win_rate / dec!(100.0) * dec!(0.2))
-            - (self.max_drawdown / dec!(100.0) * dec!(0.1));
+        // Multi-criteria optimization (Sharpe + MaxDD + Stability)
+
+        // 1. Return/Risk components
+        let sharpe_component = self.sharpe_ratio * dec!(0.5);
+        let return_component = (self.total_return / dec!(100.0)) * dec!(0.2);
+        let win_rate_component = (self.win_rate / dec!(100.0)) * dec!(0.1);
+
+        // 2. Drawdown component (Non-linear penalty for drawdowns)
+        let dd_ratio = self.max_drawdown.abs() / dec!(100.0);
+        let dd_penalty = dd_ratio * dd_ratio * dec!(2.0); // Quadratic penalty
+
+        // 3. Stability Penalty (penalize if total trades is less than 30)
+        let trades_dec = Decimal::from(self.total_trades);
+        let stability_penalty = if self.total_trades < 30 {
+            let penalty_factor = (dec!(30.0) - trades_dec) / dec!(30.0);
+            penalty_factor * dec!(2.0)
+        } else {
+            Decimal::ZERO
+        };
+
+        self.objective_score = sharpe_component + return_component + win_rate_component
+            - dd_penalty
+            - stability_penalty;
     }
 
     /// Build OptimalParameters for persistence (e.g. ~/.rustrade/optimal_parameters.json) from this result.
@@ -435,8 +452,6 @@ impl OptimizationResult {
         )
     }
 }
-
-// use crate::domain::ports::MarketDataService;
 
 /// Pre-fetched bars for walk-forward optimization (avoids repeated API calls).
 struct PrefetchedBars {
@@ -1498,9 +1513,43 @@ mod tests {
 
         result.calculate_objective_score();
 
-        // Score = (2.0 * 0.4) + (0.15 * 0.3) + (0.6 * 0.2) - (0.05 * 0.1)
-        //       = 0.8 + 0.045 + 0.12 - 0.005 = 0.96
-        assert!((result.objective_score - dec!(0.96)).abs() < dec!(0.01));
+        // Multi-criteria score calculation:
+        // sharpe = 2.0 * 0.5 = 1.0
+        // return = 15.0/100 * 0.2 = 0.03
+        // win_rate = 60.0/100 * 0.1 = 0.06
+        // dd_ratio = 5.0/100 = 0.05 -> penalty = 0.05 * 0.05 * 2 = 0.005
+        // trades = 20 < 30 -> penalty = (30-20)/30 * 2.0 = 0.6666...
+        // score = 1.0 + 0.03 + 0.06 - 0.005 - 0.6666 = 0.4183...
+
+        let expected_penalty = (dec!(30.0) - dec!(20.0)) / dec!(30.0) * dec!(2.0);
+        let expected_score = dec!(1.0) + dec!(0.03) + dec!(0.06) - dec!(0.005) - expected_penalty;
+        assert!((result.objective_score - expected_score).abs() < dec!(0.01));
+    }
+
+    #[test]
+    fn test_objective_score_penalizes_high_drawdown() {
+        let mut result = OptimizationResult {
+            params: AnalystConfig::default(),
+            sharpe_ratio: dec!(2.0),
+            total_return: dec!(15.0),
+            max_drawdown: dec!(-50.0), // 50% drawdown
+            win_rate: dec!(60.0),
+            total_trades: 50, // > 30 so no stability penalty
+            objective_score: dec!(0.0),
+            alpha: dec!(0.0),
+            beta: dec!(0.0),
+            in_sample_sharpe: None,
+            risk_score: None,
+        };
+
+        result.calculate_objective_score();
+
+        // sharpe = 1.0
+        // return = 0.03
+        // win = 0.06
+        // dd = 0.5 -> squared = 0.25 -> penalty = 0.5
+        // expected = 1.0 + 0.03 + 0.06 - 0.5 = 0.59
+        assert!((result.objective_score - dec!(0.59)).abs() < dec!(0.01));
     }
 
     #[test]

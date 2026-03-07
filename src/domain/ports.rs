@@ -34,6 +34,11 @@ pub trait ExecutionService: Send + Sync {
     async fn cancel_order(&self, order_id: &str, symbol: &str) -> Result<()>;
     async fn cancel_all_orders(&self) -> Result<()>;
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>>;
+    /// Retrieve actual broker-reported fees for a filled order.
+    /// Returns None if the broker does not support fee retrieval.
+    async fn get_order_fees(&self, _order_id: &str) -> Result<Option<Decimal>> {
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +51,8 @@ pub struct OrderUpdate {
     pub filled_qty: Decimal,
     pub filled_avg_price: Option<Decimal>,
     pub timestamp: chrono::DateTime<chrono::Utc>,
+    /// Actual broker-reported fees for this fill (None if broker does not provide fees)
+    pub fees: Option<Decimal>,
 }
 
 #[async_trait]

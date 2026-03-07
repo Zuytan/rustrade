@@ -259,6 +259,7 @@ impl AlpacaTradingStream {
             filled_qty,
             filled_avg_price,
             timestamp: Utc::now(), // Ideally parse data.timestamp
+            fees: None, // WebSocket stream does not provide fee data; fetched via REST after fill
         };
 
         if let Err(e) = tx.send(event) {
