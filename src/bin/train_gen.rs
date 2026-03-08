@@ -25,7 +25,7 @@ struct Cli {
     days: Option<i64>,
 
     /// Strategy to use for the simulation
-    #[arg(long, default_value = "standard")]
+    #[arg(long, default_value = "smc")]
     strategy: String,
 
     /// Asset class (stock or crypto)
@@ -91,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
         Utc.from_utc_datetime(&start_date.and_hms_opt(0, 0, 0).unwrap())
     };
 
-    let strat_mode = StrategyMode::from_str(&cli.strategy).unwrap_or(StrategyMode::Standard);
+    let strat_mode = StrategyMode::from_str(&cli.strategy).unwrap_or(StrategyMode::SMC);
 
     info!("🚀 GENERATING ML TRAINING DATA");
     info!("Symbols: {:?}", symbol_list);

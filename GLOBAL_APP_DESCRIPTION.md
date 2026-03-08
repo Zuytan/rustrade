@@ -66,11 +66,7 @@ Rustrade supports a diverse suite of strategies. The system has evolved to prior
 - **Adaptive**: `RegimeAdaptive` (Dynamic ensemble that switches strategies and risk profile based on Hurst Exponent and Volatility).
 - **Ensemble**: Voting system combining multiple strategies.
 
-#### Legacy Strategies (Deprecated)
-*Kept for backward compatibility and A/B testing. Use modern equivalents for production.*
-- **Trend Following**: `TrendRiding` (EMA Crossovers), `AdvancedTripleFilter` (SMA + RSI + MACD + ADX) — *Superseded by `StatisticalMomentum` / `MLStrategy`*.
-- **Mean Reversion**: `MeanReversion` (Bollinger Bands), `VWAP` (Volume Weighted Average Price) — *Superseded by `ZScoreMeanReversion`*.
-- **Breakout**: `Breakout` (Volume/Range), `Momentum` — *Superseded by `SMC` / `OrderFlow`*.
+
 
 ### Adaptive Features
 - **Regime Adaptation**: The `RegimeAdaptive` mode employs a `RegimeDetector` (using ADX, Variance, Linear Regression) to classify the market as `Trending` (Up/Down), `Ranging`, or `Volatile`. It automatically switches the active strategy (e.g., Trend -> VWAP in range) to match conditions.
@@ -114,7 +110,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 - **Activity Feed**: Live log of system events, trades, and rejected proposals.
 - **News Feed**: Real-time stream of analyzed news with sentiment badges.
 - **Configuration Panel**:
-  - **Simple Mode**: Risk Score slider with **automatic strategy selection** (Risk 1-3→Standard, 4-6→RegimeAdaptive, 7-10→SMC).
+  - **Simple Mode**: Risk Score slider with **automatic strategy selection** (Risk 1-3→ZScoreMR, 4-6→RegimeAdaptive, 7-10→SMC).
   - **Crypto Mode**: **Dynamic Symbol Selector** allows searching and selecting from all available exchange pairs.
   - **Advanced Mode**: Granular control over SMA periods, RSI thresholds, manual strategy override.
 - **Internationalization (I18n)**: Full support for English and French, with dynamic language switching.

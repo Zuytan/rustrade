@@ -223,13 +223,14 @@ mod tests {
     use super::*;
     use crate::application::agents::analyst_config::AnalystConfig;
     use crate::application::optimization::win_rate_provider::StaticWinRateProvider;
-    use crate::application::strategies::DualSMAStrategy;
+    use crate::application::strategies::StrategyFactory;
     use crate::application::trading::symbol_context::SymbolContext;
     use crate::domain::listener::NewsSentiment;
+    use crate::domain::market::strategy_config::StrategyMode;
 
     fn create_test_context() -> SymbolContext {
         let config = AnalystConfig::default();
-        let strategy = Arc::new(DualSMAStrategy::new(20, 60, dec!(0.0)));
+        let strategy = StrategyFactory::create(StrategyMode::SMC, &AnalystConfig::default());
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
     }

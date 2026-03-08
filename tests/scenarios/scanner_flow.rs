@@ -7,7 +7,7 @@ use rustrade::application::agents::sentinel::Sentinel;
 use rustrade::application::monitoring::connection_health_service::{
     ConnectionHealthService, ConnectionStatus,
 };
-use rustrade::application::strategies::DualSMAStrategy;
+use rustrade::application::strategies::SMCStrategy;
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::domain::trading::types::{Candle, MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
@@ -103,7 +103,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: Default::default(),
             ensemble_voting_threshold: dec!(0.5),
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..rustrade::domain::config::StrategyConfig::default()
         },
         risk: rustrade::domain::config::RiskConfig {
@@ -118,7 +118,7 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
         ..rustrade::application::agents::analyst::AnalystConfig::default()
     };
 
-    let strategy = Arc::new(DualSMAStrategy::new(2, 3, dec!(0.0)));
+    let strategy = Arc::new(SMCStrategy::new(20, dec!(0.005), dec!(1.5)));
     let (_analyst_cmd_tx, analyst_cmd_rx) = mpsc::channel(10);
     let mut analyst = Analyst::new(
         market_rx,
@@ -159,16 +159,23 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
     // Wait for scanner to run at least once
     time::sleep(Duration::from_millis(200)).await;
 
-    let prices = [100.0, 100.0, 100.0, 110.0, 120.0];
-    for (i, p) in prices.iter().enumerate() {
+    // Inject SMC Bullish Sequence
+    let smc_data = [
+        (100.0, 101.0, 99.0, 99.0),   // C1: Bearish OB
+        (99.0, 104.0, 99.0, 104.0),   // C2: Impulsive Bullish
+        (104.0, 108.0, 103.0, 108.0), // C3: FVG Top
+        (108.0, 108.0, 102.0, 102.0), // C4: Retracement
+        (102.0, 105.0, 102.0, 105.0), // C5: Bullish Confirm
+    ];
+    for (i, (o, h, l, c)) in smc_data.into_iter().enumerate() {
         let event = MarketEvent::Candle(Candle {
             symbol: "AAPL".to_string(),
-            open: Decimal::from_f64_retain(*p).unwrap(),
-            high: Decimal::from_f64_retain(*p).unwrap(),
-            low: Decimal::from_f64_retain(*p).unwrap(),
-            close: Decimal::from_f64_retain(*p).unwrap(),
+            open: Decimal::from_f64_retain(o).unwrap(),
+            high: Decimal::from_f64_retain(h).unwrap(),
+            low: Decimal::from_f64_retain(l).unwrap(),
+            close: Decimal::from_f64_retain(c).unwrap(),
             volume: Decimal::new(100, 0),
-            timestamp: i as i64,
+            timestamp: i as i64 * 60_000,
         });
         market_service.publish(event).await;
         time::sleep(Duration::from_millis(50)).await;

@@ -189,7 +189,7 @@ impl Default for StrategyConfig {
     fn default() -> Self {
         use rust_decimal_macros::dec;
         Self {
-            strategy_mode: StrategyMode::Dynamic,
+            strategy_mode: StrategyMode::RegimeAdaptive,
             fast_sma_period: 20,
             slow_sma_period: 60,
             trend_sma_period: 50,

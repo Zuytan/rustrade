@@ -104,15 +104,11 @@ impl SettingsPanel {
         self.selected_strategy = match settings.analyst.strategy_mode.as_str() {
             "SMC" => StrategyMode::SMC,
             "RegimeAdaptive" => StrategyMode::RegimeAdaptive,
-            "Standard" => StrategyMode::Standard,
-            "Momentum" => StrategyMode::Momentum,
-            "MeanReversion" => StrategyMode::MeanReversion,
-            "Breakout" => StrategyMode::Breakout,
-            "TrendRiding" => StrategyMode::TrendRiding,
-            "Advanced" => StrategyMode::Advanced,
-            "Dynamic" => StrategyMode::Dynamic,
-            "VWAP" => StrategyMode::VWAP,
             "Ensemble" => StrategyMode::Ensemble,
+            "ZScoreMR" => StrategyMode::ZScoreMR,
+            "StatMomentum" => StrategyMode::StatMomentum,
+            "OrderFlow" => StrategyMode::OrderFlow,
+            "ML" => StrategyMode::ML,
             _ => Self::select_strategy_for_risk(settings.risk_score), // Fallback to risk-based
         };
 
@@ -138,10 +134,10 @@ impl SettingsPanel {
     fn select_strategy_for_risk(score: u8) -> crate::domain::market::strategy_config::StrategyMode {
         use crate::domain::market::strategy_config::StrategyMode;
         match score {
-            1..=3 => StrategyMode::Standard, // Conservative: Safe, avoids chop
-            4..=6 => StrategyMode::RegimeAdaptive, // Balanced: Steady gains
-            7..=10 => StrategyMode::SMC,     // Aggressive: Best alpha generator
-            _ => StrategyMode::Standard,     // Fallback
+            1..=3 => StrategyMode::ZScoreMR, // Conservative: High-probability mean reversion
+            4..=6 => StrategyMode::RegimeAdaptive, // Balanced: Multi-model adaptation
+            7..=10 => StrategyMode::SMC,     // Aggressive: High alpha Smart Money Concepts
+            _ => StrategyMode::RegimeAdaptive, // Fallback
         }
     }
 

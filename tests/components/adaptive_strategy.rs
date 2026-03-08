@@ -7,24 +7,22 @@ use rustrade::domain::market::strategy_config::StrategyMode;
 
 /// Test that StrategySelector correctly maps market regimes to appropriate strategies
 #[test]
-fn test_strategy_selector_ranging_to_vwap() {
+fn test_strategy_selector_ranging_to_zscore() {
     let config = AnalystConfig::default();
 
-    // Create a Ranging regime with HIGH volatility (>= 1.5)
-    // This triggers VWAP instead of MeanReversion
+    // Create a Ranging regime
     let ranging_regime = MarketRegime::new(
         MarketRegimeType::Ranging,
         dec!(0.8),  // High confidence
-        dec!(2.0),  // High volatility -> VWAP
+        dec!(2.0),  // High volatility
         dec!(10.0), // Low trend strength
     );
 
-    // Start with Standard strategy
-    let current_mode = StrategyMode::Standard;
+    // Start with RegimeAdaptive strategy
+    let current_mode = StrategyMode::RegimeAdaptive;
 
     // Select strategy based on regime
-    let (new_mode, _strategy) =
-        StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
+    let new_mode = StrategySelector::select_best(ranging_regime, "BTCUSDT", &config, current_mode);
 
     // Should switch to ZScoreMR for Ranging regime (Modern Logic)
     assert_eq!(
@@ -35,32 +33,7 @@ fn test_strategy_selector_ranging_to_vwap() {
 }
 
 #[test]
-fn test_strategy_selector_ranging_low_vol_to_mean_reversion() {
-    let config = AnalystConfig::default();
-
-    // Create a Ranging regime with LOW volatility (< 1.5)
-    let ranging_regime = MarketRegime::new(
-        MarketRegimeType::Ranging,
-        dec!(0.8),  // High confidence
-        dec!(1.0),  // Low volatility -> MeanReversion
-        dec!(10.0), // Low trend strength
-    );
-
-    let current_mode = StrategyMode::Standard;
-
-    let (new_mode, _strategy) =
-        StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
-
-    // Should switch to ZScoreMR for Ranging regime
-    assert_eq!(
-        new_mode,
-        StrategyMode::ZScoreMR,
-        "Should select ZScoreMR strategy for Ranging regime"
-    );
-}
-
-#[test]
-fn test_strategy_selector_trending_up_to_trend_riding() {
+fn test_strategy_selector_trending_to_regime_adaptive() {
     let config = AnalystConfig::default();
 
     // Create a TrendingUp regime
@@ -71,44 +44,20 @@ fn test_strategy_selector_trending_up_to_trend_riding() {
         dec!(35.0), // High trend strength
     );
 
-    let current_mode = StrategyMode::Standard;
+    let current_mode = StrategyMode::RegimeAdaptive;
 
-    let (new_mode, _strategy) =
-        StrategySelector::select_strategy(&trending_regime, &config, current_mode);
+    let new_mode = StrategySelector::select_best(trending_regime, "BTCUSDT", &config, current_mode);
 
-    // Should switch to StatMomentum for trending markets
+    // Should stay/switch to RegimeAdaptive for trending markets
     assert_eq!(
         new_mode,
-        StrategyMode::StatMomentum,
-        "Should select StatMomentum strategy for TrendingUp regime"
+        StrategyMode::RegimeAdaptive,
+        "Should select RegimeAdaptive strategy for TrendingUp regime"
     );
 }
 
 #[test]
-fn test_strategy_selector_trending_down_to_trend_riding() {
-    let config = AnalystConfig::default();
-
-    let trending_regime = MarketRegime::new(
-        MarketRegimeType::TrendingDown,
-        dec!(0.85),
-        dec!(2.0),
-        dec!(40.0),
-    );
-
-    let current_mode = StrategyMode::Standard;
-
-    let (new_mode, _strategy) =
-        StrategySelector::select_strategy(&trending_regime, &config, current_mode);
-
-    assert_eq!(
-        new_mode,
-        StrategyMode::StatMomentum,
-        "Should select StatMomentum strategy for TrendingDown regime"
-    );
-}
-
-#[test]
-fn test_strategy_selector_volatile_to_momentum() {
+fn test_strategy_selector_volatile_to_smc() {
     let config = AnalystConfig::default();
 
     let volatile_regime = MarketRegime::new(
@@ -118,37 +67,33 @@ fn test_strategy_selector_volatile_to_momentum() {
         dec!(15.0),
     );
 
-    let current_mode = StrategyMode::Standard;
+    let current_mode = StrategyMode::RegimeAdaptive;
 
-    let (new_mode, _strategy) =
-        StrategySelector::select_strategy(&volatile_regime, &config, current_mode);
+    let new_mode = StrategySelector::select_best(volatile_regime, "BTCUSDT", &config, current_mode);
 
-    // Volatile markets should use Momentum (v0.60 enhancement - divergence detection)
+    // Volatile markets should use SMC
     assert_eq!(
         new_mode,
-        StrategyMode::Momentum,
-        "Should select Momentum strategy for Volatile regime"
+        StrategyMode::SMC,
+        "Should select SMC strategy for Volatile regime"
     );
 }
 
 #[test]
-fn test_strategy_selector_unknown_to_standard() {
+fn test_strategy_selector_unknown_to_regime_adaptive() {
     let config = AnalystConfig::default();
 
     let unknown_regime = MarketRegime::unknown();
 
-    // Start with Standard (unknown regime has confidence 0, hysteresis kicks in)
-    // But since current_mode IS Standard, it should stay Standard
-    let current_mode = StrategyMode::Standard;
+    let current_mode = StrategyMode::RegimeAdaptive;
 
-    let (new_mode, _strategy) =
-        StrategySelector::select_strategy(&unknown_regime, &config, current_mode);
+    let new_mode = StrategySelector::select_best(unknown_regime, "BTCUSDT", &config, current_mode);
 
-    // Unknown regime with confidence 0 and current mode Standard stays Standard
+    // Unknown regime defaults to RegimeAdaptive
     assert_eq!(
         new_mode,
-        StrategyMode::Standard,
-        "Should stay with Standard strategy for Unknown regime"
+        StrategyMode::RegimeAdaptive,
+        "Should stay with RegimeAdaptive strategy for Unknown regime"
     );
 }
 
@@ -163,8 +108,7 @@ fn test_strategy_selector_no_change_when_same() {
     // Already using ZScoreMR
     let current_mode = StrategyMode::ZScoreMR;
 
-    let (new_mode, _strategy) =
-        StrategySelector::select_strategy(&ranging_regime, &config, current_mode);
+    let new_mode = StrategySelector::select_best(ranging_regime, "BTCUSDT", &config, current_mode);
 
     // Should stay with ZScoreMR
     assert_eq!(

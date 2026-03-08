@@ -1,143 +1,85 @@
 use crate::application::agents::analyst_config::AnalystConfig;
-use crate::application::strategies::{StrategyFactory, TradingStrategy};
 use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
 use crate::domain::market::strategy_config::StrategyMode;
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
-use std::sync::Arc;
-use tracing::info;
 
 pub struct StrategySelector;
 
 impl StrategySelector {
-    /// Selects the best strategy for the given market regime.
-    ///
-    /// Enhanced Logic (v0.60.0):
-    /// - **TrendingUp/Down** → TrendRiding (strong momentum capture)
-    /// - **Ranging** → VWAP (institutional mean-reversion around VWAP)  
-    /// - **Volatile** → Momentum (divergence detection for reversals)
-    /// - **Unknown** → Standard (safe fallback)
-    ///
-    /// Optional: Use Breakout when transitioning FROM Ranging TO Trending
-    pub fn select_strategy(
-        regime: &MarketRegime,
-        config: &AnalystConfig,
+    /// Selects the best strategy mode based on the current market regime.
+    /// If an override mode is provided (not RegimeAdaptive), it will be used instead.
+    pub fn select_best(
+        regime: MarketRegime,
+        _symbol: &str,
+        _config: &AnalystConfig,
         current_mode: StrategyMode,
-    ) -> (StrategyMode, Arc<dyn TradingStrategy>) {
-        let proposed_mode = Self::select_mode_for_regime(regime, current_mode);
-
-        if proposed_mode != current_mode {
-            info!(
-                "StrategySelector: Switching strategy from {} to {} based on Regime {:?} (strength: {:.1}%)",
-                current_mode,
-                proposed_mode,
-                regime.regime_type,
-                regime.confidence * dec!(100.0)
-            );
-        }
-
-        let strategy = StrategyFactory::create(proposed_mode, config);
-        (proposed_mode, strategy)
-    }
-
-    /// Core logic for mapping regime to strategy mode
-    ///
-    /// Enhanced with hysteresis: requires high confidence (>= 0.6) to switch strategies,
-    /// preventing whipsaw from rapid regime changes.
-    fn select_mode_for_regime(regime: &MarketRegime, current_mode: StrategyMode) -> StrategyMode {
-        // Hysteresis: Only switch if confidence is high enough
-        // This prevents rapid switching (whipsawing) between strategies
-        const MIN_CONFIDENCE_TO_SWITCH: Decimal = dec!(0.6);
-
-        if regime.confidence < MIN_CONFIDENCE_TO_SWITCH && current_mode != StrategyMode::Standard {
-            // Low confidence in new regime - stick with current strategy
+    ) -> StrategyMode {
+        // If user manually selected a specific strategy, respect it
+        if current_mode != StrategyMode::RegimeAdaptive {
             return current_mode;
         }
 
+        // Otherwise, adapt based on regime
         match regime.regime_type {
             MarketRegimeType::TrendingUp | MarketRegimeType::TrendingDown => {
-                // Strong trends → Statistical Momentum (Modern)
-                // Using regression slope and normalized momentum for better stability
-                StrategyMode::StatMomentum
+                StrategyMode::RegimeAdaptive
             }
-            MarketRegimeType::Ranging => {
-                // Sideways/consolidation → Z-Score Mean Reversion (Modern)
-                // Pure statistical deviation trading
-                StrategyMode::ZScoreMR
-            }
-            MarketRegimeType::Volatile => {
-                // High volatility → Momentum divergence detection remains reliable
-                // Or switch to pure volatility harvesting if available
-                StrategyMode::Momentum
-            }
-            MarketRegimeType::Unknown => {
-                // No clear regime → Safe fallback
-                StrategyMode::Standard
-            }
+            MarketRegimeType::Volatile => StrategyMode::SMC,
+            MarketRegimeType::Ranging => StrategyMode::ZScoreMR,
+            MarketRegimeType::Unknown => StrategyMode::RegimeAdaptive,
         }
-    }
-
-    /// Alternative: Select Ensemble mode for maximum robustness
-    /// (combines multiple strategies with voting)
-    pub fn select_ensemble_strategy(
-        config: &AnalystConfig,
-    ) -> (StrategyMode, Arc<dyn TradingStrategy>) {
-        info!("StrategySelector: Using Ensemble mode (multi-strategy voting)");
-        let strategy = StrategyFactory::create(StrategyMode::Ensemble, config);
-        (StrategyMode::Ensemble, strategy)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::agents::analyst_config::AnalystConfig;
+    use crate::domain::market::market_regime::{MarketRegime, MarketRegimeType};
+    use rust_decimal_macros::dec;
 
-    fn default_config() -> AnalystConfig {
-        AnalystConfig::default()
-    }
-
-    fn make_regime(regime_type: MarketRegimeType, confidence: f64) -> MarketRegime {
-        MarketRegime {
-            regime_type,
-            confidence: Decimal::from_f64_retain(confidence).unwrap_or(Decimal::ZERO),
-            volatility_score: dec!(1.5),
-            trend_strength: dec!(30.0),
-        }
+    fn make_regime(t: MarketRegimeType) -> MarketRegime {
+        MarketRegime::new(t, dec!(0.8), dec!(0.5), dec!(0.5))
     }
 
     #[test]
-    fn test_trending_uses_stat_momentum() {
-        let config = default_config();
-        let regime = make_regime(MarketRegimeType::TrendingUp, 0.8);
+    fn test_select_strategy_for_regimes() {
+        let config = AnalystConfig::default();
+        let name = "BTCUSDT";
 
-        let (mode, _) = StrategySelector::select_strategy(&regime, &config, StrategyMode::Standard);
-        assert_eq!(mode, StrategyMode::StatMomentum);
-    }
+        // Trending -> RegimeAdaptive
+        let mode = StrategySelector::select_best(
+            make_regime(MarketRegimeType::TrendingUp),
+            name,
+            &config,
+            StrategyMode::RegimeAdaptive,
+        );
+        assert_eq!(mode, StrategyMode::RegimeAdaptive);
 
-    #[test]
-    fn test_ranging_uses_zscore() {
-        let config = default_config();
-        let regime = make_regime(MarketRegimeType::Ranging, 0.7);
+        // Volatile -> SMC
+        let mode = StrategySelector::select_best(
+            make_regime(MarketRegimeType::Volatile),
+            name,
+            &config,
+            StrategyMode::RegimeAdaptive,
+        );
+        assert_eq!(mode, StrategyMode::SMC);
 
-        let (mode, _) = StrategySelector::select_strategy(&regime, &config, StrategyMode::Standard);
+        // Sideways (Ranging) -> ZScoreMR
+        let mode = StrategySelector::select_best(
+            make_regime(MarketRegimeType::Ranging),
+            name,
+            &config,
+            StrategyMode::RegimeAdaptive,
+        );
         assert_eq!(mode, StrategyMode::ZScoreMR);
-    }
 
-    #[test]
-    fn test_volatile_uses_momentum() {
-        let config = default_config();
-        let regime = make_regime(MarketRegimeType::Volatile, 0.75);
-
-        let (mode, _) = StrategySelector::select_strategy(&regime, &config, StrategyMode::Standard);
-        assert_eq!(mode, StrategyMode::Momentum);
-    }
-
-    #[test]
-    fn test_unknown_uses_standard() {
-        let config = default_config();
-        let regime = make_regime(MarketRegimeType::Unknown, 0.3);
-
-        let (mode, _) = StrategySelector::select_strategy(&regime, &config, StrategyMode::Standard);
-        assert_eq!(mode, StrategyMode::Standard);
+        // Force manual override
+        let mode = StrategySelector::select_best(
+            make_regime(MarketRegimeType::TrendingUp),
+            name,
+            &config,
+            StrategyMode::SMC,
+        );
+        assert_eq!(mode, StrategyMode::SMC);
     }
 }

@@ -55,7 +55,7 @@ impl SMCStrategy {
         }
 
         // Look for FVG in the recent history
-        let scan_depth = 20.min(candles.len() - 3);
+        let scan_depth = 20.min(candles.len());
         let start_idx = candles.len() - scan_depth;
 
         // Iterate RECENT to OLD (finding the most relevant recent structure)

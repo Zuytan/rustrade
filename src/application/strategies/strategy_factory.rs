@@ -1,9 +1,7 @@
 use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::strategies::{
-    AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, BreakoutStrategy, DualSMAStrategy,
-    DynamicRegimeConfig, DynamicRegimeStrategy, EnsembleStrategy, MeanReversionStrategy,
-    MomentumDivergenceStrategy, OrderFlowStrategy, SMCStrategy, StatisticalMomentumStrategy,
-    TradingStrategy, TrendRidingStrategy, VWAPStrategy, ZScoreMeanReversionStrategy,
+    EnsembleStrategy, OrderFlowStrategy, SMCStrategy, StatisticalMomentumStrategy, TradingStrategy,
+    ZScoreMeanReversionStrategy,
 };
 use crate::domain::market::strategy_config::StrategyMode;
 use std::sync::Arc;
@@ -13,68 +11,17 @@ pub struct StrategyFactory;
 impl StrategyFactory {
     pub fn create(mode: StrategyMode, config: &AnalystConfig) -> Arc<dyn TradingStrategy> {
         match mode {
-            StrategyMode::Standard => Arc::new(DualSMAStrategy::new(
-                config.strategy.fast_sma_period,
-                config.strategy.slow_sma_period,
-                config.strategy.sma_threshold,
-            )),
-            StrategyMode::Advanced => Arc::new(AdvancedTripleFilterStrategy::new(
-                AdvancedTripleFilterConfig {
-                    fast_period: config.strategy.fast_sma_period,
-                    slow_period: config.strategy.slow_sma_period,
-                    sma_threshold: config.strategy.sma_threshold,
-                    trend_sma_period: config.strategy.trend_sma_period,
-                    rsi_threshold: config.strategy.rsi_threshold,
-                    signal_confirmation_bars: config.strategy.signal_confirmation_bars,
-                    macd_requires_rising: config.strategy.macd_requires_rising,
-                    trend_tolerance_pct: config.strategy.trend_tolerance_pct,
-                    macd_min_threshold: config.strategy.macd_min_threshold,
-                    adx_threshold: config.strategy.adx_threshold,
-                },
-            )),
-            StrategyMode::Dynamic => {
-                Arc::new(DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
-                    fast_period: config.strategy.fast_sma_period,
-                    slow_period: config.strategy.slow_sma_period,
-                    sma_threshold: config.strategy.sma_threshold,
-                    trend_sma_period: config.strategy.trend_sma_period,
-                    rsi_threshold: config.strategy.rsi_threshold,
-                    trend_divergence_threshold: config.strategy.trend_divergence_threshold,
-                    signal_confirmation_bars: config.strategy.signal_confirmation_bars,
-                    macd_requires_rising: config.strategy.macd_requires_rising,
-                    trend_tolerance_pct: config.strategy.trend_tolerance_pct,
-                    macd_min_threshold: config.strategy.macd_min_threshold,
-                    adx_threshold: config.strategy.adx_threshold,
-                }))
+            StrategyMode::RegimeAdaptive => {
+                // RegimeAdaptive uses Ensemble logic or specialized routing.
+                // For now, routing to SMC as a high-performance modern default for adaptive regimes,
+                // or preferably the actual EnsembleStrategy.
+                Arc::new(EnsembleStrategy::modern_ensemble(config))
             }
-            StrategyMode::TrendRiding => Arc::new(TrendRidingStrategy::new(
-                config.strategy.fast_sma_period,
-                config.strategy.slow_sma_period,
-                config.strategy.sma_threshold,
-                config.strategy.trend_riding_exit_buffer_pct,
-            )),
-            StrategyMode::MeanReversion => Arc::new(MeanReversionStrategy::new(
-                config.strategy.mean_reversion_bb_period,
-                config.strategy.mean_reversion_rsi_exit,
-            )),
-            StrategyMode::RegimeAdaptive => Arc::new(TrendRidingStrategy::new(
-                config.strategy.fast_sma_period,
-                config.strategy.slow_sma_period,
-                config.strategy.sma_threshold,
-                config.strategy.trend_riding_exit_buffer_pct,
-            )),
             StrategyMode::SMC => Arc::new(SMCStrategy::new(
                 config.strategy.smc_ob_lookback,
                 config.strategy.smc_min_fvg_size_pct,
                 config.strategy.smc_volume_multiplier,
             )),
-            StrategyMode::VWAP => Arc::new(VWAPStrategy::default()),
-            StrategyMode::Breakout => Arc::new(BreakoutStrategy::new(
-                config.strategy.breakout_lookback,
-                config.strategy.breakout_threshold_pct,
-                config.strategy.breakout_volume_mult,
-            )),
-            StrategyMode::Momentum => Arc::new(MomentumDivergenceStrategy::default()),
             StrategyMode::Ensemble => Arc::new(EnsembleStrategy::modern_ensemble(config)),
             // Modern statistical/microstructure strategies (params from config)
             StrategyMode::ZScoreMR => Arc::new(ZScoreMeanReversionStrategy::new(

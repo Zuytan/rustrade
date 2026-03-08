@@ -8,7 +8,6 @@ use crate::application::optimization::win_rate_provider::{StaticWinRateProvider,
 
 use crate::application::strategies::TradingStrategy;
 
-use crate::application::agents::trade_evaluator::TradeEvaluator;
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{CandleRepository, StrategyRepository};
 use crate::domain::trading::types::{Candle, MarketEvent, OrderSide, OrderStatus, TradeProposal};
@@ -54,8 +53,6 @@ pub struct Analyst {
     candle_aggregator: CandleAggregator,
     win_rate_provider: Arc<dyn WinRateProvider>,
 
-    #[allow(dead_code)] // Used indirectly by pipeline
-    trade_evaluator: TradeEvaluator,
     pipeline: super::candle_pipeline::CandlePipeline,
     warmup_service: super::warmup_service::WarmupService,
     // Multi-timeframe configuration
@@ -95,15 +92,6 @@ impl Analyst {
                 dependencies.spread_cache.clone(),
                 cost_evaluator.clone(),
             ),
-        );
-
-        let trade_filter =
-            crate::application::trading::trade_filter::TradeFilter::new(cost_evaluator.clone());
-        let trade_evaluator = crate::application::agents::trade_evaluator::TradeEvaluator::new(
-            trade_filter,
-            crate::application::agents::signal_processor::SignalProcessor::new(
-                sizing_engine.clone(),
-            ), /* Clone for main analyst */
         );
 
         // Extract enabled timeframes from config (will be passed from system.rs)
@@ -166,7 +154,6 @@ impl Analyst {
             symbol_states: HashMap::new(),
             candle_aggregator: CandleAggregator::new(dependencies.candle_repository.clone()),
             win_rate_provider,
-            trade_evaluator,
             pipeline,
             warmup_service,
             enabled_timeframes,

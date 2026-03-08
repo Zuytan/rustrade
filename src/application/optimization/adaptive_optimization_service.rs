@@ -194,7 +194,7 @@ impl AdaptiveOptimizationService {
             // Update Active Strategy
             let strategy_def = StrategyDefinition {
                 symbol: symbol.to_string(),
-                mode: StrategyMode::Advanced, // Assuming Advanced for now
+                mode: StrategyMode::RegimeAdaptive, // Defaulting to RegimeAdaptive
                 config_json,
                 is_active: true,
             };

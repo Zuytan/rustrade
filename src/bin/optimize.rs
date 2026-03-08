@@ -48,8 +48,8 @@ enum Commands {
         #[arg(long, default_value = "2023-12-31")]
         end: String,
 
-        /// Strategy mode (standard, advanced, dynamic, trendriding, meanreversion)
-        #[arg(long, default_value = "advanced")]
+        /// Strategy mode (smc, regimeadaptive, ensemble, zscoremr, statmomentum, orderflow, ml)
+        #[arg(long, default_value = "smc")]
         strategy: String,
 
         /// TOML file with parameter grid (e.g. grid.toml, grid_entry_opt.toml in project root)
@@ -135,7 +135,7 @@ enum Commands {
         session_end: Option<String>,
     },
     /// Discover and save optimal parameters for all risk levels
-    /// Uses benchmark-proven strategies: Conservative→Standard, Balanced→RegimeAdaptive, Aggressive→SMC
+    /// Uses benchmark-proven strategies: Conservative→ZScoreMR, Balanced→RegimeAdaptive, Aggressive→SMC
     DiscoverOptimal {
         /// Symbol to use (e.g. AAPL for stocks, BTC/USD for crypto)
         #[arg(short, long, default_value = "AAPL")]
@@ -160,7 +160,7 @@ enum Commands {
         end: String,
 
         /// Strategy mode
-        #[arg(long, default_value = "advanced")]
+        #[arg(long, default_value = "smc")]
         strategy: String,
 
         /// TOML file with parameter grid (optional; default = crypto grid)
@@ -216,7 +216,7 @@ async fn run_optimize(
     session_end: Option<String>,
     risk_score: Option<u8>,
 ) -> Result<()> {
-    let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::Advanced);
+    let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::SMC);
     let is_crypto = asset_type.to_lowercase().as_str() == "crypto";
     let symbol = resolve_run_symbol(&symbol, is_crypto);
     let (session_start, session_end) =
@@ -342,7 +342,7 @@ async fn run_clusters(
     output_prefix: String,
     risk_score: Option<u8>,
 ) -> Result<()> {
-    let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::Advanced);
+    let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::SMC);
     let (session_start, session_end) = ("00:00:00".to_string(), "23:59:59".to_string());
     let clusters = resolve_clusters(&cluster_ids);
     if clusters.is_empty() {
@@ -534,7 +534,7 @@ async fn main() -> Result<()> {
             let symbol_list = resolve_batch_symbols(&symbols, is_crypto);
             let (session_start, session_end) =
                 resolve_session_times(session_start.as_deref(), session_end.as_deref(), is_crypto);
-            let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::Advanced);
+            let strategy_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::SMC);
             let parameter_grid = ParameterGrid::default();
 
             println!("{}", "=".repeat(80));
@@ -613,7 +613,7 @@ async fn main() -> Result<()> {
             println!("Symbol: {} ({})", symbol, asset);
             println!("Periods: {}", period_desc);
             println!(
-                "Strategy per profile: Conservative→Standard, Balanced→RegimeAdaptive, Aggressive→SMC"
+                "Strategy per profile: Conservative→ZScoreMR, Balanced→RegimeAdaptive, Aggressive→SMC"
             );
             println!("{}\n", "=".repeat(80));
 
@@ -946,12 +946,12 @@ fn calculate_grid_combinations(grid: &ParameterGrid) -> usize {
 /// Returns the optimal strategy for each risk profile based on benchmark analysis.
 ///
 /// Mapping based on comprehensive testing across 5 symbols, 9 strategies, 3 risk levels:
-/// - Conservative (1-3): Standard - Safe with ADX filters, avoids choppy markets
+/// - Conservative (1-3): ZScoreMR - Safe mean reversion, avoids choppy trending markets
 /// - Balanced (4-6): RegimeAdaptive - Steady gains with good risk/reward balance  
 /// - Aggressive (7-10): SMC - Best alpha generator with proven robust scaling
 fn get_strategy_for_profile(profile: RiskProfile) -> StrategyMode {
     match profile {
-        RiskProfile::Conservative => StrategyMode::Standard,
+        RiskProfile::Conservative => StrategyMode::ZScoreMR,
         RiskProfile::Balanced => StrategyMode::RegimeAdaptive,
         RiskProfile::Aggressive => StrategyMode::SMC,
     }

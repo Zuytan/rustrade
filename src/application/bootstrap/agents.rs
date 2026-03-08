@@ -320,78 +320,14 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
 
 fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn TradingStrategy> {
     match config.strategy.strategy_mode {
-        crate::domain::market::strategy_config::StrategyMode::Standard => {
-            Arc::new(DualSMAStrategy::new(
-                config.strategy.fast_sma_period,
-                config.strategy.slow_sma_period,
-                config.strategy.sma_threshold,
-            ))
-        }
-        crate::domain::market::strategy_config::StrategyMode::Advanced => Arc::new(
-            AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
-                fast_period: analyst_config.strategy.fast_sma_period,
-                slow_period: analyst_config.strategy.slow_sma_period,
-                sma_threshold: analyst_config.strategy.sma_threshold,
-                trend_sma_period: analyst_config.strategy.trend_sma_period,
-                rsi_threshold: analyst_config.strategy.rsi_threshold,
-                signal_confirmation_bars: analyst_config.strategy.signal_confirmation_bars,
-                macd_requires_rising: analyst_config.strategy.macd_requires_rising,
-                trend_tolerance_pct: analyst_config.strategy.trend_tolerance_pct,
-                macd_min_threshold: analyst_config.strategy.macd_min_threshold,
-                adx_threshold: analyst_config.strategy.adx_threshold,
-            }),
-        ),
-        crate::domain::market::strategy_config::StrategyMode::Dynamic => {
-            Arc::new(DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
-                fast_period: analyst_config.strategy.fast_sma_period,
-                slow_period: analyst_config.strategy.slow_sma_period,
-                sma_threshold: analyst_config.strategy.sma_threshold,
-                trend_sma_period: analyst_config.strategy.trend_sma_period,
-                rsi_threshold: analyst_config.strategy.rsi_threshold,
-                trend_divergence_threshold: analyst_config.strategy.trend_divergence_threshold,
-                signal_confirmation_bars: analyst_config.strategy.signal_confirmation_bars,
-                macd_requires_rising: analyst_config.strategy.macd_requires_rising,
-                trend_tolerance_pct: analyst_config.strategy.trend_tolerance_pct,
-                macd_min_threshold: analyst_config.strategy.macd_min_threshold,
-                adx_threshold: analyst_config.strategy.adx_threshold,
-            }))
-        }
-        crate::domain::market::strategy_config::StrategyMode::TrendRiding => {
-            Arc::new(TrendRidingStrategy::new(
-                config.strategy.fast_sma_period,
-                config.strategy.slow_sma_period,
-                config.strategy.sma_threshold,
-                config.strategy.trend_riding_exit_buffer_pct,
-            ))
-        }
-        crate::domain::market::strategy_config::StrategyMode::MeanReversion => {
-            Arc::new(MeanReversionStrategy::new(
-                analyst_config.strategy.mean_reversion_bb_period,
-                analyst_config.strategy.mean_reversion_rsi_exit,
-            ))
-        }
         crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive => {
-            Arc::new(crate::application::strategies::TrendRidingStrategy::new(
-                analyst_config.strategy.fast_sma_period,
-                analyst_config.strategy.slow_sma_period,
-                analyst_config.strategy.sma_threshold,
-                analyst_config.strategy.trend_riding_exit_buffer_pct,
-            ))
+            Arc::new(EnsembleStrategy::modern_ensemble(analyst_config))
         }
         crate::domain::market::strategy_config::StrategyMode::SMC => Arc::new(SMCStrategy::new(
             analyst_config.strategy.smc_ob_lookback,
             analyst_config.strategy.smc_min_fvg_size_pct,
             analyst_config.strategy.smc_volume_multiplier,
         )),
-        crate::domain::market::strategy_config::StrategyMode::VWAP => {
-            Arc::new(VWAPStrategy::default())
-        }
-        crate::domain::market::strategy_config::StrategyMode::Breakout => {
-            Arc::new(BreakoutStrategy::default())
-        }
-        crate::domain::market::strategy_config::StrategyMode::Momentum => {
-            Arc::new(MomentumDivergenceStrategy::default())
-        }
         crate::domain::market::strategy_config::StrategyMode::Ensemble => {
             Arc::new(EnsembleStrategy::modern_ensemble(analyst_config))
         }

@@ -19,7 +19,7 @@ mod tests {
         let mut result = OptimizationResult {
             params: AnalystConfig {
                 strategy: StrategyConfig {
-                    strategy_mode: StrategyMode::Standard,
+                    strategy_mode: StrategyMode::SMC,
                     fast_sma_period: 20,
                     slow_sma_period: 60,
                     sma_threshold: dec!(0.001),

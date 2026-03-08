@@ -15,8 +15,7 @@ pub struct StrategyEnvLoader;
 
 impl StrategyEnvLoader {
     pub fn from_env() -> Result<crate::domain::config::StrategyConfig> {
-        let strategy_mode_str =
-            env::var("STRATEGY_MODE").unwrap_or_else(|_| "standard".to_string());
+        let strategy_mode_str = env::var("STRATEGY_MODE").unwrap_or_else(|_| "smc".to_string());
         let strategy_mode = StrategyMode::from_str(&strategy_mode_str)?;
 
         // Parse Risk Appetite first (may override other values)

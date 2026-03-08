@@ -1,13 +1,13 @@
 use rust_decimal_macros::dec;
 
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
 use rustrade::application::monitoring::connection_health_service::{
     ConnectionHealthService, ConnectionStatus,
 };
 use rustrade::application::system::Application;
 use rustrade::config::{Config, Mode};
 use rustrade::domain::ports::ExecutionService;
+use rustrade::domain::trading::types::Candle;
 use rustrade::domain::trading::types::{MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
 use rustrade::infrastructure::observability::Metrics;
@@ -36,7 +36,7 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         asset_class: rustrade::config::AssetClass::Stock,
         broker: rustrade::config::BrokerEnvConfig::default(),
         strategy: rustrade::domain::config::StrategyConfig {
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             fast_sma_period: 2,
             slow_sma_period: 5,
             sma_threshold: dec!(0.001),
@@ -263,35 +263,34 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     // 2. Dip to trigger "Below" state (Fast < Slow)
     // 3. Rip to trigger "Above" state (Fast > Slow) -> BUY SIGNAL
 
-    // Scenario: Smooth uptrend to ensure MACD histogram rises consistently
-    // Start flat, then gradual acceleration to trigger golden cross with rising MACD
-    let events = [
-        100.0, 100.0, 100.0, 100.0, 100.0, // Stable baseline
-        100.5, 101.0, 101.5, 102.0, 102.5, // Gradual
-        103.5, 104.5, 105.5, 106.5, 107.5, // Acceleration
-        109.0, 110.5, 112.0, 113.5, 115.0, // Crossover
+    // Scenario: SMC Bullish Sequence
+    let smc_data = [
+        (100.0, 101.0, 99.0, 99.0),   // C1: Bearish OB
+        (99.0, 104.0, 99.0, 104.0),   // C2: Impulsive Bullish
+        (104.0, 108.0, 103.0, 108.0), // C3: FVG Top
+        (108.0, 108.0, 102.0, 102.0), // C4: Retracement
+        (102.0, 105.0, 102.0, 105.0), // C5: Bullish Confirm
     ];
 
     let start_time = chrono::Utc::now();
-    for (i, price_f64) in events.iter().enumerate() {
-        let price = Decimal::from_f64(*price_f64).unwrap();
-        // Advance time by 60 sec + i * 60 sec to ensure new candles
+    for (i, &(o, h, l, c)) in smc_data.iter().enumerate() {
         let timestamp = start_time + chrono::Duration::seconds(60 * (i as i64 + 1));
-
         mock_market
-            .publish(MarketEvent::Quote {
+            .publish(MarketEvent::Candle(Candle {
                 symbol: symbol.clone(),
-                price,
-                quantity: Decimal::from(100), // Significant volume
+                open: Decimal::from_f64_retain(o).unwrap(),
+                high: Decimal::from_f64_retain(h).unwrap(),
+                low: Decimal::from_f64_retain(l).unwrap(),
+                close: Decimal::from_f64_retain(c).unwrap(),
+                volume: Decimal::new(100, 0),
                 timestamp: timestamp.timestamp_millis(),
-            })
+            }))
             .await;
-        // Give time for analysis
         sleep(Duration::from_millis(10)).await;
     }
 
     // Flush the aggregator by sending one more event in the future
-    let flush_timestamp = start_time + chrono::Duration::seconds(60 * (events.len() as i64 + 5));
+    let flush_timestamp = start_time + chrono::Duration::seconds(60 * (smc_data.len() as i64 + 5));
     mock_market
         .publish(MarketEvent::Quote {
             symbol: symbol.clone(),

@@ -153,7 +153,7 @@ pub fn apply_adaptive_strategy_switching(
     context: &mut SymbolContext,
     regime: &MarketRegime,
     config: &AnalystConfig,
-    symbol: &str,
+    _symbol: &str,
 ) -> bool {
     use crate::application::strategies::strategy_selector::StrategySelector;
     use crate::domain::market::strategy_config::StrategyMode;
@@ -162,16 +162,24 @@ pub fn apply_adaptive_strategy_switching(
         return false;
     }
 
-    let (new_mode, new_strategy) =
-        StrategySelector::select_strategy(regime, config, context.active_strategy_mode);
+    // Update strategy mode based on regime
+    let symbol = context.active_symbol();
+    let new_mode = StrategySelector::select_best(
+        regime.clone(),
+        &symbol,
+        config,
+        context.active_strategy_mode,
+    );
 
     if new_mode != context.active_strategy_mode {
         info!(
-            "RegimeHandler: Adaptive Switch for {} -> {:?} (Regime: {:?})",
-            symbol, new_mode, regime.regime_type
+            "Regime change detected for {}: {:?} -> {:?}",
+            symbol, context.active_strategy_mode, new_mode
         );
-        context.strategy = new_strategy;
         context.active_strategy_mode = new_mode;
+        // Re-create the strategy instance using the factor
+        use crate::application::strategies::StrategyFactory;
+        context.strategy = StrategyFactory::create(new_mode, config);
         return true;
     }
 
@@ -183,15 +191,14 @@ mod tests {
     use super::*;
     use crate::application::agents::analyst_config::AnalystConfig;
     use crate::application::optimization::win_rate_provider::StaticWinRateProvider;
-    use crate::application::strategies::DualSMAStrategy;
+    use crate::application::strategies::SMCStrategy as DualSMAStrategy;
     use crate::domain::market::market_regime::MarketRegimeType;
-    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     fn create_test_context_with_score(score: Option<u8>) -> SymbolContext {
         let mut config = AnalystConfig::default();
         config.strategy.risk_appetite_score = score;
-        let strategy = Arc::new(DualSMAStrategy::new(20, 60, Decimal::ZERO));
+        let strategy = Arc::new(DualSMAStrategy::new(20, dec!(0.001), dec!(1.0)));
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
     }

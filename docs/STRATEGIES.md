@@ -1,25 +1,21 @@
 # Trading Strategies Documentation
 
-This document provides a comprehensive overview of all trading strategies implemented in Rustrade.
+This document provides a comprehensive overview of all modern trading strategies implemented in Rustrade. The legacy SMA-based and basic momentum strategies have been fully deprecated in favor of institutional-grade, statistically sound, and machine learning components.
 
 ## Table of Contents
 
 - [Strategy Overview](#strategy-overview)
-- [Trend Following Strategies](#trend-following-strategies)
-  - [Dual SMA (Standard)](#dual-sma-standard)
-  - [Advanced Triple Filter](#advanced-triple-filter)
-  - [Trend Riding](#trend-riding)
-- [Mean Reversion Strategies](#mean-reversion-strategies)
-  - [Mean Reversion (Bollinger)](#mean-reversion-bollinger)
-  - [VWAP](#vwap)
-- [Momentum Strategies](#momentum-strategies)
-  - [Breakout](#breakout)
-  - [Momentum Divergence](#momentum-divergence)
 - [Institutional Strategies](#institutional-strategies)
   - [SMC (Smart Money Concepts)](#smc-smart-money-concepts)
-- [Adaptive Strategies](#adaptive-strategies)
-  - [Dynamic (Regime-Based)](#dynamic-regime-based)
+  - [Order Flow](#order-flow)
+- [Statistical & Quantitative](#statistical--quantitative)
+  - [Z-Score Mean Reversion](#z-score-mean-reversion)
+  - [Statistical Momentum](#statistical-momentum)
+- [Adaptive & Meta](#adaptive--meta)
+  - [Regime Adaptive](#regime-adaptive)
   - [Ensemble](#ensemble)
+- [Machine Learning](#machine-learning)
+  - [ML inference](#ml-inference)
 - [Configuration](#configuration)
 
 ---
@@ -28,447 +24,87 @@ This document provides a comprehensive overview of all trading strategies implem
 
 | Strategy | Type | Market Condition | Risk Level | Key Indicators |
 |----------|------|------------------|------------|----------------|
-| DualSMA | Trend | Trending | Medium | SMA Crossover |
-| Advanced | Trend | Strong Trends | Low | SMA + RSI + MACD + ADX |
-| TrendRiding | Trend | Long Trends | Medium | EMA + Trailing Stop |
-| MeanReversion | Contrarian | Ranging | Medium | Bollinger Bands + RSI |
-| VWAP | Contrarian | Ranging | Low | Volume-Weighted Price |
-| Breakout | Momentum | Volatility | High | Volume + Range |
-| Momentum | Momentum | Divergences | Medium | RSI Divergence |
-| SMC | Institutional | All | Medium | Order Blocks + FVG |
-| Dynamic | Adaptive | All | Variable | Regime Detection |
+| SMC | Institutional | Trending / Reversal | Medium | Order Blocks, FVG, MSS |
+| Order Flow | Institutional | High Liquidity | Medium | OFI, Cumulative Delta, VP |
+| ZScoreMR | Quantitative | Ranging | Low | Z-Score of Returns, Volatility |
+| StatMomentum | Quantitative | Trending | High | Moving Linear Reg, R² |
+| RegimeAdaptive | Adaptive | All | Variable | ADX, Trend Detection, Variance |
 | Ensemble | Meta | All | Low | Multi-Strategy Vote |
 | ML | Predictive | All | Medium | ONNX / SmartCore Models |
-
----
-
-## Trend Following Strategies
-
-### Dual SMA (Standard)
-
-The simplest and most reliable trend-following strategy based on moving average crossovers.
-
-#### Algorithm
-
-```
-BUY Signal (Golden Cross):
-  Fast SMA crosses ABOVE Slow SMA
-  
-SELL Signal (Death Cross):
-  Fast SMA crosses BELOW Slow SMA
-```
-
-#### Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `fast_period` | 2 | Fast SMA lookback period |
-| `slow_period` | 5 | Slow SMA lookback period |
-
-#### When to Use
-
-- Trending markets with clear directional moves
-- Medium to high volatility environments
-- When you want fewer false signals than single-indicator strategies
-
----
-
-### Advanced Triple Filter
-
-A multi-layered confirmation system that requires agreement from multiple indicators before generating signals.
-
-#### Algorithm
-
-```
-BUY Signal (all must pass):
-  1. Golden Cross (Fast SMA > Slow SMA)
-  2. Price > Trend SMA (above long-term trend)
-  3. RSI < Overbought threshold (not overextended)
-  4. MACD Histogram > 0 and rising (positive momentum)
-  5. ADX > Threshold (strong trend)
-
-SELL Signal (all must pass):
-  1. Death Cross (Fast SMA < Slow SMA)
-  2. Price < Trend SMA (below long-term trend)
-  3. RSI > Oversold threshold
-  4. MACD Histogram < 0
-```
-
-#### Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `trend_period` | 20 | Long-term trend SMA period |
-| `rsi_period` | 14 | RSI calculation period |
-| `rsi_overbought` | 75 | RSI overbought threshold |
-| `rsi_oversold` | 25 | RSI oversold threshold |
-| `adx_period` | 14 | ADX smoothing period |
-| `adx_threshold` | 25 | Minimum trend strength |
-
-#### When to Use
-
-- When you want high-conviction signals with fewer trades
-- Strong trending markets
-- When capital preservation is priority
-
----
-
-### Trend Riding
-
-Designed to capture extended trends by staying in positions longer using trailing mechanisms.
-
-#### Algorithm
-
-```
-ENTRY:
-  Golden Cross AND Price > Long-term EMA
-
-EXIT:
-  Price drops below trailing stop (EMA - buffer)
-  OR Death Cross occurs
-```
-
-#### Key Features
-
-- Uses EMA (Exponential Moving Average) for faster reaction
-- Trailing stop follows price higher, never lower
-- Buffer zone prevents premature exits on noise
-
-#### When to Use
-
-- Long-running trends (hours to days)
-- When you want to "let winners run"
-- Lower-frequency trading
-
----
-
-## Mean Reversion Strategies
-
-### Mean Reversion (Bollinger)
-
-Capitalizes on price returning to the mean after extreme moves, using Bollinger Bands.
-
-#### Algorithm
-
-```
-BUY Signal:
-  Price touches/crosses BELOW Lower Bollinger Band
-  AND RSI indicates oversold (< 30)
-
-SELL Signal:
-  Price touches/crosses ABOVE Upper Bollinger Band
-  AND RSI indicates overbought (> 70)
-```
-
-#### Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `bb_period` | 20 | Bollinger Band period |
-| `bb_std_dev` | 2.0 | Standard deviation multiplier |
-| `rsi_period` | 14 | RSI period |
-
-#### When to Use
-
-- Range-bound, sideways markets
-- Low ADX environments (weak trends)
-- Counter-trend opportunities
-
----
-
-### VWAP
-
-Volume-Weighted Average Price strategy for intraday mean reversion.
-
-#### Algorithm
-
-```
-VWAP = Σ(Price × Volume) / Σ(Volume)
-
-BUY Signal:
-  Price significantly BELOW VWAP (oversold relative to volume)
-  AND showing reversal candle pattern
-
-SELL Signal:
-  Price significantly ABOVE VWAP (overbought relative to volume)
-  AND showing reversal pattern
-```
-
-#### Key Features
-
-- Incorporates volume into price analysis
-- Institutional benchmark price
-- Resets daily (intraday strategy)
-
-#### When to Use
-
-- Intraday trading
-- High-volume, liquid assets
-- When volume confirmation is important
-
----
-
-## Momentum Strategies
-
-### Breakout
-
-Captures explosive moves when price breaks out of consolidation zones.
-
-#### Algorithm
-
-```
-BUY Signal:
-  Price breaks ABOVE recent high (N-period high)
-  AND Volume surge (> 1.5x average volume)
-  AND Range expansion (current range > average range)
-
-SELL Signal:
-  Price breaks BELOW recent low
-  OR Trailing stop hit
-```
-
-#### Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `lookback` | 20 | Period for high/low detection |
-| `volume_multiplier` | 1.5 | Volume surge threshold |
-
-#### When to Use
-
-- After consolidation periods
-- When volatility is expanding
-- News-driven moves
-
----
-
-### Momentum Divergence
-
-Detects when price and momentum indicators diverge, signaling potential reversals.
-
-#### Algorithm
-
-```
-Bullish Divergence (BUY):
-  Price makes LOWER low
-  BUT RSI makes HIGHER low
-  → Momentum weakening in downtrend
-
-Bearish Divergence (SELL):
-  Price makes HIGHER high
-  BUT RSI makes LOWER high
-  → Momentum weakening in uptrend
-```
-
-#### Key Features
-
-- Identifies exhaustion in trends
-- Requires pattern recognition over multiple swings
-- Higher accuracy with confirmation
-
-#### When to Use
-
-- End of extended trends
-- When looking for reversal entries
-- Combined with support/resistance levels
 
 ---
 
 ## Institutional Strategies
 
 ### SMC (Smart Money Concepts)
+Focuses on identifying institutional order flow patterns, tracing footprints left by large players.
 
-Focuses on identifying institutional order flow patterns.
+**Core Concepts:**
+- **Order Blocks (OB):** The last opposing candle before an impulsive move. Marks accumulation/distribution zones.
+- **Fair Value Gaps (FVG):** Price imbalances formed by impulsive 3-candle sequences without retracement footprint.
+- **Market Structure Shift (MSS):** Confirmation of trend change via breaks of recent swings.
 
-#### Core Concepts
+**Algorithm:**
+Generates Buy/Sell proposals when price retraces into a confirmed FVG or OB zone with subsequent directional confirmation.
 
-**Order Blocks (OB)**
-```
-Bullish OB: Last bearish candle before strong bullish move
-Bearish OB: Last bullish candle before strong bearish move
-→ Mark zones where institutions accumulated positions
-```
+### Order Flow
+Analyzes the microstructure of the market by keeping track of the order book dynamics and volume distribution.
 
-**Fair Value Gaps (FVG)**
-```
-Bullish FVG: Gap between Candle 1 High and Candle 3 Low
-  (Candle 2 is impulsive bullish)
-Bearish FVG: Gap between Candle 1 Low and Candle 3 High
-  (Candle 2 is impulsive bearish)
-→ Imbalances that price tends to fill
-```
-
-**Market Structure Shift (MSS)**
-```
-Bullish MSS: Price closes above recent swing high
-Bearish MSS: Price closes below recent swing low
-→ Confirms change in market direction
-```
-
-#### Algorithm
-
-```
-BUY Signal:
-  1. Bullish FVG detected
-  2. Price near bullish Order Block
-  3. Bullish MSS confirmed
-
-SELL Signal:
-  1. Bearish FVG detected
-  2. Price near bearish Order Block
-  3. Bearish MSS confirmed
-```
-
-#### Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `ob_lookback` | 20 | Order Block detection period |
-| `min_fvg_size_pct` | 0.1 | Minimum FVG size (0.1%) |
-
-#### When to Use
-
-- Any market condition
-- When trading alongside institutions
-- Higher timeframes preferred
+**Core Concepts:**
+- **Order Flow Imbalance (OFI):** Measures the net pressure between bid and ask volumes.
+- **Cumulative Delta:** Tracks the running total of aggressive market buying vs selling over the session.
+- **Volume Profile:** Identifies high and low volume nodes (HVN/LVN) serving as support/resistance.
 
 ---
 
-## Adaptive Strategies
+## Statistical & Quantitative
 
-### Dynamic (Regime-Based)
+### Z-Score Mean Reversion (ZScoreMR)
+A highly mathematical mean-reversion algorithm based on the statistical Z-Score formulation.
 
-Automatically switches between strategies based on detected market regime.
+**Algorithm:**
+Rather than relying on RSI or Bollinger Bands, it calculates the Z-Score of log returns over a lookback window. When the Z-Score exceeds extreme statistical bounds (e.g., ±2.0 σ), the strategy assumes price has decoupled from fair value and takes a contrarian position, aiming to exit as the Z-Score returns to 0.
 
-#### Regime Detection
+### Statistical Momentum (StatMomentum)
+A mathematically rigorous approach to trend following.
 
-```
-Market Regimes:
-  1. Trending Up: ADX > threshold, positive slope
-  2. Trending Down: ADX > threshold, negative slope  
-  3. Ranging: ADX < threshold, low variance
-  4. Volatile: High variance, unstable direction
-```
-
-#### Strategy Mapping
-
-| Regime | Active Strategy |
-|--------|-----------------|
-| Trending (Up/Down) | TrendRiding or Advanced |
-| Ranging | MeanReversion or VWAP |
-| Volatile | Reduced sizing, Breakout |
-
-#### Key Features
-
-- Uses ADX for trend strength
-- Linear regression for trend direction
-- Variance analysis for volatility
+**Algorithm:**
+Uses Moving Linear Regression applied to price data. It calculates the slope and the corresponding R² value. If the slope is steep and the R² indicates a very strong linear fit (low variance noise), it generates a momentum entry. Provides mathematically quantified trend conviction compared to lagging SMAs.
 
 ---
+
+## Adaptive & Meta
+
+### Regime Adaptive
+Automatically detects the current market environment and delegates signal generation to the most appropriate sub-strategy.
+
+**Regimes Supported:**
+1. **Trending Up / Trending Down:** Triggered by high ADX. Uses trend strategies (e.g., SMC or StatMomentum).
+2. **Choppy/Ranging:** Triggered by low ADX. Uses mean-reversion (ZScoreMR).
 
 ### Ensemble
-
-Meta-strategy that combines multiple strategies through a voting mechanism.
-
-#### Algorithm
-
-```
-For each candle:
-  1. Run all component strategies
-  2. Collect BUY/SELL/HOLD votes
-  3. Weight votes by strategy confidence
-  4. Generate signal if consensus reached
-
-Signal = Weighted vote if > threshold (e.g., 60%)
-```
-
-#### Component Strategies
-
-1. DualSMA
-2. Advanced Triple Filter
-3. Mean Reversion
-4. VWAP
-
-#### When to Use
-
-- When seeking high-conviction signals
-- Risk-averse trading
-- When no single strategy dominates
+A meta-strategy that aggregates signals from multiple robust child strategies using a weighted voting system.
+Provides highest confidence and lowest drawdown by ensuring consensus among uncorrelated models.
 
 ---
 
-## Machine Learning Strategies
+## Machine Learning
 
-### ML (High-Performance Inference)
+### ML Inference
+Uses pre-trained models to predict price movements based on a rich state representation of the market.
 
-The ML strategy uses pre-trained models to predict price movements based on a rich set of technical and order flow features.
-
-#### Runtime Support
-
-Rustrade supports two inference runtimes:
-1. **ONNX Runtime (`ort`)**: Recommended for high-performance inference with XGBoost, LightGBM, or Deep Learning models.
-2. **SmartCore**: Legacy support for Random Forest models trained with the built-in `train_ml` utility.
-
-#### Hybrid Loading Logic
-
-The `StrategyFactory` automatically detects and prioritizes models:
-- If `data/ml/model.onnx` exists → Uses **ONNX Runtime**.
-- Else if `data/ml/model.bin` exists → Uses **SmartCore**.
-- Otherwise → Returns neutral signals.
-
-#### Feature Matrix
-
-The following features are fed into the models (order is critical for ONNX):
-- RSI, MACD (Line, Signal, Hist), Bollinger Position/Width, ATR%, Hurst Exponent, Skewness, Normalized Momentum, Realized Volatility, OFI, Cumulative Delta, Spread (BPS), ADX.
-
-#### When to Use
-
-- When historical patterns are complex and non-linear.
-- In markets with rich order flow data (ONNX can process more features efficiently).
-- When you have a custom-trained model from Python/Scikit-learn/PyTorch exported to ONNX.
+**Features included:**
+ONNX Runtime support, SmartCore legacy support. Ingests dozens of features including normalized momentum, realized volatility, OFI, and Hurst exponent.
 
 ---
 
 ## Configuration
 
 ### Environment Variables
-
 ```bash
 # Strategy Selection
-STRATEGY_MODE=advanced  # standard, advanced, dynamic, trendriding, meanreversion, vwap, breakout, momentum, smc, ensemble
-
-# Common Parameters
-ADX_PERIOD=14
-ADX_THRESHOLD=25.0
-RSI_THRESHOLD=75.0
-
-# VWAP Specific
-VWAP_LOOKBACK=20
-
-# Breakout Specific
-BREAKOUT_VOLUME_MULT=1.5
-
-# SMC Specific
-SMC_OB_LOOKBACK=20
-SMC_MIN_FVG_PCT=0.1
+STRATEGY_MODE=smc  # smc, zscoremr, statmomentum, orderflow, regimeadaptive, ensemble, ml
 ```
 
-### Programmatic Configuration
-
-```rust
-use rustrade::application::strategies::StrategyFactory;
-use rustrade::domain::market::StrategyMode;
-
-// Create strategy instance
-let strategy = StrategyFactory::create(StrategyMode::Advanced, &config);
-
-// Use in analysis
-let signal = strategy.analyze(&context);
-```
-
----
-
-## Further Reading
-
-- [Global App Description](../GLOBAL_APP_DESCRIPTION.md) - Full system architecture
-- [Risk Management](../GLOBAL_APP_DESCRIPTION.md#4-risk-management-system) - Position sizing and risk controls
+### Programmatic Setup
+The `StrategyFactory` instantiates strategies directly from the `StrategyMode` enum seamlessly.

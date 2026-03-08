@@ -12,6 +12,52 @@ use tokio::sync::{RwLock, mpsc};
 static INIT: Once = Once::new();
 const BASE_TS: i64 = 1739528936000;
 
+fn create_smc_buy_sequence(symbol: &str, base_ts: i64) -> Vec<Candle> {
+    let mut candles = Vec::new();
+    let data = vec![
+        (100.0, 101.0, 99.0, 99.0),   // C1: Bearish OB
+        (99.0, 104.0, 99.0, 104.0),   // C2: Impulsive Bullish
+        (104.0, 108.0, 103.0, 108.0), // C3: FVG Top
+        (108.0, 108.0, 102.0, 102.0), // C4: Retracement
+        (102.0, 105.0, 102.0, 105.0), // C5: Bullish Confirm
+    ];
+    for (i, (o, h, l, c)) in data.into_iter().enumerate() {
+        candles.push(Candle {
+            symbol: symbol.to_string(),
+            open: Decimal::from_f64_retain(o).unwrap(),
+            high: Decimal::from_f64_retain(h).unwrap(),
+            low: Decimal::from_f64_retain(l).unwrap(),
+            close: Decimal::from_f64_retain(c).unwrap(),
+            volume: Decimal::new(100, 0),
+            timestamp: base_ts + (i as i64) * 600000,
+        });
+    }
+    candles
+}
+
+fn create_smc_sell_sequence(symbol: &str, base_ts: i64) -> Vec<Candle> {
+    let mut candles = Vec::new();
+    let data = vec![
+        (100.0, 101.0, 99.0, 101.0), // C1: Bullish OB
+        (101.0, 101.0, 96.0, 96.0),  // C2: Impulsive Bearish
+        (96.0, 97.0, 92.0, 92.0),    // C3: FVG Bottom
+        (92.0, 98.0, 92.0, 98.0),    // C4: Retracement
+        (98.0, 98.0, 95.0, 95.0),    // C5: Bearish Confirm
+    ];
+    for (i, (o, h, l, c)) in data.into_iter().enumerate() {
+        candles.push(Candle {
+            symbol: symbol.to_string(),
+            open: Decimal::from_f64_retain(o).unwrap(),
+            high: Decimal::from_f64_retain(h).unwrap(),
+            low: Decimal::from_f64_retain(l).unwrap(),
+            close: Decimal::from_f64_retain(c).unwrap(),
+            volume: Decimal::new(100, 0),
+            timestamp: base_ts + (i as i64) * 600000,
+        });
+    }
+    candles
+}
+
 #[allow(dead_code)]
 fn setup_logging() {
     INIT.call_once(|| {
@@ -54,7 +100,7 @@ async fn test_immediate_warmup() {
     let market_service = Arc::new(MockMarketDataService::new());
     let config = AnalystConfig::default();
     let strategy = rustrade::application::strategies::StrategyFactory::create(
-        rustrade::domain::market::strategy_config::StrategyMode::Advanced,
+        rustrade::domain::market::strategy_config::StrategyMode::SMC,
         &config,
     );
 
@@ -161,7 +207,7 @@ async fn test_golden_cross() {
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: Default::default(),
             ensemble_voting_threshold: dec!(0.5),
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..StrategyConfig::default()
         },
         risk: RiskConfig {
@@ -177,10 +223,10 @@ async fn test_golden_cross() {
             Decimal::ZERO,
         )),
     };
-    let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
-        config.strategy.fast_sma_period,
-        config.strategy.slow_sma_period,
-        config.strategy.sma_threshold,
+    let strategy = Arc::new(rustrade::application::strategies::SMCStrategy::new(
+        20,
+        dec!(0.005),
+        dec!(1.5),
     ));
     let mut analyst = Analyst::new(
         market_rx,
@@ -209,19 +255,8 @@ async fn test_golden_cross() {
         analyst.run().await;
     });
 
-    // Dual SMA (2, 3)
-    let prices = [100.0, 100.0, 100.0, 90.0, 110.0, 120.0];
-
-    for (i, p) in prices.iter().enumerate() {
-        let candle = Candle {
-            symbol: "BTC".to_string(),
-            open: Decimal::from_f64_retain(*p).unwrap(),
-            high: Decimal::from_f64_retain(*p).unwrap(),
-            low: Decimal::from_f64_retain(*p).unwrap(),
-            close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: Decimal::new(100, 0),
-            timestamp: BASE_TS + (i as i64) * 600000,
-        };
+    let sequence = create_smc_buy_sequence("BTC", BASE_TS);
+    for candle in sequence {
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();
     }
@@ -292,7 +327,7 @@ async fn test_prevent_short_selling() {
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: Default::default(),
             ensemble_voting_threshold: dec!(0.5),
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..StrategyConfig::default()
         },
         risk: RiskConfig {
@@ -308,10 +343,10 @@ async fn test_prevent_short_selling() {
             Decimal::ZERO,
         )),
     };
-    let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
-        config.strategy.fast_sma_period,
-        config.strategy.slow_sma_period,
-        config.strategy.sma_threshold,
+    let strategy = Arc::new(rustrade::application::strategies::SMCStrategy::new(
+        20,
+        dec!(0.005),
+        dec!(1.5),
     ));
     let mut analyst = Analyst::new(
         market_rx,
@@ -437,7 +472,7 @@ async fn test_sell_signal_with_position() {
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: Default::default(),
             ensemble_voting_threshold: dec!(0.5),
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..StrategyConfig::default()
         },
         risk: RiskConfig {
@@ -453,10 +488,10 @@ async fn test_sell_signal_with_position() {
             Decimal::ZERO,
         )),
     };
-    let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
-        config.strategy.fast_sma_period,
-        config.strategy.slow_sma_period,
-        config.strategy.sma_threshold,
+    let strategy = Arc::new(rustrade::application::strategies::SMCStrategy::new(
+        20,
+        dec!(0.005),
+        dec!(1.5),
     ));
     let mut analyst = Analyst::new(
         market_rx,
@@ -577,7 +612,7 @@ async fn test_dynamic_quantity_scaling() {
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: Default::default(),
             ensemble_voting_threshold: dec!(0.5),
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..StrategyConfig::default()
         },
         risk: RiskConfig {
@@ -593,10 +628,10 @@ async fn test_dynamic_quantity_scaling() {
             Decimal::ZERO,
         )),
     };
-    let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
-        config.strategy.fast_sma_period,
-        config.strategy.slow_sma_period,
-        config.strategy.sma_threshold,
+    let strategy = Arc::new(rustrade::application::strategies::SMCStrategy::new(
+        20,
+        dec!(0.005),
+        dec!(1.5),
     ));
     let mut analyst = Analyst::new(
         market_rx,
@@ -625,24 +660,8 @@ async fn test_dynamic_quantity_scaling() {
         analyst.run().await;
     });
 
-    // Generate sufficient data for SMA 50 to populate and cross
-    // 0-59: Stable at 100.0 (SMA 20=100, SMA 50=100)
-    // 60-69: Drop to 90.0 (SMA 20 drops fast, SMA 50 drops slow -> Fast < Slow)
-    // 70-85: Rise to 110.0 (SMA 20 rises fast, SMA 50 rises slow -> Fast > Slow -> Cross)
-    let mut prices = vec![100.0; 60];
-    prices.extend(vec![90.0; 10]);
-    prices.extend(vec![110.0; 15]);
-
-    for (i, p) in prices.iter().enumerate() {
-        let candle = Candle {
-            symbol: "AAPL".to_string(),
-            open: Decimal::from_f64_retain(*p).unwrap(),
-            high: Decimal::from_f64_retain(*p).unwrap(),
-            low: Decimal::from_f64_retain(*p).unwrap(),
-            close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: Decimal::new(100, 0),
-            timestamp: BASE_TS + (i as i64) * 600000,
-        };
+    let sequence = create_smc_buy_sequence("AAPL", BASE_TS);
+    for candle in sequence {
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();
     }
@@ -655,9 +674,9 @@ async fn test_dynamic_quantity_scaling() {
 
     assert_eq!(proposal.side, OrderSide::Buy);
 
-    // Final Price = 110. Equity = 100,000. Risk = 2% = 2,000.
-    // With cost-aware sizing, target_amt is reduced by estimated fees, so qty <= 2000/110.
-    let naive_qty = Decimal::from_f64_retain(2000.0 / 110.0)
+    // Final Price = 105. Equity = 100,000. Risk = 2% = 2,000.
+    // With cost-aware sizing, target_amt is reduced by estimated fees, so qty <= 2000/105.
+    let naive_qty = Decimal::from_f64_retain(2000.0 / 105.0)
         .unwrap()
         .round_dp(4);
     assert!(
@@ -742,7 +761,7 @@ async fn test_multi_symbol_isolation() {
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: Default::default(),
             ensemble_voting_threshold: dec!(0.5),
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..StrategyConfig::default()
         },
         risk: RiskConfig {
@@ -758,10 +777,10 @@ async fn test_multi_symbol_isolation() {
             Decimal::ZERO,
         )),
     };
-    let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
-        config.strategy.fast_sma_period,
-        config.strategy.slow_sma_period,
-        config.strategy.sma_threshold,
+    let strategy = Arc::new(rustrade::application::strategies::SMCStrategy::new(
+        20,
+        dec!(0.005),
+        dec!(1.5),
     ));
     let mut analyst = Analyst::new(
         market_rx,
@@ -790,34 +809,19 @@ async fn test_multi_symbol_isolation() {
         analyst.run().await;
     });
 
-    // Interleave BTC and ETH
-    // BTC: 100, 100, 100, 90 (init false), 120 (flip true)
-    // ETH: 100, 100, 100, 120 (init true), 70 (flip false)
-    let sequence = [
-        ("BTC", 100.0),
-        ("ETH", 100.0),
-        ("BTC", 100.0),
-        ("ETH", 100.0),
-        ("BTC", 100.0),
-        ("ETH", 100.0),
-        ("BTC", 90.0),
-        ("ETH", 120.0),
-        ("BTC", 120.0),
-        ("ETH", 70.0),
-    ];
+    let btc_sequence = create_smc_buy_sequence("BTC", BASE_TS);
+    let eth_sequence = create_smc_sell_sequence("ETH", BASE_TS);
 
-    for (i, (sym, p)) in sequence.iter().enumerate() {
-        let candle = Candle {
-            symbol: sym.to_string(),
-            open: Decimal::from_f64_retain(*p).unwrap(),
-            high: Decimal::from_f64_retain(*p).unwrap(),
-            low: Decimal::from_f64_retain(*p).unwrap(),
-            close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: Decimal::new(100, 0),
-            timestamp: BASE_TS + (i as i64) * 600000,
-        };
-        let event = MarketEvent::Candle(candle);
-        market_tx.send(event).await.unwrap();
+    // Interleave candles to test isolation
+    for i in 0..btc_sequence.len() {
+        market_tx
+            .send(MarketEvent::Candle(btc_sequence[i].clone()))
+            .await
+            .unwrap();
+        market_tx
+            .send(MarketEvent::Candle(eth_sequence[i].clone()))
+            .await
+            .unwrap();
     }
 
     // Give Analyst time to process all candles
@@ -900,7 +904,7 @@ async fn test_advanced_strategy_trend_filter() {
             orderflow_volume_profile_lookback: 100,
             ensemble_weights: Default::default(),
             ensemble_voting_threshold: dec!(0.5),
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Advanced,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..StrategyConfig::default()
         },
         risk: RiskConfig {
@@ -916,10 +920,10 @@ async fn test_advanced_strategy_trend_filter() {
             Decimal::ZERO,
         )),
     };
-    let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
-        config.strategy.fast_sma_period,
-        config.strategy.slow_sma_period,
-        config.strategy.sma_threshold,
+    let strategy = Arc::new(rustrade::application::strategies::SMCStrategy::new(
+        20,
+        dec!(0.005),
+        dec!(1.5),
     ));
     let mut analyst = Analyst::new(
         market_rx,
@@ -1016,49 +1020,7 @@ async fn test_risk_based_quantity_calculation() {
     // Production-like configuration
     let config = AnalystConfig {
         strategy: StrategyConfig {
-            fast_sma_period: 20,
-            slow_sma_period: 60,
-            sma_threshold: dec!(0.0005),
-            trend_sma_period: 200,
-            rsi_period: 14,
-            macd_fast_period: 12,
-            macd_slow_period: 26,
-            macd_signal_period: 9,
-            trend_divergence_threshold: dec!(0.005),
-            trailing_stop_atr_multiplier: dec!(3.0),
-            rsi_threshold: dec!(100.0),
-            trend_riding_exit_buffer_pct: dec!(0.03),
-            mean_reversion_rsi_exit: dec!(50.0),
-            mean_reversion_bb_period: 20,
-            bb_std_dev: dec!(2.0),
-            ema_fast_period: 50,
-            ema_slow_period: 150,
-            take_profit_pct: dec!(0.05),
-            macd_requires_rising: true,
-            trend_tolerance_pct: dec!(0.0),
-            macd_min_threshold: dec!(0.0),
-            profit_target_multiplier: dec!(1.5),
-            adx_period: 14,
-            adx_threshold: dec!(25.0),
-            smc_ob_lookback: 20,
-            smc_min_fvg_size_pct: dec!(0.005),
-            risk_appetite_score: None,
-            breakout_lookback: 10,
-            breakout_threshold_pct: dec!(0.002),
-            breakout_volume_mult: dec!(1.1),
-            smc_volume_multiplier: dec!(1.5),
-            stat_momentum_lookback: 10,
-            stat_momentum_threshold: dec!(1.5),
-            stat_momentum_trend_confirmation: true,
-            zscore_lookback: 20,
-            zscore_entry_threshold: dec!(-2.0),
-            zscore_exit_threshold: dec!(0.0),
-            orderflow_ofi_threshold: dec!(0.3),
-            orderflow_stacked_count: 3,
-            orderflow_volume_profile_lookback: 100,
-            ensemble_weights: Default::default(),
-            ensemble_voting_threshold: dec!(0.5),
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Dynamic,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..StrategyConfig::default()
         },
         risk: RiskConfig {
@@ -1075,10 +1037,10 @@ async fn test_risk_based_quantity_calculation() {
         )),
     };
 
-    let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
-        config.strategy.fast_sma_period,
-        config.strategy.slow_sma_period,
-        config.strategy.sma_threshold,
+    let strategy = Arc::new(rustrade::application::strategies::SMCStrategy::new(
+        20,
+        dec!(0.005),
+        dec!(1.5),
     ));
     let mut analyst = Analyst::new(
         market_rx,
@@ -1107,25 +1069,8 @@ async fn test_risk_based_quantity_calculation() {
         analyst.run().await;
     });
 
-    // Generate a golden cross scenario
-    let prices = vec![
-        100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
-        100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0,
-        108.0, 109.0, 110.0, 111.0, 112.0, 113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0, 120.0,
-        121.0, 122.0, 123.0, 124.0, 125.0, 126.0, 127.0, 128.0, 129.0, 130.0, 131.0, 132.0, 133.0,
-        134.0, 135.0, 136.0, 137.0, 138.0, 139.0, 140.0, 141.0, 142.0, 143.0, 144.0, 145.0,
-    ];
-
-    for (i, p) in prices.iter().enumerate() {
-        let candle = Candle {
-            symbol: "NVDA".to_string(),
-            open: Decimal::from_f64_retain(*p).unwrap(),
-            high: Decimal::from_f64_retain(*p).unwrap(),
-            low: Decimal::from_f64_retain(*p).unwrap(),
-            close: Decimal::from_f64_retain(*p).unwrap(),
-            volume: Decimal::new(1000000, 0),
-            timestamp: (i * 1000) as i64,
-        };
+    let sequence = create_smc_buy_sequence("NVDA", BASE_TS);
+    for candle in sequence {
         let event = MarketEvent::Candle(candle);
         market_tx.send(event).await.unwrap();
     }
@@ -1168,10 +1113,10 @@ async fn test_news_intelligence_filters() {
     let market_service = Arc::new(MockMarketDataService::new());
 
     let config = AnalystConfig::default();
-    let strategy = Arc::new(rustrade::application::strategies::DualSMAStrategy::new(
-        10,
+    let strategy = Arc::new(rustrade::application::strategies::SMCStrategy::new(
         20,
-        dec!(0.0),
+        dec!(0.005),
+        dec!(1.5),
     ));
 
     let deps = AnalystDependencies {

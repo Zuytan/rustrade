@@ -109,7 +109,7 @@ enum Commands {
         days: i64,
 
         /// Strategy to use
-        #[arg(long, default_value = "standard")]
+        #[arg(long, default_value = "smc")]
         strategy: String,
 
         /// Run in parallel
@@ -396,8 +396,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             } else {
-                let strat_mode =
-                    StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::Standard);
+                let strat_mode = StrategyMode::from_str(&strategy).unwrap_or(StrategyMode::SMC);
                 let run_risk_list: Vec<u8> = if let Some(ref r) = risk_levels {
                     parse_risk_levels(r)?
                 } else {
@@ -473,15 +472,13 @@ async fn main() -> anyhow::Result<()> {
             ];
 
             let strategies = vec![
-                StrategyMode::Standard,
-                StrategyMode::Advanced,
-                StrategyMode::Dynamic,
-                StrategyMode::TrendRiding,
-                StrategyMode::MeanReversion,
+                StrategyMode::ZScoreMR,
                 StrategyMode::RegimeAdaptive,
                 StrategyMode::SMC,
-                StrategyMode::Momentum,
-                StrategyMode::Breakout,
+                StrategyMode::StatMomentum,
+                StrategyMode::OrderFlow,
+                StrategyMode::ML,
+                StrategyMode::Ensemble,
             ];
             // Testing Risk Sensitivity: Conservative (2), Neutral (5), Aggressive (8)
             let risks = vec![2, 5, 8];
@@ -534,8 +531,8 @@ async fn main() -> anyhow::Result<()> {
             let symbol = "NVDA";
 
             let scenarios = vec![
-                (StrategyMode::Standard, 8, "Risk-8 Standard"),
-                (StrategyMode::Breakout, 8, "Risk-8 Breakout"),
+                (StrategyMode::ZScoreMR, 8, "Risk-8 ZScoreMR"),
+                (StrategyMode::SMC, 8, "Risk-8 SMC"),
             ];
 
             let mut results = Vec::new();

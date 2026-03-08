@@ -51,7 +51,7 @@ fn test_strategies_handle_cold_start_gracefully() {
         StrategyMode::ZScoreMR,
         // StrategyMode::OrderFlow, // Might need OFI data?
         StrategyMode::SMC,
-        StrategyMode::Dynamic,
+        StrategyMode::RegimeAdaptive,
         // StrategyMode::Ensemble, // Needs sub-strategies
     ];
 
@@ -75,23 +75,10 @@ fn test_legacy_strategies_handle_cold_start() {
     // Legacy strategies via direct instantiation or factory if supported
     // Factory supports some?
     // Let's manually test legacy ones to be sure
-    use crate::application::strategies::legacy::{
-        AdvancedTripleFilterConfig, AdvancedTripleFilterStrategy, BreakoutStrategy,
-        DualSMAStrategy, MeanReversionStrategy, MomentumDivergenceStrategy, TrendRidingStrategy,
-        VWAPStrategy,
-    };
-    use rust_decimal_macros::dec;
 
     let strategies: Vec<Box<dyn TradingStrategy>> = vec![
-        Box::new(AdvancedTripleFilterStrategy::new(
-            AdvancedTripleFilterConfig::default(),
-        )),
-        Box::new(BreakoutStrategy::new(20, dec!(0.02), dec!(1.5))),
-        Box::new(DualSMAStrategy::new(10, 20, dec!(0.01))),
-        Box::new(MeanReversionStrategy::new(20, dec!(70.0))),
-        Box::new(MomentumDivergenceStrategy::new(10, dec!(0.02))),
-        Box::new(TrendRidingStrategy::new(20, 50, dec!(0.01), dec!(0.02))),
-        Box::new(VWAPStrategy::new(dec!(0.02), dec!(30.0), dec!(70.0))),
+        Box::new(crate::application::strategies::SMCStrategy::default()),
+        Box::new(crate::application::strategies::ZScoreMeanReversionStrategy::default()),
     ];
 
     for strategy in strategies {

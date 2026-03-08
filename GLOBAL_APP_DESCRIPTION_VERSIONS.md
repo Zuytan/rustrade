@@ -1,5 +1,15 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.10 - Strategy Modernization & Legacy Cleanup (March 2026)
+
+### Architecture Modernization
+- **Strategy Deprecation**: Removed all legacy and obsolete trading strategies (`DualSMA`, `AdvancedTripleFilter`, `TrendRiding`, `MeanReversion`, `VWAP`, `Breakout`, `Momentum`) from the system.
+- **System Cleanup**: Purged the `legacy-strategies` feature flag, legacy mappings in `StrategyFactory`, and obsolete `StrategyMode` variants.
+
+### Testing & Verification
+- **Test Suite Revamp**: Updated end-to-end integration tests (`backtest_e2e_integration.rs`, `backtest.rs`), `analyst_tests.rs`, and scenario tests (`trading_flow.rs`, `scanner_flow.rs`) to utilize strict institutional `SMCStrategy` patterns (Fair Value Gaps) instead of naive moving average crossovers.
+- **Code Quality**: Enforced strict adherence to `cargo clippy -D warnings` and completely resolved all compilation warnings and `useless_vec` lints across the entire test suite.
+
 ## Version 0.99.9 - Alpaca Integration & Liquidity Reliability (March 2026)
 
 ### Infrastructure & Execution

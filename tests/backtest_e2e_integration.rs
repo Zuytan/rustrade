@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
+
 use rust_decimal_macros::dec;
 use rustrade::application::optimization::simulator::Simulator;
 use rustrade::config::{AssetClass, Config, Mode};
@@ -29,14 +29,11 @@ async fn test_full_backtest_pipeline_e2e() -> anyhow::Result<()> {
         asset_class: AssetClass::Crypto,
         broker: rustrade::config::BrokerEnvConfig::default(),
         strategy: rustrade::domain::config::StrategyConfig {
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             fast_sma_period: 2,
             slow_sma_period: 5,
-            sma_threshold: dec!(0.001),
             rsi_threshold: dec!(100.0),
             take_profit_pct: dec!(0.10),
-            adx_threshold: dec!(20.0),
-            macd_requires_rising: false,
             ..rustrade::domain::config::StrategyConfig::default()
         },
         risk: rustrade::domain::config::RiskConfig {
@@ -91,21 +88,24 @@ async fn test_full_backtest_pipeline_e2e() -> anyhow::Result<()> {
         });
     }
 
-    // 2. Add the dynamic price action
-    let prices = [
-        100.0, 100.5, 101.0, 102.0, 104.0, 107.0, 111.0, 115.0, 120.0, // Strong trend -> Buy
-        100.0, 90.0, 80.0, 70.0, 60.0, // Hard drop -> Sell
+    // 2. Add the dynamic price action (SMC Sequence)
+    let smc_data = [
+        (100.0, 101.0, 99.0, 99.0),   // C1: Bearish OB
+        (99.0, 104.0, 99.0, 104.0),   // C2: Impulsive Bullish
+        (104.0, 108.0, 103.0, 108.0), // C3: FVG Top
+        (108.0, 108.0, 102.0, 102.0), // C4: Retracement
+        (102.0, 105.0, 102.0, 105.0), // C5: Bullish Confirm
+        (105.0, 105.0, 90.0, 90.0),   // Trigger exit
+        (90.0, 90.0, 80.0, 80.0),
     ];
-
     let base_ts = start_date.timestamp_millis() + (pad_count as i64 * 60_000);
-    for (i, &price_f64) in prices.iter().enumerate() {
-        let price = Decimal::from_f64(price_f64).unwrap();
+    for (i, (o, h, l, c)) in smc_data.into_iter().enumerate() {
         bars.push(Candle {
             symbol: symbol.to_string(),
-            open: price,
-            high: price + dec!(1.0),
-            low: price - dec!(1.0),
-            close: price,
+            open: Decimal::from_f64_retain(o).unwrap(),
+            high: Decimal::from_f64_retain(h).unwrap(),
+            low: Decimal::from_f64_retain(l).unwrap(),
+            close: Decimal::from_f64_retain(c).unwrap(),
             volume: dec!(1000.0),
             timestamp: base_ts + (i as i64 * 60_000),
         });

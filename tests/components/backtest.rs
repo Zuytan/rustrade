@@ -18,43 +18,49 @@ async fn test_standard_strategy_execution_synthetic() {
 
     // 1. Generate Synthetic Data (uptrend followed by downtrend to trigger cross)
     let mut candles = Vec::new();
-    let base_price = 100.0;
     let start_time = Utc::now() - Duration::days(1);
+    let base_ts = start_time.timestamp();
 
-    // Generate 200 bars of uptrend (Price goes 100 -> 120) with some noise
-    for i in 0..200 {
-        let price = base_price + (i as f64 * 0.1);
+    // Generate 100 bars of warmup (flat)
+    for i in 0..100 {
         candles.push(Candle {
             symbol: "TEST".to_string(),
-            open: Decimal::from_f64_retain(price).unwrap(),
-            high: Decimal::from_f64_retain(price + 0.5).unwrap(),
-            low: Decimal::from_f64_retain(price - 0.5).unwrap(),
-            close: Decimal::from_f64_retain(price).unwrap(),
+            open: Decimal::from_f64_retain(100.0).unwrap(),
+            high: Decimal::from_f64_retain(101.0).unwrap(),
+            low: Decimal::from_f64_retain(99.0).unwrap(),
+            close: Decimal::from_f64_retain(100.0).unwrap(),
             volume: dec!(1000),
-            timestamp: (start_time + Duration::minutes(i)).timestamp(),
+            timestamp: base_ts + (i as i64 * 60),
         });
     }
 
-    // Generate 200 bars of downtrend (Price goes 120 -> 100)
-    for i in 0..200 {
-        let price = 120.0 - (i as f64 * 0.1);
+    // Add SMC Sequence
+    let smc_data = [
+        (100.0, 101.0, 99.0, 99.0),   // C1: Bearish OB
+        (99.0, 104.0, 99.0, 104.0),   // C2: Impulsive Bullish
+        (104.0, 108.0, 103.0, 108.0), // C3: FVG Top
+        (108.0, 108.0, 102.0, 102.0), // C4: Retracement
+        (102.0, 105.0, 102.0, 105.0), // C5: Bullish Confirm
+        (105.0, 105.0, 90.0, 90.0),   // Trigger exit
+        (90.0, 90.0, 80.0, 80.0),
+    ];
+    let offset = 100;
+    for (i, (o, h, l, c)) in smc_data.into_iter().enumerate() {
         candles.push(Candle {
             symbol: "TEST".to_string(),
-            open: Decimal::from_f64_retain(price).unwrap(),
-            high: Decimal::from_f64_retain(price + 0.5).unwrap(),
-            low: Decimal::from_f64_retain(price - 0.5).unwrap(),
-            close: Decimal::from_f64_retain(price).unwrap(),
+            open: Decimal::from_f64_retain(o).unwrap(),
+            high: Decimal::from_f64_retain(h).unwrap(),
+            low: Decimal::from_f64_retain(l).unwrap(),
+            close: Decimal::from_f64_retain(c).unwrap(),
             volume: dec!(1000),
-            timestamp: (start_time + Duration::minutes(200 + i)).timestamp(),
+            timestamp: base_ts + ((offset + i) as i64 * 60),
         });
     }
 
     // 2. Configure Simulator
     let config = AnalystConfig {
         strategy: rustrade::domain::config::StrategyConfig {
-            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
-            // Ensure thresholds are reachable
-            sma_threshold: dec!(0.001), // 0.1%
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             risk_appetite_score: Some(5),
             ..Default::default()
         },

@@ -189,14 +189,14 @@ mod tests {
     use super::*;
     use crate::application::agents::analyst_config::AnalystConfig;
     use crate::application::optimization::win_rate_provider::StaticWinRateProvider;
-    use crate::application::strategies::DualSMAStrategy;
+    use crate::application::strategies::SMCStrategy as DualSMAStrategy;
     use crate::application::trading::symbol_context::SymbolContext;
     use rust_decimal_macros::dec;
     use std::sync::Arc;
 
     fn create_test_context() -> SymbolContext {
         let config = AnalystConfig::default();
-        let strategy = Arc::new(DualSMAStrategy::new(20, 60, dec!(0.0)));
+        let strategy = Arc::new(DualSMAStrategy::new(20, dec!(0.001), dec!(1.0)));
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
     }

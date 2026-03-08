@@ -101,13 +101,15 @@ impl CandlePipeline {
         // Apply dynamic risk scaling based on regime
         super::regime_handler::apply_dynamic_risk_scaling(ctx.context, &regime, ctx.symbol);
 
-        // Apply adaptive strategy switching if enabled
-        super::regime_handler::apply_adaptive_strategy_switching(
-            ctx.context,
-            &regime,
-            &ctx.context.config.clone(),
+        // Update strategy mode based on regime
+        use crate::application::strategies::strategy_selector::StrategySelector;
+        let new_mode = StrategySelector::select_best(
+            regime.clone(),
             ctx.symbol,
+            &ctx.context.config,
+            ctx.context.active_strategy_mode,
         );
+        ctx.context.active_strategy_mode = new_mode;
 
         regime
     }
@@ -339,13 +341,13 @@ mod tests {
     use crate::application::agents::analyst_config::AnalystConfig;
     use crate::application::monitoring::cost_evaluator::CostEvaluator;
     use crate::application::optimization::win_rate_provider::StaticWinRateProvider;
-    use crate::application::strategies::DualSMAStrategy;
+    use crate::application::strategies::StrategyFactory;
     use crate::application::trading::trade_filter::TradeFilter;
+    use crate::domain::market::strategy_config::StrategyMode;
     use crate::domain::trading::fee_model::ConstantFeeModel;
     use crate::infrastructure::mock::MockExecutionService;
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
-    use rust_decimal_macros::dec;
     use std::sync::Arc;
 
     fn create_test_pipeline() -> CandlePipeline {
@@ -375,7 +377,7 @@ mod tests {
 
     fn create_test_context() -> SymbolContext {
         let config = AnalystConfig::default();
-        let strategy = Arc::new(DualSMAStrategy::new(20, 50, dec!(0.0)));
+        let strategy = StrategyFactory::create(StrategyMode::SMC, &AnalystConfig::default());
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
     }

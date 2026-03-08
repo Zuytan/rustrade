@@ -160,6 +160,14 @@ impl SymbolContext {
         self.last_features.cumulative_delta = Some(self.cumulative_delta.value);
         self.last_features.spread_bps = Some(self.config.strategy.spread_bps);
     }
+
+    /// Get the primary symbol for this context.
+    pub fn active_symbol(&self) -> String {
+        self.candle_history
+            .front()
+            .map(|c| c.symbol.clone())
+            .unwrap_or_else(|| "UNKNOWN".to_string())
+    }
 }
 
 #[cfg(test)]
@@ -189,7 +197,7 @@ mod tests {
     #[test]
     fn test_symbol_context_initialization() {
         let config = create_test_config();
-        let strategy = StrategyFactory::create(StrategyMode::Advanced, &config);
+        let strategy = StrategyFactory::create(StrategyMode::SMC, &config);
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         let timeframes = vec![crate::domain::market::timeframe::Timeframe::OneMin];
 
@@ -209,7 +217,7 @@ mod tests {
     #[test]
     fn test_candle_history_management() {
         let config = create_test_config();
-        let strategy = StrategyFactory::create(StrategyMode::Advanced, &config);
+        let strategy = StrategyFactory::create(StrategyMode::SMC, &config);
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         let timeframes = vec![crate::domain::market::timeframe::Timeframe::OneMin];
 
@@ -232,7 +240,7 @@ mod tests {
     #[test]
     fn test_macd_histogram_tracking() {
         let config = create_test_config();
-        let strategy = StrategyFactory::create(StrategyMode::Advanced, &config);
+        let strategy = StrategyFactory::create(StrategyMode::SMC, &config);
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         let timeframes = vec![crate::domain::market::timeframe::Timeframe::OneMin];
 
@@ -264,7 +272,7 @@ mod tests {
     #[test]
     fn test_multi_timeframe_initialization() {
         let config = create_test_config();
-        let strategy = StrategyFactory::create(StrategyMode::Advanced, &config);
+        let strategy = StrategyFactory::create(StrategyMode::SMC, &config);
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         let timeframes = vec![
             crate::domain::market::timeframe::Timeframe::OneMin,

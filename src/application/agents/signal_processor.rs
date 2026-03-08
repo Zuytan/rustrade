@@ -304,7 +304,7 @@ mod tests {
 
     fn create_test_context() -> SymbolContext {
         let config = super::super::analyst::AnalystConfig::default();
-        let strategy = StrategyFactory::create(StrategyMode::Advanced, &config);
+        let strategy = StrategyFactory::create(StrategyMode::SMC, &config);
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         let timeframes = vec![crate::domain::market::timeframe::Timeframe::OneMin];
 

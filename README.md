@@ -31,14 +31,14 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 - **Internationalization (i18n)**: Fully localized in **English** 🇬🇧 and **French** 🇫🇷.
 - **Manual Control**: "Panic Button" and manual strategy overrides directly from the UI.
 
-### 📈 Trading Strategies
-- **Standard**: Dual SMA Crossover (Golden/Death Cross).
-- **Advanced**: Triple Filter System (SMA Trend + RSI Momentum + MACD + **ADX Trend Strength**).
-- **Dynamic**: Automatically switches strategies based on Market Regime (e.g., Trend Riding vs Mean Reversion).
-- **Statistical**: Z-Score Mean Reversion & Statistical Momentum (Regression Slope).
-- **Machine Learning**: Random Forest Classifier trained on technical features (`MLStrategy`).
-- **Trend Riding**: Long-term trend following with trailing stops.
-- **Mean Reversion**: Contrarian strategy for overbought/oversold conditions (BB + RSI).
+### 📈 Modern Trading Strategies
+- **Smart Money Concepts (SMC)**: Institutional order flow analysis, Fair Value Gaps (FVG), mitigation blocks.
+- **Order Flow**: Microstructure volume profile, Cumulative Delta, and Order Flow Imbalance.
+- **Z-Score Mean Reversion**: Pure statistical strategy trading 2+ standard deviations from the mean.
+- **Statistical Momentum**: Volatility-normalized trend following using regression slopes.
+- **Machine Learning (ML)**: Random Forest / Deep Learning predictors trained on 18+ technical features.
+- **Regime Adaptive**: Dynamically shifts between statistical momentum and mean reversion based on market volatility (Hurst, Skewness).
+- **Ensemble**: Democratic voting system aggregating signals from all active strategies simultaneously.
 
 ### 🛡️ Advanced Risk Management
 - **Correlation Filters**: Prevents exposure to highly correlated assets (Pearson matrix).
@@ -95,16 +95,15 @@ The application is configured primarily via environment variables. You can set t
 ### Strategy Parameters
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STRATEGY_MODE` | `standard` | `standard`, `advanced`, `dynamic`, `trendriding`, `meanreversion`. |
-| `ADX_PERIOD` | `14` | ADX smoothing period. |
-| `ADX_THRESHOLD` | `25.0` | Minimum trend strength for entry. |
+| `STRATEGY_MODE` | `smc` | `smc`, `zscore`, `stat_momentum`, `order_flow`, `ml`, `ensemble`, `regime`. |
+| `ENSEMBLE_VOTING_THRESHOLD` | `0.5` | Threshold for ensemble strategy agreement. |
 | `RSI_THRESHOLD` | `75.0` | RSI Overbought threshold. |
 | `OBSERVABILITY_ENABLED` | `false` | Enable Prometheus metrics server. |
 | `OBSERVABILITY_PORT` | `9090` | Port for Prometheus metrics. |
 
 ## 📚 Documentation
 
-- [Trading Strategies](docs/STRATEGIES.md): Comprehensive guide to all 10 strategies.
+- [Trading Strategies](docs/STRATEGIES.md): Comprehensive guide to all modern Institutional and Statistical strategies.
 - [Global App Description](GLOBAL_APP_DESCRIPTION.md): Full architecture details.
 - [Version History](GLOBAL_APP_DESCRIPTION_VERSIONS.md): Changelog.
 - [Walkthrough](walkthrough.md): Guide for Benchmark and Backtesting tools.
@@ -128,7 +127,7 @@ cargo run --bin rustrade
 ### Backtesting CLI
 ```bash
 # Backtest a strategy
-cargo run --bin benchmark -- --symbol NVDA --start 2023-01-01 --end 2023-12-31 --strategy advanced
+cargo run --bin benchmark -- --symbol NVDA --start 2023-01-01 --end 2023-12-31 --strategy smc
 
 # Parallel Mass Backtest
 cargo run --bin benchmark -- --symbol AAPL,TSLA,NVDA,MSFT --start 2024-01-01 --end 2024-03-31 --parallel

@@ -278,7 +278,7 @@ mod tests {
         let service = WarmupService::new(market_service, None, None);
 
         let default_config = super::super::analyst::AnalystConfig::default();
-        let default_strategy = StrategyFactory::create(StrategyMode::Advanced, &default_config);
+        let default_strategy = StrategyFactory::create(StrategyMode::SMC, &default_config);
 
         let (_strategy, config) = service
             .resolve_strategy("BTC/USD", default_strategy.clone(), &default_config)
@@ -297,7 +297,7 @@ mod tests {
         let service = WarmupService::new(market_service, None, None);
 
         let config = super::super::analyst::AnalystConfig::default();
-        let strategy = StrategyFactory::create(StrategyMode::Advanced, &config);
+        let strategy = StrategyFactory::create(StrategyMode::SMC, &config);
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         let timeframes = vec![crate::domain::market::timeframe::Timeframe::OneMin];
 

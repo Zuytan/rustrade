@@ -1,4 +1,4 @@
-// Agent modules - core decision-making agents
+// Agent modules
 pub mod analyst;
 pub mod analyst_config;
 pub mod candle_pipeline;
