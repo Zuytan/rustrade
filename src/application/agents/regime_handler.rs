@@ -116,8 +116,9 @@ pub fn apply_dynamic_risk_scaling(
         if *remaining > 0 {
             *remaining -= 1;
         }
-        if *remaining == 0 && context.risk_base_score.is_some() {
-            let base = context.risk_base_score.take().unwrap();
+        if *remaining == 0
+            && let Some(base) = context.risk_base_score.take()
+        {
             context.risk_restore_bars_remaining = None;
             if let Ok(restore_appetite) = RiskAppetite::new(base) {
                 context.config.apply_risk_appetite(&restore_appetite);

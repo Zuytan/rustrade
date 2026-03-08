@@ -247,7 +247,7 @@ fn max_drawdown_from_trades(
             }
             crate::domain::trading::types::OrderSide::Sell => {
                 if let Some((entry_price, qty)) = open_buys.pop() {
-                    let prev = *equity_curve.last().unwrap();
+                    let prev = *equity_curve.last().unwrap_or(&0.0);
                     let pnl = (order.price - entry_price) * qty;
                     let pnl_f = pnl.to_f64().unwrap_or(0.0);
                     equity_curve.push(prev + pnl_f);

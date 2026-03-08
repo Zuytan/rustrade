@@ -214,7 +214,7 @@ impl CostEvaluator {
     /// // Trade costs $1.50, expected profit is $5.00, min ratio is 2.0
     /// // Threshold = $1.50 * 2.0 = $3.00
     /// // $5.00 >= $3.00 → Profitable ✅
-    /// let is_profitable = evaluator.is_profitable(&proposal, Decimal::from(5), Decimal::from_f64_retain(2.0).unwrap());
+    /// let is_profitable = evaluator.is_profitable(&proposal, Decimal::from(5), Decimal::from_f64_retain(2.0).unwrap_or(Decimal::from(2)));
     /// assert!(is_profitable);
     /// ```
     pub fn is_profitable(

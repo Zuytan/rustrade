@@ -210,7 +210,16 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
                     .open(price)
                     .volume(0.0)
                     .build()
-                    .unwrap()
+                    .unwrap_or_else(|_| {
+                        ta::DataItem::builder()
+                            .high(price)
+                            .low(price)
+                            .close(price)
+                            .open(price)
+                            .volume(0.0)
+                            .build()
+                            .unwrap()
+                    })
             });
 
         // Calculate ATR early as it is needed for momentum normalization
