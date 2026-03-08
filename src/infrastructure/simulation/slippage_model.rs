@@ -1,5 +1,5 @@
 use crate::domain::trading::types::OrderSide;
-use rand::Rng;
+use rand::RngExt;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 

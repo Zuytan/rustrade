@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
     let config = Config::from_env()?;
     info!(
         "Configuration loaded: Mode={:?}, Asset={:?}, Symbols={:?}",
-        config.mode, config.asset_class, config.symbols
+        config.mode, config.asset_class, config.platform.symbols
     );
 
     // Build and start the application
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
     info!("Trading system running.");
 
     // Start metrics reporter if enabled
-    if config.observability_enabled {
+    if config.observability.enabled {
         let metrics = handle.metrics.clone();
 
         let interval = std::env::var("OBSERVABILITY_INTERVAL")

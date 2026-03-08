@@ -189,7 +189,7 @@ impl CandlePipeline {
         }
 
         let atr_decimal = ctx.context.last_features.atr.unwrap_or(Decimal::ZERO);
-        let multiplier_decimal = ctx.context.config.trailing_stop_atr_multiplier;
+        let multiplier_decimal = ctx.context.config.strategy.trailing_stop_atr_multiplier;
 
         let signal_side = ctx.context.position_manager.check_trailing_stop(
             ctx.symbol,
@@ -356,7 +356,7 @@ mod tests {
         let execution_service = Arc::new(MockExecutionService::new(portfolio));
         let config = AnalystConfig::default();
         let fee_model = Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO));
-        let cost_evaluator = CostEvaluator::new(fee_model, config.spread_bps);
+        let cost_evaluator = CostEvaluator::new(fee_model, config.strategy.spread_bps);
         let trade_filter = TradeFilter::new(cost_evaluator);
 
         // Initialize SizingEngine & SignalProcessor for tests

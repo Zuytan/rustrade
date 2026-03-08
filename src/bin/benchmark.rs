@@ -3,6 +3,7 @@ use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use clap::{Parser, Subcommand};
 use rustrade::application::agents::analyst_config::AnalystConfig;
 use rustrade::application::benchmarking::engine::BenchmarkEngine;
+use rustrade::domain::config::{RiskConfig, StrategyConfig};
 
 /// One benchmark window: (label, start_dt, end_dt).
 type PeriodWindow = (String, DateTime<Utc>, DateTime<Utc>);
@@ -14,12 +15,18 @@ fn optimal_params_to_analyst_config(
 ) -> anyhow::Result<AnalystConfig> {
     let appetite = RiskAppetite::new(score).context("risk score must be 1-9")?;
     let mut cfg = AnalystConfig {
-        fast_sma_period: params.fast_sma_period,
-        slow_sma_period: params.slow_sma_period,
-        rsi_threshold: params.rsi_threshold,
-        trailing_stop_atr_multiplier: params.trailing_stop_atr_multiplier,
-        trend_divergence_threshold: params.trend_divergence_threshold,
-        order_cooldown_seconds: params.order_cooldown_seconds,
+        strategy: StrategyConfig {
+            fast_sma_period: params.fast_sma_period,
+            slow_sma_period: params.slow_sma_period,
+            rsi_threshold: params.rsi_threshold,
+            trailing_stop_atr_multiplier: params.trailing_stop_atr_multiplier,
+            trend_divergence_threshold: params.trend_divergence_threshold,
+            ..StrategyConfig::default()
+        },
+        risk: RiskConfig {
+            order_cooldown_seconds: params.order_cooldown_seconds,
+            ..RiskConfig::default()
+        },
         ..AnalystConfig::default()
     };
     cfg.apply_risk_appetite(&appetite);
@@ -336,10 +343,10 @@ async fn main() -> anyhow::Result<()> {
                     println!("Risk level(s): {:?} (params adapted to risk)", risk_list);
                     println!(
                         "Config (global best): {:?} (fast={}, slow={}, rsi={:.0})",
-                        global_best.params.strategy_mode,
-                        global_best.params.fast_sma_period,
-                        global_best.params.slow_sma_period,
-                        global_best.params.rsi_threshold
+                        global_best.params.strategy.strategy_mode,
+                        global_best.params.strategy.fast_sma_period,
+                        global_best.params.strategy.slow_sma_period,
+                        global_best.params.strategy.rsi_threshold
                     );
                     println!("{}", "=".repeat(80));
 
@@ -351,7 +358,7 @@ async fn main() -> anyhow::Result<()> {
                             let (config, strategy_label) = match risk_opt {
                                 None => (
                                     global_best.params.clone(),
-                                    format!("{:?}", global_best.params.strategy_mode),
+                                    format!("{:?}", global_best.params.strategy.strategy_mode),
                                 ),
                                 Some(score) => {
                                     let cfg = best_config_for_risk(*score)?;
@@ -359,7 +366,7 @@ async fn main() -> anyhow::Result<()> {
                                         cfg,
                                         format!(
                                             "{:?} Risk-{}",
-                                            global_best.params.strategy_mode, score
+                                            global_best.params.strategy.strategy_mode, score
                                         ),
                                     )
                                 }

@@ -205,18 +205,21 @@ impl SettingsPanel {
     /// Converts current UI state to AnalystConfig
     pub fn to_analyst_config(&self) -> AnalystConfig {
         use rust_decimal_macros::dec;
-        AnalystConfig {
-            strategy_mode: self.selected_strategy, // Include selected strategy
-            fast_sma_period: self.fast_sma_period.parse().unwrap_or(10),
-            slow_sma_period: self.slow_sma_period.parse().unwrap_or(20),
-            sma_threshold: self.sma_threshold.parse().unwrap_or(dec!(0.001)),
-            rsi_period: self.rsi_period.parse().unwrap_or(14),
-            rsi_threshold: self.rsi_threshold.parse().unwrap_or(dec!(70.0)),
-            macd_min_threshold: self.macd_min_threshold.parse().unwrap_or(Decimal::ZERO),
-            adx_threshold: self.adx_threshold.parse().unwrap_or(dec!(25.0)),
-            min_profit_ratio: self.min_profit_ratio.parse().unwrap_or(dec!(1.5)),
-            profit_target_multiplier: self.profit_target_multiplier.parse().unwrap_or(dec!(2.0)),
-            ..AnalystConfig::default()
-        }
+        let mut config = AnalystConfig::default();
+
+        config.strategy.strategy_mode = self.selected_strategy;
+        config.strategy.fast_sma_period = self.fast_sma_period.parse().unwrap_or(10);
+        config.strategy.slow_sma_period = self.slow_sma_period.parse().unwrap_or(20);
+        config.strategy.sma_threshold = self.sma_threshold.parse().unwrap_or(dec!(0.001));
+        config.strategy.rsi_period = self.rsi_period.parse().unwrap_or(14);
+        config.strategy.rsi_threshold = self.rsi_threshold.parse().unwrap_or(dec!(70.0));
+        config.strategy.macd_min_threshold =
+            self.macd_min_threshold.parse().unwrap_or(Decimal::ZERO);
+        config.strategy.adx_threshold = self.adx_threshold.parse().unwrap_or(dec!(25.0));
+        config.strategy.min_profit_ratio = self.min_profit_ratio.parse().unwrap_or(dec!(1.5));
+        config.strategy.profit_target_multiplier =
+            self.profit_target_multiplier.parse().unwrap_or(dec!(2.0));
+
+        config
     }
 }

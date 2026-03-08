@@ -133,7 +133,7 @@ impl TradeEvaluator {
 
         info!(
             "Analyst [{}]: Calculating Profit Expectancy - ATR={}, Multiplier={}, Quantity={}",
-            input.symbol, atr, context.config.profit_target_multiplier, proposal.quantity
+            input.symbol, atr, context.config.strategy.profit_target_multiplier, proposal.quantity
         );
 
         // Use fresh expectancy value if available
@@ -143,7 +143,7 @@ impl TradeEvaluator {
             self.trade_filter.calculate_expected_profit(
                 &proposal,
                 atr,
-                context.config.profit_target_multiplier,
+                context.config.strategy.profit_target_multiplier,
             )
         };
 
@@ -153,7 +153,7 @@ impl TradeEvaluator {
             &proposal,
             expected_profit,
             costs.total_cost,
-            context.config.min_profit_ratio,
+            context.config.strategy.min_profit_ratio,
             input.symbol,
         ) {
             return None;

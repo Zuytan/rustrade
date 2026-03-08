@@ -3,12 +3,12 @@ use rust_decimal_macros::dec;
 use serde::Deserialize;
 use std::env;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct SimulationEnvConfig {
-    pub simulation_enabled: bool,
-    pub simulation_latency_base_ms: u64,
-    pub simulation_latency_jitter_ms: u64,
-    pub simulation_slippage_volatility: Decimal,
+    pub enabled: bool,
+    pub latency_base_ms: u64,
+    pub latency_jitter_ms: u64,
+    pub slippage_volatility: Decimal,
 }
 
 impl SimulationEnvConfig {
@@ -34,10 +34,10 @@ impl SimulationEnvConfig {
             .unwrap_or(dec!(0.0005)); // Default 5bps volatility
 
         Self {
-            simulation_enabled,
-            simulation_latency_base_ms,
-            simulation_latency_jitter_ms,
-            simulation_slippage_volatility,
+            enabled: simulation_enabled,
+            latency_base_ms: simulation_latency_base_ms,
+            latency_jitter_ms: simulation_latency_jitter_ms,
+            slippage_volatility: simulation_slippage_volatility,
         }
     }
 }

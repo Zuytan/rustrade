@@ -5,6 +5,7 @@ use rust_decimal_macros::dec;
 use rustrade::application::agents::analyst_config::AnalystConfig;
 use rustrade::application::optimization::simulator::Simulator;
 use rustrade::config::StrategyMode;
+use rustrade::domain::config::{RiskConfig, StrategyConfig};
 use rustrade::domain::performance::metrics::PerformanceMetrics;
 use rustrade::domain::ports::MarketDataService;
 use rustrade::domain::risk::risk_appetite::RiskAppetite;
@@ -238,8 +239,15 @@ async fn run_simulation(
 
     // Config
     let mut config = AnalystConfig {
-        strategy_mode: StrategyMode::Ensemble,
-        ensemble_weights: Some(weights),
+        strategy: StrategyConfig {
+            strategy_mode: StrategyMode::Ensemble,
+            ensemble_weights: Some(weights),
+            ..Default::default()
+        },
+        risk: RiskConfig {
+            risk_per_trade_percent: dec!(0.02),
+            ..Default::default()
+        },
         ..Default::default()
     };
     // Ensure risk appetite is reasonable

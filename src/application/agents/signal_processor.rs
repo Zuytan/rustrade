@@ -151,10 +151,10 @@ impl SignalProcessor {
         let available_cash = portfolio.cash;
 
         let sizing_config = crate::application::risk_management::sizing_engine::SizingConfig {
-            risk_per_trade_percent: config.risk_per_trade_percent,
-            max_positions: config.max_positions,
-            max_position_size_pct: config.max_position_size_pct,
-            static_trade_quantity: config.trade_quantity,
+            risk_per_trade_percent: config.risk.risk_per_trade_percent,
+            max_positions: config.risk.max_positions,
+            max_position_size_pct: config.risk.max_position_size_pct,
+            static_trade_quantity: config.risk.trade_quantity,
             enable_vol_targeting: false,   // Disabled by default for now
             target_volatility: dec!(0.15), // 15% target if enabled
         };
@@ -181,11 +181,11 @@ impl SignalProcessor {
         match &signal {
             Some(s) if s.side == OrderSide::Buy => {
                 if let Some(rsi) = context.last_features.rsi
-                    && rsi > context.config.rsi_threshold
+                    && rsi > context.config.strategy.rsi_threshold
                 {
                     debug!(
                         "SignalProcessor: Buy signal BLOCKED for {} - RSI {} > {} (Overbought)",
-                        symbol, rsi, context.config.rsi_threshold
+                        symbol, rsi, context.config.strategy.rsi_threshold
                     );
                     return None;
                 }
@@ -267,7 +267,7 @@ impl SignalProcessor {
             Decimal::ZERO
         };
 
-        if pnl_pct >= context.config.take_profit_pct {
+        if pnl_pct >= context.config.strategy.take_profit_pct {
             let quantity_to_sell = (pos.quantity * Decimal::new(5, 1)).round_dp(4); // 50%
 
             if quantity_to_sell > Decimal::ZERO {
@@ -329,7 +329,7 @@ mod tests {
 
         // Set RSI to overbought level
         context.last_features.rsi = Some(dec!(75.0));
-        context.config.rsi_threshold = dec!(70.0);
+        context.config.strategy.rsi_threshold = dec!(70.0);
 
         let signal = Some(crate::application::strategies::Signal::buy(
             "Test".to_string(),
@@ -346,7 +346,7 @@ mod tests {
 
         // Set RSI to normal level
         context.last_features.rsi = Some(dec!(50.0));
-        context.config.rsi_threshold = dec!(70.0);
+        context.config.strategy.rsi_threshold = dec!(70.0);
 
         let signal = Some(crate::application::strategies::Signal::buy(
             "Test".to_string(),
@@ -366,7 +366,7 @@ mod tests {
 
         // Set RSI to overbought level
         context.last_features.rsi = Some(dec!(75.0));
-        context.config.rsi_threshold = dec!(70.0);
+        context.config.strategy.rsi_threshold = dec!(70.0);
 
         let signal = Some(crate::application::strategies::Signal::sell(
             "Test".to_string(),

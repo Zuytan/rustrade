@@ -104,7 +104,7 @@ pub fn initialize_trailing_stop_if_needed(
     }
 
     let atr_val = atr.unwrap_or(dec!(1.0));
-    let multiplier = context.config.trailing_stop_atr_multiplier;
+    let multiplier = context.config.strategy.trailing_stop_atr_multiplier;
 
     context.position_manager.trailing_stop =
         crate::application::risk_management::trailing_stops::StopState::on_buy(
@@ -129,7 +129,7 @@ pub fn initialize_trailing_stop_on_buy(context: &mut SymbolContext, price: Decim
         && atr > Decimal::ZERO
     {
         let atr_decimal = atr;
-        let multiplier = context.config.trailing_stop_atr_multiplier;
+        let multiplier = context.config.strategy.trailing_stop_atr_multiplier;
 
         context.position_manager.trailing_stop =
             crate::application::risk_management::trailing_stops::StopState::on_buy(
@@ -155,7 +155,7 @@ pub fn check_trailing_stop(
     current_price: Decimal,
 ) -> Option<crate::domain::trading::types::OrderSide> {
     let atr_decimal = context.last_features.atr.unwrap_or(Decimal::ZERO);
-    let multiplier_decimal = context.config.trailing_stop_atr_multiplier;
+    let multiplier_decimal = context.config.strategy.trailing_stop_atr_multiplier;
 
     context.position_manager.check_trailing_stop(
         symbol,

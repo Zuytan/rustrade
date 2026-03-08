@@ -19,6 +19,7 @@ The application operates as a mesh of autonomous agents communicating via high-p
 - **Connection Health Service**: Centralized monitor that tracks and broadcasts the status of market data and execution streams across all agents.
 - **Listener Agent**: Monitors news feeds (RSS, Social) and uses NLP to trigger immediate reactions to market-moving events.
 - **User Agent**: Manages the UI/Dashboard state and handles user commands.
+- **Hierarchical Configuration**: A domain-driven settings system where `StrategyConfig`, `RiskConfig`, and `PlatformConfig` are unified into a strict hierarchy. Employs `serde(flatten)` across infrastructure and agent layers to ensure complete parameter consistency and eliminate structural drift.
 
 ### Resilience & Safety
 - **State Persistence ("No Amnesia")**: Critical state (Daily Loss, High Water Mark) is persisted to SQLite, preventing rule bypass via restarts.

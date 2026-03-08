@@ -134,7 +134,7 @@ impl OptimizeEngine {
             execution_service_factory,
             bounds,
             strategy,
-            self.base_config.min_profit_ratio,
+            self.base_config.platform.min_profit_ratio,
             population_size,
             generations,
             mutation_rate,

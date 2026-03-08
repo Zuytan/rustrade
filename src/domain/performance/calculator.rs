@@ -46,8 +46,11 @@ pub fn calculate_metrics_from_orders(orders: &[Order]) -> (Decimal, Decimal) {
             // Using milliseconds for timestamp, 86_400_000 ms per day
             let day_index = order.timestamp / 86_400_000;
 
-            while qty_to_process > Decimal::ZERO && !open_chunks.is_empty() {
-                let mut chunk = open_chunks.pop_front().unwrap();
+            while qty_to_process > Decimal::ZERO {
+                let mut chunk = match open_chunks.pop_front() {
+                    Some(c) => c,
+                    None => break,
+                };
                 let match_qty = chunk.quantity.min(qty_to_process);
                 let entry_price = chunk.price;
 

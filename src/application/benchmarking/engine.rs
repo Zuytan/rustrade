@@ -56,7 +56,7 @@ impl BenchmarkEngine {
             .unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
 
         let base_config = Config::from_env().unwrap_or_else(|_| {
-            eprintln!("Warning: Failed to load config from env, using defaults");
+            tracing::error!("Failed to load config from env");
             // In a real app we might want to fail hard here or return Result
             // For now constructing a default or panicking is what the original did
             panic!("Failed to load config");
@@ -90,19 +90,19 @@ impl BenchmarkEngine {
         risk_score: Option<u8>,
     ) -> anyhow::Result<BacktestResult> {
         let mut app_config = self.base_config.clone();
-        app_config.strategy_mode = strategy;
+        app_config.strategy.strategy_mode = strategy;
 
         if let Some(score) = risk_score {
-            let risk_appetite =
-                RiskAppetite::new(score).expect("risk_score validated within 1-9 range");
-            app_config.risk_appetite = Some(risk_appetite);
+            app_config.strategy.risk_appetite_score = Some(score);
         }
 
         let mut config: AnalystConfig = app_config.clone().into();
 
-        // Ensure risk appetite is applied if present in app_config
-        if let Some(ra) = &app_config.risk_appetite {
-            config.apply_risk_appetite(ra);
+        // Ensure risk appetite is applied if present
+        if let Some(score) = app_config.strategy.risk_appetite_score
+            && let Ok(appetite) = RiskAppetite::new(score)
+        {
+            config.apply_risk_appetite(&appetite);
         }
 
         self.execute_simulation(symbol, start, end, config).await
@@ -128,7 +128,7 @@ impl BenchmarkEngine {
         strategy: StrategyMode,
     ) -> Vec<crate::application::optimization::parallel_benchmark::BatchBacktestResult> {
         let mut app_config = self.base_config.clone();
-        app_config.strategy_mode = strategy;
+        app_config.strategy.strategy_mode = strategy;
         let config: AnalystConfig = app_config.into();
 
         let runner = ParallelBenchmarkRunner::new(self.market_service.clone(), config);
@@ -200,15 +200,15 @@ impl BenchmarkEngine {
         }
 
         let mut app_config = self.base_config.clone();
-        app_config.strategy_mode = strategy;
+        app_config.strategy.strategy_mode = strategy;
         if let Some(score) = risk_score {
-            let risk_appetite =
-                RiskAppetite::new(score).expect("risk_score validated within 1-9 range");
-            app_config.risk_appetite = Some(risk_appetite);
+            app_config.strategy.risk_appetite_score = Some(score);
         }
         let mut config: AnalystConfig = app_config.clone().into();
-        if let Some(ra) = &app_config.risk_appetite {
-            config.apply_risk_appetite(ra);
+        if let Some(score) = app_config.strategy.risk_appetite_score
+            && let Ok(appetite) = RiskAppetite::new(score)
+        {
+            config.apply_risk_appetite(&appetite);
         }
 
         let mut results = Vec::with_capacity(num_folds as usize);
@@ -281,16 +281,16 @@ impl BenchmarkEngine {
         let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
 
         // Check for simulation mode (Step 2: High-Fidelity Simulation)
-        let execution_service = if self.base_config.simulation_enabled {
+        let execution_service = if self.base_config.simulation.enabled {
             use crate::infrastructure::simulation::latency_model::NetworkLatency;
             use crate::infrastructure::simulation::slippage_model::VolatilitySlippage;
 
             let latency_model = Arc::new(NetworkLatency::new(
-                self.base_config.simulation_latency_base_ms,
-                self.base_config.simulation_latency_jitter_ms,
+                self.base_config.simulation.latency_base_ms,
+                self.base_config.simulation.latency_jitter_ms,
             ));
             let slippage_model = Arc::new(VolatilitySlippage::new(
-                self.base_config.simulation_slippage_volatility,
+                self.base_config.simulation.slippage_volatility,
             ));
 
             Arc::new(MockExecutionService::with_simulation_models(

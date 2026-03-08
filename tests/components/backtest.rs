@@ -51,10 +51,13 @@ async fn test_standard_strategy_execution_synthetic() {
 
     // 2. Configure Simulator
     let config = AnalystConfig {
-        strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
-        // Ensure thresholds are reachable
-        sma_threshold: dec!(0.001), // 0.1%
-        risk_appetite_score: Some(5),
+        strategy: rustrade::domain::config::StrategyConfig {
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            // Ensure thresholds are reachable
+            sma_threshold: dec!(0.001), // 0.1%
+            risk_appetite_score: Some(5),
+            ..Default::default()
+        },
         ..Default::default()
     };
 

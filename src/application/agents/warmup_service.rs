@@ -64,7 +64,7 @@ impl WarmupService {
                 );
             }
 
-            config.strategy_mode = def.mode;
+            config.strategy.strategy_mode = def.mode;
 
             let strategy = StrategyFactory::create(def.mode, &config);
             return (strategy, config);
@@ -93,11 +93,11 @@ impl WarmupService {
         // Max(TrendSMA, SlowSMA, EMA, RSI, MACD_Slow)
         let config = &context.config;
         let max_period = [
-            config.trend_sma_period,
-            config.slow_sma_period,
-            config.ema_slow_period,
-            config.rsi_period * 2, // General rule for RSI stability
-            config.macd_slow_period + config.macd_signal_period,
+            config.strategy.trend_sma_period,
+            config.strategy.slow_sma_period,
+            config.strategy.ema_slow_period,
+            config.strategy.rsi_period * 2, // General rule for RSI stability
+            config.strategy.macd_slow_period + config.strategy.macd_signal_period,
         ]
         .iter()
         .max()
@@ -285,7 +285,10 @@ mod tests {
             .await;
 
         // Should return default strategy and config when no repository
-        assert_eq!(config.strategy_mode, default_config.strategy_mode);
+        assert_eq!(
+            config.strategy.strategy_mode,
+            default_config.strategy.strategy_mode
+        );
     }
 
     #[tokio::test]

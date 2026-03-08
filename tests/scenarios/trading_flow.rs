@@ -31,112 +31,40 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         .try_init();
 
     // 1. Setup Config (Mock Mode)
-    // We can override env vars or create a Config manually
-    // Since Config::from_env loads .env, we might want a manual builder or just modify the returned config.
-    // For this test, manual Config construction is safer if fields are public.
-    // Let's rely on default but force Mock.
-
-    // NOTE: Config fields are public? Let's assume we can construct it or use a default.
-    // To avoid breaking if Config has private fields, let's try to load from env but override relevant parts.
-    let mut config = Config::from_env().unwrap_or_else(|_| Config {
-        // Fallback minimal config if env missing (though .env.example exists)
+    let config = Config {
         mode: Mode::Mock,
-        alpaca_api_key: "".into(),
-        alpaca_secret_key: "".into(),
-        alpaca_base_url: "".into(),
-        alpaca_data_url: "".into(),
-        alpaca_ws_url: "".into(),
-        symbols: vec!["BTC/USD".to_string()],
-        max_positions: 1,
-        trade_quantity: Decimal::from(1),
-        fast_sma_period: 2,
-        slow_sma_period: 5,
-        // sma_threshold: Decimal::from_f64(0.001).unwrap(), // Actual config uses f64? Checking file.
-        sma_threshold: dec!(0.001),
-        order_cooldown_seconds: 0,
-        risk_per_trade_percent: dec!(0.01),
-        max_orders_per_minute: 100,
-        non_pdt_mode: false,
-        dynamic_symbol_mode: false,
-        dynamic_scan_interval_minutes: 60,
-        strategy_mode: rustrade::config::StrategyMode::Dynamic,
-        trend_sma_period: 50,
-        rsi_period: 14,
-        macd_fast_period: 12,
-        macd_slow_period: 26,
-        macd_signal_period: 9,
-        trend_divergence_threshold: dec!(0.005),
-        rsi_threshold: dec!(99.0),
-        trailing_stop_atr_multiplier: dec!(3.0),
-        atr_period: 14,
-        max_position_size_pct: dec!(0.25),
-        max_daily_loss_pct: dec!(0.02),
-        max_drawdown_pct: dec!(0.10),
-        consecutive_loss_limit: 3,
-        pending_order_ttl_ms: None,
-        slippage_pct: dec!(0.001),
-        commission_per_share: dec!(0.001),
-        trend_riding_exit_buffer_pct: dec!(0.03),
-        mean_reversion_rsi_exit: dec!(50.0),
-        mean_reversion_bb_period: 20,
-        risk_appetite: None,
-        max_sector_exposure_pct: dec!(0.3),
-        sector_map: std::collections::HashMap::new(),
-        adaptive_optimization_enabled: false,
-        regime_detection_window: 20,
-        adaptive_evaluation_hour: 0,
         asset_class: rustrade::config::AssetClass::Stock,
-        oanda_api_key: "".to_string(),
-        oanda_account_id: "".to_string(),
-        oanda_api_base_url: "".to_string(),
-        oanda_stream_base_url: "".to_string(),
-        min_volume_threshold: dec!(10000.0),
-        ema_fast_period: 50,
-        ema_slow_period: 150,
-        take_profit_pct: dec!(0.05),
-        max_position_value_usd: dec!(5000.0),
-        min_hold_time_minutes: 0,
-        signal_confirmation_bars: 1,
-        spread_bps: dec!(0.0),
-        min_profit_ratio: dec!(0.0),
-        portfolio_staleness_ms: 3000,
-        portfolio_refresh_interval_ms: 60000,
-        macd_requires_rising: true,
-        trend_tolerance_pct: dec!(0.0),
-        macd_min_threshold: dec!(0.0),
-        profit_target_multiplier: dec!(1.5),
-        adx_period: 14,
-        adx_threshold: dec!(25.0),
-        regime_volatility_threshold: dec!(2.0),
-        smc_ob_lookback: 20,
-        smc_min_fvg_size_pct: dec!(0.005),
-        binance_api_key: "".to_string(),
-        binance_secret_key: "".to_string(),
-        binance_base_url: "".to_string(),
-        binance_ws_url: "".to_string(),
-        observability_enabled: false, // Disable for tests
-        observability_port: 9090,
-        observability_bind_address: "127.0.0.1".to_string(),
-        primary_timeframe: rustrade::domain::market::timeframe::Timeframe::OneMin,
-        enabled_timeframes: vec![rustrade::domain::market::timeframe::Timeframe::OneMin],
-        trend_timeframe: rustrade::domain::market::timeframe::Timeframe::OneHour,
-        enable_ml_data_collection: false,
-        simulation_enabled: false,
-        simulation_latency_base_ms: 0,
-        simulation_latency_jitter_ms: 0,
-        simulation_slippage_volatility: dec!(0.0),
-        use_real_market_data: false,
-        ensemble_voting_threshold: dec!(0.5),
-    });
-
-    config.mode = Mode::Mock;
-    config.symbols = vec!["BTC/USD".to_string()];
-    config.fast_sma_period = 2;
-    config.slow_sma_period = 5;
-    config.order_cooldown_seconds = 0; // Immediate execution
-    config.rsi_threshold = dec!(99.0); // Ensure signal isn't blocked by RSI
-    config.spread_bps = dec!(0.0); // No spread cost for test
-    config.min_profit_ratio = dec!(0.0); // Accept any positive profit
+        broker: rustrade::config::BrokerEnvConfig::default(),
+        strategy: rustrade::domain::config::StrategyConfig {
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            fast_sma_period: 2,
+            slow_sma_period: 5,
+            sma_threshold: dec!(0.001),
+            rsi_threshold: dec!(99.0),
+            ..rustrade::domain::config::StrategyConfig::default()
+        },
+        risk: rustrade::domain::config::RiskConfig {
+            max_positions: 1,
+            trade_quantity: Decimal::from(1),
+            order_cooldown_seconds: 0,
+            risk_per_trade_percent: dec!(0.01),
+            ..rustrade::domain::config::RiskConfig::default()
+        },
+        platform: rustrade::config::PlatformConfig {
+            symbols: vec!["BTC/USD".to_string()],
+            spread_bps: dec!(0.0),
+            min_profit_ratio: dec!(0.0),
+            ..rustrade::config::PlatformConfig::default()
+        },
+        observability: rustrade::config::ObservabilityEnvConfig {
+            enabled: false,
+            ..rustrade::config::ObservabilityEnvConfig::default()
+        },
+        simulation: rustrade::config::SimulationEnvConfig {
+            enabled: false,
+            ..rustrade::config::SimulationEnvConfig::default()
+        },
+    };
 
     // 2. Build Application
     let _app = Application::build(config.clone()).await?;
@@ -339,9 +267,9 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
     // Start flat, then gradual acceleration to trigger golden cross with rising MACD
     let events = [
         100.0, 100.0, 100.0, 100.0, 100.0, // Stable baseline
-        100.0, 100.5, // Very slow start
-        101.0, 102.0, 104.0, // Gradual acceleration
-        107.0, 111.0, // Stronger momentum -> Golden cross + MACD rising
+        100.5, 101.0, 101.5, 102.0, 102.5, // Gradual
+        103.5, 104.5, 105.5, 106.5, 107.5, // Acceleration
+        109.0, 110.5, 112.0, 113.5, 115.0, // Crossover
     ];
 
     let start_time = chrono::Utc::now();

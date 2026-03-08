@@ -87,7 +87,7 @@ pub fn apply_dynamic_risk_scaling(
 
     if modifier != 0 {
         // Hostile regime: reduce risk (from base score), set or keep base, reset countdown
-        let current = context.config.risk_appetite_score;
+        let current = context.config.strategy.risk_appetite_score;
         if let Some(current_score) = current {
             let base = context.risk_base_score.unwrap_or(current_score);
             if context.risk_base_score.is_none() {
@@ -96,7 +96,7 @@ pub fn apply_dynamic_risk_scaling(
             let new_score = (base as i8 + modifier).clamp(1, 9) as u8;
             if let Ok(new_appetite) = RiskAppetite::new(new_score) {
                 context.config.apply_risk_appetite(&new_appetite);
-                context.config.risk_appetite_score = Some(new_score);
+                context.config.strategy.risk_appetite_score = Some(new_score);
                 context.risk_restore_bars_remaining = Some(RISK_RESTORE_HYSTERESIS_BARS);
                 context.strategy = crate::application::strategies::StrategyFactory::create(
                     context.active_strategy_mode,
@@ -121,7 +121,7 @@ pub fn apply_dynamic_risk_scaling(
             context.risk_restore_bars_remaining = None;
             if let Ok(restore_appetite) = RiskAppetite::new(base) {
                 context.config.apply_risk_appetite(&restore_appetite);
-                context.config.risk_appetite_score = Some(base);
+                context.config.strategy.risk_appetite_score = Some(base);
                 context.strategy = crate::application::strategies::StrategyFactory::create(
                     context.active_strategy_mode,
                     &context.config,
@@ -157,7 +157,7 @@ pub fn apply_adaptive_strategy_switching(
     use crate::application::strategies::strategy_selector::StrategySelector;
     use crate::domain::market::strategy_config::StrategyMode;
 
-    if config.strategy_mode != StrategyMode::RegimeAdaptive {
+    if config.strategy.strategy_mode != StrategyMode::RegimeAdaptive {
         return false;
     }
 
@@ -187,8 +187,9 @@ mod tests {
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
-    fn create_test_context() -> SymbolContext {
-        let config = AnalystConfig::default();
+    fn create_test_context_with_score(score: Option<u8>) -> SymbolContext {
+        let mut config = AnalystConfig::default();
+        config.strategy.risk_appetite_score = score;
         let strategy = Arc::new(DualSMAStrategy::new(20, 60, Decimal::ZERO));
         let win_rate_provider = Arc::new(StaticWinRateProvider::new(0.5));
         SymbolContext::new(config, strategy, win_rate_provider, vec![])
@@ -196,23 +197,21 @@ mod tests {
 
     #[test]
     fn test_dynamic_risk_scaling_volatile() {
-        let mut context = create_test_context();
-        context.config.risk_appetite_score = Some(7);
+        let mut context = create_test_context_with_score(Some(7));
 
         let regime =
             MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(15.0));
 
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
-        assert_eq!(context.config.risk_appetite_score, Some(4));
+        assert_eq!(context.config.strategy.risk_appetite_score, Some(4));
         assert_eq!(context.risk_base_score, Some(7));
         assert_eq!(context.risk_restore_bars_remaining, Some(5));
     }
 
     #[test]
     fn test_dynamic_risk_scaling_trending_down() {
-        let mut context = create_test_context();
-        context.config.risk_appetite_score = Some(5);
+        let mut context = create_test_context_with_score(Some(5));
 
         let regime = MarketRegime::new(
             MarketRegimeType::TrendingDown,
@@ -224,13 +223,12 @@ mod tests {
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
         // Score should be reduced: 5 - 2 = 3
-        assert_eq!(context.config.risk_appetite_score, Some(3));
+        assert_eq!(context.config.strategy.risk_appetite_score, Some(3));
     }
 
     #[test]
     fn test_dynamic_risk_scaling_no_change_on_trending_up() {
-        let mut context = create_test_context();
-        context.config.risk_appetite_score = Some(5);
+        let mut context = create_test_context_with_score(Some(5));
 
         let regime = MarketRegime::new(
             MarketRegimeType::TrendingUp,
@@ -242,31 +240,29 @@ mod tests {
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
         // Score should not change for bullish regime
-        assert_eq!(context.config.risk_appetite_score, Some(5));
+        assert_eq!(context.config.strategy.risk_appetite_score, Some(5));
     }
 
     #[test]
     fn test_dynamic_risk_scaling_clamps_to_min() {
-        let mut context = create_test_context();
-        context.config.risk_appetite_score = Some(2);
+        let mut context = create_test_context_with_score(Some(2));
 
         let regime =
             MarketRegime::new(MarketRegimeType::Volatile, dec!(0.9), dec!(4.0), dec!(10.0));
 
         apply_dynamic_risk_scaling(&mut context, &regime, "TEST");
 
-        assert_eq!(context.config.risk_appetite_score, Some(1));
+        assert_eq!(context.config.strategy.risk_appetite_score, Some(1));
     }
 
     #[test]
     fn test_hysteresis_restore_after_normal_bars() {
-        let mut context = create_test_context();
-        context.config.risk_appetite_score = Some(7);
+        let mut context = create_test_context_with_score(Some(7));
 
         let volatile =
             MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(15.0));
         apply_dynamic_risk_scaling(&mut context, &volatile, "TEST");
-        assert_eq!(context.config.risk_appetite_score, Some(4));
+        assert_eq!(context.config.strategy.risk_appetite_score, Some(4));
 
         let normal = MarketRegime::new(
             MarketRegimeType::TrendingUp,
@@ -277,15 +273,14 @@ mod tests {
         for _ in 0..RISK_RESTORE_HYSTERESIS_BARS {
             apply_dynamic_risk_scaling(&mut context, &normal, "TEST");
         }
-        assert_eq!(context.config.risk_appetite_score, Some(7));
+        assert_eq!(context.config.strategy.risk_appetite_score, Some(7));
         assert_eq!(context.risk_base_score, None);
         assert_eq!(context.risk_restore_bars_remaining, None);
     }
 
     #[test]
     fn test_hysteresis_reset_on_volatile_again() {
-        let mut context = create_test_context();
-        context.config.risk_appetite_score = Some(7);
+        let mut context = create_test_context_with_score(Some(7));
 
         let volatile =
             MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(15.0));
@@ -298,7 +293,7 @@ mod tests {
         assert_eq!(context.risk_restore_bars_remaining, Some(3));
 
         apply_dynamic_risk_scaling(&mut context, &volatile, "TEST");
-        assert_eq!(context.config.risk_appetite_score, Some(4));
+        assert_eq!(context.config.strategy.risk_appetite_score, Some(4));
         assert_eq!(context.risk_restore_bars_remaining, Some(5));
     }
 }

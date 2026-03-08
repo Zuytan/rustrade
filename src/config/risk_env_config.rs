@@ -9,61 +9,32 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::env;
 
-/// Risk management environment configuration
-#[derive(Debug, Clone)]
-pub struct RiskEnvConfig {
-    // Position Sizing
-    pub max_positions: usize,
-    pub max_position_size_pct: Decimal,
+/// Platform-level settings that are not part of pure trading risk logic
+#[derive(Debug, Clone, Default)]
+pub struct PlatformConfig {
     pub max_position_value_usd: Decimal,
-    pub risk_per_trade_percent: Decimal,
-
-    // Drawdown & Circuit Breaker
-    pub max_daily_loss_pct: Decimal,
-    pub max_drawdown_pct: Decimal,
-    pub consecutive_loss_limit: usize,
-    pub pending_order_ttl_ms: Option<i64>,
-
-    // Sector Exposure
-    pub max_sector_exposure_pct: Decimal,
     pub sector_map: HashMap<String, String>,
-
-    // PDT
     pub non_pdt_mode: bool,
-
-    // Trading Limits
-    pub max_orders_per_minute: u32,
-    pub order_cooldown_seconds: u64,
-    pub min_hold_time_minutes: i64,
-
-    // Transaction Costs
     pub slippage_pct: Decimal,
     pub commission_per_share: Decimal,
     pub spread_bps: Decimal,
     pub min_profit_ratio: Decimal,
-
-    // Portfolio Management
-    pub trade_quantity: Decimal,
     pub portfolio_staleness_ms: u64,
     pub portfolio_refresh_interval_ms: u64,
-
-    // Dynamic Symbol Mode
     pub dynamic_symbol_mode: bool,
     pub dynamic_scan_interval_minutes: u64,
     pub symbols: Vec<String>,
     pub min_volume_threshold: Decimal,
-
-    // Adaptive Optimization
     pub adaptive_optimization_enabled: bool,
     pub regime_detection_window: usize,
     pub adaptive_evaluation_hour: u32,
-
-    // Risk Appetite (for derived values)
-    risk_appetite: Option<RiskAppetite>,
+    pub use_real_market_data: bool,
 }
 
-impl RiskEnvConfig {
-    pub fn from_env() -> Result<Self> {
+pub struct RiskEnvLoader;
+
+impl RiskEnvLoader {
+    pub fn from_env() -> Result<(crate::domain::config::RiskConfig, PlatformConfig)> {
         use rust_decimal_macros::dec;
         // Parse Risk Appetite first
         let risk_appetite = if let Ok(score_str) = env::var("RISK_APPETITE_SCORE") {
@@ -129,28 +100,36 @@ impl RiskEnvConfig {
 
         let trade_quantity = Self::parse_decimal("TRADE_QUANTITY", dec!(1.0))?;
 
-        Ok(Self {
-            max_positions: Self::parse_usize("MAX_POSITIONS", 5)?,
+        let risk_config = crate::domain::config::RiskConfig {
             max_position_size_pct,
-            max_position_value_usd: Self::parse_decimal("MAX_POSITION_VALUE_USD", dec!(5000.0))?,
-            risk_per_trade_percent,
+            max_sector_exposure_pct: Self::parse_decimal("MAX_SECTOR_EXPOSURE_PCT", dec!(0.30))?,
             max_daily_loss_pct,
             max_drawdown_pct,
             consecutive_loss_limit: Self::parse_usize("CONSECUTIVE_LOSS_LIMIT", 3)?,
             pending_order_ttl_ms: env::var("PENDING_ORDER_TTL_MS")
                 .ok()
                 .and_then(|s| s.parse::<i64>().ok()),
-            max_sector_exposure_pct: Self::parse_decimal("MAX_SECTOR_EXPOSURE_PCT", dec!(0.30))?,
+            max_positions: Self::parse_usize("MAX_POSITIONS", 5)?,
+            risk_per_trade_percent,
+            trade_quantity,
+            order_cooldown_seconds: Self::parse_u64("ORDER_COOLDOWN_SECONDS", 300)?,
+            max_orders_per_minute: Self::parse_u32("MAX_ORDERS_PER_MINUTE", 10)?,
+            min_hold_time_minutes: Self::parse_i64("MIN_HOLD_TIME_MINUTES", 240)?,
+            max_loss_per_trade_pct: Self::parse_decimal("MAX_LOSS_PER_TRADE_PCT", dec!(-0.05))?,
+        };
+
+        risk_config
+            .validate()
+            .map_err(|e| anyhow::anyhow!("Risk validation failed: {}", e))?;
+
+        let platform_config = PlatformConfig {
+            max_position_value_usd: Self::parse_decimal("MAX_POSITION_VALUE_USD", dec!(5000.0))?,
             sector_map,
             non_pdt_mode: Self::parse_bool("NON_PDT_MODE", true),
-            max_orders_per_minute: Self::parse_u32("MAX_ORDERS_PER_MINUTE", 10)?,
-            order_cooldown_seconds: Self::parse_u64("ORDER_COOLDOWN_SECONDS", 300)?,
-            min_hold_time_minutes: Self::parse_i64("MIN_HOLD_TIME_MINUTES", 240)?,
             slippage_pct: Self::parse_decimal("SLIPPAGE_PCT", dec!(0.001))?,
             commission_per_share: Self::parse_decimal("COMMISSION_PER_SHARE", dec!(0.001))?,
             spread_bps: Self::parse_decimal("SPREAD_BPS", dec!(5.0))?,
             min_profit_ratio,
-            trade_quantity,
             portfolio_staleness_ms: Self::parse_u64("PORTFOLIO_STALENESS_MS", 5000).unwrap_or(5000),
             portfolio_refresh_interval_ms: Self::parse_u64("PORTFOLIO_REFRESH_INTERVAL_MS", 2000)
                 .unwrap_or(2000),
@@ -161,12 +140,10 @@ impl RiskEnvConfig {
             adaptive_optimization_enabled: Self::parse_bool("ADAPTIVE_OPTIMIZATION_ENABLED", false),
             regime_detection_window: Self::parse_usize("REGIME_DETECTION_WINDOW", 20).unwrap_or(20),
             adaptive_evaluation_hour: Self::parse_u32("ADAPTIVE_EVALUATION_HOUR", 0).unwrap_or(0),
-            risk_appetite,
-        })
-    }
+            use_real_market_data: Self::parse_bool("USE_REAL_MARKET_DATA", false),
+        };
 
-    pub fn risk_appetite(&self) -> Option<&RiskAppetite> {
-        self.risk_appetite.as_ref()
+        Ok((risk_config, platform_config))
     }
 
     fn parse_usize(key: &str, default: usize) -> Result<usize> {
@@ -206,8 +183,7 @@ impl RiskEnvConfig {
 
     fn parse_bool(key: &str, default: bool) -> bool {
         env::var(key)
-            .unwrap_or_else(|_| default.to_string())
-            .parse::<bool>()
+            .map(|v| v.to_lowercase() == "true")
             .unwrap_or(default)
     }
 }
@@ -218,8 +194,9 @@ mod tests {
 
     #[test]
     fn test_risk_config_defaults() {
-        let config = RiskEnvConfig::from_env().expect("Should parse with defaults");
-        assert_eq!(config.max_positions, 5);
-        assert_eq!(config.consecutive_loss_limit, 3);
+        let (risk, platform) = RiskEnvLoader::from_env().expect("Should parse with defaults");
+        assert_eq!(risk.max_positions, 5);
+        assert_eq!(risk.consecutive_loss_limit, 3);
+        assert!(platform.non_pdt_mode);
     }
 }

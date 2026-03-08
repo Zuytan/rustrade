@@ -36,7 +36,7 @@ impl OnnxPredictor {
         }
 
         match Session::builder() {
-            Ok(builder) => match builder.commit_from_file(&self.model_path) {
+            Ok(mut builder) => match builder.commit_from_file(&self.model_path) {
                 Ok(session) => {
                     info!("Successfully loaded ONNX model from {:?}", self.model_path);
                     self.session = Some(Mutex::new(session));

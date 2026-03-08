@@ -68,7 +68,7 @@ impl SymbolContext {
         win_rate_provider: Arc<dyn WinRateProvider>,
         enabled_timeframes: Vec<crate::domain::market::timeframe::Timeframe>,
     ) -> Self {
-        let min_hold_time_ms = config.min_hold_time_minutes * 60 * 1000;
+        let min_hold_time_ms = config.risk.min_hold_time_minutes * 60 * 1000;
         use rust_decimal_macros::dec;
 
         Self {
@@ -83,7 +83,7 @@ impl SymbolContext {
             taken_profit: false,
             last_entry_time: None,
             min_hold_time_ms,
-            active_strategy_mode: config.strategy_mode,
+            active_strategy_mode: config.strategy.strategy_mode,
             last_macd_histogram: None,
             cached_reward_risk_ratio: dec!(2.0), // Default to 2:1
             warmup_succeeded: false,
@@ -158,7 +158,7 @@ impl SymbolContext {
         // Populate new Microstructure features in last_features for ML
         self.last_features.ofi = Some(self.ofi_value);
         self.last_features.cumulative_delta = Some(self.cumulative_delta.value);
-        self.last_features.spread_bps = Some(self.config.spread_bps);
+        self.last_features.spread_bps = Some(self.config.strategy.spread_bps);
     }
 }
 
@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(context.cached_reward_risk_ratio, dec!(2.0));
         assert_eq!(
             context.min_hold_time_ms,
-            config.min_hold_time_minutes * 60 * 1000
+            config.risk.min_hold_time_minutes * 60 * 1000
         );
     }
 

@@ -97,15 +97,17 @@ impl Application {
                 .await?;
 
         // Log Risk Appetite configuration
-        if let Some(ref appetite) = config.risk_appetite {
+        if let Some(score) = config.strategy.risk_appetite_score
+            && let Ok(appetite) = crate::domain::risk::risk_appetite::RiskAppetite::new(score)
+        {
             info!(
                 "Risk Appetite Score: {} ({:?}) - Calculated Parameters: risk_per_trade={:.2}%, trailing_stop={:.1}x, rsi_threshold={:.0}, max_position={:.1}%",
                 appetite.score(),
                 appetite.profile(),
-                config.risk_per_trade_percent * dec!(100.0),
-                config.trailing_stop_atr_multiplier,
-                config.rsi_threshold,
-                config.max_position_size_pct * dec!(100.0)
+                config.risk.risk_per_trade_percent * dec!(100.0),
+                config.strategy.trailing_stop_atr_multiplier,
+                config.strategy.rsi_threshold,
+                config.risk.max_position_size_pct * dec!(100.0)
             );
         }
 
@@ -209,8 +211,12 @@ impl Application {
             sentiment_rx: agents.sentiment_rx,
             news_rx: agents.news_rx,
             connection_health_service: self.connection_health_service.clone(),
-            strategy_mode: self.config.strategy_mode,
-            risk_appetite: self.config.risk_appetite,
+            strategy_mode: self.config.strategy.strategy_mode,
+            risk_appetite: self
+                .config
+                .strategy
+                .risk_appetite_score
+                .and_then(|s| crate::domain::risk::risk_appetite::RiskAppetite::new(s).ok()),
             metrics: self.metrics.clone(),
             agent_registry: self.agent_registry.clone(),
         })

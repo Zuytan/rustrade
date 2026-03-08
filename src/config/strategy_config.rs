@@ -11,76 +11,10 @@ use rust_decimal_macros::dec;
 use std::env;
 use std::str::FromStr;
 
-/// Strategy environment configuration
-#[derive(Debug, Clone)]
-pub struct StrategyEnvConfig {
-    // Core SMA
-    pub fast_sma_period: usize,
-    pub slow_sma_period: usize,
-    pub trend_sma_period: usize,
-    pub sma_threshold: Decimal,
+pub struct StrategyEnvLoader;
 
-    // RSI
-    pub rsi_period: usize,
-    pub rsi_threshold: Decimal,
-
-    // MACD
-    pub macd_fast_period: usize,
-    pub macd_slow_period: usize,
-    pub macd_signal_period: usize,
-    pub macd_requires_rising: bool,
-    pub macd_min_threshold: Decimal,
-
-    // EMA
-    pub ema_fast_period: usize,
-    pub ema_slow_period: usize,
-
-    // ADX
-    pub adx_period: usize,
-    pub adx_threshold: Decimal,
-    /// Volatility threshold for regime detection (e.g. 2.0 = 2x std dev)
-    pub regime_volatility_threshold: Decimal,
-
-    // ATR
-    pub atr_period: usize,
-    pub trailing_stop_atr_multiplier: Decimal,
-
-    // Strategy mode
-    pub strategy_mode: StrategyMode,
-    pub trend_divergence_threshold: Decimal,
-    pub trend_tolerance_pct: Decimal,
-
-    // Mean Reversion
-    pub mean_reversion_rsi_exit: Decimal,
-    pub mean_reversion_bb_period: usize,
-    pub trend_riding_exit_buffer_pct: Decimal,
-
-    // SMC (Smart Money Concepts)
-    pub smc_ob_lookback: usize,
-    pub smc_min_fvg_size_pct: Decimal,
-
-    // Timeframes
-    pub primary_timeframe: Timeframe,
-    pub enabled_timeframes: Vec<Timeframe>,
-    pub trend_timeframe: Timeframe,
-
-    // Signal Parameters
-    pub signal_confirmation_bars: usize,
-    pub take_profit_pct: Decimal,
-    pub profit_target_multiplier: Decimal,
-
-    // Risk Appetite Override
-    pub risk_appetite: Option<RiskAppetite>,
-
-    // ML Configuration
-    pub enable_ml_data_collection: bool,
-
-    // Ensemble Configuration
-    pub ensemble_voting_threshold: Decimal,
-}
-
-impl StrategyEnvConfig {
-    pub fn from_env() -> Result<Self> {
+impl StrategyEnvLoader {
+    pub fn from_env() -> Result<crate::domain::config::StrategyConfig> {
         let strategy_mode_str =
             env::var("STRATEGY_MODE").unwrap_or_else(|_| "standard".to_string());
         let strategy_mode = StrategyMode::from_str(&strategy_mode_str)?;
@@ -150,7 +84,8 @@ impl StrategyEnvConfig {
             .parse::<Timeframe>()
             .context("Failed to parse TREND_TIMEFRAME")?;
 
-        Ok(Self {
+        let config = crate::domain::config::StrategyConfig {
+            strategy_mode,
             fast_sma_period: Self::parse_usize("FAST_SMA_PERIOD", 20)?,
             slow_sma_period: Self::parse_usize("SLOW_SMA_PERIOD", 60)?,
             trend_sma_period: Self::parse_usize("TREND_SMA_PERIOD", 200)?,
@@ -171,40 +106,75 @@ impl StrategyEnvConfig {
                 dec!(2.0),
             )
             .unwrap_or(dec!(2.0)),
+            bb_std_dev: Self::parse_decimal("BB_STD_DEV", dec!(2.0)).unwrap_or(dec!(2.0)),
+            spread_bps: Self::parse_decimal("SPREAD_BPS", dec!(0.5)).unwrap_or(dec!(0.5)),
             atr_period: Self::parse_usize("ATR_PERIOD", 14)?,
             trailing_stop_atr_multiplier,
-            strategy_mode,
+            min_profit_ratio: Self::parse_decimal("MIN_PROFIT_RATIO", dec!(1.5))?,
+            take_profit_pct: Self::parse_decimal("TAKE_PROFIT_PCT", dec!(0.05))
+                .unwrap_or(dec!(0.05)),
+            profit_target_multiplier,
             trend_divergence_threshold: Self::parse_decimal(
                 "TREND_DIVERGENCE_THRESHOLD",
                 dec!(0.005),
             )?,
             trend_tolerance_pct,
-            mean_reversion_rsi_exit: Self::parse_decimal("MEAN_REVERSION_RSI_EXIT", dec!(50.0))?,
-            mean_reversion_bb_period: Self::parse_usize("MEAN_REVERSION_BB_PERIOD", 20)?,
             trend_riding_exit_buffer_pct: Self::parse_decimal(
                 "TREND_RIDING_EXIT_BUFFER_PCT",
                 dec!(0.03),
             )?,
+            mean_reversion_rsi_exit: Self::parse_decimal("MEAN_REVERSION_RSI_EXIT", dec!(50.0))?,
+            mean_reversion_bb_period: Self::parse_usize("MEAN_REVERSION_BB_PERIOD", 20)?,
+            signal_confirmation_bars: Self::parse_usize("SIGNAL_CONFIRMATION_BARS", 2)?,
             smc_ob_lookback: Self::parse_usize("SMC_OB_LOOKBACK", 20).unwrap_or(20),
             smc_min_fvg_size_pct: Self::parse_decimal("SMC_MIN_FVG_SIZE_PCT", dec!(0.005))
                 .unwrap_or(dec!(0.005)),
-            primary_timeframe,
-            enabled_timeframes,
-            trend_timeframe,
-            signal_confirmation_bars: Self::parse_usize("SIGNAL_CONFIRMATION_BARS", 2)?,
-            take_profit_pct: Self::parse_decimal("TAKE_PROFIT_PCT", dec!(0.05))
-                .unwrap_or(dec!(0.05)),
-            profit_target_multiplier,
-            risk_appetite,
-            enable_ml_data_collection: env::var("ENABLE_ML_DATA_COLLECTION")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse::<bool>()
-                .unwrap_or(false),
+            smc_volume_multiplier: Self::parse_decimal("SMC_VOLUME_MULTIPLIER", dec!(1.5))
+                .unwrap_or(dec!(1.5)),
+            breakout_lookback: Self::parse_usize("BREAKOUT_LOOKBACK", 20).unwrap_or(20),
+            breakout_threshold_pct: Self::parse_decimal("BREAKOUT_THRESHOLD_PCT", dec!(0.0005))
+                .unwrap_or(dec!(0.0005)),
+            breakout_volume_mult: Self::parse_decimal("BREAKOUT_VOLUME_MULT", dec!(0.1))
+                .unwrap_or(dec!(0.1)),
+            stat_momentum_lookback: Self::parse_usize("STAT_MOMENTUM_LOOKBACK", 10).unwrap_or(10),
+            stat_momentum_threshold: Self::parse_decimal("STAT_MOMENTUM_THRESHOLD", dec!(0.8))
+                .unwrap_or(dec!(0.8)),
+            stat_momentum_trend_confirmation: Self::parse_bool(
+                "STAT_MOMENTUM_TREND_CONFIRMATION",
+                true,
+            ),
+            zscore_lookback: Self::parse_usize("ZSCORE_LOOKBACK", 20).unwrap_or(20),
+            zscore_entry_threshold: Self::parse_decimal("ZSCORE_ENTRY_THRESHOLD", dec!(-1.5))
+                .unwrap_or(dec!(-1.5)),
+            zscore_exit_threshold: Self::parse_decimal("ZSCORE_EXIT_THRESHOLD", dec!(0.0))
+                .unwrap_or(dec!(0.0)),
+            orderflow_ofi_threshold: Self::parse_decimal("ORDERFLOW_OFI_THRESHOLD", dec!(0.3))
+                .unwrap_or(dec!(0.3)),
+            orderflow_stacked_count: Self::parse_usize("ORDERFLOW_STACKED_COUNT", 3).unwrap_or(3),
+            orderflow_volume_profile_lookback: Self::parse_usize(
+                "ORDERFLOW_VOLUME_PROFILE_LOOKBACK",
+                100,
+            )
+            .unwrap_or(100),
+            ensemble_weights: None, // Cannot easily parse weights from env yet
             ensemble_voting_threshold: Self::parse_decimal(
                 "ENSEMBLE_VOTING_THRESHOLD",
                 dec!(0.50),
             )?,
-        })
+            primary_timeframe,
+            enabled_timeframes,
+            trend_timeframe,
+            enable_ml_data_collection: env::var("ENABLE_ML_DATA_COLLECTION")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse::<bool>()
+                .unwrap_or(false),
+            risk_appetite_score: risk_appetite.map(|a| a.score()),
+        };
+
+        config
+            .validate()
+            .map_err(|e| anyhow::anyhow!("Strategy validation failed: {}", e))?;
+        Ok(config)
     }
 
     fn parse_usize(key: &str, default: usize) -> Result<usize> {
@@ -222,6 +192,12 @@ impl StrategyEnvConfig {
             Err(_) => Ok(default),
         }
     }
+
+    fn parse_bool(key: &str, default: bool) -> bool {
+        env::var(key)
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(default)
+    }
 }
 
 #[cfg(test)]
@@ -230,7 +206,7 @@ mod tests {
 
     #[test]
     fn test_strategy_config_defaults() {
-        let config = StrategyEnvConfig::from_env().expect("Should parse with defaults");
+        let config = StrategyEnvLoader::from_env().expect("Should parse with defaults");
         assert_eq!(config.fast_sma_period, 20);
         assert_eq!(config.slow_sma_period, 60);
         assert_eq!(config.rsi_period, 14);

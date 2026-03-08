@@ -46,7 +46,7 @@ impl TradeFilter {
         }
 
         // 3. Cooldown Check
-        let cooldown_ms = config.order_cooldown_seconds * 1000;
+        let cooldown_ms = config.risk.order_cooldown_seconds * 1000;
         if timestamp - position_manager.last_signal_time < cooldown_ms as i64 {
             // validating silent reject for cooldown
             return false;

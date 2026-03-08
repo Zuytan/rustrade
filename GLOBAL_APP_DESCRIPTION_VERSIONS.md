@@ -1,5 +1,25 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.8 - Configuration Consolidation & Quality Audit (March 2026)
+
+### Configuration System Refactoring
+- **Hierarchical Model**: Restructured the monolithic `Config` and `AnalystConfig` into a nested, domain-driven hierarchy (`StrategyConfig`, `RiskConfig`, `PlatformConfig`).
+- **Serde Integration**: Enforced strict `serde(flatten)` patterns for configuration reuse across infrastructure and agents, ensuring zero parameter drift.
+- **Improved Loaders**: Consolidated environment variable loading into dedicated domain loaders.
+
+### Trading & Data Reliability
+- **Crypto Symbol Parsing Fix**: Implemented manual overrides for ambiguous symbols like `ARB/USD` and `VET/USD` (previously misparsed as `AR/BUSD` and `VE/TUSD`).
+- **Normalized Validation**: Added unit tests to enforce correct Base/Quote separation for assets where the base ends with a valid quote ticker.
+
+### Stability & Testing
+- **Integration Test Resilience**: Refactored `analyst_tests.rs`, `trading_flow.rs`, and `scanner_flow.rs` to support the new configuration structure.
+- **Synthetic Data Logic**: Fixed `CandleAggregator` outlier rejection and RSI threshold interference in end-to-end scenario tests.
+- **Standard Strategy Mode**: Explicitly enforced `Standard` strategy mode in scenario tests for consistent behavioral validation.
+
+### Code Hygiene
+- **Zero-Unwrap Audit**: Completed the project-wide audit of `.unwrap()` and `.expect()` calls, replacing them with robust error handling in `CandleAggregator` and `Analyst`.
+- **Clippy Strictness**: Resolved all final linting warnings across the entire workspace, including test targets.
+
 ## Version 0.99.7 - Phase 8 Refactoring, Performance & Legacy Cleanup (March 2026)
 
 ### Architecture & UI Cleanup

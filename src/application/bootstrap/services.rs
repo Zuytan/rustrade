@@ -52,20 +52,20 @@ impl ServicesBootstrap {
         );
 
         // 2. Initialize Adaptive Optimization Services
-        let performance_monitor = if config.adaptive_optimization_enabled {
+        let performance_monitor = if config.platform.adaptive_optimization_enabled {
             Some(Arc::new(PerformanceMonitoringService::new(
                 persistence.snapshot_repo.clone(),
                 persistence.candle_repository.clone(),
                 market_service.clone(),
                 portfolio.clone(),
                 persistence.order_repository.clone(),
-                config.regime_detection_window,
+                config.platform.regime_detection_window,
             )))
         } else {
             None
         };
 
-        let adaptive_optimization_service = if config.adaptive_optimization_enabled {
+        let adaptive_optimization_service = if config.platform.adaptive_optimization_enabled {
             let initial_cash = rust_decimal::Decimal::ZERO; // Start empty, require explicit funding
             let execution_factory: Arc<dyn Fn() -> Arc<dyn ExecutionService> + Send + Sync> =
                 Arc::new(move || {
@@ -81,8 +81,8 @@ impl ServicesBootstrap {
                 market_service.clone(),
                 execution_factory,
                 ParameterGrid::default(), // Load from file in real world
-                config.strategy_mode,
-                config.min_profit_ratio, // Use config value
+                config.strategy.strategy_mode,
+                config.platform.min_profit_ratio, // Use config value
             ));
 
             Some(Arc::new(AdaptiveOptimizationService::new(
@@ -93,9 +93,9 @@ impl ServicesBootstrap {
                 persistence.strategy_repository.clone(),
                 persistence.candle_repository.clone(),
                 PerformanceEvaluator::new(EvaluationThresholds::default()),
-                config.regime_detection_window,
-                config.adx_threshold,
-                config.regime_volatility_threshold,
+                config.platform.regime_detection_window,
+                config.strategy.adx_threshold,
+                config.strategy.regime_volatility_threshold,
                 true,
             )))
         } else {

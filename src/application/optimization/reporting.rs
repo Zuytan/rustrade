@@ -86,8 +86,8 @@ impl OptimizeReporter {
             println!(
                 "{:<4} | {:<6} | {:<6} | {:>8.2} | {:>8.2} | {:>8.1} | {:>7} | {:>7.2} | {:>8.4}",
                 i + 1,
-                result.params.fast_sma_period,
-                result.params.slow_sma_period,
+                result.params.strategy.fast_sma_period,
+                result.params.strategy.slow_sma_period,
                 result.sharpe_ratio,
                 result.total_return,
                 result.win_rate,
@@ -103,18 +103,30 @@ impl OptimizeReporter {
     /// Prints detailed information about the best configuration.
     pub fn print_best_config(&self, best: &OptimizationResult) {
         println!("🏆 BEST CONFIGURATION:");
-        println!("  Fast SMA:         {}", best.params.fast_sma_period);
-        println!("  Slow SMA:         {}", best.params.slow_sma_period);
-        println!("  RSI Threshold:    {:.1}", best.params.rsi_threshold);
+        println!(
+            "  Fast SMA:         {}",
+            best.params.strategy.fast_sma_period
+        );
+        println!(
+            "  Slow SMA:         {}",
+            best.params.strategy.slow_sma_period
+        );
+        println!(
+            "  RSI Threshold:    {:.1}",
+            best.params.strategy.rsi_threshold
+        );
         println!(
             "  Trend Div:        {:.4}",
-            best.params.trend_divergence_threshold
+            best.params.strategy.trend_divergence_threshold
         );
         println!(
             "  ATR Multiplier:   {:.1}",
-            best.params.trailing_stop_atr_multiplier
+            best.params.strategy.trailing_stop_atr_multiplier
         );
-        println!("  Cooldown (s):     {}", best.params.order_cooldown_seconds);
+        println!(
+            "  Cooldown (s):     {}",
+            best.params.risk.order_cooldown_seconds
+        );
         println!("\n  Sharpe Ratio:     {:.2}", best.sharpe_ratio);
         println!("  Total Return:     {:.2}%", best.total_return);
         println!("  Win Rate:         {:.1}%", best.win_rate);

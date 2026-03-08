@@ -138,8 +138,8 @@ impl MarketRegimeDetector {
         let atr = self.calculate_atr(recent_candles, 14);
         let current_price = recent_candles
             .last()
-            .expect("recent_candles slice guaranteed non-empty by window_size check")
-            .close;
+            .map(|c| c.close)
+            .unwrap_or(Decimal::ZERO);
         let volatility_score = if current_price > Decimal::ZERO {
             use rust_decimal_macros::dec;
             (atr / current_price) * dec!(100.0)
@@ -251,12 +251,10 @@ impl MarketRegimeDetector {
     }
 
     fn is_uptrend(&self, candles: &[Candle]) -> bool {
-        if candles.len() < 2 {
-            return false;
+        match (candles.first(), candles.last()) {
+            (Some(first), Some(last)) => last.close > first.close,
+            _ => false,
         }
-        let first = candles.first().expect("candles verified len >= 2").close;
-        let last = candles.last().expect("candles verified len >= 2").close;
-        last > first
     }
 }
 

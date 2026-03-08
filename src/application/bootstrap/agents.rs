@@ -78,7 +78,7 @@ impl AgentsBootstrap {
         let mut sentinel = Sentinel::new(
             services.market_service.clone(),
             market_tx,
-            config.symbols.clone(),
+            config.platform.symbols.clone(),
             Some(sentinel_cmd_rx),
             connection_health_service.clone(),
             agent_registry.clone(),
@@ -86,13 +86,13 @@ impl AgentsBootstrap {
 
         // 2. Market Scanner
         let scanner_interval =
-            std::time::Duration::from_secs(config.dynamic_scan_interval_minutes * 60);
+            std::time::Duration::from_secs(config.platform.dynamic_scan_interval_minutes * 60);
         let scanner = MarketScanner::new(
             services.market_service.clone(),
             services.execution_service.clone(),
             sentinel_cmd_tx.clone(),
             scanner_interval,
-            config.dynamic_symbol_mode,
+            config.platform.dynamic_symbol_mode,
             agent_registry.clone(),
         );
 
@@ -129,9 +129,9 @@ impl AgentsBootstrap {
         let sector_provider: Option<Arc<dyn crate::domain::ports::SectorProvider>> =
             match config.mode {
                 Mode::Alpaca => Some(Arc::new(AlpacaSectorProvider::new(
-                    config.alpaca_api_key.clone(),
-                    config.alpaca_secret_key.clone(),
-                    config.alpaca_base_url.clone(),
+                    config.broker.alpaca.api_key.clone(),
+                    config.broker.alpaca.secret_key.clone(),
+                    config.broker.alpaca.base_url.clone(),
                 ))),
                 Mode::Mock => None,
                 Mode::Oanda => Some(Arc::new(OandaSectorProvider)),
@@ -144,47 +144,52 @@ impl AgentsBootstrap {
             crate::domain::risk::risk_config::RiskConfig::default()
         };
 
+        use crate::domain::risk::risk_appetite::RiskAppetite;
         // When risk appetite is set, it drives all risk limits (prise de risque).
-        let risk_config = if let Some(ref ra) = config.risk_appetite {
-            crate::domain::risk::risk_config::RiskConfig {
-                max_position_size_pct: ra.calculate_max_position_size_pct(),
-                max_daily_loss_pct: ra.calculate_max_daily_loss_pct(),
-                max_drawdown_pct: ra.calculate_max_drawdown_pct(),
-                consecutive_loss_limit: ra.calculate_consecutive_loss_limit(),
-                valuation_interval_seconds: base_risk.valuation_interval_seconds,
-                max_sector_exposure_pct: config.max_sector_exposure_pct,
-                sector_provider: sector_provider.clone(),
-                pending_order_ttl_ms: config.pending_order_ttl_ms,
-                allow_pdt_risk: base_risk.allow_pdt_risk,
-                correlation_config: base_risk.correlation_config.clone(),
-                volatility_config: base_risk.volatility_config.clone(),
+        let risk_config = if let Some(score) = config.strategy.risk_appetite_score {
+            if let Ok(ra) = RiskAppetite::new(score) {
+                crate::domain::risk::risk_config::RiskConfig {
+                    max_position_size_pct: ra.calculate_max_position_size_pct(),
+                    max_daily_loss_pct: ra.calculate_max_daily_loss_pct(),
+                    max_drawdown_pct: ra.calculate_max_drawdown_pct(),
+                    consecutive_loss_limit: ra.calculate_consecutive_loss_limit(),
+                    valuation_interval_seconds: base_risk.valuation_interval_seconds,
+                    max_sector_exposure_pct: config.risk.max_sector_exposure_pct,
+                    sector_provider: sector_provider.clone(),
+                    pending_order_ttl_ms: config.risk.pending_order_ttl_ms,
+                    allow_pdt_risk: base_risk.allow_pdt_risk,
+                    correlation_config: base_risk.correlation_config.clone(),
+                    volatility_config: base_risk.volatility_config.clone(),
+                }
+            } else {
+                base_risk.clone()
             }
         } else {
             crate::domain::risk::risk_config::RiskConfig {
                 max_position_size_pct: if config.asset_class == crate::config::AssetClass::Crypto {
                     base_risk.max_position_size_pct
                 } else {
-                    config.max_position_size_pct
+                    config.risk.max_position_size_pct
                 },
                 max_daily_loss_pct: if config.asset_class == crate::config::AssetClass::Crypto {
                     base_risk.max_daily_loss_pct
                 } else {
-                    config.max_daily_loss_pct
+                    config.risk.max_daily_loss_pct
                 },
                 max_drawdown_pct: if config.asset_class == crate::config::AssetClass::Crypto {
                     base_risk.max_drawdown_pct
                 } else {
-                    config.max_drawdown_pct
+                    config.risk.max_drawdown_pct
                 },
                 consecutive_loss_limit: if config.asset_class == crate::config::AssetClass::Crypto {
                     base_risk.consecutive_loss_limit
                 } else {
-                    config.consecutive_loss_limit
+                    config.risk.consecutive_loss_limit
                 },
                 valuation_interval_seconds: base_risk.valuation_interval_seconds,
-                max_sector_exposure_pct: config.max_sector_exposure_pct,
+                max_sector_exposure_pct: config.risk.max_sector_exposure_pct,
                 sector_provider,
-                pending_order_ttl_ms: config.pending_order_ttl_ms,
+                pending_order_ttl_ms: config.risk.pending_order_ttl_ms,
                 allow_pdt_risk: base_risk.allow_pdt_risk,
                 correlation_config: base_risk.correlation_config,
                 volatility_config: base_risk.volatility_config,
@@ -198,7 +203,7 @@ impl AgentsBootstrap {
         // Start background refresh task
         correlation_svc
             .clone()
-            .start_background_refresh(config.symbols.clone())
+            .start_background_refresh(config.platform.symbols.clone())
             .await;
 
         let correlation_service = Some(correlation_svc);
@@ -206,7 +211,11 @@ impl AgentsBootstrap {
         let portfolio_state_manager = Arc::new(
             crate::application::monitoring::portfolio_state_manager::PortfolioStateManager::new(
                 services.execution_service.clone(),
-                config.portfolio_staleness_ms.try_into().unwrap_or(5000),
+                config
+                    .platform
+                    .portfolio_staleness_ms
+                    .try_into()
+                    .unwrap_or(5000),
             ),
         );
 
@@ -217,7 +226,7 @@ impl AgentsBootstrap {
             services.execution_service.clone(),
             services.market_service.clone(),
             portfolio_state_manager,
-            config.non_pdt_mode,
+            config.platform.non_pdt_mode,
             config.asset_class,
             risk_config,
             services.performance_monitor.clone(),
@@ -234,12 +243,12 @@ impl AgentsBootstrap {
         let mut order_throttler = OrderThrottler::new(
             order_rx,
             throttled_order_tx,
-            config.max_orders_per_minute,
+            config.risk.max_orders_per_minute,
             agent_registry.clone(),
         );
 
         let retry_config = crate::application::risk_management::order_retry_strategy::RetryConfig {
-            limit_timeout_ms: config.pending_order_ttl_ms.unwrap_or(5000) as u64,
+            limit_timeout_ms: config.risk.pending_order_ttl_ms.unwrap_or(5000) as u64,
             enable_retry: true,
         };
 
@@ -295,139 +304,84 @@ impl AgentsBootstrap {
 // Helper functions to keep init clean
 
 fn create_analyst_config(config: &Config) -> AnalystConfig {
-    use rust_decimal_macros::dec;
+    use crate::domain::risk::risk_appetite::RiskAppetite;
 
-    let mut analyst_config = AnalystConfig {
-        fast_sma_period: config.fast_sma_period,
-        slow_sma_period: config.slow_sma_period,
-        max_positions: config.max_positions,
-        trade_quantity: config.trade_quantity,
-        sma_threshold: config.sma_threshold,
-        order_cooldown_seconds: config.order_cooldown_seconds,
-        risk_per_trade_percent: config.risk_per_trade_percent,
-        strategy_mode: config.strategy_mode,
-        trend_sma_period: config.trend_sma_period,
-        rsi_period: config.rsi_period,
-        macd_fast_period: config.macd_fast_period,
-        macd_slow_period: config.macd_slow_period,
-        macd_signal_period: config.macd_signal_period,
-        trend_divergence_threshold: config.trend_divergence_threshold,
-        trailing_stop_atr_multiplier: config.trailing_stop_atr_multiplier,
-        atr_period: config.atr_period,
-        rsi_threshold: config.rsi_threshold,
-        trend_riding_exit_buffer_pct: dec!(0.03),
-        mean_reversion_rsi_exit: config.mean_reversion_rsi_exit,
-        mean_reversion_bb_period: config.mean_reversion_bb_period,
-        fee_model: config.create_fee_model(),
-        max_position_size_pct: config.max_position_size_pct,
-        bb_std_dev: dec!(2.0),
-        ema_fast_period: config.ema_fast_period,
-        ema_slow_period: config.ema_slow_period,
-        take_profit_pct: config.take_profit_pct,
-        min_hold_time_minutes: config.min_hold_time_minutes,
-        signal_confirmation_bars: config.signal_confirmation_bars,
-        spread_bps: config.spread_bps,
-        min_profit_ratio: config.min_profit_ratio,
-        profit_target_multiplier: config.profit_target_multiplier,
-        macd_requires_rising: config.macd_requires_rising,
-        trend_tolerance_pct: config.trend_tolerance_pct,
-        macd_min_threshold: config.macd_min_threshold,
-        adx_period: config.adx_period,
-        adx_threshold: config.adx_threshold,
-        smc_ob_lookback: config.smc_ob_lookback,
-        smc_min_fvg_size_pct: config.smc_min_fvg_size_pct,
-        smc_volume_multiplier: dec!(1.5),
-        risk_appetite_score: config.risk_appetite.map(|r| r.score()),
-        breakout_lookback: 10,
-        breakout_threshold_pct: dec!(0.002),
-        breakout_volume_mult: dec!(1.1),
-        max_loss_per_trade_pct: dec!(-0.05),
-        enable_ml_data_collection: false,
-        stat_momentum_lookback: 10,
-        stat_momentum_threshold: dec!(1.5),
-        stat_momentum_trend_confirmation: true,
-        zscore_lookback: 20,
-        zscore_entry_threshold: dec!(-2.0),
-        zscore_exit_threshold: dec!(0.0),
-        orderflow_ofi_threshold: dec!(0.3),
-        orderflow_stacked_count: 3,
-        orderflow_volume_profile_lookback: 100,
-        ensemble_weights: None,
-        ensemble_voting_threshold: config.ensemble_voting_threshold,
-    };
+    let mut analyst_config = AnalystConfig::from(config.clone());
 
     // Apply risk appetite settings if present to override base values
-    if let Some(ref appetite) = config.risk_appetite {
-        analyst_config.apply_risk_appetite(appetite);
+    if let Some(score) = config.strategy.risk_appetite_score
+        && let Ok(appetite) = RiskAppetite::new(score)
+    {
+        analyst_config.apply_risk_appetite(&appetite);
     }
 
     analyst_config
 }
 
 fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn TradingStrategy> {
-    match config.strategy_mode {
+    match config.strategy.strategy_mode {
         crate::domain::market::strategy_config::StrategyMode::Standard => {
             Arc::new(DualSMAStrategy::new(
-                config.fast_sma_period,
-                config.slow_sma_period,
-                config.sma_threshold,
+                config.strategy.fast_sma_period,
+                config.strategy.slow_sma_period,
+                config.strategy.sma_threshold,
             ))
         }
         crate::domain::market::strategy_config::StrategyMode::Advanced => Arc::new(
             AdvancedTripleFilterStrategy::new(AdvancedTripleFilterConfig {
-                fast_period: analyst_config.fast_sma_period,
-                slow_period: analyst_config.slow_sma_period,
-                sma_threshold: analyst_config.sma_threshold,
-                trend_sma_period: analyst_config.trend_sma_period,
-                rsi_threshold: analyst_config.rsi_threshold,
-                signal_confirmation_bars: analyst_config.signal_confirmation_bars,
-                macd_requires_rising: analyst_config.macd_requires_rising,
-                trend_tolerance_pct: analyst_config.trend_tolerance_pct,
-                macd_min_threshold: analyst_config.macd_min_threshold,
-                adx_threshold: analyst_config.adx_threshold,
+                fast_period: analyst_config.strategy.fast_sma_period,
+                slow_period: analyst_config.strategy.slow_sma_period,
+                sma_threshold: analyst_config.strategy.sma_threshold,
+                trend_sma_period: analyst_config.strategy.trend_sma_period,
+                rsi_threshold: analyst_config.strategy.rsi_threshold,
+                signal_confirmation_bars: analyst_config.strategy.signal_confirmation_bars,
+                macd_requires_rising: analyst_config.strategy.macd_requires_rising,
+                trend_tolerance_pct: analyst_config.strategy.trend_tolerance_pct,
+                macd_min_threshold: analyst_config.strategy.macd_min_threshold,
+                adx_threshold: analyst_config.strategy.adx_threshold,
             }),
         ),
         crate::domain::market::strategy_config::StrategyMode::Dynamic => {
             Arc::new(DynamicRegimeStrategy::with_config(DynamicRegimeConfig {
-                fast_period: analyst_config.fast_sma_period,
-                slow_period: analyst_config.slow_sma_period,
-                sma_threshold: analyst_config.sma_threshold,
-                trend_sma_period: analyst_config.trend_sma_period,
-                rsi_threshold: analyst_config.rsi_threshold,
-                trend_divergence_threshold: analyst_config.trend_divergence_threshold,
-                signal_confirmation_bars: analyst_config.signal_confirmation_bars,
-                macd_requires_rising: analyst_config.macd_requires_rising,
-                trend_tolerance_pct: analyst_config.trend_tolerance_pct,
-                macd_min_threshold: analyst_config.macd_min_threshold,
-                adx_threshold: analyst_config.adx_threshold,
+                fast_period: analyst_config.strategy.fast_sma_period,
+                slow_period: analyst_config.strategy.slow_sma_period,
+                sma_threshold: analyst_config.strategy.sma_threshold,
+                trend_sma_period: analyst_config.strategy.trend_sma_period,
+                rsi_threshold: analyst_config.strategy.rsi_threshold,
+                trend_divergence_threshold: analyst_config.strategy.trend_divergence_threshold,
+                signal_confirmation_bars: analyst_config.strategy.signal_confirmation_bars,
+                macd_requires_rising: analyst_config.strategy.macd_requires_rising,
+                trend_tolerance_pct: analyst_config.strategy.trend_tolerance_pct,
+                macd_min_threshold: analyst_config.strategy.macd_min_threshold,
+                adx_threshold: analyst_config.strategy.adx_threshold,
             }))
         }
         crate::domain::market::strategy_config::StrategyMode::TrendRiding => {
             Arc::new(TrendRidingStrategy::new(
-                config.fast_sma_period,
-                config.slow_sma_period,
-                config.sma_threshold,
-                config.trend_riding_exit_buffer_pct,
+                config.strategy.fast_sma_period,
+                config.strategy.slow_sma_period,
+                config.strategy.sma_threshold,
+                config.strategy.trend_riding_exit_buffer_pct,
             ))
         }
         crate::domain::market::strategy_config::StrategyMode::MeanReversion => {
             Arc::new(MeanReversionStrategy::new(
-                analyst_config.mean_reversion_bb_period,
-                analyst_config.mean_reversion_rsi_exit,
+                analyst_config.strategy.mean_reversion_bb_period,
+                analyst_config.strategy.mean_reversion_rsi_exit,
             ))
         }
         crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive => {
             Arc::new(crate::application::strategies::TrendRidingStrategy::new(
-                analyst_config.fast_sma_period,
-                analyst_config.slow_sma_period,
-                analyst_config.sma_threshold,
-                analyst_config.trend_riding_exit_buffer_pct,
+                analyst_config.strategy.fast_sma_period,
+                analyst_config.strategy.slow_sma_period,
+                analyst_config.strategy.sma_threshold,
+                analyst_config.strategy.trend_riding_exit_buffer_pct,
             ))
         }
         crate::domain::market::strategy_config::StrategyMode::SMC => Arc::new(SMCStrategy::new(
-            analyst_config.smc_ob_lookback,
-            analyst_config.smc_min_fvg_size_pct,
-            analyst_config.smc_volume_multiplier,
+            analyst_config.strategy.smc_ob_lookback,
+            analyst_config.strategy.smc_min_fvg_size_pct,
+            analyst_config.strategy.smc_volume_multiplier,
         )),
         crate::domain::market::strategy_config::StrategyMode::VWAP => {
             Arc::new(VWAPStrategy::default())
@@ -443,23 +397,23 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
         }
         crate::domain::market::strategy_config::StrategyMode::ZScoreMR => {
             Arc::new(ZScoreMeanReversionStrategy::new(
-                analyst_config.zscore_lookback,
-                analyst_config.zscore_entry_threshold,
-                analyst_config.zscore_exit_threshold,
+                analyst_config.strategy.zscore_lookback,
+                analyst_config.strategy.zscore_entry_threshold,
+                analyst_config.strategy.zscore_exit_threshold,
             ))
         }
         crate::domain::market::strategy_config::StrategyMode::StatMomentum => {
             Arc::new(StatisticalMomentumStrategy::new(
-                analyst_config.stat_momentum_lookback,
-                analyst_config.stat_momentum_threshold,
-                analyst_config.stat_momentum_trend_confirmation,
+                analyst_config.strategy.stat_momentum_lookback,
+                analyst_config.strategy.stat_momentum_threshold,
+                analyst_config.strategy.stat_momentum_trend_confirmation,
             ))
         }
         crate::domain::market::strategy_config::StrategyMode::OrderFlow => {
             Arc::new(OrderFlowStrategy::new(
-                analyst_config.orderflow_ofi_threshold,
-                analyst_config.orderflow_stacked_count,
-                analyst_config.orderflow_volume_profile_lookback,
+                analyst_config.strategy.orderflow_ofi_threshold,
+                analyst_config.strategy.orderflow_stacked_count,
+                analyst_config.strategy.orderflow_volume_profile_lookback,
             ))
         }
         crate::domain::market::strategy_config::StrategyMode::ML => {
@@ -588,8 +542,8 @@ fn spawn_adaptive_optimization(
     config: &Config,
     adaptive_service: Option<Arc<crate::application::optimization::adaptive_optimization_service::AdaptiveOptimizationService>>,
 ) {
-    let symbols = config.symbols.clone();
-    let eval_hour = config.adaptive_evaluation_hour;
+    let symbols = config.platform.symbols.clone();
+    let eval_hour = config.platform.adaptive_evaluation_hour;
 
     tokio::spawn(async move {
         if let Some(service) = adaptive_service {

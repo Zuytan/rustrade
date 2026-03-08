@@ -121,7 +121,7 @@ impl Simulator {
 
         // Use StrategyFactory to create the correct strategy for simulations
         let strategy = crate::application::strategies::StrategyFactory::create(
-            sim_config.strategy_mode,
+            sim_config.strategy.strategy_mode,
             &sim_config,
         );
 
@@ -241,7 +241,7 @@ impl Simulator {
         let max_drawdown_pct = Decimal::new(-50, 0); // -50% max loss
 
         while let Some(prop) = proposal_rx.recv().await {
-            println!(
+            tracing::info!(
                 "Simulator received proposal: {:?} {} {} @ {} for {}",
                 prop.side, prop.quantity, prop.symbol, prop.price, prop.reason
             );

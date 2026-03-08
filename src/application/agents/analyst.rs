@@ -85,7 +85,7 @@ impl Analyst {
         // Initialize Cost Evaluator for profit-aware trading
         let cost_evaluator = CostEvaluator::with_spread_cache(
             config.fee_model.clone(),
-            config.spread_bps,
+            config.strategy.spread_bps,
             dependencies.spread_cache.clone(),
         );
 
@@ -120,7 +120,7 @@ impl Analyst {
         // Initialize CandlePipeline with its own instances
         let pipeline_cost_evaluator = CostEvaluator::with_spread_cache(
             config.fee_model.clone(),
-            config.spread_bps,
+            config.strategy.spread_bps,
             dependencies.spread_cache.clone(),
         );
         let pipeline_trade_filter =
@@ -136,7 +136,7 @@ impl Analyst {
                 pipeline_signal_processor,
             );
         // Initialize Data Collector if enabled
-        let data_collector = if config.enable_ml_data_collection {
+        let data_collector = if config.strategy.enable_ml_data_collection {
             let mut path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             path.push("data");
             path.push("ml");
@@ -196,7 +196,7 @@ impl Analyst {
     pub async fn run(&mut self) {
         info!(
             "Analyst started (Multi-Symbol Dual SMA). Cache size: {}",
-            self.config.max_positions
+            self.config.risk.max_positions
         );
 
         // Subscribe to Order Updates
@@ -356,9 +356,9 @@ impl Analyst {
                             for context in self.symbol_states.values_mut() {
                                 context.config = self.config.clone();
                                 // Check if structural parameters changed (periods)
-                                if context.config.rsi_period != self.config.rsi_period ||
-                                   context.config.fast_sma_period != self.config.fast_sma_period ||
-                                   context.config.slow_sma_period != self.config.slow_sma_period {
+                                if context.config.strategy.rsi_period != self.config.strategy.rsi_period ||
+                                   context.config.strategy.fast_sma_period != self.config.strategy.fast_sma_period ||
+                                   context.config.strategy.slow_sma_period != self.config.strategy.slow_sma_period {
                                      warn!("Analyst: Structural config change detected. Re-initializing Feature Service.");
                                      context.feature_service = Box::new(crate::application::monitoring::feature_engineering_service::TechnicalFeatureEngineeringService::new(&self.config));
                                 }
@@ -538,8 +538,7 @@ impl Analyst {
                         context.last_entry_time = Some(order.timestamp);
                         info!(
                             "Analyst [{}]: Recovered last_entry_time: {} (from today's orders)",
-                            symbol,
-                            context.last_entry_time.unwrap()
+                            symbol, order.timestamp
                         );
                     } else {
                         // If no order today, we use current time as a safety buffer

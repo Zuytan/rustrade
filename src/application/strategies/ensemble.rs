@@ -66,22 +66,22 @@ impl EnsembleStrategy {
     pub fn modern_ensemble(config: &AnalystConfig) -> Self {
         let strategies: Vec<Arc<dyn TradingStrategy>> = vec![
             Arc::new(StatisticalMomentumStrategy::new(
-                config.stat_momentum_lookback,
-                config.stat_momentum_threshold,
-                config.stat_momentum_trend_confirmation,
+                config.strategy.stat_momentum_lookback,
+                config.strategy.stat_momentum_threshold,
+                config.strategy.stat_momentum_trend_confirmation,
             )),
             Arc::new(ZScoreMeanReversionStrategy::new(
-                config.zscore_lookback,
-                config.zscore_entry_threshold,
-                config.zscore_exit_threshold,
+                config.strategy.zscore_lookback,
+                config.strategy.zscore_entry_threshold,
+                config.strategy.zscore_exit_threshold,
             )),
             Arc::new(SMCStrategy::new(
-                config.smc_ob_lookback,
-                config.smc_min_fvg_size_pct,
-                config.smc_volume_multiplier,
+                config.strategy.smc_ob_lookback,
+                config.strategy.smc_min_fvg_size_pct,
+                config.strategy.smc_volume_multiplier,
             )),
         ];
-        let weights = if let Some(w) = &config.ensemble_weights {
+        let weights = if let Some(w) = &config.strategy.ensemble_weights {
             w.clone()
         } else {
             HashMap::from([
@@ -91,7 +91,11 @@ impl EnsembleStrategy {
             ])
         };
         // Use configured threshold (defaults to 0.5 if not set, or adjusted by risk)
-        let threshold = config.ensemble_voting_threshold.try_into().unwrap_or(0.5);
+        let threshold = config
+            .strategy
+            .ensemble_voting_threshold
+            .try_into()
+            .unwrap_or(0.5);
         Self::with_weights(strategies, threshold, weights)
     }
 }

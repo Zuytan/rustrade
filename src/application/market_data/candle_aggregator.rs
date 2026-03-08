@@ -28,10 +28,9 @@ impl CandleBuilder {
     fn new(symbol: String, price: Decimal, timestamp: DateTime<Utc>) -> Self {
         // Normalize start time to the beginning of the minute
         let start_time = timestamp
-            .date_naive()
-            .and_hms_opt(timestamp.hour(), timestamp.minute(), 0)
-            .expect("Valid hour/minute should always produce valid time")
-            .and_utc();
+            .with_second(0)
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(timestamp);
 
         Self {
             symbol,
@@ -164,10 +163,9 @@ impl CandleAggregator {
         }
 
         let current_minute = timestamp
-            .date_naive()
-            .and_hms_opt(timestamp.hour(), timestamp.minute(), 0)
-            .expect("Valid hour/minute should always produce valid time")
-            .and_utc();
+            .with_second(0)
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(timestamp);
 
         // Check if we have an existing builder for this symbol
         if let Some(builder) = self.builders.get_mut(symbol) {

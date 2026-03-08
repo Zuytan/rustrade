@@ -275,13 +275,15 @@ pub fn normalize_crypto_symbol(symbol: &str) -> Result<String, String> {
         return Err("Cannot normalize empty symbol".to_string());
     }
 
-    // Handle ambiguous symbols ending in 'T' that trade in 'USD' instead of 'TUSD'
+    // Handle ambiguous symbols ending in 'T' or forming valid but incorrect longer quotes (like BUSD)
     match symbol {
         "DOTUSD" => return Ok("DOT/USD".to_string()),
         "BATUSD" => return Ok("BAT/USD".to_string()),
         "FETUSD" => return Ok("FET/USD".to_string()),
         "GRTUSD" => return Ok("GRT/USD".to_string()),
         "APTUSD" => return Ok("APT/USD".to_string()),
+        "ARBUSD" => return Ok("ARB/USD".to_string()), // Prevent AR/BUSD
+        "VETUSD" => return Ok("VET/USD".to_string()), // Prevent VE/TUSD
         _ => {}
     }
 
@@ -388,6 +390,31 @@ mod tests {
     fn test_normalize_ambiguous_symbols() {
         assert_eq!(normalize_crypto_symbol("DOTUSD").unwrap(), "DOT/USD");
         assert_eq!(normalize_crypto_symbol("BATUSD").unwrap(), "BAT/USD");
+        assert_eq!(normalize_crypto_symbol("ARBUSD").unwrap(), "ARB/USD");
+        assert_eq!(normalize_crypto_symbol("VETUSD").unwrap(), "VET/USD");
+    }
+
+    #[test]
+    fn test_exhaustive_quote_priorities() {
+        // Test that 4-char quotes (USDT, BUSD) are preferred over 3-char (USD)
+        // unless explicitly overridden.
+        assert_eq!(normalize_crypto_symbol("BTCUSDT").unwrap(), "BTC/USDT");
+        assert_eq!(normalize_crypto_symbol("BTCBUSD").unwrap(), "BTC/BUSD");
+
+        // Overrides check: ARBUSD should be ARB/USD despite BUSD being a valid 4-char quote
+        assert_eq!(normalize_crypto_symbol("ARBUSD").unwrap(), "ARB/USD");
+        // VETUSD should be VET/USD despite TUSD being a valid 4-char quote (at the end)
+        assert_eq!(normalize_crypto_symbol("VETUSD").unwrap(), "VET/USD");
+    }
+
+    #[test]
+    fn test_base_currency_edge_cases() {
+        // Base currency same as quote
+        assert_eq!(normalize_crypto_symbol("BTCBTC").unwrap(), "BTC/BTC");
+
+        // Base currency ends with first char of quote
+        // LINK + USD = LINKUSD -> LINK/USD
+        assert_eq!(normalize_crypto_symbol("LINKUSD").unwrap(), "LINK/USD");
     }
 
     #[test]
@@ -396,6 +423,10 @@ mod tests {
         assert!(normalize_crypto_symbol("INVALID").is_err());
         assert!(normalize_crypto_symbol("ABC").is_err());
         assert!(normalize_crypto_symbol("GOOGLE").is_err());
+
+        // Too short to be BASE + QUOTE
+        assert!(normalize_crypto_symbol("USDT").is_err());
+        assert!(normalize_crypto_symbol("USD").is_err());
 
         // Empty symbol
         assert!(normalize_crypto_symbol("").is_err());

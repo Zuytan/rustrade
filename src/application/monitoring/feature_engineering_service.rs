@@ -141,32 +141,32 @@ pub struct TechnicalFeatureEngineeringService {
 impl TechnicalFeatureEngineeringService {
     pub fn new(config: &AnalystConfig) -> Self {
         Self {
-            rsi: RelativeStrengthIndex::new(config.rsi_period)
+            rsi: RelativeStrengthIndex::new(config.strategy.rsi_period)
                 .expect("rsi_period from AnalystConfig must be > 0"),
             macd: MovingAverageConvergenceDivergence::new(
-                config.macd_fast_period,
-                config.macd_slow_period,
-                config.macd_signal_period,
+                config.strategy.macd_fast_period,
+                config.strategy.macd_slow_period,
+                config.strategy.macd_signal_period,
             )
             .expect("MACD periods from AnalystConfig must be valid"),
-            sma_20: SimpleMovingAverage::new(config.fast_sma_period)
+            sma_20: SimpleMovingAverage::new(config.strategy.fast_sma_period)
                 .expect("fast_sma_period from AnalystConfig must be > 0"),
-            sma_50: SimpleMovingAverage::new(config.slow_sma_period)
+            sma_50: SimpleMovingAverage::new(config.strategy.slow_sma_period)
                 .expect("slow_sma_period from AnalystConfig must be > 0"),
-            sma_200: SimpleMovingAverage::new(config.trend_sma_period)
+            sma_200: SimpleMovingAverage::new(config.strategy.trend_sma_period)
                 .expect("trend_sma_period from AnalystConfig must be > 0"),
             bb: BollingerBands::new(
-                config.mean_reversion_bb_period,
-                config.bb_std_dev.to_f64().unwrap_or(2.0),
+                config.strategy.mean_reversion_bb_period,
+                config.strategy.bb_std_dev.to_f64().unwrap_or(2.0),
             )
             .expect("mean_reversion_bb_period from AnalystConfig must be > 0"),
-            atr: AverageTrueRange::new(config.atr_period)
+            atr: AverageTrueRange::new(config.strategy.atr_period)
                 .expect("atr_period from AnalystConfig must be > 0"),
-            ema_fast: ExponentialMovingAverage::new(config.ema_fast_period)
+            ema_fast: ExponentialMovingAverage::new(config.strategy.ema_fast_period)
                 .expect("ema_fast_period from AnalystConfig must be > 0"),
-            ema_slow: ExponentialMovingAverage::new(config.ema_slow_period)
+            ema_slow: ExponentialMovingAverage::new(config.strategy.ema_slow_period)
                 .expect("ema_slow_period from AnalystConfig must be > 0"),
-            adx: ManualAdx::new(config.adx_period),
+            adx: ManualAdx::new(config.strategy.adx_period),
             price_history: VecDeque::with_capacity(100),
         }
     }

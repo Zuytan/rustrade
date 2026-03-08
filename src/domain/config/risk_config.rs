@@ -10,6 +10,7 @@
 //! - **Domain Logic**: Percentage validations belong in the domain, not infrastructure
 
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Error type for RiskConfig validation
@@ -39,16 +40,18 @@ pub enum RiskConfigError {
 /// use rustrade::domain::config::RiskConfig;
 /// use rust_decimal_macros::dec;
 ///
-/// let config = RiskConfig::new(
-///     dec!(0.1),  // max_position_size_pct
-///     dec!(0.3),  // max_sector_exposure_pct
-///     dec!(0.02), // max_daily_loss_pct
-///     dec!(0.1),  // max_drawdown_pct
-///     3,    // consecutive_loss_limit
-///     Some(5000), // pending_order_ttl_ms
-/// ).expect("Valid config");
+/// let config = RiskConfig {
+///     max_position_size_pct: dec!(0.1),
+///     max_sector_exposure_pct: dec!(0.3),
+///     max_daily_loss_pct: dec!(0.02),
+///     max_drawdown_pct: dec!(0.1),
+///     consecutive_loss_limit: 3,
+///     pending_order_ttl_ms: Some(5000),
+///     ..RiskConfig::default()
+/// };
+/// assert!(config.validate().is_ok());
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RiskConfig {
     /// Maximum position size as percentage of portfolio (e.g., 0.1 = 10%)
     pub max_position_size_pct: Decimal,
@@ -67,42 +70,40 @@ pub struct RiskConfig {
 
     /// Time-to-live for pending orders in milliseconds (None = no expiration)
     pub pending_order_ttl_ms: Option<i64>,
+
+    // --- Execution Risk & Position Management ---
+    /// Maximum number of concurrent positions
+    pub max_positions: usize,
+
+    /// Risk per trade as percentage of capital (e.g., 0.01 = 1%)
+    pub risk_per_trade_percent: Decimal,
+
+    /// Default quantity for trades if not risk-scaled
+    pub trade_quantity: Decimal,
+
+    /// Cooldown period between orders for the same symbol
+    pub order_cooldown_seconds: u64,
+
+    /// Maximum orders allowed per minute (Throttling)
+    pub max_orders_per_minute: u32,
+
+    /// Minimum hold time before a position can be closed (Safety)
+    pub min_hold_time_minutes: i64,
+
+    /// Maximum allowed loss per single trade (Hard stop)
+    pub max_loss_per_trade_pct: Decimal,
 }
 
 impl RiskConfig {
-    /// Create a new RiskConfig with validation
-    ///
-    /// # Errors
-    ///
-    /// Returns `RiskConfigError` if any parameter violates invariants
-    pub fn new(
-        max_position_size_pct: Decimal,
-        max_sector_exposure_pct: Decimal,
-        max_daily_loss_pct: Decimal,
-        max_drawdown_pct: Decimal,
-        consecutive_loss_limit: usize,
-        pending_order_ttl_ms: Option<i64>,
-    ) -> Result<Self, RiskConfigError> {
-        let config = Self {
-            max_position_size_pct,
-            max_sector_exposure_pct,
-            max_daily_loss_pct,
-            max_drawdown_pct,
-            consecutive_loss_limit,
-            pending_order_ttl_ms,
-        };
-
-        config.validate()?;
-        Ok(config)
-    }
-
-    /// Validate all invariants
-    fn validate(&self) -> Result<(), RiskConfigError> {
+    /// Create a new RiskConfig with validation.
+    /// Invariants are maintained by calling validate() after initialization.
+    pub fn validate(&self) -> Result<(), RiskConfigError> {
         // Validate percentages
         self.validate_percentage("max_position_size_pct", self.max_position_size_pct)?;
         self.validate_percentage("max_sector_exposure_pct", self.max_sector_exposure_pct)?;
         self.validate_percentage("max_daily_loss_pct", self.max_daily_loss_pct)?;
         self.validate_percentage("max_drawdown_pct", self.max_drawdown_pct)?;
+        self.validate_percentage("risk_per_trade_percent", self.risk_per_trade_percent)?;
 
         // Validate consecutive loss limit
         if self.consecutive_loss_limit == 0 {
@@ -119,6 +120,14 @@ impl RiskConfig {
             return Err(RiskConfigError::InvalidTtl {
                 field: "pending_order_ttl_ms".to_string(),
                 value: ttl,
+            });
+        }
+
+        // Validate execution limits
+        if self.max_positions == 0 {
+            return Err(RiskConfigError::InvalidLimit {
+                field: "max_positions".to_string(),
+                value: self.max_positions,
             });
         }
 
@@ -151,6 +160,13 @@ impl Default for RiskConfig {
             max_drawdown_pct: dec!(0.1),        // 10%
             consecutive_loss_limit: 3,
             pending_order_ttl_ms: None,
+            max_positions: 5,
+            risk_per_trade_percent: dec!(0.01), // 1%
+            trade_quantity: Decimal::ONE,
+            order_cooldown_seconds: 60,
+            max_orders_per_minute: 10,
+            min_hold_time_minutes: 0,
+            max_loss_per_trade_pct: dec!(-0.05), // -5%
         }
     }
 }
@@ -163,10 +179,22 @@ mod tests {
     #[test]
     fn test_valid_config() {
         use rust_decimal_macros::dec;
-        let config = RiskConfig::new(dec!(0.1), dec!(0.3), dec!(0.02), dec!(0.1), 3, Some(5000));
-        assert!(config.is_ok());
-
-        let config = config.unwrap();
+        let config = RiskConfig {
+            max_position_size_pct: dec!(0.1),
+            max_sector_exposure_pct: dec!(0.3),
+            max_daily_loss_pct: dec!(0.02),
+            max_drawdown_pct: dec!(0.1),
+            consecutive_loss_limit: 3,
+            pending_order_ttl_ms: Some(5000),
+            max_positions: 5,
+            risk_per_trade_percent: dec!(0.01),
+            trade_quantity: dec!(1.0),
+            order_cooldown_seconds: 60,
+            max_orders_per_minute: 10,
+            min_hold_time_minutes: 0,
+            max_loss_per_trade_pct: dec!(-0.05),
+        };
+        assert!(config.validate().is_ok());
         assert_eq!(config.max_position_size_pct, dec!(0.1));
         assert_eq!(config.consecutive_loss_limit, 3);
     }
@@ -174,7 +202,11 @@ mod tests {
     #[test]
     fn test_invalid_max_position_size() {
         use rust_decimal_macros::dec;
-        let result = RiskConfig::new(dec!(1.5), dec!(0.3), dec!(0.02), dec!(0.1), 3, None);
+        let config = RiskConfig {
+            max_position_size_pct: dec!(1.5),
+            ..RiskConfig::default()
+        };
+        let result = config.validate();
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
@@ -188,7 +220,11 @@ mod tests {
     #[test]
     fn test_invalid_negative_percentage() {
         use rust_decimal_macros::dec;
-        let result = RiskConfig::new(dec!(0.1), dec!(-0.1), dec!(0.02), dec!(0.1), 3, None);
+        let config = RiskConfig {
+            max_sector_exposure_pct: dec!(-0.1),
+            ..RiskConfig::default()
+        };
+        let result = config.validate();
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
@@ -201,8 +237,11 @@ mod tests {
 
     #[test]
     fn test_invalid_consecutive_loss_limit() {
-        use rust_decimal_macros::dec;
-        let result = RiskConfig::new(dec!(0.1), dec!(0.3), dec!(0.02), dec!(0.1), 0, None);
+        let config = RiskConfig {
+            consecutive_loss_limit: 0,
+            ..RiskConfig::default()
+        };
+        let result = config.validate();
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
@@ -215,8 +254,11 @@ mod tests {
 
     #[test]
     fn test_invalid_ttl() {
-        use rust_decimal_macros::dec;
-        let result = RiskConfig::new(dec!(0.1), dec!(0.3), dec!(0.02), dec!(0.1), 3, Some(-100));
+        let config = RiskConfig {
+            pending_order_ttl_ms: Some(-100),
+            ..RiskConfig::default()
+        };
+        let result = config.validate();
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
@@ -231,12 +273,24 @@ mod tests {
     fn test_boundary_values() {
         use rust_decimal_macros::dec;
         // Test 0.0 (valid minimum)
-        let config = RiskConfig::new(dec!(0.0), dec!(0.0), dec!(0.0), dec!(0.0), 1, None);
-        assert!(config.is_ok());
+        let config_min = RiskConfig {
+            max_position_size_pct: dec!(0.0),
+            max_sector_exposure_pct: dec!(0.0),
+            max_daily_loss_pct: dec!(0.0),
+            max_drawdown_pct: dec!(0.0),
+            ..RiskConfig::default()
+        };
+        assert!(config_min.validate().is_ok());
 
         // Test 1.0 (valid maximum)
-        let config = RiskConfig::new(dec!(1.0), dec!(1.0), dec!(1.0), dec!(1.0), 1, Some(1));
-        assert!(config.is_ok());
+        let config_max = RiskConfig {
+            max_position_size_pct: dec!(1.0),
+            max_sector_exposure_pct: dec!(1.0),
+            max_daily_loss_pct: dec!(1.0),
+            max_drawdown_pct: dec!(1.0),
+            ..RiskConfig::default()
+        };
+        assert!(config_max.validate().is_ok());
     }
 
     #[test]

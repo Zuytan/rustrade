@@ -21,10 +21,11 @@ fn test_config_with_risk_score() {
 
     let config = Config::from_env().unwrap();
 
-    // Should have risk appetite set
-    assert!(config.risk_appetite.is_some());
-    let appetite = config.risk_appetite.unwrap();
-    assert_eq!(appetite.score(), 7);
+    // Should have risk appetite score set
+    assert!(config.strategy.risk_appetite_score.is_some());
+    let score = config.strategy.risk_appetite_score.unwrap();
+    assert_eq!(score, 7);
+    let appetite = crate::domain::risk::risk_appetite::RiskAppetite::new(score).unwrap();
 
     // Should use calculated parameters
     let expected_risk_trade = appetite.calculate_risk_per_trade_percent();
@@ -32,10 +33,12 @@ fn test_config_with_risk_score() {
     let expected_rsi = appetite.calculate_rsi_threshold();
     let expected_max_position = appetite.calculate_max_position_size_pct();
 
-    assert!((config.risk_per_trade_percent - expected_risk_trade).abs() < dec!(0.0001));
-    assert!((config.trailing_stop_atr_multiplier - expected_trailing_stop).abs() < dec!(0.01));
-    assert!((config.rsi_threshold - expected_rsi).abs() < dec!(0.1));
-    assert!((config.max_position_size_pct - expected_max_position).abs() < dec!(0.001));
+    assert!((config.risk.risk_per_trade_percent - expected_risk_trade).abs() < dec!(0.0001));
+    assert!(
+        (config.strategy.trailing_stop_atr_multiplier - expected_trailing_stop).abs() < dec!(0.01)
+    );
+    assert!((config.strategy.rsi_threshold - expected_rsi).abs() < dec!(0.1));
+    assert!((config.risk.max_position_size_pct - expected_max_position).abs() < dec!(0.001));
 
     // Cleanup
     unsafe {
@@ -62,13 +65,13 @@ fn test_config_without_risk_score() {
     let config = Config::from_env().unwrap();
 
     // Should NOT have risk appetite set
-    assert!(config.risk_appetite.is_none());
+    assert!(config.strategy.risk_appetite_score.is_none());
 
     // Should use individual env vars
-    assert!((config.risk_per_trade_percent - dec!(0.015)).abs() < dec!(0.0001));
-    assert!((config.trailing_stop_atr_multiplier - dec!(2.8)).abs() < dec!(0.01));
-    assert!((config.rsi_threshold - dec!(60.0)).abs() < dec!(0.1));
-    assert!((config.max_position_size_pct - dec!(0.15)).abs() < dec!(0.001));
+    assert!((config.risk.risk_per_trade_percent - dec!(0.015)).abs() < dec!(0.0001));
+    assert!((config.strategy.trailing_stop_atr_multiplier - dec!(2.8)).abs() < dec!(0.01));
+    assert!((config.strategy.rsi_threshold - dec!(60.0)).abs() < dec!(0.1));
+    assert!((config.risk.max_position_size_pct - dec!(0.15)).abs() < dec!(0.001));
 
     // Cleanup
     unsafe {
@@ -92,13 +95,14 @@ fn test_config_risk_params_override() {
     let config = Config::from_env().unwrap();
 
     // Risk score should override individual params
-    assert!(config.risk_appetite.is_some());
-    let appetite = config.risk_appetite.unwrap();
+    assert!(config.strategy.risk_appetite_score.is_some());
+    let score = config.strategy.risk_appetite_score.unwrap();
+    let appetite = crate::domain::risk::risk_appetite::RiskAppetite::new(score).unwrap();
 
     // Should use calculated values, NOT env var values
     let expected_risk_trade = appetite.calculate_risk_per_trade_percent();
-    assert!((config.risk_per_trade_percent - expected_risk_trade).abs() < dec!(0.0001));
-    assert!(config.risk_per_trade_percent > dec!(0.02)); // Score 9 should be aggressive, not 0.001
+    assert!((config.risk.risk_per_trade_percent - expected_risk_trade).abs() < dec!(0.0001));
+    assert!(config.risk.risk_per_trade_percent > dec!(0.02)); // Score 9 should be aggressive, not 0.001
 
     // Cleanup
     unsafe {
@@ -136,16 +140,16 @@ fn test_risk_score_boundary_values() {
         env::set_var("RISK_APPETITE_SCORE", "1");
     }
     let config = Config::from_env().unwrap();
-    assert!(config.risk_appetite.is_some());
-    assert_eq!(config.risk_appetite.unwrap().score(), 1);
+    assert!(config.strategy.risk_appetite_score.is_some());
+    assert_eq!(config.strategy.risk_appetite_score.unwrap(), 1);
 
     // Test maximum score
     unsafe {
         env::set_var("RISK_APPETITE_SCORE", "9");
     }
     let config = Config::from_env().unwrap();
-    assert!(config.risk_appetite.is_some());
-    assert_eq!(config.risk_appetite.unwrap().score(), 9);
+    assert!(config.strategy.risk_appetite_score.is_some());
+    assert_eq!(config.strategy.risk_appetite_score.unwrap(), 9);
 
     // Cleanup
     unsafe {

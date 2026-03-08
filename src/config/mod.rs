@@ -11,18 +11,13 @@ mod strategy_config;
 
 pub use broker_config::{AlpacaConfig, BinanceConfig, BrokerEnvConfig, OandaConfig};
 pub use observability_config::ObservabilityEnvConfig;
-pub use risk_env_config::RiskEnvConfig;
+pub use risk_env_config::{PlatformConfig, RiskEnvLoader};
 pub use simulation_config::SimulationEnvConfig;
-pub use strategy_config::StrategyEnvConfig;
+pub use strategy_config::StrategyEnvLoader;
 
 // ... (imports remain)
-// Re-export StrategyMode for backward compatibility
 pub use crate::domain::market::strategy_config::StrategyMode;
-use crate::domain::market::timeframe::Timeframe;
-use crate::domain::risk::risk_appetite::RiskAppetite;
 use anyhow::{Context, Result};
-use rust_decimal::Decimal;
-use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 
@@ -74,108 +69,18 @@ impl FromStr for AssetClass {
 /// Main application configuration.
 #[derive(Debug, Clone)]
 pub struct Config {
-    // Core
     pub mode: Mode,
     pub asset_class: AssetClass,
-
-    // ... (Broker fields)
-    pub alpaca_api_key: String,
-    pub alpaca_secret_key: String,
-    pub alpaca_base_url: String,
-    pub alpaca_data_url: String,
-    pub alpaca_ws_url: String,
-    pub oanda_api_base_url: String,
-    pub oanda_stream_base_url: String,
-    pub oanda_api_key: String,
-    pub oanda_account_id: String,
-    pub binance_api_key: String,
-    pub binance_secret_key: String,
-    pub binance_base_url: String,
-    pub binance_ws_url: String,
-
-    // ... (Strategy fields)
-    pub fast_sma_period: usize,
-    pub slow_sma_period: usize,
-    pub trend_sma_period: usize,
-    pub sma_threshold: Decimal,
-    pub rsi_period: usize,
-    pub rsi_threshold: Decimal,
-    pub macd_fast_period: usize,
-    pub macd_slow_period: usize,
-    pub macd_signal_period: usize,
-    pub macd_requires_rising: bool,
-    pub macd_min_threshold: Decimal,
-    pub ema_fast_period: usize,
-    pub ema_slow_period: usize,
-    pub adx_period: usize,
-    pub adx_threshold: Decimal,
-    pub regime_volatility_threshold: Decimal,
-    pub atr_period: usize,
-    pub trailing_stop_atr_multiplier: Decimal,
-    pub strategy_mode: StrategyMode,
-    pub trend_divergence_threshold: Decimal,
-    pub trend_tolerance_pct: Decimal,
-    pub mean_reversion_rsi_exit: Decimal,
-    pub mean_reversion_bb_period: usize,
-    pub trend_riding_exit_buffer_pct: Decimal,
-    pub smc_ob_lookback: usize,
-    pub smc_min_fvg_size_pct: Decimal,
-    pub primary_timeframe: Timeframe,
-    pub enabled_timeframes: Vec<Timeframe>,
-    pub trend_timeframe: Timeframe,
-    pub signal_confirmation_bars: usize,
-    pub take_profit_pct: Decimal,
-    pub profit_target_multiplier: Decimal,
-    pub ensemble_voting_threshold: Decimal,
-
-    // ... (Risk fields)
-    pub max_positions: usize,
-    pub max_position_size_pct: Decimal,
-    pub max_position_value_usd: Decimal,
-    pub risk_per_trade_percent: Decimal,
-    pub max_daily_loss_pct: Decimal,
-    pub max_drawdown_pct: Decimal,
-    pub consecutive_loss_limit: usize,
-    pub pending_order_ttl_ms: Option<i64>,
-    pub max_sector_exposure_pct: Decimal,
-    pub sector_map: HashMap<String, String>,
-    pub non_pdt_mode: bool,
-    pub max_orders_per_minute: u32,
-    pub order_cooldown_seconds: u64,
-    pub min_hold_time_minutes: i64,
-    pub slippage_pct: Decimal,
-    pub commission_per_share: Decimal,
-    pub spread_bps: Decimal,
-    pub min_profit_ratio: Decimal,
-    pub trade_quantity: Decimal,
-    pub portfolio_staleness_ms: u64,
-    pub portfolio_refresh_interval_ms: u64,
-    pub dynamic_symbol_mode: bool,
-    pub dynamic_scan_interval_minutes: u64,
-    pub symbols: Vec<String>,
-    pub min_volume_threshold: Decimal,
-    pub adaptive_optimization_enabled: bool,
-    pub regime_detection_window: usize,
-    pub adaptive_evaluation_hour: u32,
-    pub risk_appetite: Option<RiskAppetite>,
-    pub enable_ml_data_collection: bool,
-
-    // Simulation
-    pub simulation_enabled: bool,
-    pub simulation_latency_base_ms: u64,
-    pub simulation_latency_jitter_ms: u64,
-    pub simulation_slippage_volatility: Decimal,
-    pub use_real_market_data: bool,
-
-    // ... (Observability fields)
-    pub observability_enabled: bool,
-    pub observability_port: u16,
-    pub observability_bind_address: String,
+    pub broker: BrokerEnvConfig,
+    pub strategy: crate::domain::config::StrategyConfig,
+    pub risk: crate::domain::config::RiskConfig,
+    pub platform: PlatformConfig,
+    pub observability: ObservabilityEnvConfig,
+    pub simulation: SimulationEnvConfig,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        // ... (Core settings)
         let mode_str = env::var("MODE").unwrap_or_else(|_| "mock".to_string());
         let mode = Mode::from_str(&mode_str)?;
 
@@ -184,111 +89,21 @@ impl Config {
 
         // Load sub-configs
         let broker = BrokerEnvConfig::from_env();
-        let strategy = StrategyEnvConfig::from_env().context("Failed to load strategy config")?;
-        let risk = RiskEnvConfig::from_env().context("Failed to load risk config")?;
+        let strategy = StrategyEnvLoader::from_env().context("Failed to load strategy config")?;
+        let (risk, platform) =
+            RiskEnvLoader::from_env().context("Failed to load risk and platform config")?;
         let observability = ObservabilityEnvConfig::from_env();
         let simulation = SimulationEnvConfig::from_env();
 
         Ok(Self {
             mode,
             asset_class,
-
-            // ... (Broker mappings)
-            alpaca_api_key: broker.alpaca.api_key,
-            alpaca_secret_key: broker.alpaca.secret_key,
-            alpaca_base_url: broker.alpaca.base_url,
-            alpaca_data_url: broker.alpaca.data_url,
-            alpaca_ws_url: broker.alpaca.ws_url,
-            oanda_api_base_url: broker.oanda.api_base_url,
-            oanda_stream_base_url: broker.oanda.stream_base_url,
-            oanda_api_key: broker.oanda.api_key,
-            oanda_account_id: broker.oanda.account_id,
-            binance_api_key: broker.binance.api_key,
-            binance_secret_key: broker.binance.secret_key,
-            binance_base_url: broker.binance.base_url,
-            binance_ws_url: broker.binance.ws_url,
-
-            // ... (Strategy mappings)
-            fast_sma_period: strategy.fast_sma_period,
-            slow_sma_period: strategy.slow_sma_period,
-            trend_sma_period: strategy.trend_sma_period,
-            sma_threshold: strategy.sma_threshold,
-            rsi_period: strategy.rsi_period,
-            rsi_threshold: strategy.rsi_threshold,
-            macd_fast_period: strategy.macd_fast_period,
-            macd_slow_period: strategy.macd_slow_period,
-            macd_signal_period: strategy.macd_signal_period,
-            macd_requires_rising: strategy.macd_requires_rising,
-            macd_min_threshold: strategy.macd_min_threshold,
-            ema_fast_period: strategy.ema_fast_period,
-            ema_slow_period: strategy.ema_slow_period,
-            adx_period: strategy.adx_period,
-            adx_threshold: strategy.adx_threshold,
-            regime_volatility_threshold: strategy.regime_volatility_threshold,
-            atr_period: strategy.atr_period,
-            trailing_stop_atr_multiplier: strategy.trailing_stop_atr_multiplier,
-            strategy_mode: strategy.strategy_mode,
-            trend_divergence_threshold: strategy.trend_divergence_threshold,
-            trend_tolerance_pct: strategy.trend_tolerance_pct,
-            mean_reversion_rsi_exit: strategy.mean_reversion_rsi_exit,
-            mean_reversion_bb_period: strategy.mean_reversion_bb_period,
-            trend_riding_exit_buffer_pct: strategy.trend_riding_exit_buffer_pct,
-            smc_ob_lookback: strategy.smc_ob_lookback,
-            smc_min_fvg_size_pct: strategy.smc_min_fvg_size_pct,
-            primary_timeframe: strategy.primary_timeframe,
-            enabled_timeframes: strategy.enabled_timeframes,
-            trend_timeframe: strategy.trend_timeframe,
-            signal_confirmation_bars: strategy.signal_confirmation_bars,
-            take_profit_pct: strategy.take_profit_pct,
-            profit_target_multiplier: strategy.profit_target_multiplier,
-            ensemble_voting_threshold: strategy.ensemble_voting_threshold,
-
-            // ... (Risk mappings)
-            max_positions: risk.max_positions,
-            max_position_size_pct: risk.max_position_size_pct,
-            max_position_value_usd: risk.max_position_value_usd,
-            risk_per_trade_percent: risk.risk_per_trade_percent,
-            max_daily_loss_pct: risk.max_daily_loss_pct,
-            max_drawdown_pct: risk.max_drawdown_pct,
-            consecutive_loss_limit: risk.consecutive_loss_limit,
-            pending_order_ttl_ms: risk.pending_order_ttl_ms,
-            max_sector_exposure_pct: risk.max_sector_exposure_pct,
-            sector_map: risk.sector_map,
-            non_pdt_mode: risk.non_pdt_mode,
-            max_orders_per_minute: risk.max_orders_per_minute,
-            order_cooldown_seconds: risk.order_cooldown_seconds,
-            min_hold_time_minutes: risk.min_hold_time_minutes,
-            slippage_pct: risk.slippage_pct,
-            commission_per_share: risk.commission_per_share,
-            spread_bps: risk.spread_bps,
-            min_profit_ratio: risk.min_profit_ratio,
-            trade_quantity: risk.trade_quantity,
-            portfolio_staleness_ms: risk.portfolio_staleness_ms,
-            portfolio_refresh_interval_ms: risk.portfolio_refresh_interval_ms,
-            dynamic_symbol_mode: risk.dynamic_symbol_mode,
-            dynamic_scan_interval_minutes: risk.dynamic_scan_interval_minutes,
-            symbols: risk.symbols,
-            min_volume_threshold: risk.min_volume_threshold,
-            adaptive_optimization_enabled: risk.adaptive_optimization_enabled,
-            regime_detection_window: risk.regime_detection_window,
-            adaptive_evaluation_hour: risk.adaptive_evaluation_hour,
-            risk_appetite: strategy.risk_appetite,
-            enable_ml_data_collection: strategy.enable_ml_data_collection,
-
-            // Simulation
-            simulation_enabled: simulation.simulation_enabled,
-            simulation_latency_base_ms: simulation.simulation_latency_base_ms,
-            simulation_latency_jitter_ms: simulation.simulation_latency_jitter_ms,
-            simulation_slippage_volatility: simulation.simulation_slippage_volatility,
-            use_real_market_data: std::env::var("USE_REAL_MARKET_DATA")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse()
-                .unwrap_or(false),
-
-            // ... (Observability mappings)
-            observability_enabled: observability.enabled,
-            observability_port: observability.port,
-            observability_bind_address: observability.bind_address,
+            broker,
+            strategy,
+            risk,
+            platform,
+            observability,
+            simulation,
         })
     }
 
@@ -299,55 +114,26 @@ impl Config {
 
         match self.asset_class {
             AssetClass::Stock => std::sync::Arc::new(ConstantFeeModel::new(
-                self.commission_per_share,
-                self.slippage_pct,
+                self.platform.commission_per_share,
+                self.platform.slippage_pct,
             )),
             // Alpaca crypto: maker 0.15%, taker 0.25% (fallback — real fees fetched via API)
             AssetClass::Crypto => std::sync::Arc::new(TieredFeeModel::new(
                 rust_decimal_macros::dec!(0.0015),
                 rust_decimal_macros::dec!(0.0025),
-                self.slippage_pct,
+                self.platform.slippage_pct,
             )),
         }
     }
 
     /// Create a RiskConfig domain value object from this Config
     pub fn to_risk_config(&self) -> Result<crate::domain::config::RiskConfig> {
-        crate::domain::config::RiskConfig::new(
-            self.max_position_size_pct,
-            self.max_sector_exposure_pct,
-            self.max_daily_loss_pct,
-            self.max_drawdown_pct,
-            self.consecutive_loss_limit,
-            self.pending_order_ttl_ms,
-        )
-        .map_err(|e| anyhow::anyhow!("Invalid risk config: {}", e))
+        Ok(self.risk.clone())
     }
 
     /// Create a StrategyConfig domain value object from this Config
     pub fn to_strategy_config(&self) -> Result<crate::domain::config::StrategyConfig> {
-        crate::domain::config::StrategyConfig::new(
-            self.strategy_mode,
-            self.fast_sma_period,
-            self.slow_sma_period,
-            self.trend_sma_period,
-            self.rsi_period,
-            self.rsi_threshold,
-            self.macd_fast_period,
-            self.macd_slow_period,
-            self.macd_signal_period,
-            self.macd_requires_rising,
-            self.macd_min_threshold,
-            self.adx_period,
-            self.adx_threshold,
-            self.trend_divergence_threshold,
-            self.trend_tolerance_pct,
-            self.signal_confirmation_bars,
-            self.primary_timeframe,
-            self.enabled_timeframes.clone(),
-            self.trend_timeframe,
-        )
-        .map_err(|e| anyhow::anyhow!("Invalid strategy config: {}", e))
+        Ok(self.strategy.clone())
     }
 
     /// Create a BrokerConfig domain value object from this Config
@@ -370,24 +156,24 @@ impl Config {
                 None,
             ),
             Mode::Alpaca => (
-                self.alpaca_api_key.clone(),
-                self.alpaca_secret_key.clone(),
-                self.alpaca_base_url.clone(),
-                self.alpaca_ws_url.clone(),
-                Some(self.alpaca_data_url.clone()),
+                self.broker.alpaca.api_key.clone(),
+                self.broker.alpaca.secret_key.clone(),
+                self.broker.alpaca.base_url.clone(),
+                self.broker.alpaca.ws_url.clone(),
+                Some(self.broker.alpaca.data_url.clone()),
             ),
             Mode::Binance => (
-                self.binance_api_key.clone(),
-                self.binance_secret_key.clone(),
-                self.binance_base_url.clone(),
-                self.binance_ws_url.clone(),
+                self.broker.binance.api_key.clone(),
+                self.broker.binance.secret_key.clone(),
+                self.broker.binance.base_url.clone(),
+                self.broker.binance.ws_url.clone(),
                 None,
             ),
             Mode::Oanda => (
-                self.oanda_api_key.clone(),
+                self.broker.oanda.api_key.clone(),
                 String::new(),
-                self.oanda_api_base_url.clone(),
-                self.oanda_stream_base_url.clone(),
+                self.broker.oanda.api_base_url.clone(),
+                self.broker.oanda.stream_base_url.clone(),
                 None,
             ),
         };
@@ -411,8 +197,8 @@ mod tests {
     #[test]
     fn test_config_from_env_defaults() {
         let config = Config::from_env().expect("Should parse with defaults");
-        assert_eq!(config.max_positions, 5);
-        assert_eq!(config.fast_sma_period, 20);
+        assert_eq!(config.risk.max_positions, 5);
+        assert_eq!(config.strategy.fast_sma_period, 20); // Aligned with domain default
     }
 
     #[test]

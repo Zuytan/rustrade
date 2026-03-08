@@ -3,8 +3,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal_macros::dec;
 use rustrade::application::optimization::simulator::Simulator;
-use rustrade::config::{AssetClass, Config, Mode, StrategyMode};
-use rustrade::domain::market::timeframe::Timeframe;
+use rustrade::config::{AssetClass, Config, Mode};
 use rustrade::domain::trading::portfolio::Portfolio;
 use rustrade::domain::trading::types::{Candle, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
@@ -25,94 +24,49 @@ async fn test_full_backtest_pipeline_e2e() -> anyhow::Result<()> {
     let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
 
     // 2. Setup config
-    let config = Config::from_env().unwrap_or_else(|_| Config {
+    let config = Config {
         mode: Mode::Mock,
-        alpaca_api_key: "".into(),
-        alpaca_secret_key: "".into(),
-        alpaca_base_url: "".into(),
-        alpaca_data_url: "".into(),
-        alpaca_ws_url: "".into(),
-        symbols: vec!["BTC/USD".to_string()],
-        max_positions: 1,
-        trade_quantity: dec!(1.0),
-        fast_sma_period: 2,
-        slow_sma_period: 5,
-        sma_threshold: dec!(0.001),
-        order_cooldown_seconds: 0,
-        risk_per_trade_percent: dec!(0.01),
-        max_orders_per_minute: 100,
-        non_pdt_mode: false,
-        dynamic_symbol_mode: false,
-        dynamic_scan_interval_minutes: 60,
-        strategy_mode: StrategyMode::Standard,
-        trend_sma_period: 50,
-        rsi_period: 14,
-        macd_fast_period: 12,
-        macd_slow_period: 26,
-        macd_signal_period: 9,
-        trend_divergence_threshold: dec!(0.005),
-        rsi_threshold: dec!(99.0),
-        trailing_stop_atr_multiplier: dec!(3.0),
-        atr_period: 14,
-        max_position_size_pct: dec!(1.0),
-        max_daily_loss_pct: dec!(0.5),
-        max_drawdown_pct: dec!(0.5),
-        consecutive_loss_limit: 10,
-        pending_order_ttl_ms: None,
-        slippage_pct: dec!(0.0),
-        commission_per_share: dec!(0.0),
-        trend_riding_exit_buffer_pct: dec!(0.03),
-        mean_reversion_rsi_exit: dec!(50.0),
-        mean_reversion_bb_period: 20,
-        risk_appetite: None,
-        max_sector_exposure_pct: dec!(1.0),
-        sector_map: std::collections::HashMap::new(),
-        adaptive_optimization_enabled: false,
-        regime_detection_window: 20,
-        adaptive_evaluation_hour: 0,
         asset_class: AssetClass::Crypto,
-        oanda_api_key: "".to_string(),
-        oanda_account_id: "".to_string(),
-        oanda_api_base_url: "".to_string(),
-        oanda_stream_base_url: "".to_string(),
-        min_volume_threshold: dec!(0.0),
-        ema_fast_period: 50,
-        ema_slow_period: 150,
-        take_profit_pct: dec!(0.10),
-        max_position_value_usd: dec!(100000.0),
-        min_hold_time_minutes: 0,
-        signal_confirmation_bars: 1,
-        spread_bps: dec!(0.0),
-        min_profit_ratio: dec!(0.0),
-        portfolio_staleness_ms: 3000,
-        portfolio_refresh_interval_ms: 60000,
-        macd_requires_rising: false,
-        trend_tolerance_pct: dec!(0.0),
-        macd_min_threshold: dec!(0.0),
-        profit_target_multiplier: dec!(1.5),
-        adx_period: 14,
-        adx_threshold: dec!(20.0),
-        regime_volatility_threshold: dec!(2.0),
-        smc_ob_lookback: 20,
-        smc_min_fvg_size_pct: dec!(0.005),
-        binance_api_key: "".to_string(),
-        binance_secret_key: "".to_string(),
-        binance_base_url: "".to_string(),
-        binance_ws_url: "".to_string(),
-        observability_enabled: false,
-        observability_port: 9090,
-        observability_bind_address: "127.0.0.1".to_string(),
-        primary_timeframe: Timeframe::OneMin,
-        enabled_timeframes: vec![Timeframe::OneMin],
-        trend_timeframe: Timeframe::OneHour,
-        enable_ml_data_collection: false,
-        simulation_enabled: false,
-        simulation_latency_base_ms: 0,
-        simulation_latency_jitter_ms: 0,
-        simulation_slippage_volatility: dec!(0.0),
-        use_real_market_data: false,
-        ensemble_voting_threshold: dec!(0.5),
-    });
+        broker: rustrade::config::BrokerEnvConfig::default(),
+        strategy: rustrade::domain::config::StrategyConfig {
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::Standard,
+            fast_sma_period: 2,
+            slow_sma_period: 5,
+            sma_threshold: dec!(0.001),
+            rsi_threshold: dec!(100.0),
+            take_profit_pct: dec!(0.10),
+            adx_threshold: dec!(20.0),
+            macd_requires_rising: false,
+            ..rustrade::domain::config::StrategyConfig::default()
+        },
+        risk: rustrade::domain::config::RiskConfig {
+            max_positions: 1,
+            trade_quantity: dec!(1.0),
+            order_cooldown_seconds: 0,
+            risk_per_trade_percent: dec!(0.01),
+            max_position_size_pct: dec!(1.0),
+            max_daily_loss_pct: dec!(0.5),
+            max_drawdown_pct: dec!(0.5),
+            consecutive_loss_limit: 10,
+            ..rustrade::domain::config::RiskConfig::default()
+        },
+        platform: rustrade::config::PlatformConfig {
+            symbols: vec!["BTC/USD".to_string()],
+            spread_bps: dec!(0.0),
+            min_profit_ratio: dec!(0.0),
+            slippage_pct: dec!(0.0),
+            commission_per_share: dec!(0.0),
+            ..rustrade::config::PlatformConfig::default()
+        },
+        observability: rustrade::config::ObservabilityEnvConfig {
+            enabled: false,
+            ..rustrade::config::ObservabilityEnvConfig::default()
+        },
+        simulation: rustrade::config::SimulationEnvConfig {
+            enabled: false,
+            ..rustrade::config::SimulationEnvConfig::default()
+        },
+    };
 
     // Simplest moving average crossover parameters (Fast 2, Slow 5)
     let analyst_config =
