@@ -243,7 +243,11 @@ impl Simulator {
         while let Some(prop) = proposal_rx.recv().await {
             tracing::info!(
                 "Simulator received proposal: {:?} {} {} @ {} for {}",
-                prop.side, prop.quantity, prop.symbol, prop.price, prop.reason
+                prop.side,
+                prop.quantity,
+                prop.symbol,
+                prop.price,
+                prop.reason
             );
 
             // Circuit Breaker: Check equity before executing

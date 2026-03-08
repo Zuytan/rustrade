@@ -15,17 +15,17 @@ The application operates as a mesh of autonomous agents communicating via high-p
     - **Heartbeat Monitoring**: Integrates `StreamHealthMonitor` to detect "zombie" connections; marks stream as Offline if no data is received within a 10s threshold.
 - **Analyst Agent**: The "Brain". Modular architecture (`RegimeHandler`, `PositionLifecycle`, `NewsHandler`) separating regime detection, position management, and news processing. Maintains symbol state and generates trade proposals.
 - **Risk Manager**: The "Gatekeeper". Validates every proposal against a strict set of risk rules and portfolio limits. Enforces real-time connectivity checks before approving trades.
-- **Executor Agent**: Handles order placement, modification, and reconciliation. Automatically reconciles locally 'Pending' orders with exchange state on startup to prevent "ghost" orders or double-spending.
+- **Executor Agent**: Handles order placement, modification, and reconciliation. Automatically reconciles locally 'Pending' orders with exchange state on startup. Includes high-fidelity fee retrieval from broker APIs to ensure P&L accuracy.
 - **Connection Health Service**: Centralized monitor that tracks and broadcasts the status of market data and execution streams across all agents.
 - **Listener Agent**: Monitors news feeds (RSS, Social) and uses NLP to trigger immediate reactions to market-moving events.
 - **User Agent**: Manages the UI/Dashboard state and handles user commands.
 - **Hierarchical Configuration**: A domain-driven settings system where `StrategyConfig`, `RiskConfig`, and `PlatformConfig` are unified into a strict hierarchy. Employs `serde(flatten)` across infrastructure and agent layers to ensure complete parameter consistency and eliminate structural drift.
 
 ### Resilience & Safety
-- **State Persistence ("No Amnesia")**: Critical state (Daily Loss, High Water Mark) is persisted to SQLite, preventing rule bypass via restarts.
+- **State Persistence ("No Amnesia")**: Critical state is persisted to SQLite.
 - **Circuit Breakers**:
-  - **Global**: Halts trading if Daily Loss or Drawdown limits are breached.
-  - **Infrastructure**: Wraps API calls with retry policies and circuit breakers. Utilizes a **Singleton WebSocket Architecture** to maintain a single robust connection per broker, preventing limit conflicts (e.g., Alpaca 406 errors).
+  - **Global**: Halts trading on Daily Loss/Drawdown breach.
+  - **Infrastructure**: Employs **Singleton WebSocket Architecture** and validated API mapping. Account synchronization prioritizes actual `buying_power` (including non-marginable funds for crypto) over raw cash to prevent "Insufficient Balance" rejections in dynamic markets.
   - **Panic Mode**: "Blind Liquidation" logic ensures positions can be exited even if price feeds are down.
   - **Order Monitor**: Active tracking of Limit orders with automatic timeout detection and fallback to Market orders ("Cancel & Replace") to ensure execution.
   - **Startup Reconciliation**: The Executor automatically synchronizes internal order state with the broker on application boot, ensuring idempotency.

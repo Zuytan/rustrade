@@ -109,12 +109,31 @@ impl AlpacaExecutionService {
                         })?;
 
                     let mut portfolio = crate::domain::trading::portfolio::Portfolio::new();
-                    // Use buying_power instead of cash - it reflects funds actually available
-                    // for new orders (subtracts pending order values)
-                    let cash = account_resp
+
+                    // Priority for cash/liquidity:
+                    // 1. non_marginable_buying_power (mostly for Crypto/Cash accounts)
+                    // 2. buying_power (standard for margin accounts)
+                    // 3. cash (fallback)
+                    let nmbp = account_resp
+                        .non_marginable_buying_power
+                        .parse::<Decimal>()
+                        .unwrap_or(Decimal::ZERO);
+                    let bp = account_resp
+                        .buying_power
+                        .parse::<Decimal>()
+                        .unwrap_or(Decimal::ZERO);
+                    let cash_raw = account_resp
                         .cash
                         .parse::<Decimal>()
                         .unwrap_or(Decimal::ZERO);
+
+                    let cash = if nmbp > Decimal::ZERO {
+                        nmbp
+                    } else if bp > Decimal::ZERO {
+                        bp
+                    } else {
+                        cash_raw
+                    };
 
                     portfolio.cash = cash;
                     portfolio.day_trades_count = account_resp.daytrade_count as u64;
@@ -209,6 +228,10 @@ struct AlpacaOrderResponse {
 #[derive(Debug, Deserialize)]
 struct AlpacaAccount {
     cash: String,
+    buying_power: String,
+    non_marginable_buying_power: String,
+    #[serde(rename = "equity")]
+    _equity: String,
     #[serde(default)]
     daytrade_count: i64,
 }
@@ -521,7 +544,12 @@ impl ExecutionService for AlpacaExecutionService {
 
     #[instrument(skip(self))]
     async fn get_order_fees(&self, order_id: &str) -> Result<Option<Decimal>> {
-        let url = format!("{}/v2/orders/{}", self.base_url, order_id);
+        // IMPORTANT: order_id here is the client_order_id (local UUID), NOT the Alpaca
+        // server-side order ID. We must use the by_client_order_id endpoint.
+        let url = build_url_with_query(
+            &format!("{}/v2/orders:by_client_order_id", self.base_url),
+            &[("client_order_id", order_id)],
+        );
 
         let response = self
             .client
@@ -560,5 +588,76 @@ impl ExecutionService for AlpacaExecutionService {
         }
 
         Ok(fees)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AlpacaConfig;
+    use crate::infrastructure::observability::Metrics;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_alpaca_fee_retrieval_integration() -> Result<()> {
+        let config = AlpacaConfig::from_env();
+        if config.api_key.is_empty() {
+            return Ok(());
+        }
+
+        let metrics = Metrics::new().expect("Failed to create metrics");
+        let portfolio = Arc::new(RwLock::new(
+            crate::domain::trading::portfolio::Portfolio::new(),
+        ));
+
+        let service = AlpacaExecutionService::new(
+            config.api_key,
+            config.secret_key,
+            config.base_url,
+            portfolio,
+            metrics,
+        );
+
+        // 1. Create a dummy limit order (unlikely to be filled)
+        let order_id = Uuid::new_v4().to_string();
+        let order = Order {
+            id: order_id.clone(),
+            symbol: "AAPL".to_string(),
+            side: OrderSide::Buy,
+            quantity: rust_decimal_macros::dec!(1.0),
+            price: rust_decimal_macros::dec!(1.0), // Very low price
+            order_type: crate::domain::trading::types::OrderType::Limit,
+            status: crate::domain::trading::types::OrderStatus::New,
+            timestamp: chrono::Utc::now().timestamp(),
+        };
+
+        // 2. Execute (place) the order
+        service.execute(order).await?;
+        info!("Integration test: Order placed {}", order_id);
+
+        // 3. Attempt to retrieve fees (should return Some(Decimal) or None, but NOT 404)
+        // Note: Commission might be None if not filled, but the API call itself must succeed.
+        let fees_res = service.get_order_fees(&order_id).await;
+        match fees_res {
+            Ok(fees) => {
+                info!(
+                    "Integration test: get_order_fees successful. Fees: {:?}",
+                    fees
+                );
+            }
+            Err(e) => {
+                // If it fails with 404, our fix didn't work.
+                anyhow::bail!("get_order_fees failed with error: {}", e);
+            }
+        }
+
+        // 4. Cancel the order
+        service.cancel_order(&order_id, "AAPL").await?;
+        info!("Integration test: Order cancelled {}", order_id);
+
+        Ok(())
     }
 }

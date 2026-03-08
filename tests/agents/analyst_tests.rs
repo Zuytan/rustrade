@@ -1,11 +1,11 @@
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
+use rust_decimal_macros::dec;
 use rustrade::application::agents::analyst::{Analyst, AnalystConfig, AnalystDependencies};
 use rustrade::application::market_data::spread_cache::SpreadCache;
 use rustrade::domain::config::{RiskConfig, StrategyConfig};
 use rustrade::domain::trading::types::{Candle, MarketEvent, OrderSide};
 use rustrade::infrastructure::mock::{MockExecutionService, MockMarketDataService};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
-use rust_decimal_macros::dec;
 use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, mpsc};
 

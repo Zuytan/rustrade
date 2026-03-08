@@ -1,5 +1,16 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.9 - Alpaca Integration & Liquidity Reliability (March 2026)
+
+### Infrastructure & Execution
+- **Alpaca Fee Retrieval Fix**: Corrected the fee retrieval mechanism to use `by_client_order_id` endpoint. This ensures accurate fee tracking for orders placed within the current session, preventing fallback to estimated models.
+- **Enhanced Liquidity Tracking**: Upgraded `AlpacaAccount` synchronization to prioritize `non_marginable_buying_power` (critical for crypto/cash accounts) over baseline `buying_power` and `cash`. Fixed "insufficient balance" errors by aligning internal portfolio state with actual broker buying power.
+- **Alpaca API Resilience**: Improved JSON deserialization resilience for Alpaca account responses and added explicit field mapping for critical risk fields like `equity`.
+
+### Verification Suite
+- **Alpaca Integration Test**: Implemented `test_alpaca_fee_retrieval_integration` to validate the full order-to-fee lifecycle on live/paper endpoints.
+- **Improved Logging**: Added detailed buying power metrics during account synchronization for better runtime observability.
+
 ## Version 0.99.8 - Configuration Consolidation & Quality Audit (March 2026)
 
 ### Configuration System Refactoring
