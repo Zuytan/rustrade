@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.99.14"
+version = "0.99.15"
 edition = "2024"
 default-run = "rustrade"
 
@@ -45,21 +45,21 @@ async-trait = "0.1.89"
 chrono = { version = "0.4.44", features = ["serde"] }
 dotenvy = "0.15"
 futures-util = "0.3.32"
-rand = "0.10.0"
+rand = "0.10.1"
 reqwest = { version = "0.13", features = ["json", "query"] }
-rust_decimal = "1.40.0"
+rust_decimal = "1.42.0"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 ta = "0.5.0"
 thiserror = "2.0"
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1.52.3", features = ["full"] }
 tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
-toml = "1.0.6"  # For grid config parsing
+toml = "1.1.2"  # For grid config parsing
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracing-attributes = "0.1"
 url = "2.5.8"
-uuid = { version = "1.22.0", features = ["v4", "serde"] }
+uuid = { version = "1.23.1", features = ["v4", "serde"] }
 # Binance API dependencies
 hmac = "0.12"
 sha2 = "0.10"
@@ -70,15 +70,15 @@ futures = "0.3.32"
 reqwest-middleware = "0.5"
 reqwest-retry = "0.9"
 task-local-extensions = "0.1"
-rss = "2.0.12"
+rss = "2.0.13"
 vader_sentiment = "0.1"
-rayon = "1.11"
+rayon = "1.12"
 statrs = "0.18"  # Statistical functions (Z-Score, rolling stats)
 
 # Observability (push-based, no HTTP server)
 prometheus = "0.14"
-clap = { version = "4.5.60", features = ["derive"] }
-smartcore = { version = "0.4.9", features = ["serde"] }
+clap = { version = "4.6.1", features = ["derive"] }
+smartcore = { version = "0.4.10", features = ["serde"] }
 csv = "1.4.0"
 
 ort = { version = "2.0.0-rc.12", features = ["ndarray"] }

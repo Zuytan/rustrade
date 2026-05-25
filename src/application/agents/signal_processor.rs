@@ -206,18 +206,19 @@ impl SignalProcessor {
         trailing_stop_triggered: bool,
     ) -> Option<crate::application::strategies::Signal> {
         match &signal {
-            Some(s) if s.side == OrderSide::Sell => {
-                if context.position_manager.trailing_stop.is_active() && !trailing_stop_triggered {
-                    debug!(
-                        "SignalProcessor: Sell signal SUPPRESSED for {} - Using trailing stop exit instead",
-                        symbol
-                    );
-                    return None;
-                }
+            Some(s)
+                if s.side == OrderSide::Sell
+                    && context.position_manager.trailing_stop.is_active()
+                    && !trailing_stop_triggered =>
+            {
+                debug!(
+                    "SignalProcessor: Sell signal SUPPRESSED for {} - Using trailing stop exit instead",
+                    symbol
+                );
+                None
             }
-            _ => {}
+            _ => signal,
         }
-        signal
     }
 
     /// Check if partial take-profit conditions are met.

@@ -1,5 +1,13 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.15 - Dependency Upgrades & Security Hardening (May 2026)
+
+### Dependency Upgrades
+- **Compatible Upgrades**: Upgraded `Cargo.toml` dependencies to their latest compatible versions, including `rand` (0.10.1), `rust_decimal` (1.42.0), `serde_json` (1.0.150), `tokio` (1.52.3), `toml` (1.1.2), `tracing-subscriber` (0.3.23), `uuid` (1.23.1), `rss` (2.0.13), `rayon` (1.12), `clap` (4.6.1), and `smartcore` (0.4.10).
+
+### Security Hardening
+- **Cargo Audit Advisory Fixes**: Resolved all security vulnerabilities flagged by `cargo audit` in subdependencies by updating the cargo lockfile (`Cargo.lock`). This includes updating `aws-lc-sys` (0.41.0), `quinn-proto` (0.11.14), `rustls-webpki` (0.103.13), and `rand` (0.8.6).
+
 ## Version 0.99.14 - SNN Ensemble Integration & Functional Evaluation (May 2026)
 
 ### SNN Architectural Alignment

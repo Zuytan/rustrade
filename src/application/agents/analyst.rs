@@ -278,17 +278,13 @@ impl Analyst {
                 Ok(health_event) = health_rx.recv() => {
                     if health_event.component == "MarketData" {
                          match health_event.status {
-                             ConnectionStatus::Online => {
-                                 if !self.market_data_online {
-                                     debug!("Analyst: Market Data back ONLINE. Resuming analysis.");
-                                     self.market_data_online = true;
-                                 }
+                             ConnectionStatus::Online if !self.market_data_online => {
+                                 debug!("Analyst: Market Data back ONLINE. Resuming analysis.");
+                                 self.market_data_online = true;
                              }
-                             ConnectionStatus::Offline => {
-                                 if self.market_data_online {
-                                     debug!("Analyst: Market Data OFFLINE. Pausing analysis to prevent calculations on stale data.");
-                                     self.market_data_online = false;
-                                 }
+                             ConnectionStatus::Offline if self.market_data_online => {
+                                 debug!("Analyst: Market Data OFFLINE. Pausing analysis to prevent calculations on stale data.");
+                                 self.market_data_online = false;
                              }
                              _ => {}
                          }
