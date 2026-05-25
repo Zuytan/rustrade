@@ -319,46 +319,12 @@ fn create_analyst_config(config: &Config) -> AnalystConfig {
 }
 
 fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn TradingStrategy> {
-    match config.strategy.strategy_mode {
-        crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive => {
-            Arc::new(EnsembleStrategy::modern_ensemble(analyst_config))
-        }
-        crate::domain::market::strategy_config::StrategyMode::SMC => Arc::new(SMCStrategy::new(
-            analyst_config.strategy.smc_ob_lookback,
-            analyst_config.strategy.smc_min_fvg_size_pct,
-            analyst_config.strategy.smc_volume_multiplier,
-        )),
-        crate::domain::market::strategy_config::StrategyMode::Ensemble => {
-            Arc::new(EnsembleStrategy::modern_ensemble(analyst_config))
-        }
-        crate::domain::market::strategy_config::StrategyMode::ZScoreMR => {
-            Arc::new(ZScoreMeanReversionStrategy::new(
-                analyst_config.strategy.zscore_lookback,
-                analyst_config.strategy.zscore_entry_threshold,
-                analyst_config.strategy.zscore_exit_threshold,
-            ))
-        }
-        crate::domain::market::strategy_config::StrategyMode::StatMomentum => {
-            Arc::new(StatisticalMomentumStrategy::new(
-                analyst_config.strategy.stat_momentum_lookback,
-                analyst_config.strategy.stat_momentum_threshold,
-                analyst_config.strategy.stat_momentum_trend_confirmation,
-            ))
-        }
-        crate::domain::market::strategy_config::StrategyMode::OrderFlow => {
-            Arc::new(OrderFlowStrategy::new(
-                analyst_config.strategy.orderflow_ofi_threshold,
-                analyst_config.strategy.orderflow_stacked_count,
-                analyst_config.strategy.orderflow_volume_profile_lookback,
-            ))
-        }
-        crate::domain::market::strategy_config::StrategyMode::ML => {
-            let path = std::path::PathBuf::from("data/ml/model.bin");
-            let predictor =
-                crate::application::ml::smartcore_predictor::SmartCorePredictor::new(path);
-            Arc::new(MLStrategy::new(Arc::new(Box::new(predictor)), 0.0005))
-        }
-    }
+    // Delegate to the single source of truth for strategy creation.
+    // This avoids duplicating match arms that diverge silently over time.
+    crate::application::strategies::strategy_factory::StrategyFactory::create(
+        config.strategy.strategy_mode,
+        analyst_config,
+    )
 }
 
 fn spawn_listener(

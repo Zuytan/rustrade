@@ -36,8 +36,7 @@ pub struct BatchBacktestResult {
 /// let symbols = vec!["AAPL".to_string(), "TSLA".to_string(), "NVDA".to_string()];
 /// let start = Utc::now() - chrono::Duration::days(30);
 /// let end = Utc::now();
-///
-/// let results = runner.run_parallel(symbols, start, end).await;
+/// let results = runner.run_parallel(symbols, start, end, "1Min".to_string()).await;
 /// for result in results {
 ///     match result.result {
 ///         Ok(backtest) => println!("{}: {:.2}%", result.symbol, backtest.total_return_pct),
@@ -87,6 +86,7 @@ impl ParallelBenchmarkRunner {
         symbols: Vec<String>,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
+        timeframe: String,
     ) -> Vec<BatchBacktestResult> {
         // Get a handle to the current Tokio runtime
         let handle = tokio::runtime::Handle::current();
@@ -99,9 +99,10 @@ impl ParallelBenchmarkRunner {
                 let config = self.config.clone();
                 let symbol_clone = symbol.clone(); // Clone before moving into async
 
+                let tf = timeframe.clone();
                 // Block on the async task from within the Rayon thread pool
                 let result = handle.block_on(async move {
-                    Self::run_single(&market_service, &config, &symbol_clone, start, end).await
+                    Self::run_single(&market_service, &config, &symbol_clone, start, end, tf).await
                 });
 
                 BatchBacktestResult {
@@ -122,6 +123,7 @@ impl ParallelBenchmarkRunner {
         symbol: &str,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
+        timeframe: String,
     ) -> Result<BacktestResult> {
         // Create a fresh portfolio for this backtest
         let mut portfolio = Portfolio::new();
@@ -149,7 +151,7 @@ impl ParallelBenchmarkRunner {
         // Run the simulation
         let simulator = Simulator::new(market_service.clone(), execution_service, config.clone());
 
-        simulator.run(symbol, start, end).await
+        simulator.run(symbol, start, end, &timeframe).await
     }
 }
 

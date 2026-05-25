@@ -73,7 +73,7 @@ impl MockMarketDataService {
             static COUNTER: AtomicUsize = AtomicUsize::new(0);
             let count = COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
             #[allow(clippy::manual_is_multiple_of)]
-            if count % 10 == 0 {
+            if count.is_multiple_of(10) {
                 info!(
                     "MockMarketDataService: Published {} events to {} subscribers",
                     count, sent_count
@@ -474,6 +474,12 @@ impl ExecutionService for MockExecutionService {
 
         self.orders.write().await.push(order.clone());
 
+        let update_timestamp = chrono::DateTime::from_timestamp(
+            order.timestamp / 1000,
+            ((order.timestamp % 1000) * 1_000_000) as u32,
+        )
+        .unwrap_or_else(chrono::Utc::now);
+
         let _ = self.order_update_sender.send(OrderUpdate {
             order_id: order.id.clone(),
             client_order_id: order.id.clone(),
@@ -482,8 +488,8 @@ impl ExecutionService for MockExecutionService {
             status: crate::domain::trading::types::OrderStatus::Filled,
             filled_qty: order.quantity,
             filled_avg_price: Some(execution_price),
-            timestamp: chrono::Utc::now(),
-            fees: Some(commission), // We can also include funding cost here if needed, but OrderUpdate typically tracks explicit trade commission
+            timestamp: update_timestamp,
+            fees: Some(commission),
         });
 
         info!(

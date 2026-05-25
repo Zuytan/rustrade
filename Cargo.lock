@@ -2819,6 +2819,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
+ "serde",
 ]
 
 [[package]]
@@ -4277,7 +4278,7 @@ dependencies = [
 
 [[package]]
 name = "rustrade"
-version = "0.99.10"
+version = "0.99.14"
 dependencies = [
  "anyhow",
  "async-trait",

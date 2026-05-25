@@ -273,11 +273,52 @@ pub trait TradingStrategy: Send + Sync {
 
     /// Strategy name for logging and identification
     fn name(&self) -> &str;
+
+    /// Feeds back the result of a closed trade into the strategy.
+    /// Used primarily by R-STDP and Reinforcement Learning strategies.
+    /// `realized_pnl_pct` is the percentage gain/loss (e.g. 0.05 for +5%).
+    ///
+    /// TODO(Phase 3): Implement R-STDP or RL weight updates using this feedback.
+    /// Currently unused by the Surrogate Gradient model (which trains offline).
+    fn inject_trade_feedback(&self, _symbol: &str, _realized_pnl_pct: f64) {}
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn test_position_info_creation() {
+        let entry_price = dec!(50000.0);
+        let _current_price = dec!(51000.0);
+        let info = PositionInfo {
+            entry_price,
+            quantity: dec!(0.5),
+            unrealized_pnl_pct: dec!(0.02),
+        };
+
+        assert_eq!(info.entry_price, entry_price);
+        assert_eq!(info.unrealized_pnl_pct, dec!(0.02)); // (51000 - 50000) / 50000
+    }
+
+    #[test]
+    fn test_inject_trade_feedback_default_noop() {
+        // Implement a dummy strategy that uses the default inject_trade_feedback
+        struct DummyStrategy;
+        impl TradingStrategy for DummyStrategy {
+            fn analyze(&self, _ctx: &AnalysisContext) -> Option<Signal> {
+                None
+            }
+            fn name(&self) -> &str {
+                "Dummy"
+            }
+        }
+
+        let strategy = DummyStrategy;
+        // Default implementation should just do nothing without panicking
+        strategy.inject_trade_feedback("BTC/USD", 0.05);
+    }
 
     #[test]
     fn test_signal_creation() {

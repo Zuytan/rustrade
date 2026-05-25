@@ -1,12 +1,13 @@
 [package]
 name = "rustrade"
-version = "0.99.10"
+version = "0.99.14"
 edition = "2024"
 default-run = "rustrade"
 
 [features]
 default = ["ui"]
 ui = ["dep:eframe", "dep:egui", "dep:egui_plot"]
+surrogate = []
 
 [[bin]]
 name = "rustrade"
@@ -24,6 +25,11 @@ path = "src/bin/benchmark.rs"
 [[bin]]
 name = "optimize"
 path = "src/bin/optimize.rs"
+
+[[bin]]
+name = "train_surrogate"
+path = "src/bin/train_surrogate.rs"
+required-features = ["surrogate"]
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -76,4 +82,4 @@ smartcore = { version = "0.4.9", features = ["serde"] }
 csv = "1.4.0"
 
 ort = { version = "2.0.0-rc.12", features = ["ndarray"] }
-ndarray = "0.17"
+ndarray = { version = "0.17", features = ["serde"] }

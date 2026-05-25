@@ -94,18 +94,23 @@ pub fn apply_dynamic_risk_scaling(
                 context.risk_base_score = Some(base);
             }
             let new_score = (base as i8 + modifier).clamp(1, 9) as u8;
-            if let Ok(new_appetite) = RiskAppetite::new(new_score) {
-                context.config.apply_risk_appetite(&new_appetite);
-                context.config.strategy.risk_appetite_score = Some(new_score);
+            if Some(new_score) != context.config.strategy.risk_appetite_score {
+                if let Ok(new_appetite) = RiskAppetite::new(new_score) {
+                    context.config.apply_risk_appetite(&new_appetite);
+                    context.config.strategy.risk_appetite_score = Some(new_score);
+                    context.risk_restore_bars_remaining = Some(RISK_RESTORE_HYSTERESIS_BARS);
+                    context.strategy = crate::application::strategies::StrategyFactory::create(
+                        context.active_strategy_mode,
+                        &context.config,
+                    );
+                    info!(
+                        "RegimeHandler [{}]: Dynamic Risk Scaling. Score {} -> {} ({:?}). Restore after {} normal bars.",
+                        symbol, base, new_score, regime.regime_type, RISK_RESTORE_HYSTERESIS_BARS
+                    );
+                }
+            } else {
+                // Prolong countdown even if score didn't change (still in hostile regime)
                 context.risk_restore_bars_remaining = Some(RISK_RESTORE_HYSTERESIS_BARS);
-                context.strategy = crate::application::strategies::StrategyFactory::create(
-                    context.active_strategy_mode,
-                    &context.config,
-                );
-                info!(
-                    "RegimeHandler [{}]: Dynamic Risk Scaling. Score {} -> {} ({:?}). Restore after {} normal bars.",
-                    symbol, base, new_score, regime.regime_type, RISK_RESTORE_HYSTERESIS_BARS
-                );
             }
         }
         return;
@@ -302,6 +307,40 @@ mod tests {
 
         apply_dynamic_risk_scaling(&mut context, &volatile, "TEST");
         assert_eq!(context.config.strategy.risk_appetite_score, Some(4));
+        assert_eq!(context.risk_restore_bars_remaining, Some(5));
+    }
+    #[test]
+    fn test_regime_handler_no_recreation_when_score_unchanged() {
+        let mut context = create_test_context_with_score(Some(4));
+        let strategy_ptr = Arc::clone(&context.strategy);
+
+        // Volatile regime reduces score by 3. If base is 7, it becomes 4.
+        // If current is already 4, it should calculate 4, see it's unchanged, and NOT recreate strategy.
+        context.risk_base_score = Some(7);
+        let volatile =
+            MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(15.0));
+
+        apply_dynamic_risk_scaling(&mut context, &volatile, "TEST");
+
+        assert_eq!(context.config.strategy.risk_appetite_score, Some(4));
+        assert!(
+            Arc::ptr_eq(&context.strategy, &strategy_ptr),
+            "Strategy should not be recreated if score is unchanged"
+        );
+    }
+
+    #[test]
+    fn test_regime_handler_prolongs_countdown_when_score_same() {
+        let mut context = create_test_context_with_score(Some(4));
+        context.risk_base_score = Some(7);
+        context.risk_restore_bars_remaining = Some(2); // Countdown was at 2
+
+        let volatile =
+            MarketRegime::new(MarketRegimeType::Volatile, dec!(0.8), dec!(3.0), dec!(15.0));
+
+        // This is a hostile regime, so score will stay 4, but countdown should reset to 5
+        apply_dynamic_risk_scaling(&mut context, &volatile, "TEST");
+
         assert_eq!(context.risk_restore_bars_remaining, Some(5));
     }
 }

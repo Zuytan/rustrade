@@ -36,7 +36,7 @@ pub struct AnchoredWalkForwardResult {
 
 pub struct BenchmarkEngine {
     market_service: Arc<AlpacaMarketDataService>,
-    base_config: Config,
+    pub base_config: Config,
 }
 
 impl BenchmarkEngine {
@@ -88,6 +88,7 @@ impl BenchmarkEngine {
         end: DateTime<Utc>,
         strategy: StrategyMode,
         risk_score: Option<u8>,
+        timeframe: &str,
     ) -> anyhow::Result<BacktestResult> {
         let mut app_config = self.base_config.clone();
         app_config.strategy.strategy_mode = strategy;
@@ -105,7 +106,8 @@ impl BenchmarkEngine {
             config.apply_risk_appetite(&appetite);
         }
 
-        self.execute_simulation(symbol, start, end, config).await
+        self.execute_simulation(symbol, start, end, config, timeframe)
+            .await
     }
 
     /// Runs a single backtest with the given AnalystConfig (e.g. from optimization results).
@@ -116,8 +118,10 @@ impl BenchmarkEngine {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         config: AnalystConfig,
+        timeframe: &str,
     ) -> anyhow::Result<BacktestResult> {
-        self.execute_simulation(symbol, start, end, config).await
+        self.execute_simulation(symbol, start, end, config, timeframe)
+            .await
     }
 
     pub async fn run_parallel(
@@ -126,13 +130,16 @@ impl BenchmarkEngine {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         strategy: StrategyMode,
+        timeframe: &str,
     ) -> Vec<crate::application::optimization::parallel_benchmark::BatchBacktestResult> {
         let mut app_config = self.base_config.clone();
         app_config.strategy.strategy_mode = strategy;
         let config: AnalystConfig = app_config.into();
 
         let runner = ParallelBenchmarkRunner::new(self.market_service.clone(), config);
-        runner.run_parallel(symbols, start, end).await
+        runner
+            .run_parallel(symbols, start, end, timeframe.to_string())
+            .await
     }
 
     pub async fn get_historical_movers(
@@ -161,7 +168,16 @@ impl BenchmarkEngine {
         risk_score: Option<u8>,
     ) -> anyhow::Result<WalkForwardResult> {
         let anchored = self
-            .run_anchored_walk_forward(symbol, start, end, strategy, train_ratio, 1, risk_score)
+            .run_anchored_walk_forward(
+                symbol,
+                start,
+                end,
+                strategy,
+                train_ratio,
+                1,
+                risk_score,
+                "1Min",
+            )
             .await?;
         anchored
             .results
@@ -182,6 +198,7 @@ impl BenchmarkEngine {
         train_ratio: f64,
         num_folds: u32,
         risk_score: Option<u8>,
+        timeframe: &str,
     ) -> anyhow::Result<AnchoredWalkForwardResult> {
         let total_secs = (end - start).num_seconds();
         let train_secs = (total_secs as f64 * train_ratio) as i64;
@@ -221,7 +238,7 @@ impl BenchmarkEngine {
             }
 
             let result = self
-                .execute_simulation(symbol, test_start, test_end, config.clone())
+                .execute_simulation(symbol, test_start, test_end, config.clone(), timeframe)
                 .await?;
 
             let trades = orders_to_trades(&result.trades);
@@ -270,6 +287,7 @@ impl BenchmarkEngine {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
         config: AnalystConfig,
+        timeframe: &str,
     ) -> anyhow::Result<BacktestResult> {
         let mut portfolio = Portfolio::new();
         portfolio.cash = Decimal::new(100000, 0);
@@ -308,7 +326,7 @@ impl BenchmarkEngine {
 
         let simulator = Simulator::new(self.market_service.clone(), execution_service, config);
 
-        simulator.run(symbol, start, end).await
+        simulator.run(symbol, start, end, timeframe).await
     }
 }
 

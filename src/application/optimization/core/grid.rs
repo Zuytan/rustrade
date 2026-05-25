@@ -328,6 +328,7 @@ pub fn decode_genome(
             enable_ml_data_collection: false,
             risk_appetite_score: None,
             min_profit_ratio,
+            ..StrategyConfig::default()
         },
         risk: RiskConfig {
             max_positions: 5,

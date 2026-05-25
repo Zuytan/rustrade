@@ -103,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
     for sym in symbol_list {
         info!("Processing {}...", sym);
         match engine
-            .run_single(&sym, start_dt, end_dt, strat_mode, None)
+            .run_single(&sym, start_dt, end_dt, strat_mode, None, "1Min")
             .await
         {
             Ok(_) => info!("✅ Done for {}", sym),

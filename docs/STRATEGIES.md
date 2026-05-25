@@ -29,8 +29,8 @@ This document provides a comprehensive overview of all modern trading strategies
 | ZScoreMR | Quantitative | Ranging | Low | Z-Score of Returns, Volatility |
 | StatMomentum | Quantitative | Trending | High | Moving Linear Reg, R² |
 | RegimeAdaptive | Adaptive | All | Variable | ADX, Trend Detection, Variance |
-| Ensemble | Meta | All | Low | Multi-Strategy Vote |
-| ML | Predictive | All | Medium | ONNX / SmartCore Models |
+| Ensemble | Meta | All | Low | Multi-Strategy Vote (optional SNN) |
+| SnnSurrogate | Predictive (SNN) | All | Medium | Spiking Neural Network, Surrogate Gradient |
 
 ---
 
@@ -85,16 +85,19 @@ Automatically detects the current market environment and delegates signal genera
 ### Ensemble
 A meta-strategy that aggregates signals from multiple robust child strategies using a weighted voting system.
 Provides highest confidence and lowest drawdown by ensuring consensus among uncorrelated models.
+Can optionally include the `SnnSurrogate` as a heavily-weighted voter if `ENSEMBLE_INCLUDE_SNN=true`.
 
 ---
 
 ## Machine Learning
 
-### ML Inference
-Uses pre-trained models to predict price movements based on a rich state representation of the market.
+### SNN Surrogate (Spiking Neural Network)
+Uses a highly efficient, biologically-inspired Spiking Neural Network (SNN) with a surrogate gradient approach.
 
-**Features included:**
-ONNX Runtime support, SmartCore legacy support. Ingests dozens of features including normalized momentum, realized volatility, OFI, and Hurst exponent.
+**Core Concepts:**
+- Replaces legacy ONNX/SmartCore ML logic with a custom-built Rust SNN engine.
+- Capable of temporal pattern recognition natively, avoiding the heavy memory footprint of traditional RNNs/LSTMs.
+- Operates primarily on a 15-minute timeframe alignment for high-fidelity technical features processing.
 
 ---
 
@@ -103,7 +106,7 @@ ONNX Runtime support, SmartCore legacy support. Ingests dozens of features inclu
 ### Environment Variables
 ```bash
 # Strategy Selection
-STRATEGY_MODE=smc  # smc, zscoremr, statmomentum, orderflow, regimeadaptive, ensemble, ml
+STRATEGY_MODE=smc  # smc, zscoremr, statmomentum, orderflow, regimeadaptive, ensemble, snn_surrogate
 ```
 
 ### Programmatic Setup

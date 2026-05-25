@@ -1,9 +1,12 @@
 use anyhow::Context;
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use clap::{Parser, Subcommand};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use rustrade::application::agents::analyst_config::AnalystConfig;
 use rustrade::application::benchmarking::engine::BenchmarkEngine;
 use rustrade::domain::config::{RiskConfig, StrategyConfig};
+use rustrade::domain::trading::types::normalize_crypto_symbol;
 
 /// One benchmark window: (label, start_dt, end_dt).
 type PeriodWindow = (String, DateTime<Utc>, DateTime<Utc>);
@@ -21,6 +24,9 @@ fn optimal_params_to_analyst_config(
             rsi_threshold: params.rsi_threshold,
             trailing_stop_atr_multiplier: params.trailing_stop_atr_multiplier,
             trend_divergence_threshold: params.trend_divergence_threshold,
+            snn_activation_threshold: rust_decimal_macros::dec!(0.8),
+            snn_surrogate_model_path: "models/snn/snn_surrogate_model.json".to_string(),
+            snn_surrogate_window_size: 50,
             ..StrategyConfig::default()
         },
         risk: RiskConfig {
@@ -91,51 +97,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Standard benchmark run
-    Run {
-        /// Symbol(s) to benchmark (comma separated)
-        #[arg(short, long, default_value = "TSLA")]
-        symbols: String,
+    Run(Box<RunArgs>),
 
-        /// Start date (YYYY-MM-DD)
-        #[arg(long, default_value = "2024-12-20")]
-        start: String,
-
-        /// End date (YYYY-MM-DD)
-        #[arg(long)]
-        end: Option<String>,
-
-        /// Lookback days (if end date not specified)
-        #[arg(short, long, default_value = "30")]
-        days: i64,
-
-        /// Strategy to use
-        #[arg(long, default_value = "smc")]
-        strategy: String,
-
-        /// Run in parallel
-        #[arg(short, long)]
-        parallel: bool,
-
-        /// Risk Score (1-10)
-        #[arg(short, long, default_value = "5")]
-        risk: u8,
-
-        /// Asset class (stock or crypto)
-        #[arg(long, default_value = "stock")]
-        asset_class: String,
-
-        /// JSON file from optimize (e.g. optimization_results.json), or "rustrade" to use ~/.rustrade/optimal_parameters.json. Uses best params and runs benchmark with them.
-        #[arg(long)]
-        params_file: Option<String>,
-
-        /// Multiple periods for benchmark (only with params-file). Comma-separated "start:end" (e.g. "2024-01-01:2024-03-31,2024-04-01:2024-06-30").
-        #[arg(long)]
-        periods: Option<String>,
-
-        /// Multiple risk appetites (1-9). Comma-separated (e.g. "2,5,8"). When set, benchmark runs for each risk level; report shows Strategy e.g. "Ensemble Risk-5".
-        #[arg(long)]
-        risk_levels: Option<String>,
-    },
     /// Matrix benchmark (Parameter Grid Search)
     Matrix {
         /// Symbol to test
@@ -144,6 +107,77 @@ enum Commands {
     },
     /// Verify benchmark (Regression Tests)
     Verify,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct RunArgs {
+    /// Symbol(s) to benchmark (comma separated)
+    #[arg(short, long, default_value = "TSLA")]
+    pub symbols: String,
+
+    /// Start date (YYYY-MM-DD)
+    #[arg(long, default_value = "2024-12-20")]
+    pub start: String,
+
+    /// End date (YYYY-MM-DD)
+    #[arg(long)]
+    pub end: Option<String>,
+
+    /// Lookback days (if end date not specified)
+    #[arg(short, long, default_value = "30")]
+    pub days: i64,
+
+    /// Strategy to use
+    #[arg(long, default_value = "smc")]
+    pub strategy: String,
+
+    /// Run in parallel
+    #[arg(short, long)]
+    pub parallel: bool,
+
+    /// Risk Score (1-10)
+    #[arg(short, long, default_value = "5")]
+    pub risk: u8,
+
+    /// Asset class (stock or crypto)
+    #[arg(long, default_value = "stock")]
+    pub asset_class: String,
+
+    /// JSON file from optimize (e.g. optimization_results.json), or "rustrade" to use ~/.rustrade/optimal_parameters.json. Uses best params and runs benchmark with them.
+    #[arg(long)]
+    pub params_file: Option<String>,
+
+    /// Multiple periods for benchmark (only with params-file). Comma-separated "start:end" (e.g. "2024-01-01:2024-03-31,2024-04-01:2024-06-30").
+    #[arg(long)]
+    pub periods: Option<String>,
+
+    /// Multiple risk appetites (1-9). Comma-separated (e.g. "2,5,8"). When set, benchmark runs for each risk level; report shows Strategy e.g. "Ensemble Risk-5".
+    #[arg(long)]
+    pub risk_levels: Option<String>,
+
+    /// SNN Activation Threshold Override
+    #[arg(long)]
+    pub snn_threshold: Option<f64>,
+
+    /// SNN Encoder Threshold Override (Delta percentage)
+    #[arg(long)]
+    pub snn_encoder_threshold: Option<f64>,
+
+    /// Fee percentage (e.g. 0.003 for 0.3%)
+    #[arg(long)]
+    pub fee_pct: Option<f64>,
+
+    /// ATR Multiplier override
+    #[arg(long)]
+    pub atr_multiplier: Option<f64>,
+
+    /// Take Profit Percentage override (e.g. 0.1 for 10%)
+    #[arg(long)]
+    pub take_profit_pct: Option<f64>,
+
+    /// Timeframe for data fetching (e.g. 1Min, 15Min, 1Day)
+    #[arg(long, default_value = "1Min")]
+    pub timeframe: String,
 }
 
 #[tokio::main]
@@ -162,19 +196,26 @@ async fn main() -> anyhow::Result<()> {
     let reporter = BenchmarkReporter::new("benchmark_results");
 
     match cli.command {
-        Commands::Run {
-            symbols,
-            start,
-            end,
-            days,
-            strategy,
-            parallel,
-            risk,
-            asset_class,
-            params_file,
-            periods,
-            risk_levels,
-        } => {
+        Commands::Run(args) => {
+            let RunArgs {
+                symbols,
+                start,
+                end,
+                days,
+                strategy,
+                parallel,
+                risk,
+                asset_class,
+                params_file,
+                periods,
+                risk_levels,
+                snn_threshold,
+                snn_encoder_threshold,
+                fee_pct,
+                atr_multiplier,
+                take_profit_pct,
+                timeframe,
+            } = *args;
             unsafe {
                 std::env::set_var("ASSET_CLASS", &asset_class);
             }
@@ -188,8 +229,7 @@ async fn main() -> anyhow::Result<()> {
                     .into_iter()
                     .map(|s| {
                         if !s.contains('/') {
-                            rustrade::domain::trading::types::normalize_crypto_symbol(&s)
-                                .unwrap_or(s)
+                            normalize_crypto_symbol(&s).unwrap_or(s)
                         } else {
                             s
                         }
@@ -257,7 +297,13 @@ async fn main() -> anyhow::Result<()> {
                             println!("\n📅 Period: {} Risk-{}", period_label, score);
                             for sym in &symbol_list {
                                 match engine
-                                    .run_single_with_config(sym, *start_p, *end_p, config.clone())
+                                    .run_single_with_config(
+                                        sym,
+                                        *start_p,
+                                        *end_p,
+                                        config.clone(),
+                                        &timeframe,
+                                    )
                                     .await
                                 {
                                     Ok(res) => {
@@ -376,7 +422,13 @@ async fn main() -> anyhow::Result<()> {
                             println!("\n📅 Period: {}{}", period_label, risk_suffix);
                             for sym in &symbol_list {
                                 match engine
-                                    .run_single_with_config(sym, *start_p, *end_p, config.clone())
+                                    .run_single_with_config(
+                                        sym,
+                                        *start_p,
+                                        *end_p,
+                                        config.clone(),
+                                        &timeframe,
+                                    )
                                     .await
                                 {
                                     Ok(res) => {
@@ -414,7 +466,7 @@ async fn main() -> anyhow::Result<()> {
 
                 if parallel && symbol_list.len() > 1 && run_risk_list.len() == 1 {
                     let batch_results = engine
-                        .run_parallel(symbol_list, start_dt, end_dt, strat_mode)
+                        .run_parallel(symbol_list, start_dt, end_dt, strat_mode, &timeframe)
                         .await;
                     for _batch_res in batch_results {
                         // ...
@@ -422,9 +474,55 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     for risk_score in &run_risk_list {
                         let strategy_label = format!("{:?} Risk-{}", strat_mode, risk_score);
+
+                        // Apply SNN overrides if provided
+                        let mut app_config = engine.base_config.clone();
+                        app_config.strategy.strategy_mode = strat_mode;
+                        if let Some(d) = snn_threshold.and_then(Decimal::from_f64) {
+                            app_config.strategy.snn_activation_threshold = d;
+                        }
+                        if let Some(d) = snn_encoder_threshold.and_then(Decimal::from_f64) {
+                            app_config.strategy.snn_encoder_threshold = d;
+                        }
+                        if std::env::var("ENSEMBLE_INCLUDE_SNN").unwrap_or_default() == "true" {
+                            app_config.strategy.ensemble_include_snn = true;
+                        }
+                        if let Some(score) = risk_score.to_owned().into() {
+                            app_config.strategy.risk_appetite_score = Some(score);
+                        }
+
+                        let mut config: AnalystConfig = app_config.clone().into();
+
+                        if let Ok(appetite) = RiskAppetite::new(*risk_score) {
+                            config.apply_risk_appetite(&appetite);
+                        }
+
+                        // Apply Overrides AFTER risk appetite to ensure they persist
+                        if let Some(m) = atr_multiplier {
+                            config.strategy.trailing_stop_atr_multiplier =
+                                Decimal::from_f64(m).unwrap_or(Decimal::from_f64(2.5).unwrap());
+                        }
+                        if let Some(tp) = take_profit_pct {
+                            config.strategy.take_profit_pct =
+                                Decimal::from_f64(tp).unwrap_or(Decimal::ZERO);
+                        }
+                        if let Some(pct) = fee_pct {
+                            use rustrade::domain::trading::fee_model::ConstantFeeModel;
+                            use std::sync::Arc;
+                            let fee_dec = Decimal::from_f64(pct).unwrap_or(Decimal::ZERO);
+                            config.fee_model =
+                                Arc::new(ConstantFeeModel::new(fee_dec, Decimal::ZERO));
+                        }
+
                         for sym in &symbol_list {
                             match engine
-                                .run_single(sym, start_dt, end_dt, strat_mode, Some(*risk_score))
+                                .run_single_with_config(
+                                    sym,
+                                    start_dt,
+                                    end_dt,
+                                    config.clone(),
+                                    &timeframe,
+                                )
                                 .await
                             {
                                 Ok(res) => {
@@ -498,7 +596,7 @@ async fn main() -> anyhow::Result<()> {
                         for risk in &risks {
                             print!("    👉 {:?}... ", strat);
                             match engine
-                                .run_single(symbol, *start, *end, *strat, Some(*risk))
+                                .run_single(symbol, *start, *end, *strat, Some(*risk), "1Min")
                                 .await
                             {
                                 Ok(res) => {
@@ -538,7 +636,7 @@ async fn main() -> anyhow::Result<()> {
             let mut results = Vec::new();
             for (strat, risk, label) in scenarios {
                 match engine
-                    .run_single(symbol, start, end, strat, Some(risk))
+                    .run_single(symbol, start, end, strat, Some(risk), "1Min")
                     .await
                 {
                     Ok(res) => {

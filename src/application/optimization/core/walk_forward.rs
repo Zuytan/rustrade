@@ -161,6 +161,12 @@ impl GridSearchOptimizer {
                                                                         trend_timeframe: crate::domain::market::timeframe::Timeframe::OneHour,
                                                                         enable_ml_data_collection: false,
                                                                         risk_appetite_score: None,
+                                                                        snn_activation_threshold: rust_decimal_macros::dec!(0.8),
+                                                                        snn_encoder_threshold: rust_decimal_macros::dec!(0.01),
+                                                                        snn_surrogate_model_path: "models/snn/snn_surrogate_model.json".to_string(),
+                                                                        snn_surrogate_window_size: 50,
+                                                                        ensemble_include_snn: false,
+                                                                        ensemble_snn_weight: rust_decimal_macros::dec!(0.3),
                                                                         min_profit_ratio: self.min_profit_ratio,
                                                                     },
                                                                     risk: RiskConfig {
@@ -274,11 +280,6 @@ impl GridSearchOptimizer {
     ) -> Result<Vec<OptimizationResult>> {
         const PARALLEL_WORKERS: usize = 4;
         let _total_combinations = self.generate_combinations().len();
-
-        // let _split_idx = (total_combinations as f64 * train_ratio).round() as usize;
-
-        // Let's re-read the original logic for train_ratio
-        // Original line 806: train_ratio is used for bars split.
 
         let bars = self
             .market_data

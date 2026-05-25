@@ -62,9 +62,12 @@ impl EnsembleStrategy {
         Self::modern_ensemble(&AnalystConfig::default())
     }
 
-    /// Modern ensemble: StatisticalMomentum (0.4) + ZScoreMR (0.3) + SMC (0.3), weighted voting >= 0.5.
+    /// Modern ensemble: StatisticalMomentum + ZScoreMR + SMC, with optional SNN Surrogate.
+    ///
+    /// The SNN is only included when `config.strategy.ensemble_include_snn` is true
+    /// and the model at `snn_surrogate_model_path` loads successfully.
     pub fn modern_ensemble(config: &AnalystConfig) -> Self {
-        let strategies: Vec<Arc<dyn TradingStrategy>> = vec![
+        let mut strategies: Vec<Arc<dyn TradingStrategy>> = vec![
             Arc::new(StatisticalMomentumStrategy::new(
                 config.strategy.stat_momentum_lookback,
                 config.strategy.stat_momentum_threshold,
@@ -81,7 +84,8 @@ impl EnsembleStrategy {
                 config.strategy.smc_volume_multiplier,
             )),
         ];
-        let weights = if let Some(w) = &config.strategy.ensemble_weights {
+
+        let mut weights = if let Some(w) = &config.strategy.ensemble_weights {
             w.clone()
         } else {
             HashMap::from([
@@ -90,6 +94,43 @@ impl EnsembleStrategy {
                 ("SMC".to_string(), 0.3),
             ])
         };
+
+        // Optionally include SNN Surrogate as an additional sub-strategy
+        if config.strategy.ensemble_include_snn {
+            use crate::application::strategies::snn_surrogate_strategy::SnnSurrogateStrategy;
+            use rust_decimal::prelude::ToPrimitive;
+            match SnnSurrogateStrategy::new(
+                &config.strategy.snn_surrogate_model_path,
+                config
+                    .strategy
+                    .snn_activation_threshold
+                    .to_f64()
+                    .unwrap_or(0.3),
+                config.strategy.snn_surrogate_window_size,
+                config
+                    .strategy
+                    .snn_encoder_threshold
+                    .to_f64()
+                    .unwrap_or(0.5),
+            ) {
+                Ok(snn) => {
+                    let snn_weight = config.strategy.ensemble_snn_weight.to_f64().unwrap_or(0.3);
+                    weights.insert("SnnSurrogate".to_string(), snn_weight);
+                    strategies.push(Arc::new(snn));
+                    tracing::info!(
+                        "🧠 SNN Surrogate added to Ensemble (weight={:.2})",
+                        snn_weight
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "⚠️ Failed to load SNN for Ensemble (will proceed without it): {}",
+                        e
+                    );
+                }
+            }
+        }
+
         // Use configured threshold (defaults to 0.5 if not set, or adjusted by risk)
         let threshold = config
             .strategy
@@ -373,5 +414,46 @@ mod tests {
             signal.is_none(),
             "Should return None due to Buy/Sell conflict"
         );
+    }
+    #[test]
+    fn test_ensemble_without_snn_has_3_strategies() {
+        let mut config = AnalystConfig::default();
+        config.strategy.ensemble_include_snn = false;
+        let ensemble = EnsembleStrategy::modern_ensemble(&config);
+
+        let debug_str = format!("{:?}", ensemble);
+        assert!(
+            debug_str.contains("num_strategies: 3"),
+            "Should have exactly 3 strategies: {}",
+            debug_str
+        );
+    }
+
+    #[test]
+    fn test_ensemble_with_snn_has_4_strategies() {
+        let mut config = AnalystConfig::default();
+        config.strategy.ensemble_include_snn = true;
+
+        // Create mock model to allow loading
+        let hp = crate::domain::snn::hyperparams::SnnHyperparameters::default();
+        let network =
+            crate::domain::snn::competitive_network::CompetitiveSnnNetwork::new(10, 8, 8, 3, hp);
+        let json = serde_json::to_string(&network).unwrap();
+        let mut path = std::env::temp_dir();
+        path.push("mock_snn_model_ensemble.json");
+        std::fs::write(&path, json).unwrap();
+
+        config.strategy.snn_surrogate_model_path = path.to_str().unwrap().to_string();
+
+        let ensemble = EnsembleStrategy::modern_ensemble(&config);
+
+        let debug_str = format!("{:?}", ensemble);
+        assert!(
+            debug_str.contains("num_strategies: 4"),
+            "Should have exactly 4 strategies: {}",
+            debug_str
+        );
+
+        std::fs::remove_file(path).ok();
     }
 }

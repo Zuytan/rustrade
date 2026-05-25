@@ -168,6 +168,20 @@ impl StrategyEnvLoader {
                 .parse::<bool>()
                 .unwrap_or(false),
             risk_appetite_score: risk_appetite.map(|a| a.score()),
+            snn_activation_threshold: Self::parse_decimal("SNN_ACTIVATION_THRESHOLD", dec!(0.8))
+                .unwrap_or(dec!(0.8)),
+            snn_encoder_threshold: Self::parse_decimal("SNN_ENCODER_THRESHOLD", dec!(0.01))
+                .unwrap_or(dec!(0.01)),
+            snn_surrogate_model_path: env::var("SNN_SURROGATE_MODEL_PATH")
+                .unwrap_or_else(|_| "models/snn/snn_surrogate_model.json".to_string()),
+            snn_surrogate_window_size: Self::parse_usize("SNN_SURROGATE_WINDOW_SIZE", 50)
+                .unwrap_or(50),
+            ensemble_include_snn: env::var("ENSEMBLE_INCLUDE_SNN")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse::<bool>()
+                .unwrap_or(false),
+            ensemble_snn_weight: Self::parse_decimal("ENSEMBLE_SNN_WEIGHT", dec!(0.3))
+                .unwrap_or(dec!(0.3)),
         };
 
         config

@@ -221,6 +221,7 @@ pub struct FeatureSet {
     pub bb_width: Option<Decimal>,
     pub bb_position: Option<Decimal>,
     pub atr_pct: Option<Decimal>,
+    pub vwap: Option<Decimal>,
 
     // Advanced Statistical Features (Phase 2)
     pub hurst_exponent: Option<Decimal>,

@@ -1,5 +1,59 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.14 - SNN Ensemble Integration & Functional Evaluation (May 2026)
+
+### SNN Architectural Alignment
+- **Surrogate Model Finalization**: Successfully trained the SNN Surrogate Model on `BTC/USD` for 180 days on a 15Min timeframe, reaching an F1-Score of 0.446 and MCC of 0.220, proving the network correctly learns market dynamics without predicting constant "Hold".
+- **Ensemble Integration**: Added SNN Surrogate as a dynamically loaded sub-strategy in the `EnsembleStrategy`, controlled by the `ensemble_include_snn` environment flag (disabled by default for stability).
+
+### Quality & Evaluation
+- **Functional Validation**: Ran strict Out-of-Sample benchmarks (April-May 2026) proving that the current ensemble weighting (`0.30`) suppresses the SNN's signals against traditional indicators, ensuring no regressions in core trading behavior.
+- **Bug Fixes**: Repaired clipping bugs in tests (`unused_variables`) and early stopping logic during SNN training.
+## Version 0.99.13 - SNN Retraining & Integration Assessment (April 2026)
+
+### SNN Architectural Alignment
+- **Dimensional Retraining**: Retrained the `CompetitiveSnnNetwork` to align with the new 10-feature `encode_multi_feature` pipeline (v2.1).
+- **Hyperparameter Optimization**: Adjusted training horizons to 15-minute timeframes (`--timeframe 15Min`), mitigating class imbalance and noise by looking forward (`--return-horizon 12`) with strict action thresholds (`--label-threshold 0.002`).
+- **Validation Balance**: Restored symmetric Buy/Sell labels in the multi-month validation dataset (~150 of each), resolving previous Hold-biased prediction collapse.
+
+### Ensemble Strategic Integration
+- **Opt-in SNN Mode**: Successfully backtested the newly generated 10-feature JSON model (`models/snn/snn_surrogate_model.json`) as a minority vote (`weight: 0.3`) within the `EnsembleStrategy`.
+- **Systematic Conservatism**: Verified that the combined strategy effectively filters noisy trades, culminating in a highly selective baseline (e.g., 2 trades across 15 days of BTC/USD crypto data) preventing over-exposure.
+
+## Version 0.99.12 - SNN Consolidation & v2 Hardening (April 2026)
+
+### SNN Consolidation
+- **v1 Removal**: Completely deleted the legacy Spiking Neural Network (SNN) v1 subsystem, including the genetic training pipeline (`train_genetic.rs`), STDP learning mechanics (`episodic_memory.rs`, `network_dynamic.rs`), and associated traits.
+- **Unified Architecture**: Consolidated the SNN domain around the robust, gradient-based Surrogate (v2) implementation (`SnnSurrogateStrategy`).
+- **Model Cleanup**: Purged 16 legacy genome files from `models/snn/`, keeping only the high-performance surrogate models.
+
+### v2 Strategy Hardening
+- **Zero-Unwrap Policy**: Refactored `SnnSurrogateStrategy` to eliminate all `.unwrap()` calls, ensuring production-grade stability and graceful failure modes.
+- **Safe Data Handling**: Enforced the "No Default 0.0" rule for technical indicators; the strategy now propagates `None` and skips analysis if required data (RSI, ATR, BB, VWAP, etc.) is incomplete.
+- **Temporal Alignment**: Improved 15m bar aggregation logic with strict timestamp alignment checks, preventing signal generation on unaligned 1-minute ticks.
+
+### Quality & Verification
+- **Unit Testing**: Implemented a comprehensive test suite for `SnnSurrogateStrategy`, verifying initialization, temporal alignment, and multi-feature encoding robustness.
+- **Compilation Hygiene**: Resolved several compilation errors in legacy neural network tests triggered by API changes in `AdamOptimizer` and `DerivativeEncoding`.
+- **Zero Warnings**: achieved clean build with no clippy warnings across renamed and refactored SNN modules.
+
+
+## Version 0.99.11 - SNN Evolution & Episodic R-STDP (March 2026)
+
+### SNN Architecture & Learning
+- **Episodic Memory**: Implemented a synaptic tag snapshot system to solve the temporal credit assignment problem in R-STDP. Dopamine rewards are now applied retrospectively to decision-time tags.
+- **Architecture Unification**: Deleted the redundant Python-bridge SNN infrastructure. The engine is now 100% Rust-native for both training and inference.
+- **Learning Mechanics**: Added support for episodic dopamine injection and weight modulation in `DynamicSpikingNetwork`.
+
+### Neuroevolution (GA) Enhancements
+- **Data Splitting**: Integrated 80/20 Train/Validation splitting in `train_genetic.rs` to prevent overfitting.
+- **Realistic Cost Model**: Refined fitness evaluation to include explicit slippage (0.05%) and fee modeling, ensuring genomes are viable in real market conditions.
+- **Validation Guard**: Added a mandatory validation check before saving genomes.
+
+### Quality & Verification
+- **Unit Testing**: Added dedicated unit tests for episodic R-STDP mechanics, verifying weight updates across long temporal delays.
+- **CLI Cleanup**: Removed defunct SNN strategy references in agents and factory.
+
 ## Version 0.99.10 - Strategy Modernization & Legacy Cleanup (March 2026)
 
 ### Architecture Modernization

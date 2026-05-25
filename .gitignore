@@ -24,6 +24,9 @@ check_output.txt
 .rustrade/
 data/
 
+# --- ML MODELS ---
+models/
+
 # --- INTERNAL DOCS (not versioned) ---
 docs/BENCHMARK_CORRECTIVE_PLAN.md
 docs/OPTIMIZATION_BOTTLENECKS.md
@@ -39,3 +42,8 @@ docs/OPTIMIZATION_BOTTLENECKS.md
 /tmp/
 log/*.log
 *.log
+
+# --- PYTHON ---
+**/.venv/
+**/__pycache__/
+**/*.pyc

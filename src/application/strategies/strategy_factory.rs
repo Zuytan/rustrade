@@ -1,9 +1,10 @@
 use crate::application::agents::analyst_config::AnalystConfig;
 use crate::application::strategies::{
     EnsembleStrategy, OrderFlowStrategy, SMCStrategy, StatisticalMomentumStrategy, TradingStrategy,
-    ZScoreMeanReversionStrategy,
+    ZScoreMeanReversionStrategy, snn_surrogate_strategy::SnnSurrogateStrategy,
 };
 use crate::domain::market::strategy_config::StrategyMode;
+use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 
 pub struct StrategyFactory;
@@ -40,25 +41,36 @@ impl StrategyFactory {
                 config.strategy.orderflow_volume_profile_lookback,
             )),
             StrategyMode::ML => {
-                let onnx_path = std::path::PathBuf::from("data/ml/model.onnx");
-                let bin_path = std::path::PathBuf::from("data/ml/model.bin");
-
-                let predictor: Arc<Box<dyn crate::application::ml::predictor::MLPredictor>> =
-                    if onnx_path.exists() {
-                        let p =
-                            crate::application::ml::onnx_predictor::OnnxPredictor::new(onnx_path);
-                        Arc::new(Box::new(p))
-                    } else {
-                        let p =
-                            crate::application::ml::smartcore_predictor::SmartCorePredictor::new(
-                                bin_path,
-                            );
-                        Arc::new(Box::new(p))
-                    };
-
-                Arc::new(crate::application::strategies::MLStrategy::new(
-                    predictor, 0.0005, // Threshold: 0.05% expected return (Regression Mode)
-                ))
+                tracing::warn!(
+                    "ML strategy mode is no longer supported. Falling back to Ensemble."
+                );
+                Arc::new(EnsembleStrategy::modern_ensemble(config))
+            }
+            StrategyMode::SnnSurrogate => {
+                match SnnSurrogateStrategy::new(
+                    &config.strategy.snn_surrogate_model_path,
+                    config
+                        .strategy
+                        .snn_activation_threshold
+                        .to_f64()
+                        .unwrap_or(0.3),
+                    config.strategy.snn_surrogate_window_size,
+                    config
+                        .strategy
+                        .snn_encoder_threshold
+                        .to_f64()
+                        .unwrap_or(0.5),
+                ) {
+                    Ok(strategy) => Arc::new(strategy),
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to load SNN Surrogate strategy: {}. Falling back to Ensemble.",
+                            e
+                        );
+                        // Fallback to Ensemble if surrogate fails
+                        Arc::new(EnsembleStrategy::modern_ensemble(config))
+                    }
+                }
             }
         }
     }

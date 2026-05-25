@@ -66,10 +66,11 @@ impl Simulator {
         symbol: &str,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
+        timeframe: &str,
     ) -> Result<BacktestResult> {
         let bars = self
             .market_data
-            .get_historical_bars(symbol, start, end, "1Min")
+            .get_historical_bars(symbol, start, end, timeframe)
             .await
             .context("Failed to fetch historical bars")?;
         self.run_with_bars(symbol, &bars, start, end, None).await

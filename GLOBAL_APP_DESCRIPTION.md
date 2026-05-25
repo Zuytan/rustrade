@@ -63,8 +63,9 @@ Rustrade supports a diverse suite of strategies. The system has evolved to prior
 - **Market Structure**: `SMC` (Smart Money Concepts - Order Blocks, FVGs with Strict Zone Mitigation logic).
 - **Order Flow**: `OrderFlow` (Institutional footprints via stacked imbalances, Cumulative Delta, HVN support/resistance).
 - **Machine Learning**: `MLStrategy` (Random Forest Regressor utilizing advanced statistical features).
+- **Spiking Neural Network**: `SnnSurrogate` (Gradient-based Surrogate SNN using competitive excitatory/inhibitory pathways).
 - **Adaptive**: `RegimeAdaptive` (Dynamic ensemble that switches strategies and risk profile based on Hurst Exponent and Volatility).
-- **Ensemble**: Voting system combining multiple strategies.
+- **Ensemble**: Voting system combining multiple strategies (StatMomentum, ZScore, SMC, and an optional SNN Surrogate module).
 
 
 
@@ -76,7 +77,7 @@ Rustrade supports a diverse suite of strategies. The system has evolved to prior
 ### Machine Learning Architecture
 - **Data Collection**: `DataCollector` agent passively captures enriched `FeatureSet` (including Order Flow and Statistical Microstructure) and labels them with future returns (1m, 5m, 15m).
 - **Inference Engine**: `SmartCorePredictor` (SmartCore) or `InferenceEngine` (ONNX/XGBoost) loads pre-trained models to generate real-time trade probabilities.
-- **Training Pipeline**: 
+- **Training Pipelines**: 
   - `train_gen`: High-speed dataset generation via historical backtesting.
   - `train_ml`: Standalone binary for offline model retraining.
 

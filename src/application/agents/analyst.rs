@@ -318,6 +318,16 @@ impl Analyst {
                                  context.position_manager.clear_pending();
                                  if order_update.side == OrderSide::Buy {
                                      context.last_entry_time = Some(order_update.timestamp.timestamp_millis());
+                                     context.last_entry_price = order_update.filled_avg_price;
+                                 } else if order_update.side == OrderSide::Sell {
+                                     if let (Some(entry), Some(exit)) = (context.last_entry_price, order_update.filled_avg_price) {
+                                         let pnl_pct = (exit - entry) / entry;
+                                         use rust_decimal::prelude::ToPrimitive;
+                                         if let Some(pct) = pnl_pct.to_f64() {
+                                             context.strategy.inject_trade_feedback(&order_update.symbol, pct);
+                                         }
+                                     }
+                                     context.last_entry_price = None;
                                  }
                              }
                              OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => {
@@ -423,9 +433,6 @@ impl Analyst {
             }
         };
 
-        // Reset config to default to prevent regime-based config drift
-        context.config = self.config.clone();
-
         // 2. Get portfolio for pipeline context
         let portfolio = self.execution_service.get_portfolio().await.ok();
 
@@ -440,9 +447,16 @@ impl Analyst {
         // 4. Process through pipeline (6 discrete stages)
         if let Some(proposal) = self.pipeline.process(&mut pipeline_ctx).await {
             // 5. Send proposal to risk manager
+            let side = proposal.side;
             match self.proposal_tx.try_send(proposal) {
                 Ok(_) => {
                     info!("Analyst [{}]: Proposal sent to RiskManager ✓", symbol);
+                    // NEW: Mark as pending immediately to prevent double-proposing in same/next candle
+                    // before the async order confirmation arrives (critical for high-speed simulation).
+                    pipeline_ctx
+                        .context
+                        .position_manager
+                        .set_pending_order(side, timestamp);
                 }
                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                     warn!(

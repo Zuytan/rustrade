@@ -121,6 +121,17 @@ pub struct StrategyConfig {
     // Risk Scaling
     pub risk_appetite_score: Option<u8>,
 
+    // SNN Configuration (v2 Surrogate only)
+    pub snn_activation_threshold: Decimal,
+    pub snn_encoder_threshold: Decimal,
+    pub snn_surrogate_model_path: String,
+    pub snn_surrogate_window_size: usize,
+    /// If true, include SNN Surrogate as an additional sub-strategy in the Ensemble.
+    /// Requires a valid `snn_surrogate_model_path`. Disabled by default (false).
+    pub ensemble_include_snn: bool,
+    /// Weight given to the SNN Surrogate in the ensemble vote. Default: 0.3.
+    pub ensemble_snn_weight: Decimal,
+
     // Market / Execution specific
     pub spread_bps: Decimal,
 }
@@ -245,6 +256,12 @@ impl Default for StrategyConfig {
             trend_timeframe: Timeframe::OneHour,
             enable_ml_data_collection: true,
             risk_appetite_score: None,
+            snn_activation_threshold: dec!(0.8),
+            snn_encoder_threshold: dec!(0.01),
+            snn_surrogate_model_path: "models/snn/snn_surrogate_model.json".to_string(),
+            snn_surrogate_window_size: 50,
+            ensemble_include_snn: false,
+            ensemble_snn_weight: dec!(0.3),
             spread_bps: dec!(0.5),
         }
     }

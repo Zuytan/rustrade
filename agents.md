@@ -28,6 +28,7 @@ To ensure consistency, every Agent **MUST** start a task by:
 
 ### Code Quality
 - **NEVER** use `f64` for money calculations → use `rust_decimal::Decimal`
+  - **Exception**: Neural network computation modules (`domain/snn/surrogate*`, `domain/snn/izhikevich_diff*`, `domain/snn/optimizer*`, `domain/snn/loss*`) MAY use `f64` for gradients, membrane potentials, and spike computations (requires `exp`, SIMD, sub-epsilon precision)
 - **NEVER** use `.unwrap()` in production code → use proper error handling (`?`, `match`, `.expect()` with context)
 - **NEVER** use default 0.0 values (e.g. `unwrap_or(0.0)`) → use `Option` and propagate `None`
 - **ALWAYS** write tests BEFORE implementation (TDD)

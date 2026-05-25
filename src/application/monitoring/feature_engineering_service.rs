@@ -136,6 +136,8 @@ pub struct TechnicalFeatureEngineeringService {
     adx: ManualAdx,
     /// Price history kept in Decimal until conversion for statistical functions (hurst, skewness, volatility).
     price_history: VecDeque<Decimal>,
+    /// Volume history for VWAP and Volume EMA
+    volume_history: VecDeque<f64>,
 }
 
 impl TechnicalFeatureEngineeringService {
@@ -167,7 +169,8 @@ impl TechnicalFeatureEngineeringService {
             ema_slow: ExponentialMovingAverage::new(config.strategy.ema_slow_period)
                 .expect("ema_slow_period from AnalystConfig must be > 0"),
             adx: ManualAdx::new(config.strategy.adx_period),
-            price_history: VecDeque::with_capacity(100),
+            price_history: VecDeque::with_capacity(200),
+            volume_history: VecDeque::with_capacity(200),
         }
     }
 }
@@ -284,6 +287,31 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
 
         let atr_pct = if price > 0.0 { atr_val / price } else { 0.0 };
 
+        // 50-period rolling VWAP
+        self.volume_history
+            .push_back(candle.volume.to_f64().unwrap_or(0.0));
+        if self.volume_history.len() > 100 {
+            self.volume_history.pop_front();
+        }
+
+        let mut sum_pv = 0.0;
+        let mut sum_v = 0.0;
+        let vwap_window = 50.min(self.volume_history.len());
+        let start_v = self.volume_history.len() - vwap_window;
+        let start_p = prices_vec.len().saturating_sub(vwap_window);
+
+        for j in 0..vwap_window {
+            let p_idx = start_p + j;
+            let v_idx = start_v + j;
+            if p_idx < prices_vec.len() {
+                let p = prices_vec[p_idx];
+                let v = self.volume_history[v_idx];
+                sum_pv += p * v;
+                sum_v += v;
+            }
+        }
+        let vwap_val = if sum_v > 1e-10 { sum_pv / sum_v } else { price };
+
         use rust_decimal::Decimal;
         let to_dec = |v: f64| Decimal::from_f64_retain(v);
         let to_dec_opt = |v: Option<f64>| v.and_then(Decimal::from_f64_retain);
@@ -307,6 +335,7 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
             bb_width: to_dec(bb_width),
             bb_position: to_dec(bb_position),
             atr_pct: to_dec(atr_pct),
+            vwap: to_dec(vwap_val),
 
             // Advanced Statistical Features (Phase 2)
             hurst_exponent: to_dec_opt(hurst_exponent),
@@ -480,5 +509,47 @@ mod tests {
         assert!(features.skewness.is_none());
         assert!(features.realized_volatility.is_none());
         assert!(features.momentum_normalized.is_none());
+    }
+    #[test]
+    fn test_vwap_computed_and_present_in_feature_set() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        for _ in 0..5 {
+            service.update(&create_test_candle(100.0));
+        }
+
+        let features = service.update(&create_test_candle(100.0));
+        assert!(features.vwap.is_some());
+    }
+
+    #[test]
+    fn test_vwap_correct_value_uniform_volume() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        // Price from 100 to 110, volume is 100 always
+        for i in 0..10 {
+            let price = 100.0 + i as f64;
+            service.update(&create_trending_candle(price, 0.5));
+        }
+
+        let features = service.update(&create_trending_candle(110.0, 0.5));
+
+        // Sum(P * V) / Sum(V). Since V is uniform, it's just the average of P.
+        // Prices: 100, 101, ..., 110. Average = 105.0.
+        assert_eq!(features.vwap.unwrap(), dec!(105.0));
+    }
+
+    #[test]
+    fn test_volume_history_capped_at_100() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        for _ in 0..150 {
+            service.update(&create_test_candle(100.0));
+        }
+
+        assert_eq!(service.volume_history.len(), 100);
     }
 }

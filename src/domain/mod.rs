@@ -33,4 +33,5 @@ pub mod sentiment;
 pub mod listener;
 
 // Data Validation domain
+pub mod snn;
 pub mod validation;
