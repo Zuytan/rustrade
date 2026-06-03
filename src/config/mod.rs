@@ -73,7 +73,7 @@ pub struct Config {
     pub asset_class: AssetClass,
     pub broker: BrokerEnvConfig,
     pub strategy: crate::domain::config::StrategyConfig,
-    pub risk: crate::domain::config::RiskConfig,
+    pub risk: crate::domain::risk::risk_config::RiskConfig,
     pub platform: PlatformConfig,
     pub observability: ObservabilityEnvConfig,
     pub simulation: SimulationEnvConfig,
@@ -127,7 +127,7 @@ impl Config {
     }
 
     /// Create a RiskConfig domain value object from this Config
-    pub fn to_risk_config(&self) -> Result<crate::domain::config::RiskConfig> {
+    pub fn to_risk_config(&self) -> Result<crate::domain::risk::risk_config::RiskConfig> {
         Ok(self.risk.clone())
     }
 

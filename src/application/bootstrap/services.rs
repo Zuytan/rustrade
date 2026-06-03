@@ -49,7 +49,7 @@ impl ServicesBootstrap {
             Some(persistence.candle_repository.clone()),
             portfolio.clone(),
             metrics.clone(),
-        );
+        )?;
 
         // 2. Initialize Adaptive Optimization Services
         let performance_monitor = if config.platform.adaptive_optimization_enabled {

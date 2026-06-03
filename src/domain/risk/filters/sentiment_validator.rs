@@ -152,6 +152,7 @@ mod tests {
         let prices = HashMap::new();
 
         let sentiment = Sentiment {
+            symbol: None,
             value: 10,
             classification: SentimentClassification::ExtremeFear,
             timestamp: chrono::Utc::now(),
@@ -181,6 +182,7 @@ mod tests {
         let prices = HashMap::new();
 
         let sentiment = Sentiment {
+            symbol: None,
             value: 10,
             classification: SentimentClassification::ExtremeFear,
             timestamp: chrono::Utc::now(),
@@ -212,6 +214,7 @@ mod tests {
         let prices = HashMap::new();
 
         let sentiment = Sentiment {
+            symbol: None,
             value: 20, // Below 30
             classification: SentimentClassification::ExtremeFear,
             timestamp: chrono::Utc::now(),

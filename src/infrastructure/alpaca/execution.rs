@@ -61,6 +61,9 @@ impl AlpacaExecutionService {
 
         tokio::spawn(async move {
             info!("AlpacaExecutionService: Starting background portfolio poller");
+            let mut backoff_ms: u64 = 1000;
+            let max_backoff_ms: u64 = 60_000;
+
             loop {
                 let fetch_result = async {
                     let account_url = format!("{}/v2/account", base_url_clone);
@@ -175,19 +178,21 @@ impl AlpacaExecutionService {
                     Ok(portfolio) => {
                         let mut guard = portfolio_clone.write().await;
                         *guard = portfolio.clone();
-                        // Debug logging disabled - uncomment if needed for troubleshooting
-                        // tracing::debug!(
-                        //     "AlpacaExecutionService: Portfolio cache updated - Cash: ${}, Positions: {}",
-                        //     portfolio.cash,
-                        //     portfolio.positions.len()
-                        // );
+                        backoff_ms = 1000; // Reset on success
                     }
                     Err(e) => {
                         error!("AlpacaExecutionService: Portfolio poll failed: {}", e);
+                        // Exponential backoff
+                        backoff_ms = std::cmp::min(backoff_ms * 2, max_backoff_ms);
                     }
                 }
 
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .subsec_nanos();
+                let jitter = (nanos as f64 / 1_000_000_000.0 * 0.1 * backoff_ms as f64) as u64;
+                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms + jitter)).await;
             }
         });
 

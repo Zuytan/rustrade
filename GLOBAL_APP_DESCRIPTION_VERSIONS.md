@@ -1,5 +1,37 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.18 - Remove Code Coverage & Test Fix (June 2026)
+
+### CI/CD Workflow Optimization
+- **Removed Code Coverage Job**: Deleted the unused `coverage` job using `cargo-tarpaulin` and Codecov upload from the GitHub Actions CI workflow to speed up CI pipelines since the coverage reports are not currently published.
+
+### Test Stability & E2E Verification
+- **E2E Integration Test Fix**: Fixed a critical issue in `test_e2e_golden_cross_buy` where the background agent tasks were aborted early. Resolved by properly retaining the `JoinSet` returned by `Application::start` in a local variable during the test lifecycle, ensuring full agent execution and order placement validation.
+
+## Version 0.99.17 - Frontend Redesign & WebSocket Shutdown Fix (June 2026)
+
+### Frontend UI Redesign & Layout Reorganization
+- **Dynamic Alignment of Metric Cards**: Redesigned all 5 dashboard metrics cards to set a uniform height of `110.0`. Stacked progress indicators (Win Rate, Portfolio Mood) vertically below the value instead of horizontally, preventing layout compression and horizontal overflow on smaller screens.
+- **Structured Right-Panel Layout**: Grouped the previously uncontained, stacked feeds on the right panel into two separate, styled `Card` containers with proportional heights based on available vertical space.
+- **Tabbed Feed Layout**: Introduced a modern Tabbed UI in the bottom right card to toggle between **News** and **Activity**, eliminating the issue of three stacked scroll areas, reducing visual noise, and avoiding layout overflows.
+- **Responsive Architecture Graph**: Redesigned the "Agent Data Flow" diagram in the Architecture view to be fully responsive by scaling node spacing, radius, and arrows dynamically relative to the panel width, and wrapping it in a standard `Card` component.
+- **Overview Metrics & Details**: Redesigned the system overview metrics cards to stretch and fill a structured 4-column layout, and updated agent detail cards to dynamically list all published key-value metrics from `status.metrics` with state colors based on severity.
+
+### System & Connection Stability
+- **WebSocket Shutdown Fix**: Resolved a critical bug where `WebSocketManager` would reconnect infinitely after receiving a `Shutdown` command. Defined a new `ConnectionLoopResult` enum to cleanly break the background task loop and exit upon shutdown.
+
+## Version 0.99.16 - Code Quality & Strict Compliance (June 2026)
+
+### Production Rules Enforcement
+- **Zero Unwrap Policy in Production**: Scanned and purged `.unwrap()` usages from `liquidation_service.rs` replacing them with explicit `match` blocks for safe error handling. Remaining `unwrap()` usages were validated to strictly belong to test suites (`#[cfg(test)]`).
+- **Strict Decimal Finance**: Eliminated `f64` conversions in risk calculations:
+  - Rewrote `HardStopManager` to natively use `Decimal` for percentages and P&L evaluations.
+  - Converted circuit breaker ratio tracking from floats to precise `Decimal` limits in `CircuitBreakerService`.
+  - Refactored `KellyStats` (`win_rate`) and variance calculations in `SessionManager` to utilize `rust_decimal` macros and struct fields.
+
+### Quality Assurance
+- **Strict Linting & Correctness**: Maintained a clean build with zero warnings under `cargo clippy --all-targets -- -D warnings`.
+- **Test Integrity**: Maintained 100% test pass rate over the integration and unit tests following deep numerical refactoring.
 ## Version 0.99.15 - Dependency Upgrades & Security Hardening (May 2026)
 
 ### Dependency Upgrades

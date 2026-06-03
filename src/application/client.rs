@@ -50,7 +50,9 @@ impl SystemClient {
         }
 
         // 4. Check News
-        if let Ok(news) = self.handle.news_rx.try_recv() {
+        if let Some(ref mut rx) = self.handle.news_rx
+            && let Ok(news) = rx.try_recv()
+        {
             return Some(SystemEvent::News(news));
         }
 

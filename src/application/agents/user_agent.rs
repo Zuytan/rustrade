@@ -60,6 +60,13 @@ impl ActivityEvent {
     }
 }
 
+/// Tab options for the right panel in the Dashboard
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RightPanelTab {
+    News,
+    Activity,
+}
+
 pub struct UserAgent {
     pub client: SystemClient,
     pub portfolio: Arc<RwLock<Portfolio>>,
@@ -97,11 +104,12 @@ pub struct UserAgent {
 
     // Dashboard Navigation State
     pub current_view: crate::interfaces::ui_components::DashboardView,
+    pub right_panel_tab: RightPanelTab,
 
     // Performance & Risk metrics (Dynamic)
     pub latency_ms: u64,
     pub risk_score: u8, // Risk appetite score (1-9)
-    pub market_sentiment: Option<Sentiment>,
+    pub symbol_sentiments: std::collections::HashMap<String, Sentiment>,
 
     // Phase 4: Analytics State
     pub monte_carlo_result: Option<crate::domain::performance::monte_carlo::MonteCarloResult>,
@@ -196,9 +204,10 @@ impl UserAgent {
             i18n,
             settings_panel,
             current_view: crate::interfaces::ui_components::DashboardView::Dashboard,
+            right_panel_tab: RightPanelTab::News,
             latency_ms: 12,                 // Default initial value
             risk_score: initial_risk_score, // Use the score from the loaded settings
-            market_sentiment: None,
+            symbol_sentiments: std::collections::HashMap::new(),
             monte_carlo_result: None,
             correlation_matrix: std::collections::HashMap::new(),
             // Dynamic Symbol Selection
@@ -324,7 +333,9 @@ impl UserAgent {
                         "UserAgent: Received new sentiment: {} ({})",
                         sentiment.value, sentiment.classification
                     );
-                    self.market_sentiment = Some(sentiment);
+                    if let Some(symbol) = sentiment.symbol.clone() {
+                        self.symbol_sentiments.insert(symbol, sentiment);
+                    }
                 }
                 SystemEvent::News(news) => {
                     debug!(

@@ -106,14 +106,14 @@ async fn test_repro_dynamic_empty_portfolio_buys() {
             strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
             ..rustrade::domain::config::StrategyConfig::default()
         },
-        risk: rustrade::domain::config::RiskConfig {
+        risk: rustrade::domain::risk::risk_config::RiskConfig {
             max_positions: 5,
             trade_quantity: Decimal::from(1),
             order_cooldown_seconds: 0,
             risk_per_trade_percent: dec!(0.1),
             max_position_size_pct: dec!(0.2),
             max_loss_per_trade_pct: dec!(-0.05),
-            ..rustrade::domain::config::RiskConfig::default()
+            ..rustrade::domain::risk::risk_config::RiskConfig::default()
         },
         ..rustrade::application::agents::analyst::AnalystConfig::default()
     };

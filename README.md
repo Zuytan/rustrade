@@ -79,7 +79,7 @@ The application is configured primarily via environment variables. You can set t
 ### Core & Connectivity
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODE` | `mock` | Trading mode: `mock`, `alpaca`, `oanda`. |
+| `MODE` | `mock` | Trading mode: `mock`, `alpaca`, `binance`. |
 | `ASSET_CLASS` | `stock` | Asset class: `stock` or `crypto`. |
 | `ALPACA_API_KEY` | - | Your Alpaca API Key. |
 | `ALPACA_SECRET_KEY` | - | Your Alpaca Secret Key. |

@@ -43,12 +43,12 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
             rsi_threshold: dec!(99.0),
             ..rustrade::domain::config::StrategyConfig::default()
         },
-        risk: rustrade::domain::config::RiskConfig {
+        risk: rustrade::domain::risk::risk_config::RiskConfig {
             max_positions: 1,
             trade_quantity: Decimal::from(1),
             order_cooldown_seconds: 0,
             risk_per_trade_percent: dec!(0.01),
-            ..rustrade::domain::config::RiskConfig::default()
+            ..rustrade::domain::risk::risk_config::RiskConfig::default()
         },
         platform: rustrade::config::PlatformConfig {
             symbols: vec!["BTC/USD".to_string()],
@@ -232,10 +232,9 @@ async fn test_e2e_golden_cross_buy() -> anyhow::Result<()> {
         ),
     };
 
-    // 4. Run Application (BACKGROUND)
-    tokio::spawn(async move {
-        app.start().await.unwrap();
-    });
+    // 4. Run Application
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let (_system_handle, _join_set) = app.start(cancel_token.clone()).await?;
 
     // Wait for agents to start
     sleep(Duration::from_millis(100)).await;

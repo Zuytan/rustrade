@@ -8,7 +8,14 @@ pub fn render_architecture_view(ui: &mut egui::Ui, agent: &UserAgent) {
     ui.vertical(|ui| {
         // Header
         ui.add_space(DesignSystem::SPACING_MEDIUM);
-        ui.heading("System Architecture & Agent Status");
+        ui.heading(
+            egui::RichText::new("⚙ System Architecture & Agent Status")
+                .size(24.0)
+                .strong()
+                .color(DesignSystem::TEXT_PRIMARY),
+        );
+        ui.add_space(DesignSystem::SPACING_SMALL);
+        ui.separator();
         ui.add_space(DesignSystem::SPACING_LARGE);
 
         // Fetch metrics from registry (UI thread safe)
@@ -26,10 +33,25 @@ pub fn render_architecture_view(ui: &mut egui::Ui, agent: &UserAgent) {
         render_global_halt_status(ui, &statuses);
 
         ui.add_space(DesignSystem::SPACING_LARGE);
-        ui.separator();
+
+        // 2. Agent Graph (Enclosed in a Card)
+        crate::interfaces::components::card::Card::new()
+            .title("Agent Data Flow")
+            .show(ui, |ui| {
+                render_agent_graph(ui, &statuses);
+            });
+
         ui.add_space(DesignSystem::SPACING_LARGE);
 
-        // 2. Agent Grid
+        // 3. Agent Grid Section
+        ui.heading(
+            egui::RichText::new("📊 Active Agents Detail")
+                .size(18.0)
+                .strong()
+                .color(DesignSystem::TEXT_PRIMARY),
+        );
+        ui.add_space(DesignSystem::SPACING_MEDIUM);
+
         egui::ScrollArea::vertical().show(ui, |ui| {
             render_agent_grid(ui, &statuses);
         });
@@ -51,29 +73,34 @@ fn render_system_metrics(ui: &mut egui::Ui, statuses: &[AgentStatus]) {
         .filter(|s| s.health == HealthStatus::Dead)
         .count();
 
-    ui.horizontal(|ui| {
-        render_metric_card(
-            ui,
-            "Total Agents",
-            &total_agents.to_string(),
-            DesignSystem::TEXT_PRIMARY,
-        );
-        ui.add_space(DesignSystem::SPACING_MEDIUM);
-        render_metric_card(
-            ui,
-            "Healthy",
-            &healthy_count.to_string(),
-            DesignSystem::SUCCESS,
-        );
-        ui.add_space(DesignSystem::SPACING_MEDIUM);
-        render_metric_card(
-            ui,
-            "Degraded",
-            &degraded_count.to_string(),
-            DesignSystem::WARNING,
-        );
-        ui.add_space(DesignSystem::SPACING_MEDIUM);
-        render_metric_card(ui, "Dead", &dead_count.to_string(), DesignSystem::DANGER);
+    ui.columns(4, |cols| {
+        cols[0].push_id("arch_total_agents", |ui| {
+            render_metric_card(
+                ui,
+                "Total Agents",
+                &total_agents.to_string(),
+                DesignSystem::TEXT_PRIMARY,
+            );
+        });
+        cols[1].push_id("arch_healthy", |ui| {
+            render_metric_card(
+                ui,
+                "Healthy",
+                &healthy_count.to_string(),
+                DesignSystem::SUCCESS,
+            );
+        });
+        cols[2].push_id("arch_degraded", |ui| {
+            render_metric_card(
+                ui,
+                "Degraded",
+                &degraded_count.to_string(),
+                DesignSystem::WARNING,
+            );
+        });
+        cols[3].push_id("arch_dead", |ui| {
+            render_metric_card(ui, "Dead", &dead_count.to_string(), DesignSystem::DANGER);
+        });
     });
 }
 
@@ -84,6 +111,7 @@ fn render_metric_card(ui: &mut egui::Ui, label: &str, value: &str, color: egui::
         .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
         .inner_margin(16.0)
         .show(ui, |ui| {
+            ui.set_width(ui.available_width());
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new(label)
@@ -94,6 +122,104 @@ fn render_metric_card(ui: &mut egui::Ui, label: &str, value: &str, color: egui::
                 ui.label(egui::RichText::new(value).size(24.0).strong().color(color));
             });
         });
+}
+
+fn render_agent_graph(ui: &mut egui::Ui, statuses: &[AgentStatus]) {
+    let width = ui.available_width().max(400.0);
+    let (response, painter) = ui.allocate_painter(egui::vec2(width, 180.0), egui::Sense::hover());
+    let rect = response.rect;
+
+    let center_x = rect.center().x;
+    let center_y = rect.center().y;
+
+    // Dynamically calculate spacing based on available width
+    let x_spacing = (rect.width() / 8.0).clamp(50.0, 150.0);
+    let y_spacing = 40.0;
+    let node_radius = (x_spacing * 0.22).clamp(16.0, 24.0);
+
+    // Define positions
+    let positions = [
+        (
+            "Listener",
+            egui::pos2(center_x - 3.0 * x_spacing, center_y - y_spacing),
+        ),
+        (
+            "ConnectionHealthService",
+            egui::pos2(center_x - 3.0 * x_spacing, center_y + y_spacing),
+        ),
+        ("Sentinel", egui::pos2(center_x - 1.5 * x_spacing, center_y)),
+        ("Analyst", egui::pos2(center_x, center_y)),
+        (
+            "RiskManager",
+            egui::pos2(center_x + 1.5 * x_spacing, center_y),
+        ),
+        ("Executor", egui::pos2(center_x + 3.0 * x_spacing, center_y)),
+        (
+            "UserAgent",
+            egui::pos2(center_x, center_y - 1.8 * y_spacing),
+        ),
+    ];
+
+    // Draw edges
+    let stroke = egui::Stroke::new(2.0, DesignSystem::TEXT_MUTED);
+    let draw_arrow = |from: egui::Pos2, to: egui::Pos2| {
+        let dir = (to - from).normalized();
+        let start = from + dir * (node_radius + 2.0);
+        let end = to - dir * (node_radius + 2.0);
+        painter.line_segment([start, end], stroke);
+        // Arrow head scaled with node_radius
+        let head_len = (node_radius * 0.4).clamp(6.0, 10.0);
+        let angle = std::f32::consts::PI / 6.0;
+        let p1 = end
+            - egui::Vec2::new(
+                dir.x * angle.cos() - dir.y * angle.sin(),
+                dir.x * angle.sin() + dir.y * angle.cos(),
+            ) * head_len;
+        let p2 = end
+            - egui::Vec2::new(
+                dir.x * angle.cos() + dir.y * angle.sin(),
+                -dir.x * angle.sin() + dir.y * angle.cos(),
+            ) * head_len;
+        painter.line_segment([end, p1], stroke);
+        painter.line_segment([end, p2], stroke);
+    };
+
+    draw_arrow(positions[0].1, positions[2].1); // Listener -> Sentinel
+    draw_arrow(positions[1].1, positions[2].1); // ConnectionHealth -> Sentinel
+    draw_arrow(positions[2].1, positions[3].1); // Sentinel -> Analyst
+    draw_arrow(positions[3].1, positions[4].1); // Analyst -> RiskManager
+    draw_arrow(positions[4].1, positions[5].1); // RiskManager -> Executor
+    draw_arrow(positions[6].1, positions[3].1); // UserAgent -> Analyst
+    draw_arrow(positions[6].1, positions[4].1); // UserAgent -> RiskManager
+
+    // Draw nodes
+    for (name, pos) in positions.iter() {
+        // Find status
+        let status = statuses.iter().find(|s| s.name == *name);
+        let color = if let Some(s) = status {
+            match s.health {
+                HealthStatus::Healthy => DesignSystem::SUCCESS,
+                HealthStatus::Degraded => DesignSystem::WARNING,
+                HealthStatus::Dead => DesignSystem::DANGER,
+                HealthStatus::Starting => DesignSystem::INFO,
+            }
+        } else {
+            DesignSystem::TEXT_MUTED
+        };
+
+        painter.circle_filled(*pos, node_radius, DesignSystem::BG_CARD);
+        painter.circle_stroke(*pos, node_radius, egui::Stroke::new(2.0, color));
+
+        let text_color = DesignSystem::TEXT_PRIMARY;
+        let label_offset = node_radius + 12.0;
+        painter.text(
+            *pos - egui::vec2(0.0, label_offset),
+            egui::Align2::CENTER_CENTER,
+            *name,
+            egui::FontId::proportional(11.0),
+            text_color,
+        );
+    }
 }
 
 fn render_agent_grid(ui: &mut egui::Ui, statuses: &[AgentStatus]) {
@@ -163,7 +289,7 @@ fn render_agent_card(ui: &mut egui::Ui, status: &AgentStatus) {
         .inner_margin(16.0)
         .show(ui, |ui| {
             ui.set_width(300.0);
-            ui.set_min_height(180.0); // Changed to min_height for expansion
+            ui.set_min_height(180.0); // Allow expansion for metrics
 
             ui.vertical(|ui| {
                 // Header
@@ -205,28 +331,61 @@ fn render_agent_card(ui: &mut egui::Ui, status: &AgentStatus) {
                     );
                 });
 
-                ui.add_space(DesignSystem::SPACING_MEDIUM);
+                ui.add_space(DesignSystem::SPACING_SMALL);
 
-                // Specialized Risk Information
-                if status.name == "RiskManager" && (is_halted || halt_level.is_some()) {
-                    ui.add_space(8.0);
+                // Dynamic metrics display
+                if !status.metrics.is_empty() {
+                    ui.add_space(DesignSystem::SPACING_SMALL);
+                    ui.label(
+                        egui::RichText::new("Metrics:")
+                            .size(11.0)
+                            .strong()
+                            .color(DesignSystem::TEXT_SECONDARY),
+                    );
+                    ui.add_space(4.0);
+
                     egui::Frame::NONE
                         .fill(DesignSystem::BG_WINDOW)
                         .corner_radius(DesignSystem::ROUNDING_SMALL)
                         .inner_margin(8.0)
                         .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
                             ui.vertical(|ui| {
-                                if let Some(drawdown) = status.metrics.get("drawdown") {
-                                    render_kv(ui, "Drawdown", drawdown, DesignSystem::DANGER);
-                                }
-                                if let Some(loss) = status.metrics.get("daily_loss") {
-                                    render_kv(ui, "Daily Loss", loss, DesignSystem::WARNING);
-                                }
-                                if let Some(level) = halt_level {
-                                    render_kv(ui, "Halt Level", level, DesignSystem::TEXT_PRIMARY);
-                                }
-                                if let Some(losses) = status.metrics.get("consecutive_losses") {
-                                    render_kv(ui, "Cons. Losses", losses, DesignSystem::DANGER);
+                                let mut sorted_keys: Vec<&String> = status.metrics.keys().collect();
+                                sorted_keys.sort();
+
+                                for key in sorted_keys {
+                                    let val = &status.metrics[key];
+
+                                    // Determine semantic color for specific keys/values
+                                    let val_color = match key.as_str() {
+                                        "circuit_breaker" => {
+                                            if val == "HALTED" {
+                                                DesignSystem::DANGER
+                                            } else {
+                                                DesignSystem::SUCCESS
+                                            }
+                                        }
+                                        "drawdown" | "consecutive_losses" => DesignSystem::DANGER,
+                                        "daily_loss" => DesignSystem::WARNING,
+                                        "queued_orders" | "queue" => {
+                                            if val != "0" {
+                                                DesignSystem::WARNING
+                                            } else {
+                                                DesignSystem::TEXT_PRIMARY
+                                            }
+                                        }
+                                        "active_symbols" | "top_movers_count" => {
+                                            DesignSystem::ACCENT_SECONDARY
+                                        }
+                                        _ => DesignSystem::TEXT_PRIMARY,
+                                    };
+
+                                    // Capitalize key for cleaner display
+                                    let display_key = key.replace('_', " ");
+
+                                    render_kv(ui, &display_key, val, val_color);
+                                    ui.add_space(2.0);
                                 }
                             });
                         });

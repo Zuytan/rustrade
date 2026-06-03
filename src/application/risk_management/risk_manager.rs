@@ -88,7 +88,7 @@ pub struct RiskManager {
     // Cache
     current_prices: HashMap<String, Decimal>,
     // pending_reservations moved to OrderReconciler
-    current_sentiment: Option<Sentiment>,
+    symbol_sentiments: HashMap<String, Sentiment>,
     // risk_state_repository removed (moved to state_manager)
     candle_repository: Option<Arc<dyn CandleRepository>>,
 
@@ -226,12 +226,10 @@ impl RiskManager {
             daily_pnl: Decimal::ZERO,
 
             // pending_reservations removed
-            current_sentiment: None,
-            // risk_state_repository removed
-            candle_repository,
-
             connection_health_service,
-            last_quote_timestamp: Utc::now().timestamp(),
+            last_quote_timestamp: Utc::now().timestamp_millis(),
+            symbol_sentiments: HashMap::new(),
+            candle_repository,
             metrics,
             agent_registry,
             startup_time: Utc::now().timestamp(),
@@ -566,11 +564,14 @@ impl RiskManager {
         &mut self,
         sentiment: Sentiment,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let sym = sentiment.symbol.as_deref().unwrap_or("UNKNOWN");
         info!(
-            "RiskManager: Received Market Sentiment: {} ({})",
-            sentiment.value, sentiment.classification
+            "RiskManager: Received Market Sentiment for {}: {} ({})",
+            sym, sentiment.value, sentiment.classification
         );
-        self.current_sentiment = Some(sentiment);
+        if let Some(symbol) = sentiment.symbol.clone() {
+            self.symbol_sentiments.insert(symbol, sentiment);
+        }
         Ok(())
     }
 
@@ -758,13 +759,15 @@ impl RiskManager {
 
         let available_cash = snapshot.available_cash();
 
+        let symbol_sentiment = self.symbol_sentiments.get(&proposal.symbol);
+
         let ctx = ValidationContext::new(
             &proposal,
             &snapshot.portfolio,
             current_equity,
             &self.current_prices,
             self.state_manager.get_state(),
-            self.current_sentiment.as_ref(),
+            symbol_sentiment,
             correlation_matrix.as_ref(), // Pass pre-calculated matrix
             volatility_multiplier,
             pending_exposure,

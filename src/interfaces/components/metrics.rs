@@ -14,7 +14,7 @@ pub fn render_metric_card(
 ) {
     Card::new()
         .title(title)
-        .min_height(100.0)
+        .min_height(110.0)
         .active(active)
         .show(ui, |ui| {
             ui.horizontal(|ui| {

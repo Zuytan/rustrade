@@ -1,21 +1,20 @@
 use crate::application::agents::user_agent::UserAgent;
 use eframe::egui;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 
 pub struct DashboardMetrics {
-    pub total_value: f64,
-    pub pnl_value: f64,
-    pub pnl_pct: f64,
+    pub total_value: Decimal,
+    pub pnl_value: Decimal,
+    pub pnl_pct: Decimal,
     pub pnl_color: egui::Color32,
     pub pnl_sign: &'static str,
     pub pnl_arrow: &'static str,
     pub position_count: usize,
-    pub market_value: f64,
+    pub market_value: Decimal,
 }
 
 pub struct WinRateMetrics {
-    pub rate: f64,
+    pub rate: Decimal,
     pub winning_trades: usize,
     pub total_trades: usize,
 }
@@ -37,7 +36,7 @@ pub struct DashboardViewModel;
 
 impl DashboardViewModel {
     pub fn get_metrics(agent: &UserAgent) -> DashboardMetrics {
-        let total_value = agent.calculate_total_value().to_f64().unwrap_or(0.0);
+        let total_value = agent.calculate_total_value();
 
         let (pnl_value, pnl_pct, position_count, market_value) = match agent.portfolio.try_read() {
             Ok(pf) => {
@@ -54,23 +53,16 @@ impl DashboardViewModel {
                 }
                 let pnl = mv - cost_basis;
                 let pnl_pct = if cost_basis > Decimal::ZERO {
-                    (pnl / cost_basis * Decimal::from(100))
-                        .to_f64()
-                        .unwrap_or(0.0)
+                    pnl / cost_basis * Decimal::from(100)
                 } else {
-                    0.0
+                    Decimal::ZERO
                 };
-                (
-                    pnl.to_f64().unwrap_or(0.0),
-                    pnl_pct,
-                    pf.positions.len(),
-                    mv.to_f64().unwrap_or(0.0),
-                )
+                (pnl, pnl_pct, pf.positions.len(), mv)
             }
-            Err(_) => (0.0, 0.0, 0, 0.0),
+            Err(_) => (Decimal::ZERO, Decimal::ZERO, 0, Decimal::ZERO),
         };
 
-        let is_positive = pnl_value >= 0.0;
+        let is_positive = pnl_value >= Decimal::ZERO;
         let pnl_color = if is_positive {
             egui::Color32::from_rgb(0, 230, 118) // Neon Green
         } else {
@@ -91,7 +83,7 @@ impl DashboardViewModel {
 
     pub fn get_win_rate(agent: &UserAgent) -> WinRateMetrics {
         WinRateMetrics {
-            rate: agent.calculate_win_rate().to_f64().unwrap_or(0.0),
+            rate: agent.calculate_win_rate(),
             winning_trades: agent.winning_trades,
             total_trades: agent.total_trades,
         }
@@ -113,23 +105,54 @@ impl DashboardViewModel {
     }
 
     pub fn get_sentiment_metrics(agent: &UserAgent) -> SentimentMetrics {
-        if let Some(sentiment) = &agent.market_sentiment {
-            let color = egui::Color32::from_hex(sentiment.classification.color_hex())
-                .unwrap_or(egui::Color32::GRAY);
-
-            SentimentMetrics {
-                title: sentiment.classification.to_string(),
-                value: sentiment.value,
-                color,
-                is_loading: false,
-            }
-        } else {
-            SentimentMetrics {
-                title: "Loading...".to_string(),
-                value: 0,
+        if agent.symbol_sentiments.is_empty() {
+            return SentimentMetrics {
+                title: "No Data".to_string(),
+                value: 50,
                 color: egui::Color32::GRAY,
                 is_loading: true,
-            }
+            };
+        }
+
+        // Collect sentiment values for symbols we hold in portfolio,
+        // or fall back to all tracked symbols if portfolio is empty.
+        let held_symbols: Vec<String> = agent
+            .portfolio
+            .try_read()
+            .map(|pf| pf.positions.keys().cloned().collect())
+            .unwrap_or_default();
+
+        let relevant_values: Vec<u8> = if held_symbols.is_empty() {
+            // No positions — use all known sentiments
+            agent.symbol_sentiments.values().map(|s| s.value).collect()
+        } else {
+            held_symbols
+                .iter()
+                .filter_map(|sym| agent.symbol_sentiments.get(sym))
+                .map(|s| s.value)
+                .collect()
+        };
+
+        if relevant_values.is_empty() {
+            return SentimentMetrics {
+                title: "Neutral".to_string(),
+                value: 50,
+                color: egui::Color32::GRAY,
+                is_loading: false,
+            };
+        }
+
+        let avg: u8 = (relevant_values.iter().map(|v| *v as u16).sum::<u16>()
+            / relevant_values.len() as u16) as u8;
+        let classification = crate::domain::sentiment::SentimentClassification::from_score(avg);
+        let color =
+            egui::Color32::from_hex(classification.color_hex()).unwrap_or(egui::Color32::GRAY);
+
+        SentimentMetrics {
+            title: classification.to_string(),
+            value: avg,
+            color,
+            is_loading: false,
         }
     }
 }

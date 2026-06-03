@@ -3,10 +3,10 @@ use eframe::egui;
 use std::collections::VecDeque;
 
 /// Helper function to render the news feed widget
-pub fn render_news_feed(ui: &mut egui::Ui, events: &VecDeque<NewsEvent>) {
+pub fn render_news_feed(ui: &mut egui::Ui, events: &VecDeque<NewsEvent>, max_height: f32) {
     egui::ScrollArea::vertical()
         .id_salt("news_feed_scroll")
-        .max_height(150.0)
+        .max_height(max_height)
         .show(ui, |ui| {
             if events.is_empty() {
                 egui::Frame::NONE

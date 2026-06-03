@@ -2,7 +2,8 @@ use anyhow::Result;
 use chrono::Timelike;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
-use tracing::{error, info, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 use crate::application::agents::{
     analyst::{Analyst, AnalystCommand, AnalystConfig, AnalystDependencies},
@@ -24,16 +25,14 @@ use crate::config::{Config, Mode};
 use crate::domain::listener::NewsEvent;
 use crate::domain::listener::{ListenerAction, ListenerConfig};
 use crate::domain::sentiment::Sentiment;
-use crate::domain::sentiment::SentimentProvider;
+
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Candle, TradeProposal};
 use crate::infrastructure::alpaca::AlpacaSectorProvider;
 use crate::infrastructure::binance::BinanceSectorProvider;
-use crate::infrastructure::news::mock_news::MockNewsService;
 use crate::infrastructure::news::rss::RssNewsService;
 use crate::infrastructure::oanda::OandaSectorProvider;
 use crate::infrastructure::observability::Metrics;
-use crate::infrastructure::sentiment::alternative_me::AlternativeMeSentimentProvider;
 
 // We need a struct to return all the control channels
 pub struct AgentsHandle {
@@ -43,12 +42,13 @@ pub struct AgentsHandle {
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub candle_rx: broadcast::Receiver<Candle>,
     pub sentiment_rx: broadcast::Receiver<Sentiment>,
-    pub news_rx: broadcast::Receiver<NewsEvent>,
+    pub news_rx: Option<broadcast::Receiver<NewsEvent>>,
 }
 
 pub struct AgentsBootstrap;
 
 impl AgentsBootstrap {
+    #[allow(clippy::too_many_arguments)]
     pub async fn init(
         config: &Config,
         services: &ServicesHandle,
@@ -57,8 +57,10 @@ impl AgentsBootstrap {
         connection_health_service: Arc<ConnectionHealthService>,
         metrics: Metrics,
         agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
-    ) -> Result<AgentsHandle> {
+        cancel_token: CancellationToken,
+    ) -> Result<(AgentsHandle, tokio::task::JoinSet<()>)> {
         info!("Initializing Agents...");
+        let mut join_set = tokio::task::JoinSet::new();
 
         // Channel creation
         let (market_tx, market_rx) = mpsc::channel(500);
@@ -72,7 +74,6 @@ impl AgentsBootstrap {
         // Broadcast channels
         let (candle_tx, candle_rx) = broadcast::channel(100);
         let (sentiment_broadcast_tx, sentiment_broadcast_rx) = broadcast::channel(8);
-        let (news_broadcast_tx, news_broadcast_rx) = broadcast::channel(20);
 
         // 1. Sentinel
         let mut sentinel = Sentinel::new(
@@ -160,6 +161,14 @@ impl AgentsBootstrap {
                     allow_pdt_risk: base_risk.allow_pdt_risk,
                     correlation_config: base_risk.correlation_config.clone(),
                     volatility_config: base_risk.volatility_config.clone(),
+
+                    max_positions: config.risk.max_positions,
+                    risk_per_trade_percent: config.risk.risk_per_trade_percent,
+                    trade_quantity: config.risk.trade_quantity,
+                    order_cooldown_seconds: config.risk.order_cooldown_seconds,
+                    max_orders_per_minute: config.risk.max_orders_per_minute,
+                    min_hold_time_minutes: config.risk.min_hold_time_minutes,
+                    max_loss_per_trade_pct: config.risk.max_loss_per_trade_pct,
                 }
             } else {
                 base_risk.clone()
@@ -193,6 +202,14 @@ impl AgentsBootstrap {
                 allow_pdt_risk: base_risk.allow_pdt_risk,
                 correlation_config: base_risk.correlation_config,
                 volatility_config: base_risk.volatility_config,
+
+                max_positions: config.risk.max_positions,
+                risk_per_trade_percent: config.risk.risk_per_trade_percent,
+                trade_quantity: config.risk.trade_quantity,
+                order_cooldown_seconds: config.risk.order_cooldown_seconds,
+                max_orders_per_minute: config.risk.max_orders_per_minute,
+                min_hold_time_minutes: config.risk.min_hold_time_minutes,
+                max_loss_per_trade_pct: config.risk.max_loss_per_trade_pct,
             }
         };
 
@@ -264,40 +281,85 @@ impl AgentsBootstrap {
         );
 
         // SPAWN TASKS
-        tokio::spawn(async move { sentinel.run().await });
-        tokio::spawn(async move { scanner.run().await });
-        tokio::spawn(async move { analyst.run().await });
-        tokio::spawn(async move { risk_manager.run().await });
-        tokio::spawn(async move { order_throttler.run().await });
-        tokio::spawn(async move { executor.run().await });
+        let ct1 = cancel_token.clone();
+        join_set.spawn(async move {
+            tokio::select! { _ = sentinel.run() => {}, _ = ct1.cancelled() => {} }
+        });
+        let ct2 = cancel_token.clone();
+        join_set.spawn(async move {
+            tokio::select! { _ = scanner.run() => {}, _ = ct2.cancelled() => {} }
+        });
+        let ct3 = cancel_token.clone();
+        join_set.spawn(async move {
+            tokio::select! { _ = analyst.run() => {}, _ = ct3.cancelled() => {} }
+        });
+        let ct4 = cancel_token.clone();
+        join_set.spawn(async move {
+            tokio::select! { _ = risk_manager.run() => {}, _ = ct4.cancelled() => {} }
+        });
+        let ct5 = cancel_token.clone();
+        join_set.spawn(async move {
+            tokio::select! { _ = order_throttler.run() => {}, _ = ct5.cancelled() => {} }
+        });
+        let ct6 = cancel_token.clone();
+        join_set.spawn(async move {
+            tokio::select! { _ = executor.run() => {}, _ = ct6.cancelled() => {} }
+        });
 
-        // Listener Agent
-        spawn_listener(
-            analyst_cmd_tx.clone(),
-            news_broadcast_tx.clone(),
-            agent_registry.clone(),
-        );
+        // Listener Agent (Optional)
+        let news_rx = if std::env::var("NEWS_RSS_URL").is_ok() {
+            let (news_broadcast_tx, news_broadcast_rx) = broadcast::channel(20);
+            spawn_listener(
+                &mut join_set,
+                analyst_cmd_tx.clone(),
+                news_broadcast_tx.clone(),
+                sentiment_broadcast_tx.clone(),
+                agent_registry.clone(),
+                cancel_token.clone(),
+            );
+            Some(news_broadcast_rx)
+        } else {
+            None
+        };
 
-        // Sentiment Polling
-        spawn_sentiment_poller(
-            config,
-            risk_cmd_tx.clone(),
-            sentiment_broadcast_tx,
-            metrics.clone(),
-        );
+        // Forward Sentiment Broadcast to RiskManager
+        let mut sentiment_rx_for_risk = sentiment_broadcast_tx.subscribe();
+        let risk_tx_for_sentiment = risk_cmd_tx.clone();
+        let ct7 = cancel_token.clone();
+        join_set.spawn(async move {
+            tokio::select! {
+                _ = async {
+                    while let Ok(sentiment) = sentiment_rx_for_risk.recv().await {
+                        let _ = risk_tx_for_sentiment
+                            .send(RiskCommand::UpdateSentiment(sentiment))
+                            .await;
+                    }
+                    std::future::pending::<()>().await;
+                } => {}
+                _ = ct7.cancelled() => {}
+            }
+        });
 
         // Adaptive Optimization
-        spawn_adaptive_optimization(config, services.adaptive_optimization_service.clone());
+        spawn_adaptive_optimization(
+            &mut join_set,
+            config,
+            services.adaptive_optimization_service.clone(),
+            cancel_token.clone(),
+        );
 
-        Ok(AgentsHandle {
-            sentinel_cmd_tx,
-            risk_cmd_tx,
-            analyst_cmd_tx,
-            proposal_tx,
-            candle_rx,
-            sentiment_rx: sentiment_broadcast_rx,
-            news_rx: news_broadcast_rx,
-        })
+        Ok((
+            AgentsHandle {
+                sentinel_cmd_tx,
+                risk_cmd_tx,
+                analyst_cmd_tx,
+                proposal_tx,
+                candle_rx,
+                sentiment_rx: sentiment_broadcast_rx,
+                news_rx,
+            },
+            join_set,
+        ))
     }
 }
 
@@ -328,11 +390,14 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
 }
 
 fn spawn_listener(
+    join_set: &mut tokio::task::JoinSet<()>,
     logger_analyst_tx: mpsc::Sender<AnalystCommand>,
     news_tx_for_listener: broadcast::Sender<NewsEvent>,
+    sentiment_broadcast_tx: broadcast::Sender<Sentiment>,
     agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
+    cancel_token: CancellationToken,
 ) {
-    tokio::spawn(async move {
+    join_set.spawn(async move {
         info!("Starting Listener Agent...");
         // Hardcoded configuration for now as per plan
         let config = ListenerConfig {
@@ -363,115 +428,65 @@ fn spawn_listener(
             ],
         };
 
-        let news_rss_url = std::env::var("NEWS_RSS_URL").ok();
-
+        let news_rss_url =
+            std::env::var("NEWS_RSS_URL").expect("NEWS_RSS_URL must be set to spawn listener");
         let news_service: Arc<dyn crate::domain::ports::NewsDataService> =
-            if let Some(url) = news_rss_url {
-                info!("Using RSS News Service with URL: {}", url);
-                Arc::new(RssNewsService::new(&url, 60))
-            } else {
-                info!("Using Mock News Service (NEWS_RSS_URL not set)");
-                Arc::new(MockNewsService::new())
-            };
+            Arc::new(RssNewsService::new(&news_rss_url, 60));
 
         let listener = ListenerAgent::with_news_broadcast(
             news_service,
             config,
             logger_analyst_tx, // Fixed variable name matching
             news_tx_for_listener,
+            sentiment_broadcast_tx,
             agent_registry,
         );
-        listener.run().await;
-    });
-}
-
-fn spawn_sentiment_poller(
-    config: &Config,
-    sentiment_tx: mpsc::Sender<RiskCommand>,
-    sentiment_broadcast_tx: broadcast::Sender<Sentiment>,
-    metrics: Metrics,
-) {
-    let asset_class = config.asset_class;
-    tokio::spawn(async move {
-        // Only poll for Crypto for now as we use Alternative.me
-        // In future we can add VIX for stocks
-        if asset_class == crate::config::AssetClass::Crypto {
-            info!("Starting Sentiment Polling Task (Alternative.me)...");
-            let provider = AlternativeMeSentimentProvider::new();
-
-            // Initial fetch
-            if let Ok(sentiment) = provider.fetch_sentiment().await {
-                let _ = sentiment_tx
-                    .send(RiskCommand::UpdateSentiment(sentiment.clone()))
-                    .await;
-                metrics.sentiment_score.set(sentiment.value as f64);
-                let _ = sentiment_broadcast_tx.send(sentiment);
-            }
-
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(4 * 3600)).await; // Every 4 hours
-                match provider.fetch_sentiment().await {
-                    Ok(sentiment) => {
-                        if let Err(e) = sentiment_tx
-                            .send(RiskCommand::UpdateSentiment(sentiment.clone()))
-                            .await
-                        {
-                            error!("Failed to send sentiment update: {}", e);
-                        }
-                        metrics.sentiment_score.set(sentiment.value as f64);
-                        let _ = sentiment_broadcast_tx.send(sentiment);
-                    }
-                    Err(e) => {
-                        warn!("Failed to fetch sentiment: {}", e);
-                    }
-                }
-            }
-        } else {
-            // For Stock mode, send a mock neutral sentiment for UI display
-            info!("Asset class is Stock - using mock neutral sentiment for UI");
-            let mock_sentiment = crate::domain::sentiment::Sentiment {
-                value: 50,
-                classification: crate::domain::sentiment::SentimentClassification::Neutral,
-                timestamp: chrono::Utc::now(),
-                source: "Mock (Stock Mode)".to_string(),
-            };
-            let _ = sentiment_broadcast_tx.send(mock_sentiment);
+        tokio::select! {
+            _ = listener.run() => {}
+            _ = cancel_token.cancelled() => {}
         }
     });
 }
 
 fn spawn_adaptive_optimization(
+    join_set: &mut tokio::task::JoinSet<()>,
     config: &Config,
     adaptive_service: Option<Arc<crate::application::optimization::adaptive_optimization_service::AdaptiveOptimizationService>>,
+    cancel_token: CancellationToken,
 ) {
     let symbols = config.platform.symbols.clone();
     let eval_hour = config.platform.adaptive_evaluation_hour;
 
-    tokio::spawn(async move {
-        if let Some(service) = adaptive_service {
+    if let Some(service) = adaptive_service {
+        join_set.spawn(async move {
             info!(
                 "Starting Adaptive Optimization Service task (Evaluation hour: {:02}:00 UTC)",
                 eval_hour
             );
-            loop {
-                let now = chrono::Utc::now();
-                if now.hour() == eval_hour {
-                    info!(
-                        "Triggering daily adaptive evaluation for symbols: {:?}",
-                        symbols
-                    );
-                    for symbol in &symbols {
-                        if let Err(e) = service.run_daily_evaluation(symbol).await {
-                            error!("Adaptive Optimization failed for {}: {}", symbol, e);
+            tokio::select! {
+                _ = async {
+                    loop {
+                        let now = chrono::Utc::now();
+                        if now.hour() == eval_hour {
+                            info!(
+                                "Triggering daily adaptive evaluation for symbols: {:?}",
+                                symbols
+                            );
+                            for symbol in &symbols {
+                                if let Err(e) = service.run_daily_evaluation(symbol).await {
+                                    error!("Adaptive Optimization failed for {}: {}", symbol, e);
+                                }
+                            }
+                            // Sleep for an hour and a bit to avoid re-triggering immediately
+                            tokio::time::sleep(tokio::time::Duration::from_secs(3660)).await;
+                        } else {
+                            // Check every 15 minutes
+                            tokio::time::sleep(tokio::time::Duration::from_secs(900)).await;
                         }
                     }
-                    // Sleep for an hour and a bit to avoid re-triggering immediately
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3660)).await;
-                } else {
-                    // Check every 15 minutes
-                    tokio::time::sleep(tokio::time::Duration::from_secs(900)).await;
-                }
+                } => {}
+                _ = cancel_token.cancelled() => {}
             }
-        }
-    });
+        });
+    }
 }

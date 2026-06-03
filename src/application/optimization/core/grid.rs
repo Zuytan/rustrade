@@ -1,6 +1,7 @@
 use crate::application::agents::analyst_config::AnalystConfig;
 use crate::config::StrategyMode;
-use crate::domain::config::{RiskConfig, StrategyConfig};
+use crate::domain::config::StrategyConfig;
+use crate::domain::risk::risk_config::RiskConfig;
 use crate::domain::trading::fee_model::ConstantFeeModel;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;

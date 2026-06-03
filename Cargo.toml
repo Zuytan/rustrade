@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.99.15"
+version = "0.99.18"
 edition = "2024"
 default-run = "rustrade"
 
@@ -83,3 +83,4 @@ csv = "1.4.0"
 
 ort = { version = "2.0.0-rc.12", features = ["ndarray"] }
 ndarray = { version = "0.17", features = ["serde"] }
+tokio-util = { version = "0.7.18", features = ["full"] }

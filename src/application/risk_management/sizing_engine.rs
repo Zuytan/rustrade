@@ -24,7 +24,7 @@ pub struct SizingConfig {
 /// Trade statistics for Kelly Criterion position sizing. Use when n_trades >= 30.
 #[derive(Debug, Clone)]
 pub struct KellyStats {
-    pub win_rate: f64,
+    pub win_rate: Decimal,
     pub avg_win: Decimal,
     pub avg_loss: Decimal,
     pub n_trades: usize,
@@ -37,7 +37,7 @@ impl KellyStats {
         if self.n_trades < 30 || self.avg_win <= Decimal::ZERO {
             return None;
         }
-        let p = Decimal::from_f64_retain(self.win_rate).unwrap_or(Decimal::ZERO);
+        let p = self.win_rate;
         let one_p = Decimal::ONE - p;
         let loss_as_positive = self.avg_loss.abs();
         let numerator = p * self.avg_win - one_p * loss_as_positive;

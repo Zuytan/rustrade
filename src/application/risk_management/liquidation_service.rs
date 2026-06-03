@@ -111,15 +111,17 @@ impl LiquidationService {
         reason: &str,
         current_prices: &HashMap<String, Decimal>,
     ) {
-        if self.order_tx.is_none() {
-            error!("LiquidationService: Cannot liquidate via channel - channel is missing");
-            return;
-        }
+        let tx = match self.order_tx.as_ref() {
+            Some(t) => t,
+            None => {
+                error!("LiquidationService: Cannot liquidate via channel - channel is missing");
+                return;
+            }
+        };
 
         let orders = self
             .generate_liquidation_orders(reason, current_prices)
             .await;
-        let tx = self.order_tx.as_ref().unwrap();
 
         for order in orders {
             warn!(

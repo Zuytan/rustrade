@@ -3,6 +3,7 @@ use rustrade::application::client::SystemClient;
 
 use rustrade::application::system::Application;
 use rustrade::config::Config;
+use tokio_util::sync::CancellationToken;
 
 use tracing::info;
 use tracing_subscriber::prelude::*;
@@ -99,18 +100,36 @@ fn main() -> anyhow::Result<()> {
                 }
             };
 
+            let cancel_token = CancellationToken::new();
+
             // Start System
-            match app.start().await {
-                Ok(handle) => {
+            match app.start(cancel_token.clone()).await {
+                Ok((handle, mut join_set)) => {
                     let _ = system_tx.send(handle);
                     info!("Trading System Running.");
-                    // Keep the background runtime alive by awaiting a pending future or parking?
-                    // app.start() spawned tasks, so we just need to keep this block alive.
-                    // The spawned tasks are detached, but the runtime must not drop.
 
-                    // We can just sleep forever or await a shutdown signal.
-                    // For now, let's just park.
-                    std::future::pending::<()>().await;
+                    tokio::select! {
+                        _ = cancel_token.cancelled() => {
+                            info!("Cancellation requested. Waiting for tasks to complete...");
+                        }
+                        res = join_set.join_next() => {
+                            if let Some(res) = res {
+                                match res {
+                                    Ok(_) => info!("A background task completed gracefully."),
+                                    Err(e) => tracing::error!("A background task panicked or was aborted: {}", e),
+                                }
+                                cancel_token.cancel();
+                            }
+                        }
+                    }
+
+                    info!("Shutting down background tasks...");
+                    while let Some(res) = join_set.join_next().await {
+                        if let Err(e) = res {
+                            tracing::error!("Background task error during shutdown: {}", e);
+                        }
+                    }
+                    info!("All background tasks completed. Runtime thread exiting.");
                 }
                 Err(e) => {
                     tracing::error!("Failed to start application: {}", e);

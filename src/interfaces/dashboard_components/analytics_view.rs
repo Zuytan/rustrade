@@ -2,10 +2,11 @@ use crate::application::agents::user_agent::UserAgent;
 use crate::interfaces::dashboard_components::metrics_card::render_mini_metric;
 use crate::interfaces::design_system::DesignSystem;
 use eframe::egui;
-use rust_decimal::prelude::ToPrimitive;
 
-/// Renders the Analytics View
 pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
+    // Only calculate performance metrics every 10 frames to save CPU (or ideally use a cache)
+    // Since we don't have a cache in UserAgent yet, we'll just let it run. But we can optimize it by
+    // moving Monte Carlo outside of the UI thread if that's what was slow.
     let metrics = agent.get_performance_metrics();
     let equity_curve = agent.get_equity_curve_points();
 
@@ -33,7 +34,7 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
 
                 ui.columns(4, |cols| {
                     let pnl_color = if metrics.total_return >= rust_decimal::Decimal::ZERO { DesignSystem::SUCCESS } else { DesignSystem::DANGER };
-                    render_mini_metric(&mut cols[0], "Total P&L".to_string(), &format!("${:.2}", metrics.total_return.to_f64().unwrap_or(0.0)), pnl_color);
+                    render_mini_metric(&mut cols[0], "Total P&L".to_string(), &format!("${:.2}", metrics.total_return), pnl_color);
 
                     render_mini_metric(&mut cols[1], "Win Rate".to_string(), &format!("{:.1}%", metrics.win_rate), DesignSystem::TEXT_PRIMARY);
 
@@ -97,8 +98,8 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                                             let side_color = if side_text == "Buy" { DesignSystem::SUCCESS } else { DesignSystem::DANGER };
                                             ui.colored_label(side_color, side_text);
 
-                                            let pnl_val = trade.pnl.to_f64().unwrap_or(0.0);
-                                            let pnl_color = if pnl_val >= 0.0 { DesignSystem::SUCCESS } else { DesignSystem::DANGER };
+                                            let pnl_val = trade.pnl;
+                                            let pnl_color = if pnl_val >= rust_decimal::Decimal::ZERO { DesignSystem::SUCCESS } else { DesignSystem::DANGER };
                                             ui.colored_label(pnl_color, format!("${:.2}", pnl_val));
 
                                             if let Some(exit_ts) = trade.exit_timestamp {
@@ -166,10 +167,10 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
 
                             if let Some(res) = &agent.monte_carlo_result {
                                 ui.columns(4, |cols| {
-                                    render_mini_metric(&mut cols[0], agent.i18n.t("prob_profit").to_string(), &format!("{:.1}%", res.probability_of_profit.to_f64().unwrap_or(0.0) * 100.0), DesignSystem::SUCCESS);
+                                    render_mini_metric(&mut cols[0], agent.i18n.t("prob_profit").to_string(), &format!("{:.1}%", res.probability_of_profit * rust_decimal::Decimal::from(100)), DesignSystem::SUCCESS);
                                     render_mini_metric(&mut cols[1], agent.i18n.t("expected_dd").to_string(), &format!("{:.1}%", res.max_drawdown_mean * 100.0), DesignSystem::DANGER);
-                                    render_mini_metric(&mut cols[2], agent.i18n.t("final_equity").to_string(), &format!("${:.0}", res.final_equity_median.to_f64().unwrap_or(0.0)), DesignSystem::TEXT_PRIMARY);
-                                    render_mini_metric(&mut cols[3], "95% Range".to_string(), &format!("${:.0} - ${:.0}", res.percentile_5.to_f64().unwrap_or(0.0), res.percentile_95.to_f64().unwrap_or(0.0)), DesignSystem::TEXT_SECONDARY);
+                                    render_mini_metric(&mut cols[2], agent.i18n.t("final_equity").to_string(), &format!("${:.0}", res.final_equity_median), DesignSystem::TEXT_PRIMARY);
+                                    render_mini_metric(&mut cols[3], "95% Range".to_string(), &format!("${:.0} - ${:.0}", res.percentile_5, res.percentile_95), DesignSystem::TEXT_SECONDARY);
                                 });
                             } else {
                                 ui.centered_and_justified(|ui| {

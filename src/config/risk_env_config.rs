@@ -34,7 +34,7 @@ pub struct PlatformConfig {
 pub struct RiskEnvLoader;
 
 impl RiskEnvLoader {
-    pub fn from_env() -> Result<(crate::domain::config::RiskConfig, PlatformConfig)> {
+    pub fn from_env() -> Result<(crate::domain::risk::risk_config::RiskConfig, PlatformConfig)> {
         use rust_decimal_macros::dec;
         // Parse Risk Appetite first
         let risk_appetite = if let Ok(score_str) = env::var("RISK_APPETITE_SCORE") {
@@ -100,15 +100,21 @@ impl RiskEnvLoader {
 
         let trade_quantity = Self::parse_decimal("TRADE_QUANTITY", dec!(1.0))?;
 
-        let risk_config = crate::domain::config::RiskConfig {
+        let risk_config = crate::domain::risk::risk_config::RiskConfig {
             max_position_size_pct,
             max_sector_exposure_pct: Self::parse_decimal("MAX_SECTOR_EXPOSURE_PCT", dec!(0.30))?,
             max_daily_loss_pct,
             max_drawdown_pct,
             consecutive_loss_limit: Self::parse_usize("CONSECUTIVE_LOSS_LIMIT", 3)?,
+            valuation_interval_seconds: Self::parse_u64("VALUATION_INTERVAL_SECONDS", 60)?,
+            sector_provider: None,
+            allow_pdt_risk: Self::parse_bool("ALLOW_PDT_RISK", false),
             pending_order_ttl_ms: env::var("PENDING_ORDER_TTL_MS")
                 .ok()
                 .and_then(|s| s.parse::<i64>().ok()),
+            correlation_config:
+                crate::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
+            volatility_config: crate::domain::risk::volatility_manager::VolatilityConfig::default(),
             max_positions: Self::parse_usize("MAX_POSITIONS", 5)?,
             risk_per_trade_percent,
             trade_quantity,
@@ -130,16 +136,15 @@ impl RiskEnvLoader {
             commission_per_share: Self::parse_decimal("COMMISSION_PER_SHARE", dec!(0.001))?,
             spread_bps: Self::parse_decimal("SPREAD_BPS", dec!(5.0))?,
             min_profit_ratio,
-            portfolio_staleness_ms: Self::parse_u64("PORTFOLIO_STALENESS_MS", 5000).unwrap_or(5000),
-            portfolio_refresh_interval_ms: Self::parse_u64("PORTFOLIO_REFRESH_INTERVAL_MS", 2000)
-                .unwrap_or(2000),
+            portfolio_staleness_ms: Self::parse_u64("PORTFOLIO_STALENESS_MS", 5000)?,
+            portfolio_refresh_interval_ms: Self::parse_u64("PORTFOLIO_REFRESH_INTERVAL_MS", 2000)?,
             dynamic_symbol_mode,
             dynamic_scan_interval_minutes: Self::parse_u64("DYNAMIC_SCAN_INTERVAL_MINUTES", 5)?,
             symbols,
             min_volume_threshold: Self::parse_decimal("MIN_VOLUME_THRESHOLD", dec!(50000.0))?,
             adaptive_optimization_enabled: Self::parse_bool("ADAPTIVE_OPTIMIZATION_ENABLED", false),
-            regime_detection_window: Self::parse_usize("REGIME_DETECTION_WINDOW", 20).unwrap_or(20),
-            adaptive_evaluation_hour: Self::parse_u32("ADAPTIVE_EVALUATION_HOUR", 0).unwrap_or(0),
+            regime_detection_window: Self::parse_usize("REGIME_DETECTION_WINDOW", 20)?,
+            adaptive_evaluation_hour: Self::parse_u32("ADAPTIVE_EVALUATION_HOUR", 0)?,
             use_real_market_data: Self::parse_bool("USE_REAL_MARKET_DATA", false),
         };
 

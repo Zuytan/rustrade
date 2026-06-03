@@ -1,6 +1,5 @@
 use crate::domain::risk::state::RiskState;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 
 #[derive(Clone, Debug)]
@@ -62,16 +61,14 @@ impl CircuitBreakerService {
             let daily_loss_pct = (current_equity - risk_state.session_start_equity)
                 .checked_div(risk_state.session_start_equity)
                 .unwrap_or(Decimal::ZERO);
-            let ratio = (daily_loss_pct
+            let ratio = daily_loss_pct
                 .checked_div(-self.config.max_daily_loss_pct)
-                .unwrap_or(Decimal::ZERO))
-            .to_f64()
-            .unwrap_or(0.0);
-            let level = if ratio >= 1.0 {
+                .unwrap_or(Decimal::ZERO);
+            let level = if ratio >= dec!(1.0) {
                 HaltLevel::FullHalt
-            } else if ratio >= 0.75 {
+            } else if ratio >= dec!(0.75) {
                 HaltLevel::Reduced
-            } else if ratio >= 0.5 {
+            } else if ratio >= dec!(0.5) {
                 HaltLevel::Warning
             } else {
                 HaltLevel::Normal
@@ -95,16 +92,14 @@ impl CircuitBreakerService {
             let drawdown_pct = (current_equity - risk_state.equity_high_water_mark)
                 .checked_div(risk_state.equity_high_water_mark)
                 .unwrap_or(Decimal::ZERO);
-            let ratio = (drawdown_pct
+            let ratio = drawdown_pct
                 .checked_div(-self.config.max_drawdown_pct)
-                .unwrap_or(Decimal::ZERO))
-            .to_f64()
-            .unwrap_or(0.0);
-            let level = if ratio >= 1.0 {
+                .unwrap_or(Decimal::ZERO);
+            let level = if ratio >= dec!(1.0) {
                 HaltLevel::FullHalt
-            } else if ratio >= 0.75 {
+            } else if ratio >= dec!(0.75) {
                 HaltLevel::Reduced
-            } else if ratio >= 0.5 {
+            } else if ratio >= dec!(0.5) {
                 HaltLevel::Warning
             } else {
                 HaltLevel::Normal

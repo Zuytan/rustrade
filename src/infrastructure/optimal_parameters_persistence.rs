@@ -55,6 +55,17 @@ impl OptimalParametersPersistence {
         // Atomic write: write to temp file then rename
         let temp_path = self.file_path.with_extension("tmp");
         fs::write(&temp_path, content).context("Failed to write temp file")?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&temp_path)
+                .context("Failed to read metadata")?
+                .permissions();
+            perms.set_mode(0o600);
+            fs::set_permissions(&temp_path, perms).context("Failed to set permissions")?;
+        }
+
         fs::rename(&temp_path, &self.file_path).context("Failed to rename temp file")?;
 
         info!("Saved optimal parameters to {:?}", self.file_path);

@@ -36,7 +36,7 @@ async fn test_full_backtest_pipeline_e2e() -> anyhow::Result<()> {
             take_profit_pct: dec!(0.10),
             ..rustrade::domain::config::StrategyConfig::default()
         },
-        risk: rustrade::domain::config::RiskConfig {
+        risk: rustrade::domain::risk::risk_config::RiskConfig {
             max_positions: 1,
             trade_quantity: dec!(1.0),
             order_cooldown_seconds: 0,
@@ -45,7 +45,7 @@ async fn test_full_backtest_pipeline_e2e() -> anyhow::Result<()> {
             max_daily_loss_pct: dec!(0.5),
             max_drawdown_pct: dec!(0.5),
             consecutive_loss_limit: 10,
-            ..rustrade::domain::config::RiskConfig::default()
+            ..rustrade::domain::risk::risk_config::RiskConfig::default()
         },
         platform: rustrade::config::PlatformConfig {
             symbols: vec!["BTC/USD".to_string()],

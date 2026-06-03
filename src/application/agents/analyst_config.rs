@@ -1,4 +1,5 @@
-use crate::domain::config::{RiskConfig, StrategyConfig};
+use crate::domain::config::StrategyConfig;
+use crate::domain::risk::risk_config::RiskConfig;
 use crate::domain::trading::fee_model::{ConstantFeeModel, FeeModel};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

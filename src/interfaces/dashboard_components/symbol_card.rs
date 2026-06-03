@@ -2,7 +2,6 @@ use crate::application::agents::user_agent::UserAgent;
 use crate::interfaces::components::metrics::render_status_pill;
 use crate::interfaces::design_system::DesignSystem;
 use eframe::egui;
-use rust_decimal::prelude::ToPrimitive;
 
 pub fn render_symbol_card(
     ui: &mut egui::Ui,
@@ -51,7 +50,7 @@ pub fn render_symbol_card(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
 
-            // Header Row: Symbol + P&L or Trend
+            // Header Row: Symbol + Sentiment Dot + P&L or Trend
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(symbol)
@@ -59,6 +58,19 @@ pub fn render_symbol_card(
                         .strong()
                         .color(DesignSystem::TEXT_PRIMARY),
                 );
+
+                // Per-symbol sentiment indicator dot
+                if let Some(sentiment) = agent.symbol_sentiments.get(symbol) {
+                    let dot_color = egui::Color32::from_hex(sentiment.classification.color_hex())
+                        .unwrap_or(egui::Color32::GRAY);
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                    ui.painter().circle_filled(rect.center(), 4.0, dot_color);
+                    resp.on_hover_text(format!(
+                        "Mood: {} ({})",
+                        sentiment.classification, sentiment.value
+                    ));
+                }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if let Some(pos) = pos {
@@ -76,10 +88,7 @@ pub fn render_symbol_card(
                             &agent.i18n.tf(
                                 "pnl_amount_format",
                                 &[
-                                    (
-                                        "amount",
-                                        &format!("{:.2}", pnl.to_f64().unwrap_or(0.0).abs()),
-                                    ),
+                                    ("amount", &format!("{:.2}", pnl.abs())),
                                     ("sign", if is_profit { "+" } else { "-" }),
                                 ],
                             ),

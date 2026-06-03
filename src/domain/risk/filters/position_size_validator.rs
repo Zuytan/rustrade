@@ -253,6 +253,7 @@ mod tests {
 
         // Extreme Fear sentiment (value = 10)
         let sentiment = Sentiment {
+            symbol: None,
             value: 10,
             classification: SentimentClassification::ExtremeFear,
             timestamp: chrono::Utc::now(),
@@ -299,6 +300,7 @@ mod tests {
 
         // Extreme Greed sentiment (no adjustment applied)
         let sentiment = Sentiment {
+            symbol: None,
             value: 90,
             classification: SentimentClassification::ExtremeGreed,
             timestamp: chrono::Utc::now(),

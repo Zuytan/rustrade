@@ -78,9 +78,12 @@ impl RiskStateRepository for SqliteRiskStateRepository {
         if let Some((id, session_eq_str, daily_eq_str, hwm_eq_str, losses, ref_date)) = row {
             Ok(Some(RiskState {
                 id,
-                session_start_equity: Decimal::from_str(&session_eq_str).unwrap_or_default(),
-                daily_start_equity: Decimal::from_str(&daily_eq_str).unwrap_or_default(),
-                equity_high_water_mark: Decimal::from_str(&hwm_eq_str).unwrap_or_default(),
+                session_start_equity: Decimal::from_str(&session_eq_str)
+                    .context("Failed to parse session_start_equity")?,
+                daily_start_equity: Decimal::from_str(&daily_eq_str)
+                    .context("Failed to parse daily_start_equity")?,
+                equity_high_water_mark: Decimal::from_str(&hwm_eq_str)
+                    .context("Failed to parse equity_high_water_mark")?,
                 consecutive_losses: losses as usize,
                 reference_date: ref_date,
                 updated_at: chrono::Utc::now().timestamp(),

@@ -14,16 +14,17 @@ use tokio::sync::RwLock;
 pub struct ServiceFactory;
 
 impl ServiceFactory {
+    #[allow(clippy::type_complexity)]
     pub fn create_services(
         config: &Config,
         candle_repo: Option<Arc<dyn CandleRepository>>,
         portfolio: Arc<RwLock<Portfolio>>,
         metrics: Metrics,
-    ) -> (
+    ) -> anyhow::Result<(
         Arc<dyn MarketDataService>,
         Arc<dyn ExecutionService>,
         Arc<SpreadCache>,
-    ) {
+    )> {
         match config.mode {
             Mode::Mock => {
                 let execution_service = if config.simulation.enabled {
@@ -85,11 +86,11 @@ impl ServiceFactory {
                         Arc::new(MockMarketDataService::new())
                     };
 
-                (
+                Ok((
                     market_data,
                     Arc::new(execution_service),
                     Arc::new(SpreadCache::new()),
-                )
+                ))
             }
             Mode::Alpaca => {
                 let market_service = AlpacaMarketDataService::builder()
@@ -119,38 +120,16 @@ impl ServiceFactory {
                     metrics.clone(),
                 );
 
-                (
+                Ok((
                     Arc::new(market_service),
                     Arc::new(execution_service),
                     spread_cache,
-                )
+                ))
             }
             Mode::Oanda => {
-                // OANDA market data and execution not implemented; use Mock for now.
-                let execution_service = if config.simulation.enabled {
-                    use crate::infrastructure::simulation::latency_model::NetworkLatency;
-                    use crate::infrastructure::simulation::slippage_model::VolatilitySlippage;
-                    let latency_model = Arc::new(NetworkLatency::new(
-                        config.simulation.latency_base_ms,
-                        config.simulation.latency_jitter_ms,
-                    ));
-                    let slippage_model = Arc::new(VolatilitySlippage::new(
-                        config.simulation.slippage_volatility,
-                    ));
-                    MockExecutionService::with_simulation_models(
-                        portfolio.clone(),
-                        config.create_fee_model(),
-                        latency_model,
-                        slippage_model,
-                    )
-                } else {
-                    MockExecutionService::with_costs(portfolio.clone(), config.create_fee_model())
-                };
-                (
-                    Arc::new(MockMarketDataService::new()),
-                    Arc::new(execution_service),
-                    Arc::new(SpreadCache::new()),
-                )
+                anyhow::bail!(
+                    "Oanda broker mode is currently incomplete and unsupported. It cannot be used without mock fallbacks."
+                );
             }
             Mode::Binance => {
                 let market_service = BinanceMarketDataService::builder()
@@ -168,11 +147,11 @@ impl ServiceFactory {
                     config.broker.binance.base_url.clone(),
                 );
 
-                (
+                Ok((
                     Arc::new(market_service),
                     Arc::new(execution_service),
                     spread_cache,
-                )
+                ))
             }
         }
     }

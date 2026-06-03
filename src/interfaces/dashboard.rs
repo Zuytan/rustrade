@@ -1,7 +1,6 @@
 use crate::application::agents::user_agent::UserAgent;
 use crate::interfaces::components::{
     card::Card,
-    charts::render_donut_chart,
     metrics::{render_metric_card, render_status_pill},
 };
 use crate::interfaces::dashboard_components::{
@@ -12,6 +11,7 @@ use crate::interfaces::design_system::DesignSystem;
 use crate::interfaces::view_models::dashboard_view_model::DashboardViewModel;
 
 use eframe::egui;
+use rust_decimal::prelude::ToPrimitive;
 
 /// Renders the main Dashboard content
 pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
@@ -121,40 +121,59 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
         columns[1].push_id("card_win_rate", |ui| {
             Card::new()
                 .title(agent.i18n.t("metric_win_rate"))
-                .min_height(100.0)
+                .min_height(110.0)
                 .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
+                    ui.vertical(|ui| {
+                        // Value + Icon row
+                        ui.horizontal(|ui| {
                             ui.label(
-                                egui::RichText::new(agent.i18n.tf(
-                                    "percent_format",
-                                    &[("value", &format!("{:.1}", win_rate_metrics.rate))],
-                                ))
-                                .size(28.0)
-                                .strong()
-                                .color(DesignSystem::BORDER_FOCUS),
+                                egui::RichText::new(format!("{:.1}%", win_rate_metrics.rate))
+                                    .size(28.0)
+                                    .strong()
+                                    .color(DesignSystem::TEXT_PRIMARY),
                             );
-                            ui.label(
-                                egui::RichText::new(agent.i18n.tf(
-                                    "trades_count_format",
-                                    &[
-                                        ("winning", &win_rate_metrics.winning_trades.to_string()),
-                                        ("total", &win_rate_metrics.total_trades.to_string()),
-                                    ],
-                                ))
-                                .size(11.0)
-                                .color(DesignSystem::TEXT_MUTED),
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new("🎯")
+                                            .size(24.0)
+                                            .color(DesignSystem::TEXT_MUTED),
+                                    );
+                                },
                             );
                         });
 
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            render_donut_chart(
-                                ui,
-                                win_rate_metrics.rate as f32,
-                                DesignSystem::BORDER_FOCUS,
-                                40.0,
-                            );
-                        });
+                        ui.add_space(DesignSystem::SPACING_SMALL);
+
+                        // Custom thin progress bar
+                        let (rect, _) = ui.allocate_at_least(
+                            egui::vec2(ui.available_width(), 6.0),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter()
+                            .rect_filled(rect, 3.0, DesignSystem::BORDER_SUBTLE);
+                        let progress_width =
+                            rect.width() * (win_rate_metrics.rate.to_f32().unwrap_or(0.0) / 100.0);
+                        let progress_rect =
+                            egui::Rect::from_min_size(rect.min, egui::vec2(progress_width, 6.0));
+                        ui.painter()
+                            .rect_filled(progress_rect, 3.0, DesignSystem::ACCENT_PRIMARY);
+
+                        ui.add_space(DesignSystem::SPACING_SMALL);
+
+                        // Subtitle
+                        ui.label(
+                            egui::RichText::new(agent.i18n.tf(
+                                "trades_count_format",
+                                &[
+                                    ("winning", &win_rate_metrics.winning_trades.to_string()),
+                                    ("total", &win_rate_metrics.total_trades.to_string()),
+                                ],
+                            ))
+                            .size(11.0)
+                            .color(DesignSystem::TEXT_MUTED),
+                        );
                     });
                 });
         });
@@ -191,73 +210,85 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
             );
         });
 
-        // Card 5: MARKET MOOD
+        // Card 5: PORTFOLIO MOOD
         columns[4].push_id("card_market_mood", |ui| {
             Card::new()
-                .title("MARKET MOOD")
-                .min_height(100.0)
+                .title("PORTFOLIO MOOD")
+                .min_height(110.0)
                 .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
-                            if !sentiment_metrics.is_loading {
+                    ui.vertical(|ui| {
+                        if !sentiment_metrics.is_loading {
+                            // Value + Icon row
+                            ui.horizontal(|ui| {
                                 ui.label(
                                     egui::RichText::new(&sentiment_metrics.title)
-                                        .size(22.0)
+                                        .size(28.0)
                                         .strong()
                                         .color(sentiment_metrics.color),
                                 );
-
-                                // Progress Bar
-                                let (rect, _resp) = ui.allocate_at_least(
-                                    egui::vec2(100.0, 6.0),
-                                    egui::Sense::hover(),
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(
+                                            egui::RichText::new("🌡")
+                                                .size(24.0)
+                                                .color(DesignSystem::TEXT_MUTED),
+                                        );
+                                    },
                                 );
-                                ui.painter()
-                                    .rect_filled(rect, 3.0, DesignSystem::BORDER_SUBTLE);
+                            });
 
-                                let progress_width =
-                                    100.0 * (sentiment_metrics.value as f32 / 100.0);
-                                let progress_rect = egui::Rect::from_min_size(
-                                    rect.min,
-                                    egui::vec2(progress_width, 6.0),
-                                );
-                                ui.painter().rect_filled(
-                                    progress_rect,
-                                    3.0,
-                                    sentiment_metrics.color,
-                                );
+                            ui.add_space(DesignSystem::SPACING_SMALL);
 
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "Index: {}",
-                                        sentiment_metrics.value
-                                    ))
+                            // Custom thin progress bar
+                            let (rect, _) = ui.allocate_at_least(
+                                egui::vec2(ui.available_width(), 6.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter()
+                                .rect_filled(rect, 3.0, DesignSystem::BORDER_SUBTLE);
+                            let progress_width =
+                                rect.width() * (sentiment_metrics.value as f32 / 100.0);
+                            let progress_rect = egui::Rect::from_min_size(
+                                rect.min,
+                                egui::vec2(progress_width, 6.0),
+                            );
+                            ui.painter()
+                                .rect_filled(progress_rect, 3.0, sentiment_metrics.color);
+
+                            ui.add_space(DesignSystem::SPACING_SMALL);
+
+                            ui.label(
+                                egui::RichText::new(format!("Index: {}", sentiment_metrics.value))
                                     .size(11.0)
                                     .color(DesignSystem::TEXT_MUTED),
-                                );
-                            } else {
+                            );
+                        } else {
+                            ui.horizontal(|ui| {
                                 ui.label(
                                     egui::RichText::new(&sentiment_metrics.title)
-                                        .size(22.0)
+                                        .size(28.0)
                                         .strong()
                                         .color(sentiment_metrics.color),
                                 );
-                                ui.label(
-                                    egui::RichText::new("Waiting for data")
-                                        .size(11.0)
-                                        .color(DesignSystem::TEXT_MUTED),
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(
+                                            egui::RichText::new("🌡")
+                                                .size(24.0)
+                                                .color(DesignSystem::TEXT_MUTED),
+                                        );
+                                    },
                                 );
-                            }
-                        });
-
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            });
+                            ui.add_space(DesignSystem::SPACING_SMALL);
                             ui.label(
-                                egui::RichText::new("🌡")
-                                    .size(24.0)
+                                egui::RichText::new("Waiting for data")
+                                    .size(11.0)
                                     .color(DesignSystem::TEXT_MUTED),
                             );
-                        });
+                        }
                     });
                 });
         });
@@ -291,77 +322,110 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
 
         ui.add_space(gap);
 
-        // --- RIGHT COLUMN: MARKET & POSITIONS & NEWS ---
+        // --- RIGHT COLUMN: MARKET & POSITIONS & NEWS & ACTIVITY ---
         ui.allocate_ui_with_layout(
             egui::vec2(right_panel_width, available_height),
             egui::Layout::top_down(egui::Align::LEFT),
             |ui| {
-                ui.label(
-                    egui::RichText::new(agent.i18n.t("market_and_positions"))
-                        .size(12.0)
-                        .strong()
-                        .color(DesignSystem::TEXT_SECONDARY),
-                );
-                ui.add_space(DesignSystem::SPACING_SMALL);
+                let card1_height = (available_height * 0.45 - gap / 2.0).max(150.0);
+                let card2_height = (available_height * 0.55 - gap / 2.0).max(150.0);
 
-                egui::ScrollArea::vertical()
-                    .id_salt("market_list_scroll")
-                    .max_height(available_height * 0.35)
+                // Card 1: Market & Positions
+                Card::new()
+                    .title(agent.i18n.t("market_and_positions"))
+                    .min_height(card1_height)
                     .show(ui, |ui| {
-                        let mut symbol_set: std::collections::HashSet<String> =
-                            agent.market_data.keys().cloned().collect();
+                        let scroll_height = card1_height - 50.0;
+                        egui::ScrollArea::vertical()
+                            .id_salt("market_list_scroll")
+                            .max_height(scroll_height)
+                            .show(ui, |ui| {
+                                let mut symbol_set: std::collections::HashSet<String> =
+                                    agent.market_data.keys().cloned().collect();
 
-                        if let Ok(pf) = agent.portfolio.try_read() {
-                            for key in pf.positions.keys() {
-                                symbol_set.insert(key.clone());
-                            }
+                                if let Ok(pf) = agent.portfolio.try_read() {
+                                    for key in pf.positions.keys() {
+                                        symbol_set.insert(key.clone());
+                                    }
+                                }
+
+                                let mut symbols: Vec<_> = symbol_set.into_iter().collect();
+                                symbols.sort();
+
+                                if let Ok(pf) = agent.portfolio.try_read() {
+                                    for symbol in symbols {
+                                        let pos = pf.positions.get(&symbol);
+                                        let is_selected =
+                                            agent.selected_chart_tab.as_ref() == Some(&symbol);
+
+                                        if render_symbol_card(ui, agent, &symbol, pos, is_selected)
+                                            .clicked()
+                                        {
+                                            agent.selected_chart_tab = Some(symbol.clone());
+                                        }
+                                        ui.add_space(DesignSystem::SPACING_SMALL);
+                                    }
+                                }
+                            });
+                    });
+
+                ui.add_space(gap);
+
+                // Card 2: News & Activity Feed (Tabbed)
+                Card::new().min_height(card2_height).show(ui, |ui| {
+                    let scroll_height = card2_height - 60.0;
+
+                    ui.horizontal(|ui| {
+                        let is_news = agent.right_panel_tab
+                            == crate::application::agents::user_agent::RightPanelTab::News;
+                        let is_activity = agent.right_panel_tab
+                            == crate::application::agents::user_agent::RightPanelTab::Activity;
+
+                        let news_text = if is_news {
+                            egui::RichText::new("📰 News")
+                                .strong()
+                                .color(DesignSystem::ACCENT_PRIMARY)
+                        } else {
+                            egui::RichText::new("📰 News").color(DesignSystem::TEXT_SECONDARY)
+                        };
+                        if ui.selectable_label(is_news, news_text).clicked() {
+                            agent.right_panel_tab =
+                                crate::application::agents::user_agent::RightPanelTab::News;
                         }
 
-                        let mut symbols: Vec<_> = symbol_set.into_iter().collect();
-                        symbols.sort();
+                        ui.add_space(16.0);
 
-                        if let Ok(pf) = agent.portfolio.try_read() {
-                            for symbol in symbols {
-                                let pos = pf.positions.get(&symbol);
-                                let is_selected =
-                                    agent.selected_chart_tab.as_ref() == Some(&symbol);
-
-                                if render_symbol_card(ui, agent, &symbol, pos, is_selected)
-                                    .clicked()
-                                {
-                                    agent.selected_chart_tab = Some(symbol.clone());
-                                }
-                                ui.add_space(DesignSystem::SPACING_SMALL);
-                            }
+                        let activity_text = if is_activity {
+                            egui::RichText::new("⚡ Activity")
+                                .strong()
+                                .color(DesignSystem::ACCENT_PRIMARY)
+                        } else {
+                            egui::RichText::new("⚡ Activity").color(DesignSystem::TEXT_SECONDARY)
+                        };
+                        if ui.selectable_label(is_activity, activity_text).clicked() {
+                            agent.right_panel_tab =
+                                crate::application::agents::user_agent::RightPanelTab::Activity;
                         }
                     });
 
-                ui.add_space(DesignSystem::SPACING_MEDIUM);
+                    ui.add_space(DesignSystem::SPACING_SMALL);
+                    ui.separator();
+                    ui.add_space(DesignSystem::SPACING_SMALL);
 
-                // --- NEWS FEED SECTION ---
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("📰").size(14.0));
-                    ui.label(
-                        egui::RichText::new("MARKET NEWS")
-                            .size(12.0)
-                            .strong()
-                            .color(DesignSystem::TEXT_SECONDARY),
-                    );
+                    match agent.right_panel_tab {
+                        crate::application::agents::user_agent::RightPanelTab::News => {
+                            render_news_feed(ui, &agent.news_events, scroll_height);
+                        }
+                        crate::application::agents::user_agent::RightPanelTab::Activity => {
+                            render_activity_feed(
+                                ui,
+                                &agent.activity_feed,
+                                &agent.i18n,
+                                scroll_height,
+                            );
+                        }
+                    }
                 });
-                ui.add_space(DesignSystem::SPACING_SMALL);
-
-                render_news_feed(ui, &agent.news_events);
-
-                ui.add_space(DesignSystem::SPACING_MEDIUM);
-                ui.label(
-                    egui::RichText::new(agent.i18n.t("section_recent_activity"))
-                        .size(12.0)
-                        .strong()
-                        .color(DesignSystem::TEXT_SECONDARY),
-                );
-                ui.add_space(DesignSystem::SPACING_SMALL);
-
-                render_activity_feed(ui, &agent.activity_feed, &agent.i18n);
             },
         );
     });

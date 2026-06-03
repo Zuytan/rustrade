@@ -17,7 +17,6 @@ pub enum SettingsTab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DashboardView {
     Dashboard,
-    Charts,
     Analytics,
     Architecture,
     Settings,
@@ -27,9 +26,8 @@ impl DashboardView {
     pub fn icon(&self) -> &'static str {
         match self {
             DashboardView::Dashboard => "📊",
-            DashboardView::Charts => "📈",
             DashboardView::Analytics => "🔬",
-            DashboardView::Architecture => "🏗️",
+            DashboardView::Architecture => "🕸",
             DashboardView::Settings => "⚙️",
         }
     }
@@ -37,7 +35,6 @@ impl DashboardView {
     pub fn label(&self, i18n: &I18nService) -> String {
         match self {
             DashboardView::Dashboard => i18n.t("nav_dashboard").to_string(),
-            DashboardView::Charts => i18n.t("nav_charts").to_string(),
             DashboardView::Analytics => i18n.t("nav_analytics").to_string(),
             DashboardView::Architecture => "Architecture".to_string(), // i18n.t("nav_architecture").to_string()
             DashboardView::Settings => i18n.t("nav_settings").to_string(),
@@ -63,7 +60,6 @@ pub fn render_sidebar(
 
         let views = [
             DashboardView::Dashboard,
-            DashboardView::Charts,
             DashboardView::Analytics,
             DashboardView::Architecture,
             DashboardView::Settings,

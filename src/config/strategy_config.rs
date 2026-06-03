@@ -96,22 +96,20 @@ impl StrategyEnvLoader {
             macd_signal_period: Self::parse_usize("MACD_SIGNAL_PERIOD", 9)?,
             macd_requires_rising,
             macd_min_threshold,
-            ema_fast_period: Self::parse_usize("EMA_FAST_PERIOD", 50).unwrap_or(50),
-            ema_slow_period: Self::parse_usize("EMA_SLOW_PERIOD", 150).unwrap_or(150),
-            adx_period: Self::parse_usize("ADX_PERIOD", 14).unwrap_or(14),
-            adx_threshold: Self::parse_decimal("ADX_THRESHOLD", dec!(25.0)).unwrap_or(dec!(25.0)),
+            ema_fast_period: Self::parse_usize("EMA_FAST_PERIOD", 50)?,
+            ema_slow_period: Self::parse_usize("EMA_SLOW_PERIOD", 150)?,
+            adx_period: Self::parse_usize("ADX_PERIOD", 14)?,
+            adx_threshold: Self::parse_decimal("ADX_THRESHOLD", dec!(25.0))?,
             regime_volatility_threshold: Self::parse_decimal(
                 "REGIME_VOLATILITY_THRESHOLD",
                 dec!(2.0),
-            )
-            .unwrap_or(dec!(2.0)),
-            bb_std_dev: Self::parse_decimal("BB_STD_DEV", dec!(2.0)).unwrap_or(dec!(2.0)),
-            spread_bps: Self::parse_decimal("SPREAD_BPS", dec!(0.5)).unwrap_or(dec!(0.5)),
+            )?,
+            bb_std_dev: Self::parse_decimal("BB_STD_DEV", dec!(2.0))?,
+            spread_bps: Self::parse_decimal("SPREAD_BPS", dec!(0.5))?,
             atr_period: Self::parse_usize("ATR_PERIOD", 14)?,
             trailing_stop_atr_multiplier,
             min_profit_ratio: Self::parse_decimal("MIN_PROFIT_RATIO", dec!(1.5))?,
-            take_profit_pct: Self::parse_decimal("TAKE_PROFIT_PCT", dec!(0.05))
-                .unwrap_or(dec!(0.05)),
+            take_profit_pct: Self::parse_decimal("TAKE_PROFIT_PCT", dec!(0.05))?,
             profit_target_multiplier,
             trend_divergence_threshold: Self::parse_decimal(
                 "TREND_DIVERGENCE_THRESHOLD",
@@ -125,36 +123,27 @@ impl StrategyEnvLoader {
             mean_reversion_rsi_exit: Self::parse_decimal("MEAN_REVERSION_RSI_EXIT", dec!(50.0))?,
             mean_reversion_bb_period: Self::parse_usize("MEAN_REVERSION_BB_PERIOD", 20)?,
             signal_confirmation_bars: Self::parse_usize("SIGNAL_CONFIRMATION_BARS", 2)?,
-            smc_ob_lookback: Self::parse_usize("SMC_OB_LOOKBACK", 20).unwrap_or(20),
-            smc_min_fvg_size_pct: Self::parse_decimal("SMC_MIN_FVG_SIZE_PCT", dec!(0.005))
-                .unwrap_or(dec!(0.005)),
-            smc_volume_multiplier: Self::parse_decimal("SMC_VOLUME_MULTIPLIER", dec!(1.5))
-                .unwrap_or(dec!(1.5)),
-            breakout_lookback: Self::parse_usize("BREAKOUT_LOOKBACK", 20).unwrap_or(20),
-            breakout_threshold_pct: Self::parse_decimal("BREAKOUT_THRESHOLD_PCT", dec!(0.0005))
-                .unwrap_or(dec!(0.0005)),
-            breakout_volume_mult: Self::parse_decimal("BREAKOUT_VOLUME_MULT", dec!(0.1))
-                .unwrap_or(dec!(0.1)),
-            stat_momentum_lookback: Self::parse_usize("STAT_MOMENTUM_LOOKBACK", 10).unwrap_or(10),
-            stat_momentum_threshold: Self::parse_decimal("STAT_MOMENTUM_THRESHOLD", dec!(0.8))
-                .unwrap_or(dec!(0.8)),
+            smc_ob_lookback: Self::parse_usize("SMC_OB_LOOKBACK", 20)?,
+            smc_min_fvg_size_pct: Self::parse_decimal("SMC_MIN_FVG_SIZE_PCT", dec!(0.005))?,
+            smc_volume_multiplier: Self::parse_decimal("SMC_VOLUME_MULTIPLIER", dec!(1.5))?,
+            breakout_lookback: Self::parse_usize("BREAKOUT_LOOKBACK", 20)?,
+            breakout_threshold_pct: Self::parse_decimal("BREAKOUT_THRESHOLD_PCT", dec!(0.0005))?,
+            breakout_volume_mult: Self::parse_decimal("BREAKOUT_VOLUME_MULT", dec!(0.1))?,
+            stat_momentum_lookback: Self::parse_usize("STAT_MOMENTUM_LOOKBACK", 10)?,
+            stat_momentum_threshold: Self::parse_decimal("STAT_MOMENTUM_THRESHOLD", dec!(0.8))?,
             stat_momentum_trend_confirmation: Self::parse_bool(
                 "STAT_MOMENTUM_TREND_CONFIRMATION",
                 true,
             ),
-            zscore_lookback: Self::parse_usize("ZSCORE_LOOKBACK", 20).unwrap_or(20),
-            zscore_entry_threshold: Self::parse_decimal("ZSCORE_ENTRY_THRESHOLD", dec!(-1.5))
-                .unwrap_or(dec!(-1.5)),
-            zscore_exit_threshold: Self::parse_decimal("ZSCORE_EXIT_THRESHOLD", dec!(0.0))
-                .unwrap_or(dec!(0.0)),
-            orderflow_ofi_threshold: Self::parse_decimal("ORDERFLOW_OFI_THRESHOLD", dec!(0.3))
-                .unwrap_or(dec!(0.3)),
-            orderflow_stacked_count: Self::parse_usize("ORDERFLOW_STACKED_COUNT", 3).unwrap_or(3),
+            zscore_lookback: Self::parse_usize("ZSCORE_LOOKBACK", 20)?,
+            zscore_entry_threshold: Self::parse_decimal("ZSCORE_ENTRY_THRESHOLD", dec!(-1.5))?,
+            zscore_exit_threshold: Self::parse_decimal("ZSCORE_EXIT_THRESHOLD", dec!(0.0))?,
+            orderflow_ofi_threshold: Self::parse_decimal("ORDERFLOW_OFI_THRESHOLD", dec!(0.3))?,
+            orderflow_stacked_count: Self::parse_usize("ORDERFLOW_STACKED_COUNT", 3)?,
             orderflow_volume_profile_lookback: Self::parse_usize(
                 "ORDERFLOW_VOLUME_PROFILE_LOOKBACK",
                 100,
-            )
-            .unwrap_or(100),
+            )?,
             ensemble_weights: None, // Cannot easily parse weights from env yet
             ensemble_voting_threshold: Self::parse_decimal(
                 "ENSEMBLE_VOTING_THRESHOLD",
@@ -163,25 +152,15 @@ impl StrategyEnvLoader {
             primary_timeframe,
             enabled_timeframes,
             trend_timeframe,
-            enable_ml_data_collection: env::var("ENABLE_ML_DATA_COLLECTION")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse::<bool>()
-                .unwrap_or(false),
+            enable_ml_data_collection: Self::parse_bool("ENABLE_ML_DATA_COLLECTION", false),
             risk_appetite_score: risk_appetite.map(|a| a.score()),
-            snn_activation_threshold: Self::parse_decimal("SNN_ACTIVATION_THRESHOLD", dec!(0.8))
-                .unwrap_or(dec!(0.8)),
-            snn_encoder_threshold: Self::parse_decimal("SNN_ENCODER_THRESHOLD", dec!(0.01))
-                .unwrap_or(dec!(0.01)),
+            snn_activation_threshold: Self::parse_decimal("SNN_ACTIVATION_THRESHOLD", dec!(0.8))?,
+            snn_encoder_threshold: Self::parse_decimal("SNN_ENCODER_THRESHOLD", dec!(0.01))?,
             snn_surrogate_model_path: env::var("SNN_SURROGATE_MODEL_PATH")
                 .unwrap_or_else(|_| "models/snn/snn_surrogate_model.json".to_string()),
-            snn_surrogate_window_size: Self::parse_usize("SNN_SURROGATE_WINDOW_SIZE", 50)
-                .unwrap_or(50),
-            ensemble_include_snn: env::var("ENSEMBLE_INCLUDE_SNN")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse::<bool>()
-                .unwrap_or(false),
-            ensemble_snn_weight: Self::parse_decimal("ENSEMBLE_SNN_WEIGHT", dec!(0.3))
-                .unwrap_or(dec!(0.3)),
+            snn_surrogate_window_size: Self::parse_usize("SNN_SURROGATE_WINDOW_SIZE", 50)?,
+            ensemble_include_snn: Self::parse_bool("ENSEMBLE_INCLUDE_SNN", false),
+            ensemble_snn_weight: Self::parse_decimal("ENSEMBLE_SNN_WEIGHT", dec!(0.3))?,
         };
 
         config

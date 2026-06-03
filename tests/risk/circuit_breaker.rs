@@ -55,6 +55,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
         correlation_config:
             rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
         volatility_config: rustrade::domain::risk::volatility_manager::VolatilityConfig::default(),
+        ..RiskConfig::default()
     };
 
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);

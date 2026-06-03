@@ -1,9 +1,10 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 /// Configuration for the Volatility Manager
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VolatilityConfig {
     /// Number of periods to calculate average volatility (e.g., 20)
     pub lookback_period: usize,

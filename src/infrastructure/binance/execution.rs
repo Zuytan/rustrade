@@ -15,7 +15,7 @@ use crate::infrastructure::core::circuit_breaker::CircuitBreaker;
 use crate::infrastructure::core::http_client_factory::HttpClientFactory;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use chrono::TimeZone;
+
 use hmac::{Hmac, Mac};
 use reqwest_middleware::ClientWithMiddleware;
 use rust_decimal::Decimal;
@@ -30,14 +30,12 @@ pub struct BinanceExecutionService {
     api_key: String,
     api_secret: String,
     base_url: String,
-    order_update_tx: broadcast::Sender<OrderUpdate>,
     circuit_breaker: Arc<CircuitBreaker>,
 }
 
 impl BinanceExecutionService {
     pub fn new(api_key: String, api_secret: String, base_url: String) -> Self {
         let client = HttpClientFactory::create_client();
-        let (order_update_tx, _) = broadcast::channel(100);
         let circuit_breaker = Arc::new(CircuitBreaker::new(
             "BinanceExecution",
             5,
@@ -50,7 +48,6 @@ impl BinanceExecutionService {
             api_key,
             api_secret,
             base_url,
-            order_update_tx,
             circuit_breaker,
         }
     }
@@ -225,21 +222,9 @@ impl ExecutionService for BinanceExecutionService {
     }
 
     async fn get_today_orders(&self) -> Result<Vec<Order>> {
-        // Get orders from start of today (UTC)
-        let today_start = chrono::Utc::now()
-            .date_naive()
-            .and_hms_opt(0, 0, 0)
-            .expect("midnight is always a valid time");
-        let _start_time = chrono::Utc
-            .from_utc_datetime(&today_start)
-            .timestamp_millis();
-
-        // Note: Binance requires symbol for allOrders endpoint
-        // For simplicity, return empty for now (can be enhanced to query all symbols)
-        warn!(
-            "BinanceExecutionService::get_today_orders not fully implemented - requires symbol parameter"
+        anyhow::bail!(
+            "BinanceExecutionService::get_today_orders is not implemented - requires symbol parameter"
         );
-        Ok(vec![])
     }
 
     async fn get_open_orders(&self) -> Result<Vec<Order>> {
@@ -390,15 +375,9 @@ impl ExecutionService for BinanceExecutionService {
     }
 
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
-        // Known limitation: User Data Stream is not implemented; order status updates rely on polling.
-        // Priority: Medium/Low - Current strategy relies on polling/REST. Stream needed only for HFT or high-concurrency needs.
-        // This requires:
-        // 1. POST /api/v3/userDataStream to get listenKey
-        // 2. Connect WebSocket to wss://stream.binance.com:9443/ws/<listenKey>
-        // 3. Keep listenKey alive with PUT requests every 30 minutes
-        // 4. Parse executionReport events and broadcast as OrderUpdate
-
-        Ok(self.order_update_tx.subscribe())
+        anyhow::bail!(
+            "BinanceExecutionService::subscribe_order_updates is not implemented (requires User Data Stream)"
+        );
     }
 }
 

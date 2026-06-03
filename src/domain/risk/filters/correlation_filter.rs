@@ -1,8 +1,9 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::{Deserialize, Serialize};
 
 /// Configuration for correlation-based diversification
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorrelationFilterConfig {
     /// Maximum allowed correlation with any existing position (e.g., 0.85)
     pub max_correlation_threshold: Decimal,

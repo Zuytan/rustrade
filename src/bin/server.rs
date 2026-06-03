@@ -50,7 +50,8 @@ async fn main() -> Result<()> {
     let app = Application::build(config.clone()).await?;
 
     info!("Starting trading system...");
-    let handle = app.start().await?;
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let (handle, mut join_set) = app.start(cancel_token.clone()).await?;
     info!("Trading system running.");
 
     // Start metrics reporter if enabled
@@ -75,8 +76,27 @@ async fn main() -> Result<()> {
 
     info!("Server running. Press Ctrl+C to shutdown.");
 
-    tokio::signal::ctrl_c().await?;
-    info!("Shutdown signal received. Exiting...");
+    tokio::select! {
+        _ = cancel_token.cancelled() => {
+            info!("Cancellation requested. Waiting for tasks to complete...");
+        }
+        res = join_set.join_next() => {
+            if let Some(res) = res {
+                if let Err(e) = res {
+                    tracing::error!("A background task panicked or was aborted: {}", e);
+                }
+                cancel_token.cancel();
+            }
+        }
+    }
+
+    info!("Shutting down background tasks...");
+    while let Some(res) = join_set.join_next().await {
+        if let Err(e) = res {
+            tracing::error!("Background task error during shutdown: {}", e);
+        }
+    }
+    info!("All background tasks completed. Server exiting.");
 
     Ok(())
 }

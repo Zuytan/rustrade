@@ -10,10 +10,11 @@ pub fn render_activity_feed(
     ui: &mut egui::Ui,
     events: &VecDeque<ActivityEvent>,
     i18n: &I18nService,
+    max_height: f32,
 ) {
     egui::ScrollArea::vertical()
         .id_salt("activity_feed_scroll")
-        .max_height(300.0)
+        .max_height(max_height)
         .show(ui, |ui| {
             if events.is_empty() {
                 ui.label(

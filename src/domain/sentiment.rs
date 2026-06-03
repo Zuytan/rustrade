@@ -48,6 +48,7 @@ impl SentimentClassification {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sentiment {
+    pub symbol: Option<String>,
     pub value: u8, // 0-100
     pub classification: SentimentClassification,
     pub timestamp: DateTime<Utc>,

@@ -124,7 +124,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                         let slow_period = 50;
 
                         for (i, c) in candles.iter().enumerate() {
-                            let t = c.timestamp as f64;
+                            let t = c.timestamp as f64 / 1000.0; // Convert millis to seconds for egui_plot
                             let open = c.open.to_f64().unwrap_or(0.0);
                             let close = c.close.to_f64().unwrap_or(0.0);
                             let high = c.high.to_f64().unwrap_or(0.0);
@@ -142,7 +142,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                                 BoxElem::new(t, BoxSpread::new(low, min_oc, mid, max_oc, high))
                                     .fill(color)
                                     .stroke(egui::Stroke::new(1.0, color))
-                                    .box_width(45.0),
+                                    .box_width(45.0), // 45 seconds wide (out of 60s candle)
                             );
 
                             if i >= fast_period - 1 {

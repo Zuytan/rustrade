@@ -5,7 +5,8 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use rustrade::application::agents::analyst_config::AnalystConfig;
 use rustrade::application::benchmarking::engine::BenchmarkEngine;
-use rustrade::domain::config::{RiskConfig, StrategyConfig};
+use rustrade::domain::config::StrategyConfig;
+use rustrade::domain::risk::risk_config::RiskConfig;
 use rustrade::domain::trading::types::normalize_crypto_symbol;
 
 /// One benchmark window: (label, start_dt, end_dt).

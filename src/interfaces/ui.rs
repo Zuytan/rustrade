@@ -1,7 +1,7 @@
 use crate::application::agents::user_agent::UserAgent;
 use crate::interfaces::dashboard_components::{
     activity_feed::render_logs_panel, analytics_view::render_analytics_view,
-    architecture_view::render_architecture_view, chart_panel::render_chart_panel,
+    architecture_view::render_architecture_view,
 };
 use eframe::egui;
 impl eframe::App for UserAgent {
@@ -62,10 +62,6 @@ impl eframe::App for UserAgent {
                 crate::interfaces::ui_components::DashboardView::Dashboard => {
                     crate::interfaces::dashboard::render_dashboard(ui, self);
                 }
-                crate::interfaces::ui_components::DashboardView::Charts => {
-                    render_chart_panel(self, ui);
-                }
-
                 crate::interfaces::ui_components::DashboardView::Analytics => {
                     render_analytics_view(ui, self);
                 }

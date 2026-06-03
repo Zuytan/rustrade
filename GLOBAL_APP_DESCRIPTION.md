@@ -119,7 +119,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 ## 6. Infrastructure & Data
 
 ### Connectivity
-- **Broker Agnostic**: Seamlessly switches between Alpaca (Stocks/Crypto), Binance (Crypto), and Mock (Paper Trading). OANDA (Forex) is supported as a sector provider only; when `MODE=oanda`, market data and execution fall back to Mock until full v20 API integration.
+- **Broker Agnostic**: Seamlessly switches between Alpaca (Stocks/Crypto), Binance (Crypto), and Mock (Paper Trading). OANDA (Forex) is currently incomplete and unsupported.
 - **Modular Services**: Each broker infrastructure is organized into focused modules:
   - **Binance**: `common.rs`, `market_data.rs`, `execution.rs`, `sector_provider.rs`, `websocket.rs`
   - **Alpaca**: Similar modular structure for consistency

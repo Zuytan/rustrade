@@ -83,6 +83,13 @@ enum SubscriptionCommand {
     Shutdown,
 }
 
+/// Result of a connection attempt loop
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConnectionLoopResult {
+    Reconnect { authenticated: bool },
+    Shutdown,
+}
+
 /// Persistent WebSocket connection manager
 pub struct AlpacaWebSocketManager {
     /// WebSocket URL
@@ -240,13 +247,21 @@ impl AlpacaWebSocketManager {
                 )
                 .await
                 {
-                    Ok(authenticated) => {
+                    Ok(ConnectionLoopResult::Shutdown) => {
+                        info!("WebSocketManager: Shutting down connection loop cleanly.");
+                        break;
+                    }
+                    Ok(ConnectionLoopResult::Reconnect { authenticated }) => {
                         if authenticated {
                             warn!(
                                 "WebSocketManager: Connection ended (authenticated). Reconnecting..."
                             );
                         } else {
                             warn!("WebSocketManager: Connection ended (pre-auth). Reconnecting...");
+                        }
+                        // Reset reconnect attempts on clean close if we were authenticated
+                        if authenticated {
+                            reconnect_attempts = 0;
                         }
                     }
                     Err(e) => {
@@ -281,11 +296,11 @@ impl AlpacaWebSocketManager {
     }
 
     /// Main connection loop
-    /// Returns Ok(true) if connection was authenticated successfully, Ok(false) if ended before auth
+    /// Returns Ok(ConnectionLoopResult) indicating if connection should reconnect or shutdown
     async fn run_connection(
         config: ConnectionConfig<'_>,
         deps: ConnectionDependencies<'_>,
-    ) -> Result<bool> {
+    ) -> Result<ConnectionLoopResult> {
         // Connect to WebSocket
         let (ws_stream, _) = connect_async(config.ws_url)
             .await
@@ -416,7 +431,7 @@ impl AlpacaWebSocketManager {
                         }
                         Some(Ok(Message::Close(_))) => {
                             info!("WebSocketManager: Connection closed by server");
-                            return Ok(authenticated);
+                            return Ok(ConnectionLoopResult::Reconnect { authenticated });
                         }
                         Some(Err(e)) => {
                             error!("WebSocketManager: WebSocket error: {}", e);
@@ -424,7 +439,7 @@ impl AlpacaWebSocketManager {
                         }
                         None => {
                             warn!("WebSocketManager: Stream ended");
-                            return Ok(authenticated);
+                            return Ok(ConnectionLoopResult::Reconnect { authenticated });
                         }
                         _ => {}
                     }
@@ -467,7 +482,7 @@ impl AlpacaWebSocketManager {
                         }
                         SubscriptionCommand::Shutdown => {
                             info!("WebSocketManager: Shutdown command received");
-                            return Ok(authenticated);
+                            return Ok(ConnectionLoopResult::Shutdown);
                         }
                     }
                 }

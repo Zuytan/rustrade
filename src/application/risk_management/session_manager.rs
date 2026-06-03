@@ -92,23 +92,19 @@ impl SessionManager {
                     // Validate that the loaded state matches the current account reality
                     // If the HWM is significantly different from current equity (e.g. > 50%),
                     // we assume this is a different account/environment and RESET.
-                    // Example: Persisted HWM $100k, Current $12k -> Variance 88% -> RESET
-                    use rust_decimal::prelude::ToPrimitive;
-                    let hwm_f64 = state.equity_high_water_mark.to_f64().unwrap_or(0.0);
-                    let current_f64 = initial_equity.to_f64().unwrap_or(0.0);
-
-                    let variance = if hwm_f64 > 0.0 {
-                        (hwm_f64 - current_f64).abs() / hwm_f64
+                    let variance = if state.equity_high_water_mark > Decimal::ZERO {
+                        (state.equity_high_water_mark - initial_equity).abs()
+                            / state.equity_high_water_mark
                     } else {
-                        0.0
+                        Decimal::ZERO
                     };
 
-                    if variance > 0.1 {
+                    if variance > rust_decimal_macros::dec!(0.1) {
                         warn!(
-                            "SessionManager: Detected equity discrepancy (Variance: {:.1}%). \
+                            "SessionManager: Detected equity discrepancy (Variance: {}%). \
                             Persisted HWM: {}, Current Equity: {}. \
                             Assuming environment change or stale peak and RESETTING risk state.",
-                            variance * 100.0,
+                            variance * rust_decimal_macros::dec!(100.0),
                             state.equity_high_water_mark,
                             initial_equity
                         );

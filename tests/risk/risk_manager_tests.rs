@@ -901,6 +901,7 @@ async fn test_sentiment_risk_adjustment() {
 
     // 1. Inject Sentiment: Extreme Fear (20)
     let sentiment = Sentiment {
+        symbol: Some("BTC".to_string()),
         value: 20,
         classification: SentimentClassification::from_score(20),
         timestamp: Utc::now(),
@@ -937,6 +938,7 @@ async fn test_sentiment_risk_adjustment() {
 
     // 4. Inject Sentiment: Greed (60)
     let sentiment_greed = Sentiment {
+        symbol: Some("BTC".to_string()),
         value: 60,
         classification: SentimentClassification::from_score(60),
         timestamp: Utc::now(),

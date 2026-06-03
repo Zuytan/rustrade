@@ -44,6 +44,7 @@ async fn test_concurrent_proposals_respect_limits() {
         correlation_config:
             rustrade::domain::risk::filters::correlation_filter::CorrelationFilterConfig::default(),
         volatility_config: rustrade::domain::risk::volatility_manager::VolatilityConfig::default(),
+        ..RiskConfig::default()
     };
 
     let state_manager = Arc::new(PortfolioStateManager::new(

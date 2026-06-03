@@ -23,6 +23,7 @@ use crate::application::{
 };
 use crate::config::Config;
 use crate::infrastructure::observability::Metrics;
+use tokio_util::sync::CancellationToken;
 
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::repositories::{
@@ -40,7 +41,7 @@ pub struct SystemHandle {
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub candle_rx: broadcast::Receiver<Candle>,
     pub sentiment_rx: broadcast::Receiver<Sentiment>,
-    pub news_rx: broadcast::Receiver<crate::domain::listener::NewsEvent>,
+    pub news_rx: Option<broadcast::Receiver<crate::domain::listener::NewsEvent>>,
     pub connection_health_service: Arc<ConnectionHealthService>,
     pub strategy_mode: crate::domain::market::strategy_config::StrategyMode,
     pub risk_appetite: Option<crate::domain::risk::risk_appetite::RiskAppetite>,
@@ -131,7 +132,10 @@ impl Application {
         })
     }
 
-    pub async fn start(self) -> Result<SystemHandle> {
+    pub async fn start(
+        self,
+        cancel_token: CancellationToken,
+    ) -> Result<(SystemHandle, tokio::task::JoinSet<()>)> {
         info!("Starting Agents...");
 
         // Initial Portfolio Sync
@@ -155,7 +159,7 @@ impl Application {
         }
 
         // Initialize Agents
-        let agents = AgentsBootstrap::init(
+        let (agents, join_set) = AgentsBootstrap::init(
             &self.config,
             &self.services,
             &self.persistence,
@@ -163,6 +167,7 @@ impl Application {
             self.connection_health_service.clone(),
             self.metrics.clone(),
             self.agent_registry.clone(),
+            cancel_token.clone(),
         )
         .await?;
 
@@ -187,13 +192,14 @@ impl Application {
         ));
 
         let service_clone = shutdown_service.clone();
+        let ct = cancel_token.clone();
         tokio::spawn(async move {
             match tokio::signal::ctrl_c().await {
                 Ok(()) => {
                     info!("Received Ctrl+C signal.");
                     service_clone.shutdown().await;
-                    info!("Shutdown sequence completed. Exiting.");
-                    std::process::exit(0);
+                    info!("Shutdown sequence completed. Signalling cancellation.");
+                    ct.cancel();
                 }
                 Err(err) => {
                     error!("Unable to listen for shutdown signal: {}", err);
@@ -201,24 +207,27 @@ impl Application {
             }
         });
 
-        Ok(SystemHandle {
-            sentinel_cmd_tx: agents.sentinel_cmd_tx,
-            risk_cmd_tx: agents.risk_cmd_tx,
-            analyst_cmd_tx: agents.analyst_cmd_tx,
-            proposal_tx: agents.proposal_tx,
-            portfolio: self.portfolio.clone(),
-            candle_rx: agents.candle_rx,
-            sentiment_rx: agents.sentiment_rx,
-            news_rx: agents.news_rx,
-            connection_health_service: self.connection_health_service.clone(),
-            strategy_mode: self.config.strategy.strategy_mode,
-            risk_appetite: self
-                .config
-                .strategy
-                .risk_appetite_score
-                .and_then(|s| crate::domain::risk::risk_appetite::RiskAppetite::new(s).ok()),
-            metrics: self.metrics.clone(),
-            agent_registry: self.agent_registry.clone(),
-        })
+        Ok((
+            SystemHandle {
+                sentinel_cmd_tx: agents.sentinel_cmd_tx,
+                risk_cmd_tx: agents.risk_cmd_tx,
+                analyst_cmd_tx: agents.analyst_cmd_tx,
+                proposal_tx: agents.proposal_tx,
+                portfolio: self.portfolio.clone(),
+                candle_rx: agents.candle_rx,
+                sentiment_rx: agents.sentiment_rx,
+                news_rx: agents.news_rx,
+                connection_health_service: self.connection_health_service.clone(),
+                strategy_mode: self.config.strategy.strategy_mode,
+                risk_appetite: self
+                    .config
+                    .strategy
+                    .risk_appetite_score
+                    .and_then(|s| crate::domain::risk::risk_appetite::RiskAppetite::new(s).ok()),
+                metrics: self.metrics.clone(),
+                agent_registry: self.agent_registry.clone(),
+            },
+            join_set,
+        ))
     }
 }

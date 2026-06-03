@@ -12,6 +12,7 @@ pub struct ListenerAgent {
     analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
     /// Optional broadcast sender to forward news events to UI
     news_broadcast_tx: Option<broadcast::Sender<NewsEvent>>,
+    sentiment_broadcast_tx: Option<broadcast::Sender<crate::domain::sentiment::Sentiment>>,
     agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
 }
 
@@ -27,6 +28,7 @@ impl ListenerAgent {
             config,
             analyst_cmd_tx,
             news_broadcast_tx: None,
+            sentiment_broadcast_tx: None,
             agent_registry,
         }
     }
@@ -37,6 +39,7 @@ impl ListenerAgent {
         config: ListenerConfig,
         analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
         news_broadcast_tx: broadcast::Sender<NewsEvent>,
+        sentiment_broadcast_tx: broadcast::Sender<crate::domain::sentiment::Sentiment>,
         agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Self {
         Self {
@@ -44,6 +47,7 @@ impl ListenerAgent {
             config,
             analyst_cmd_tx,
             news_broadcast_tx: Some(news_broadcast_tx),
+            sentiment_broadcast_tx: Some(sentiment_broadcast_tx),
             agent_registry,
         }
     }
@@ -178,6 +182,26 @@ impl ListenerAgent {
             source: event.source.clone(),
             url: event.url.clone(),
         };
+
+        if let Some(tx) = &self.sentiment_broadcast_tx {
+            let score = event.sentiment_score.unwrap_or(match sentiment {
+                crate::domain::listener::NewsSentiment::Bullish => 0.5,
+                crate::domain::listener::NewsSentiment::Bearish => -0.5,
+                crate::domain::listener::NewsSentiment::Neutral => 0.0,
+            });
+            let value = (score * 50.0 + 50.0).clamp(0.0, 100.0) as u8;
+
+            let sent = crate::domain::sentiment::Sentiment {
+                symbol: Some(rule.target_symbol.clone()),
+                value,
+                classification: crate::domain::sentiment::SentimentClassification::from_score(
+                    value,
+                ),
+                timestamp: chrono::Utc::now(),
+                source: event.source.clone(),
+            };
+            let _ = tx.send(sent);
+        }
 
         info!(
             "Listener: Sending News Signal to Analyst: {:?} for {}",

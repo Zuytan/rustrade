@@ -132,10 +132,10 @@ impl AlpacaMarketDataService {
                 bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
             }
 
-            let data: MultiBarResponse =
-                response.json().await.unwrap_or_else(|_| MultiBarResponse {
-                    bars: std::collections::HashMap::new(),
-                });
+            let data: MultiBarResponse = response
+                .json()
+                .await
+                .context("Failed to parse historical bars response")?;
 
             for (symbol, bars) in data.bars {
                 if let Some(bar) = bars.first() {
@@ -706,7 +706,15 @@ impl MarketDataService for AlpacaMarketDataService {
                     .context("Failed to fetch snapshots from Alpaca")?;
 
                 if !response.status().is_success() {
+                    let status = response.status();
                     let error_text = response.text().await.unwrap_or_default();
+                    tracing::error!(
+                        "Alpaca API Error [{}]: URL: {} | Symbols: {} | Response: {}",
+                        status,
+                        url_with_query,
+                        symbols_param,
+                        error_text
+                    );
                     anyhow::bail!("Alpaca snapshots fetch failed: {}", error_text);
                 }
 
@@ -730,12 +738,13 @@ impl MarketDataService for AlpacaMarketDataService {
 
                 let resp: std::collections::HashMap<String, Snapshot> = if is_crypto {
                     if let Some(snapshots_obj) = json_val.get("snapshots") {
-                        serde_json::from_value(snapshots_obj.clone()).unwrap_or_default()
+                        serde_json::from_value(snapshots_obj.clone())
+                            .context("Failed to parse crypto snapshots")?
                     } else {
                         std::collections::HashMap::new()
                     }
                 } else {
-                    serde_json::from_value(json_val).unwrap_or_default()
+                    serde_json::from_value(json_val).context("Failed to parse stock snapshots")?
                 };
 
                 let mut prices = std::collections::HashMap::new();
