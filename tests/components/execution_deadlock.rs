@@ -79,6 +79,7 @@ async fn test_execution_timeouts_on_deadlock() {
         order_type: OrderType::Market,
         status: rustrade::domain::trading::types::OrderStatus::New,
         timestamp: 0,
+        correlation_id: None,
     };
 
     let start = std::time::Instant::now();

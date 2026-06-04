@@ -3,15 +3,14 @@ use crate::application::optimization::parallel_benchmark::ParallelBenchmarkRunne
 use crate::application::optimization::simulator::{BacktestResult, Simulator};
 use crate::config::{Config, StrategyMode};
 use crate::domain::performance::metrics::PerformanceMetrics;
+use crate::domain::ports::MarketDataService;
 use crate::domain::risk::risk_appetite::RiskAppetite;
 use crate::domain::trading::fee_model::ConstantFeeModel;
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, OrderSide, Trade};
-use crate::infrastructure::alpaca::AlpacaMarketDataService;
 use crate::infrastructure::mock::MockExecutionService;
 use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
-use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -35,49 +34,20 @@ pub struct AnchoredWalkForwardResult {
 }
 
 pub struct BenchmarkEngine {
-    market_service: Arc<AlpacaMarketDataService>,
+    market_service: Arc<dyn MarketDataService>,
     pub base_config: Config,
 }
 
 impl BenchmarkEngine {
-    pub async fn new() -> Self {
-        // Load env
-        if dotenvy::from_filename(".env.benchmark").is_err() {
-            dotenvy::dotenv().ok();
-        }
-
-        let api_key = env::var("ALPACA_API_KEY").expect("ALPACA_API_KEY must be set");
-        let api_secret = env::var("ALPACA_SECRET_KEY").expect("ALPACA_SECRET_KEY must be set");
-        let data_url =
-            env::var("ALPACA_DATA_URL").unwrap_or("https://data.alpaca.markets".to_string());
-        let api_base_url =
-            env::var("ALPACA_BASE_URL").unwrap_or("https://paper-api.alpaca.markets".to_string());
-        let ws_url = env::var("ALPACA_WS_URL")
-            .unwrap_or("wss://stream.data.alpaca.markets/v2/iex".to_string());
-
-        let base_config = Config::from_env().unwrap_or_else(|_| {
-            tracing::error!("Failed to load config from env");
-            // In a real app we might want to fail hard here or return Result
-            // For now constructing a default or panicking is what the original did
-            panic!("Failed to load config");
-        });
-
-        let market_service = Arc::new(
-            AlpacaMarketDataService::builder()
-                .api_key(api_key)
-                .api_secret(api_secret)
-                .data_base_url(data_url)
-                .api_base_url(api_base_url)
-                .ws_url(ws_url)
-                // Use existing config val or 0.0 for benchmark strictness
-                .min_volume_threshold(0.0)
-                .asset_class(crate::config::AssetClass::Stock)
-                .build(),
-        );
-
+    /// Creates a new BenchmarkEngine with an injected MarketDataService.
+    ///
+    /// This constructor allows using any market data source (Mock, Binance, etc.)
+    /// and is the preferred way to create a BenchmarkEngine for testing or
+    /// non-Alpaca environments.
+    pub fn new(market_service: Arc<dyn MarketDataService>, config: Config) -> Self {
         Self {
             market_service,
-            base_config,
+            base_config: config,
         }
     }
 
@@ -140,21 +110,6 @@ impl BenchmarkEngine {
         runner
             .run_parallel(symbols, start, end, timeframe.to_string())
             .await
-    }
-
-    pub async fn get_historical_movers(
-        &self,
-        date: chrono::NaiveDate,
-        universe: &[String],
-    ) -> anyhow::Result<Vec<String>> {
-        self.market_service
-            .get_historical_movers(date, universe)
-            .await
-    }
-
-    pub async fn get_top_movers(&self) -> anyhow::Result<Vec<String>> {
-        use crate::domain::ports::MarketDataService;
-        self.market_service.get_top_movers().await
     }
 
     /// Walk-forward backtesting: single split train (e.g. 70%) / test (30%), run backtest on test only.

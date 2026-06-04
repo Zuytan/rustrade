@@ -306,6 +306,7 @@ impl Simulator {
                 order_type: crate::domain::trading::types::OrderType::Market,
                 status: crate::domain::trading::types::OrderStatus::Filled,
                 timestamp: prop.timestamp,
+                correlation_id: prop.correlation_id.clone(),
             };
 
             if let Err(e) = self.execution_service.execute(order.clone()).await {

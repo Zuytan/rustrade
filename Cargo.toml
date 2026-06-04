@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.99.18"
+version = "0.99.19"
 edition = "2024"
 default-run = "rustrade"
 
@@ -71,6 +71,7 @@ reqwest-middleware = "0.5"
 reqwest-retry = "0.9"
 task-local-extensions = "0.1"
 rss = "2.0.13"
+# NOTE: early maturity, calibrated for social media (Twitter), not specialized for financial text
 vader_sentiment = "0.1"
 rayon = "1.12"
 statrs = "0.18"  # Statistical functions (Z-Score, rolling stats)
@@ -78,9 +79,11 @@ statrs = "0.18"  # Statistical functions (Z-Score, rolling stats)
 # Observability (push-based, no HTTP server)
 prometheus = "0.14"
 clap = { version = "4.6.1", features = ["derive"] }
+# NOTE: limited maintenance, known Random Forest limitations
 smartcore = { version = "0.4.10", features = ["serde"] }
 csv = "1.4.0"
 
+# TODO: Pin to stable once ort 2.0 releases
 ort = { version = "2.0.0-rc.12", features = ["ndarray"] }
 ndarray = { version = "0.17", features = ["serde"] }
 tokio-util = { version = "0.7.18", features = ["full"] }

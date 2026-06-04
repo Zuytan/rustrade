@@ -8,6 +8,8 @@ use rustrade::application::benchmarking::engine::BenchmarkEngine;
 use rustrade::domain::config::StrategyConfig;
 use rustrade::domain::risk::risk_config::RiskConfig;
 use rustrade::domain::trading::types::normalize_crypto_symbol;
+use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
+use std::sync::Arc;
 
 /// One benchmark window: (label, start_dt, end_dt).
 type PeriodWindow = (String, DateTime<Utc>, DateTime<Utc>);
@@ -181,6 +183,46 @@ pub struct RunArgs {
     pub timeframe: String,
 }
 
+async fn create_benchmark_engine(asset_class_str: &str) -> anyhow::Result<BenchmarkEngine> {
+    use std::env;
+
+    // Load env
+    if dotenvy::from_filename(".env.benchmark").is_err() {
+        dotenvy::dotenv().ok();
+    }
+
+    let api_key = env::var("ALPACA_API_KEY").expect("ALPACA_API_KEY must be set");
+    let api_secret = env::var("ALPACA_SECRET_KEY").expect("ALPACA_SECRET_KEY must be set");
+    let data_url =
+        env::var("ALPACA_DATA_URL").unwrap_or_else(|_| "https://data.alpaca.markets".to_string());
+    let api_base_url = env::var("ALPACA_BASE_URL")
+        .unwrap_or_else(|_| "https://paper-api.alpaca.markets".to_string());
+    let ws_url = env::var("ALPACA_WS_URL")
+        .unwrap_or_else(|_| "wss://stream.data.alpaca.markets/v2/iex".to_string());
+
+    let base_config = rustrade::config::Config::from_env().unwrap_or_else(|e| {
+        tracing::error!("Failed to load config from env: {}", e);
+        panic!("Failed to load config")
+    });
+
+    let asset_class = rustrade::config::AssetClass::from_str(asset_class_str)
+        .unwrap_or(rustrade::config::AssetClass::Stock);
+
+    let market_service = Arc::new(
+        AlpacaMarketDataService::builder()
+            .api_key(api_key)
+            .api_secret(api_secret)
+            .data_base_url(data_url)
+            .api_base_url(api_base_url)
+            .ws_url(ws_url)
+            .min_volume_threshold(0.0)
+            .asset_class(asset_class)
+            .build(),
+    );
+
+    Ok(BenchmarkEngine::new(market_service, base_config))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Setup logging
@@ -193,7 +235,6 @@ async fn main() -> anyhow::Result<()> {
     tracing::subscriber::set_global_default(subscriber).ok();
 
     let cli = Cli::parse();
-    let engine = BenchmarkEngine::new().await;
     let reporter = BenchmarkReporter::new("benchmark_results");
 
     match cli.command {
@@ -220,6 +261,8 @@ async fn main() -> anyhow::Result<()> {
             unsafe {
                 std::env::set_var("ASSET_CLASS", &asset_class);
             }
+
+            let engine = create_benchmark_engine(&asset_class).await?;
 
             let mut symbol_list: Vec<String> =
                 symbols.split(',').map(|s| s.trim().to_string()).collect();
@@ -552,6 +595,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Matrix { symbol: _ } => {
             println!("🔬 RUNNING EXPANDED MATRIX BENCHMARK");
+            let engine = create_benchmark_engine("stock").await?;
 
             // Define Symbols
             let symbols = vec!["TSLA", "NVDA", "AAPL", "AMD", "MSFT"];
@@ -625,6 +669,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Verify => {
             println!("✅ RUNNING VERIFICATION SUITE");
+            let engine = create_benchmark_engine("stock").await?;
             let start = Utc.with_ymd_and_hms(2024, 1, 1, 14, 30, 0).unwrap();
             let end = Utc.with_ymd_and_hms(2024, 6, 30, 21, 0, 0).unwrap();
             let symbol = "NVDA";

@@ -123,6 +123,7 @@ impl StrategyEnvLoader {
             mean_reversion_rsi_exit: Self::parse_decimal("MEAN_REVERSION_RSI_EXIT", dec!(50.0))?,
             mean_reversion_bb_period: Self::parse_usize("MEAN_REVERSION_BB_PERIOD", 20)?,
             signal_confirmation_bars: Self::parse_usize("SIGNAL_CONFIRMATION_BARS", 2)?,
+            strict_sell_htf_confirmation: Self::parse_bool("STRICT_SELL_HTF_CONFIRMATION", false),
             smc_ob_lookback: Self::parse_usize("SMC_OB_LOOKBACK", 20)?,
             smc_min_fvg_size_pct: Self::parse_decimal("SMC_MIN_FVG_SIZE_PCT", dec!(0.005))?,
             smc_volume_multiplier: Self::parse_decimal("SMC_VOLUME_MULTIPLIER", dec!(1.5))?,

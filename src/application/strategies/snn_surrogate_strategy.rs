@@ -21,6 +21,9 @@ pub struct SnnSurrogateStrategy {
 
     /// Minimum spike magnitude for encoding.
     spike_threshold: f64,
+
+    /// Whether the model has been validated as having trained weights.
+    is_model_trained: bool,
 }
 
 /// Struct holding gathered features for analysis.
@@ -48,11 +51,24 @@ impl SnnSurrogateStrategy {
         let json = std::fs::read_to_string(model_path)?;
         let network: CompetitiveSnnNetwork = serde_json::from_str(&json)?;
 
+        // Validate that the model has non-trivial weights (cold-start guard)
+        let weight_sum: f64 = network.layer_a.weights.iter().map(|w| w.abs()).sum();
+        let is_model_trained = weight_sum > f64::EPSILON;
+
+        if !is_model_trained {
+            tracing::warn!(
+                "⚠️  SNN model loaded from {} but weights are all zero (untrained). \
+                 Strategy will skip analysis until a trained model is provided.",
+                model_path
+            );
+        }
+
         info!(
-            "✅ SNN Surrogate loaded: hidden_a={}, hidden_b={}, input_dim={}",
+            "✅ SNN Surrogate loaded: hidden_a={}, hidden_b={}, input_dim={}, trained={}",
             network.layer_a.num_neurons,
             network.layer_b.num_neurons,
-            network.layer_a.weights.shape()[0] // input_dim
+            network.layer_a.weights.shape()[0], // input_dim
+            is_model_trained
         );
 
         Ok(Self {
@@ -60,6 +76,7 @@ impl SnnSurrogateStrategy {
             activation_threshold,
             window_size,
             spike_threshold,
+            is_model_trained,
         })
     }
 
@@ -211,6 +228,11 @@ impl SnnSurrogateStrategy {
 
 impl TradingStrategy for SnnSurrogateStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
+        // Cold-start guard: skip analysis if model has untrained weights
+        if !self.is_model_trained {
+            return None;
+        }
+
         // 1. Prepare data and features
         let wf = self.prepare_rolling_window(ctx)?;
 

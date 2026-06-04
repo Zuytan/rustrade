@@ -99,6 +99,7 @@ pub struct TradeProposal {
     pub timestamp: i64,
     pub stop_loss: Option<Decimal>,
     pub take_profit: Option<Decimal>,
+    pub correlation_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +112,7 @@ pub struct Order {
     pub order_type: OrderType,
     pub status: OrderStatus,
     pub timestamp: i64,
+    pub correlation_id: Option<String>,
 }
 
 /// Represents a completed trade with profit/loss information.

@@ -18,7 +18,7 @@ impl ContextBuilder {
             ctx: AnalysisContext {
                 symbol: "QA_TEST".to_string(),
                 current_price: d_price,
-                price_f64: price,
+                strict_sell_htf_confirmation: false,
                 fast_sma: Some(d_price),
                 slow_sma: Some(d_price),
                 trend_sma: Some(d_price),
@@ -272,7 +272,7 @@ fn test_precision_zscore() {
     let ctx = AnalysisContext {
         symbol: "TEST".to_string(),
         current_price: dec!(40.0),
-        price_f64: 40.0,
+        strict_sell_htf_confirmation: false,
         fast_sma: Some(Decimal::ZERO),
         slow_sma: Some(Decimal::ZERO),
         trend_sma: Some(Decimal::ZERO),

@@ -80,6 +80,7 @@ pub struct StrategyConfig {
 
     // Signal Confirmation
     pub signal_confirmation_bars: usize,
+    pub strict_sell_htf_confirmation: bool,
 
     // SMC (Smart Money Concepts)
     pub smc_ob_lookback: usize,
@@ -229,6 +230,7 @@ impl Default for StrategyConfig {
             mean_reversion_rsi_exit: dec!(50.0),
             mean_reversion_bb_period: 20,
             signal_confirmation_bars: 1,
+            strict_sell_htf_confirmation: false,
             smc_ob_lookback: 20,
             smc_min_fvg_size_pct: dec!(0.005),
             smc_volume_multiplier: dec!(1.5),

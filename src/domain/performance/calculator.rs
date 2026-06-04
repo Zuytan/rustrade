@@ -141,6 +141,7 @@ mod tests {
             order_type: OrderType::Market,
             status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp,
+            correlation_id: None,
         }
     }
 

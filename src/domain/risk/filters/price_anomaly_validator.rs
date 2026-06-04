@@ -182,6 +182,7 @@ mod tests {
             timestamp: 0,
             stop_loss: None,
             take_profit: None,
+            correlation_id: None,
         }
     }
 

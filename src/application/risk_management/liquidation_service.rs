@@ -305,6 +305,7 @@ mod tests {
             price: dec!(0),
             status: OrderStatus::New,
             timestamp: 0,
+            correlation_id: None,
         };
 
         service

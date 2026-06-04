@@ -340,6 +340,7 @@ mod tests {
             order_type: crate::domain::trading::types::OrderType::Market,
             status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp: 0,
+            correlation_id: None,
         }
     }
 
@@ -353,6 +354,7 @@ mod tests {
             order_type: crate::domain::trading::types::OrderType::Market,
             status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp: 1000,
+            correlation_id: None,
         }
     }
 

@@ -421,6 +421,7 @@ mod tests {
             order_type: crate::domain::trading::types::OrderType::Limit,
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: 0,
+            correlation_id: None,
         };
         tx.send(order).await.expect("Failed to send order in test");
 
@@ -466,6 +467,7 @@ mod tests {
             order_type: crate::domain::trading::types::OrderType::Limit,
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: 0,
+            correlation_id: None,
         };
         tx.send(order).await.expect("Failed to send order in test");
 

@@ -96,6 +96,7 @@ impl OrderMonitor {
                     order_type: OrderType::Market,
                     status: crate::domain::trading::types::OrderStatus::New,
                     timestamp: now,
+                    correlation_id: monitored.order.correlation_id.clone(),
                 };
 
                 actions.push(MonitorAction::CancelAndReplace {
@@ -137,6 +138,7 @@ mod tests {
             order_type: OrderType::Limit,
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: chrono::Utc::now().timestamp_millis(),
+            correlation_id: None,
         }
     }
 

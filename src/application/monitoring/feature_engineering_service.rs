@@ -143,31 +143,46 @@ pub struct TechnicalFeatureEngineeringService {
 impl TechnicalFeatureEngineeringService {
     pub fn new(config: &AnalystConfig) -> Self {
         Self {
-            rsi: RelativeStrengthIndex::new(config.strategy.rsi_period)
-                .expect("rsi_period from AnalystConfig must be > 0"),
+            rsi: RelativeStrengthIndex::new(config.strategy.rsi_period).unwrap_or_else(|_| {
+                RelativeStrengthIndex::new(14).expect("RSI default period 14 must be valid")
+            }),
             macd: MovingAverageConvergenceDivergence::new(
                 config.strategy.macd_fast_period,
                 config.strategy.macd_slow_period,
                 config.strategy.macd_signal_period,
             )
-            .expect("MACD periods from AnalystConfig must be valid"),
-            sma_20: SimpleMovingAverage::new(config.strategy.fast_sma_period)
-                .expect("fast_sma_period from AnalystConfig must be > 0"),
-            sma_50: SimpleMovingAverage::new(config.strategy.slow_sma_period)
-                .expect("slow_sma_period from AnalystConfig must be > 0"),
-            sma_200: SimpleMovingAverage::new(config.strategy.trend_sma_period)
-                .expect("trend_sma_period from AnalystConfig must be > 0"),
+            .unwrap_or_else(|_| {
+                MovingAverageConvergenceDivergence::new(12, 26, 9)
+                    .expect("MACD default periods 12, 26, 9 must be valid")
+            }),
+            sma_20: SimpleMovingAverage::new(config.strategy.fast_sma_period).unwrap_or_else(
+                |_| SimpleMovingAverage::new(20).expect("SMA 20 default period must be valid"),
+            ),
+            sma_50: SimpleMovingAverage::new(config.strategy.slow_sma_period).unwrap_or_else(
+                |_| SimpleMovingAverage::new(60).expect("SMA 60 default period must be valid"),
+            ),
+            sma_200: SimpleMovingAverage::new(config.strategy.trend_sma_period).unwrap_or_else(
+                |_| SimpleMovingAverage::new(50).expect("SMA 50 default period must be valid"),
+            ),
             bb: BollingerBands::new(
                 config.strategy.mean_reversion_bb_period,
                 config.strategy.bb_std_dev.to_f64().unwrap_or(2.0),
             )
-            .expect("mean_reversion_bb_period from AnalystConfig must be > 0"),
-            atr: AverageTrueRange::new(config.strategy.atr_period)
-                .expect("atr_period from AnalystConfig must be > 0"),
+            .unwrap_or_else(|_| {
+                BollingerBands::new(20, 2.0)
+                    .expect("BollingerBands default period 20 must be valid")
+            }),
+            atr: AverageTrueRange::new(config.strategy.atr_period).unwrap_or_else(|_| {
+                AverageTrueRange::new(14).expect("ATR default period 14 must be valid")
+            }),
             ema_fast: ExponentialMovingAverage::new(config.strategy.ema_fast_period)
-                .expect("ema_fast_period from AnalystConfig must be > 0"),
+                .unwrap_or_else(|_| {
+                    ExponentialMovingAverage::new(10).expect("EMA 10 default period must be valid")
+                }),
             ema_slow: ExponentialMovingAverage::new(config.strategy.ema_slow_period)
-                .expect("ema_slow_period from AnalystConfig must be > 0"),
+                .unwrap_or_else(|_| {
+                    ExponentialMovingAverage::new(20).expect("EMA 20 default period must be valid")
+                }),
             adx: ManualAdx::new(config.strategy.adx_period),
             price_history: VecDeque::with_capacity(200),
             volume_history: VecDeque::with_capacity(200),

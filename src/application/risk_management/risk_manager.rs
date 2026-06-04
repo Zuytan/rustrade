@@ -96,6 +96,7 @@ pub struct RiskManager {
     metrics: Metrics,
     agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     startup_time: i64,
+    alert_webhook_url: Option<String>,
 }
 
 impl RiskManager {
@@ -233,12 +234,63 @@ impl RiskManager {
             metrics,
             agent_registry,
             startup_time: Utc::now().timestamp(),
+            alert_webhook_url: None,
         })
     }
 
     /// Persist current risk state to database
     async fn persist_state(&self) {
         self.state_manager.persist().await;
+    }
+
+    /// Set webhook URL for alerts
+    pub fn set_alert_webhook_url(&mut self, url: Option<String>) {
+        self.alert_webhook_url = url;
+    }
+
+    /// Helper to emit structured tracing event and send asynchronous webhook alert
+    fn trigger_alert(&self, level: HaltLevel, reason: &str) {
+        // Structured tracing log with dedicated event name
+        tracing::error!(
+            event = "circuit_breaker_triggered",
+            level = ?level,
+            reason = %reason,
+            "CIRCUIT BREAKER TRIGGERED ({:?}): {}",
+            level,
+            reason
+        );
+
+        if let Some(ref webhook_url) = self.alert_webhook_url {
+            let webhook_url = webhook_url.clone();
+            let reason = reason.to_string();
+            let level_str = format!("{:?}", level);
+            let timestamp = Utc::now().to_rfc3339();
+
+            tokio::spawn(async move {
+                let payload = serde_json::json!({
+                    "event": "circuit_breaker_triggered",
+                    "level": level_str,
+                    "reason": reason,
+                    "timestamp": timestamp,
+                    "message": format!("⚠️ [CIRCUIT BREAKER] Level: {}, Reason: {}", level_str, reason)
+                });
+
+                let client = reqwest::Client::new();
+                match client.post(&webhook_url).json(&payload).send().await {
+                    Ok(resp) => {
+                        if !resp.status().is_success() {
+                            tracing::warn!(
+                                "Failed to send alert to webhook. Status: {}",
+                                resp.status()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to send alert to webhook: {}", e);
+                    }
+                }
+            });
+        }
     }
 
     /// Initialize session tracking with starting equity
@@ -363,22 +415,21 @@ impl RiskManager {
                     missing
                 );
             } else if let Some((level, reason)) = self.check_circuit_breaker(current_equity) {
-                tracing::error!(
-                    "RiskManager MONITOR: CIRCUIT BREAKER TRIGGERED ({:?}): {}",
-                    level,
-                    reason
-                );
-                self.circuit_breaker_service.set_halted(level);
-                self.metrics.circuit_breaker_status.set(1.0);
+                let current_level = self.circuit_breaker_service.halt_level();
+                if level > current_level {
+                    self.trigger_alert(level, &reason);
+                    self.circuit_breaker_service.set_halted(level);
+                    self.metrics.circuit_breaker_status.set(1.0);
 
-                // Grace Period: skip emergency liquidation during first 60 seconds
-                if Utc::now().timestamp() - self.startup_time < 60 {
-                    warn!(
-                        "RiskManager: CIRCUIT BREAKER TRIGGERED ({:?}) during startup grace period. skipping liquidation for stabilization.",
-                        level
-                    );
-                } else {
-                    self.liquidate_portfolio(&reason).await;
+                    // Grace Period: skip emergency liquidation during first 60 seconds
+                    if Utc::now().timestamp() - self.startup_time < 60 {
+                        warn!(
+                            "RiskManager: CIRCUIT BREAKER TRIGGERED ({:?}) during startup grace period. skipping liquidation for stabilization.",
+                            level
+                        );
+                    } else {
+                        self.liquidate_portfolio(&reason).await;
+                    }
                 }
             } else {
                 self.metrics.circuit_breaker_status.set(0.0);
@@ -694,21 +745,21 @@ impl RiskManager {
 
         // Circuit breaker check (Trigger Liquidation logic)
         if let Some((level, reason)) = self.check_circuit_breaker(current_equity) {
-            error!(
-                "RiskManager: CIRCUIT BREAKER TRIGGERED ({:?}) - {}",
-                level, reason
-            );
-            self.circuit_breaker_service.set_halted(level);
-            self.metrics.circuit_breaker_status.set(1.0);
+            let current_level = self.circuit_breaker_service.halt_level();
+            if level > current_level {
+                self.trigger_alert(level, &reason);
+                self.circuit_breaker_service.set_halted(level);
+                self.metrics.circuit_breaker_status.set(1.0);
 
-            // Grace Period: skip emergency liquidation during first 60 seconds
-            if Utc::now().timestamp() - self.startup_time < 60 {
-                warn!(
-                    "RiskManager: CIRCUIT BREAKER TRIGGERED ({:?}) during startup grace period. skipping liquidation for stabilization.",
-                    level
-                );
-            } else {
-                self.liquidate_portfolio(&reason).await;
+                // Grace Period: skip emergency liquidation during first 60 seconds
+                if Utc::now().timestamp() - self.startup_time < 60 {
+                    warn!(
+                        "RiskManager: CIRCUIT BREAKER TRIGGERED ({:?}) during startup grace period. skipping liquidation for stabilization.",
+                        level
+                    );
+                } else {
+                    self.liquidate_portfolio(&reason).await;
+                }
             }
             return Ok(());
         }
@@ -875,6 +926,7 @@ impl RiskManager {
             order_type: proposal.order_type,
             status: crate::domain::trading::types::OrderStatus::Pending,
             timestamp: Utc::now().timestamp_millis(),
+            correlation_id: proposal.correlation_id.clone(),
         };
 
         // Track as pending

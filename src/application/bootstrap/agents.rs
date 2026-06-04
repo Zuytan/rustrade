@@ -255,6 +255,7 @@ impl AgentsBootstrap {
             metrics.clone(),
             agent_registry.clone(),
         )?;
+        risk_manager.set_alert_webhook_url(config.observability.alert_webhook_url.clone());
 
         // 5. Order Throttler & Executor
         let mut order_throttler = OrderThrottler::new(

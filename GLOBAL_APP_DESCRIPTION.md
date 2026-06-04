@@ -23,8 +23,10 @@ The application operates as a mesh of autonomous agents communicating via high-p
 
 ### Resilience & Safety
 - **State Persistence ("No Amnesia")**: Critical state is persisted to SQLite.
+- **Production Live Safety Gate**: Enforces a strict guard preventing live trading with real money unless `TRADING_LIVE=true` is explicitly set in environment variables when connecting to Alpaca's production API.
 - **Circuit Breakers**:
   - **Global**: Halts trading on Daily Loss/Drawdown breach.
+  - **Alerting Integration**: Supports notifying external channels (e.g. Discord, Slack) via an asynchronous HTTP POST request using `ALERT_WEBHOOK_URL` when a circuit breaker triggers.
   - **Infrastructure**: Employs **Singleton WebSocket Architecture** and validated API mapping. Account synchronization prioritizes actual `buying_power` (including non-marginable funds for crypto) over raw cash to prevent "Insufficient Balance" rejections in dynamic markets.
   - **Panic Mode**: "Blind Liquidation" logic ensures positions can be exited even if price feeds are down.
   - **Order Monitor**: Active tracking of Limit orders with automatic timeout detection and fallback to Market orders ("Cancel & Replace") to ensure execution.

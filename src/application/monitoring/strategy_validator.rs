@@ -333,6 +333,7 @@ mod tests {
                 order_type: OrderType::Market,
                 status: crate::domain::trading::types::OrderStatus::Filled,
                 timestamp: 0,
+                correlation_id: None,
             },
             Order {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -343,6 +344,7 @@ mod tests {
                 order_type: OrderType::Market,
                 status: crate::domain::trading::types::OrderStatus::Filled,
                 timestamp: 1000,
+                correlation_id: None,
             },
         ]
     }
@@ -358,6 +360,7 @@ mod tests {
                 order_type: OrderType::Market,
                 status: crate::domain::trading::types::OrderStatus::Filled,
                 timestamp: 0,
+                correlation_id: None,
             },
             Order {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -368,6 +371,7 @@ mod tests {
                 order_type: OrderType::Market,
                 status: crate::domain::trading::types::OrderStatus::Filled,
                 timestamp: 1000,
+                correlation_id: None,
             },
         ]
     }

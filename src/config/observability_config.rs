@@ -10,6 +10,7 @@ pub struct ObservabilityEnvConfig {
     pub enabled: bool,
     pub port: u16,
     pub bind_address: String,
+    pub alert_webhook_url: Option<String>,
 }
 
 impl Default for ObservabilityEnvConfig {
@@ -18,6 +19,7 @@ impl Default for ObservabilityEnvConfig {
             enabled: true,
             port: 9090,
             bind_address: "127.0.0.1".to_string(),
+            alert_webhook_url: None,
         }
     }
 }
@@ -35,6 +37,7 @@ impl ObservabilityEnvConfig {
                 .unwrap_or(9090),
             bind_address: env::var("OBSERVABILITY_BIND_ADDRESS")
                 .unwrap_or_else(|_| "127.0.0.1".to_string()),
+            alert_webhook_url: env::var("ALERT_WEBHOOK_URL").ok(),
         }
     }
 }

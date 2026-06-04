@@ -455,6 +455,45 @@ async fn run_clusters(
     Ok(())
 }
 
+fn create_optimize_engine() -> Result<OptimizeEngine> {
+    use rust_decimal::prelude::ToPrimitive;
+    use rustrade::config::{AssetClass, Config};
+    use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
+    use std::env;
+    use std::sync::Arc;
+
+    // Load env
+    dotenvy::dotenv().ok();
+
+    let api_key = env::var("ALPACA_API_KEY").context("ALPACA_API_KEY must be set")?;
+    let api_secret = env::var("ALPACA_SECRET_KEY").context("ALPACA_SECRET_KEY must be set")?;
+    let data_url =
+        env::var("ALPACA_DATA_URL").unwrap_or_else(|_| "https://data.alpaca.markets".to_string());
+    let api_base_url = env::var("ALPACA_BASE_URL")
+        .unwrap_or_else(|_| "https://paper-api.alpaca.markets".to_string());
+    let ws_url = env::var("ALPACA_WS_URL")
+        .unwrap_or_else(|_| "wss://stream.data.alpaca.markets/v2/iex".to_string());
+    let asset_class_str = env::var("ASSET_CLASS").unwrap_or_else(|_| "stock".to_string());
+    let asset_class = AssetClass::from_str(&asset_class_str).unwrap_or(AssetClass::Stock);
+
+    let base_config = Config::from_env().context("Failed to load config from environment")?;
+
+    let market_service = Arc::new(
+        AlpacaMarketDataService::builder()
+            .api_key(api_key)
+            .api_secret(api_secret)
+            .data_base_url(data_url)
+            .api_base_url(api_base_url)
+            .ws_url(ws_url)
+            .min_volume_threshold(dec!(10000.0).to_f64().unwrap_or(10000.0))
+            .asset_class(asset_class)
+            .candle_repository(None) // No caching needed for optimization
+            .build(),
+    );
+
+    Ok(OptimizeEngine::new(market_service, base_config))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Suppress "trade rejected" / validation logs unless RUST_LOG requests them (e.g. =debug)
@@ -476,7 +515,7 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber).ok();
 
     let cli = Cli::parse();
-    let engine = OptimizeEngine::new()?;
+    let engine = create_optimize_engine()?;
     let reporter = OptimizeReporter::default();
 
     match cli.command {

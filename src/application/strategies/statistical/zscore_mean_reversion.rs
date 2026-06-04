@@ -53,7 +53,7 @@ impl ZScoreMeanReversionStrategy {
             return None;
         }
 
-        let mut prices = vec![ctx.price_f64];
+        let mut prices = vec![ctx.current_price.to_f64().unwrap_or(0.0)];
         prices.extend(historical_prices);
 
         // Calculate mean and std dev using statrs (f64 boundary for statistical library)
@@ -158,7 +158,7 @@ mod tests {
         AnalysisContext {
             symbol: "TEST".to_string(),
             current_price: d_price,
-            price_f64: price,
+            strict_sell_htf_confirmation: false,
             fast_sma: Some(Decimal::ZERO),
             slow_sma: Some(Decimal::ZERO),
             trend_sma: Some(Decimal::ZERO),

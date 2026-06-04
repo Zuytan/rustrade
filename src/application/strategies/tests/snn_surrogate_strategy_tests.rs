@@ -57,7 +57,7 @@ fn test_snn_strategy_alignment_check() {
     let ctx = AnalysisContext {
         symbol: "TSLA".to_string(),
         current_price: Decimal::from(102),
-        price_f64: 102.0,
+        strict_sell_htf_confirmation: false,
         fast_sma: None,
         slow_sma: None,
         trend_sma: None,
@@ -106,7 +106,7 @@ fn test_snn_strategy_insufficient_data() {
     let ctx = AnalysisContext {
         symbol: "TSLA".to_string(),
         current_price: Decimal::from(102),
-        price_f64: 102.0,
+        strict_sell_htf_confirmation: false,
         fast_sma: None,
         slow_sma: None,
         trend_sma: None,
@@ -176,7 +176,7 @@ fn create_aligned_context(candle_model_path: PathBuf) -> (AnalysisContext, PathB
     let ctx = AnalysisContext {
         symbol: "TSLA".to_string(),
         current_price: Decimal::from(120),
-        price_f64: 120.0,
+        strict_sell_htf_confirmation: false,
         fast_sma: None,
         slow_sma: None,
         trend_sma: None,

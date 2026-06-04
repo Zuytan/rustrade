@@ -194,7 +194,7 @@ mod tests {
         AnalysisContext {
             symbol: "TEST".to_string(),
             current_price: d_price,
-            price_f64: price,
+            strict_sell_htf_confirmation: false,
             fast_sma: Some(Decimal::ZERO),
             slow_sma: Some(Decimal::ZERO),
             trend_sma: Some(d_trend_sma),

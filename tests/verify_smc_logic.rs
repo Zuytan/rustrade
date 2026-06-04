@@ -1,5 +1,4 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 
 use rustrade::application::strategies::AnalysisContext;
@@ -21,11 +20,10 @@ fn create_candle(price: f64) -> Candle {
 }
 
 fn create_context(candles: VecDeque<Candle>) -> AnalysisContext {
-    let price = candles.back().unwrap().close.to_f64().unwrap();
     AnalysisContext {
         symbol: "TEST".to_string(),
         current_price: candles.back().unwrap().close,
-        price_f64: price,
+        strict_sell_htf_confirmation: false,
         fast_sma: None, // Not needed for SMC
         slow_sma: None,
         trend_sma: Some(dec!(100.0)), // Use trend to bias direction

@@ -52,6 +52,7 @@ async fn test_stress_daily_loss_breach_rejects_proposal() {
         timestamp: 0,
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
 
     let portfolio = Portfolio::new();

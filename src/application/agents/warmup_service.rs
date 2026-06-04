@@ -146,7 +146,10 @@ impl WarmupService {
                     let ctx = crate::application::strategies::AnalysisContext {
                         symbol: symbol.to_string(),
                         current_price: candle.close,
-                        price_f64: 0.0,
+                        strict_sell_htf_confirmation: context
+                            .config
+                            .strategy
+                            .strict_sell_htf_confirmation,
                         fast_sma: None,
                         slow_sma: None,
                         trend_sma: None,

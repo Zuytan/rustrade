@@ -59,6 +59,9 @@ impl OrderRetryStrategy {
                 order_type: OrderType::Limit,
                 status: crate::domain::trading::types::OrderStatus::New,
                 timestamp: chrono::Utc::now().timestamp_millis(),
+                correlation_id: Some(
+                    crate::domain::trading::correlation::generate_correlation_id(),
+                ),
             };
         }
 
@@ -76,6 +79,7 @@ impl OrderRetryStrategy {
             order_type: OrderType::Market,
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: chrono::Utc::now().timestamp_millis(),
+            correlation_id: Some(crate::domain::trading::correlation::generate_correlation_id()),
         }
     }
 }

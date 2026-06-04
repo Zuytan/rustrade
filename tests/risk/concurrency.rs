@@ -119,6 +119,7 @@ async fn test_concurrent_proposals_respect_limits() {
                 timestamp: chrono::Utc::now().timestamp_millis(),
                 stop_loss: None,
                 take_profit: None,
+                correlation_id: None,
             };
 
             tx.send(proposal).await.ok();
@@ -240,6 +241,7 @@ async fn test_backpressure_drops_excess_proposals() {
             timestamp: chrono::Utc::now().timestamp_millis(),
             stop_loss: None,
             take_profit: None,
+            correlation_id: None,
         };
 
         match proposal_tx.try_send(proposal) {

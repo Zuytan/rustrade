@@ -35,7 +35,7 @@ pub struct PositionInfo {
 pub struct AnalysisContext {
     pub symbol: String,
     pub current_price: Decimal,
-    pub price_f64: f64,
+    pub strict_sell_htf_confirmation: bool,
 
     // SMA state (primary timeframe)
     pub fast_sma: Option<Decimal>,
@@ -169,8 +169,17 @@ impl AnalysisContext {
                 }
             }
             OrderSide::Sell => {
-                // For sell signals, we're more permissive
-                true
+                if self.strict_sell_htf_confirmation {
+                    // For sell signals, check if higher timeframe is bearish (price < trend_sma)
+                    if let (Some(price), Some(trend_sma)) = (features.price, features.trend_sma) {
+                        price < trend_sma
+                    } else {
+                        true // Missing data, don't block
+                    }
+                } else {
+                    // For sell signals, default is permissive
+                    true
+                }
             }
         }
     }

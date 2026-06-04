@@ -40,14 +40,13 @@ impl SignalGenerator {
         cumulative_delta: Decimal,
         volume_profile: Option<crate::domain::market::order_flow::VolumeProfile>,
         ofi_history: &VecDeque<Decimal>,
+        strict_sell_htf_confirmation: bool,
     ) -> Option<crate::application::strategies::Signal> {
-        let price_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&price).unwrap_or(0.0);
-
         // Strategy Logic (Authoritative)
         let analysis_ctx = AnalysisContext {
             symbol: symbol.to_string(),
             current_price: price,
-            price_f64,
+            strict_sell_htf_confirmation,
             fast_sma: features.sma_20, // Using SMA 20 as fast
             slow_sma: features.sma_50, // Using SMA 50 as slow
             trend_sma: features.sma_200,
@@ -163,6 +162,7 @@ mod tests {
             dec!(1000.0), // CVD
             None,
             &ofi_history,
+            false,
         );
 
         let ctx = strategy
@@ -207,6 +207,7 @@ mod tests {
             dec!(0.0),
             None,
             &ofi_history,
+            false,
         );
 
         assert_eq!(result.map(|s| s.side), Some(OrderSide::Buy));
@@ -237,6 +238,7 @@ mod tests {
             dec!(0.0),
             None,
             &ofi_history,
+            false,
         );
 
         assert!(result.is_none());

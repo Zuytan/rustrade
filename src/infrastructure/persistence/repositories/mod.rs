@@ -151,6 +151,7 @@ impl SqliteOrderRepository {
                 order_type,
                 status,
                 timestamp: row.try_get("timestamp")?,
+                correlation_id: None,
             });
         }
         Ok(orders)

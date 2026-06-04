@@ -140,6 +140,7 @@ impl GridSearchOptimizer {
                                                                         mean_reversion_rsi_exit: rust_decimal_macros::dec!(50.0),
                                                                         mean_reversion_bb_period: 20,
                                                                         signal_confirmation_bars: 1,
+                                                                        strict_sell_htf_confirmation: false,
                                                                         smc_ob_lookback: ob_lb,
                                                                         smc_min_fvg_size_pct: fvg,
                                                                         smc_volume_multiplier: rust_decimal_macros::dec!(1.5),

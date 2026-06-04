@@ -37,6 +37,14 @@ pub struct SymbolContext {
     pub last_macd_histogram: Option<Decimal>,
     pub cached_reward_risk_ratio: Decimal,
     pub warmup_succeeded: bool,
+    /// Bounded history of candles for this symbol.
+    ///
+    /// Rationale: Keeping the history capped at 100 candles bounds the memory footprint
+    /// per symbol and maintains O(1) performance for order flow, Volume Profile, and other
+    /// microstructure calculations.
+    ///
+    /// Lookback Interaction: Ensure that indicator lookback periods (such as ZScore's 20/50 period
+    /// lookbacks) do not exceed this cap, otherwise they will be truncated.
     pub candle_history: VecDeque<Candle>,
     // Multi-timeframe support
     pub timeframe_aggregator:
@@ -115,7 +123,8 @@ impl SymbolContext {
     /// - MACD histogram tracking
     /// - Technical features via feature service
     pub fn update(&mut self, candle: &Candle) {
-        // Update candle history (maintain 100-candle limit)
+        // Update candle history (maintain 100-candle limit to restrict memory use and ensure
+        // efficient microstructure computations such as Volume Profile and OFI).
         if self.candle_history.len() >= 100 {
             self.candle_history.pop_front();
         }

@@ -188,6 +188,8 @@ fn main() -> anyhow::Result<()> {
                         );
                         break;
                     }
+                    // Note: thread::sleep is acceptable here because we are in the main synchronous thread
+                    // before the UI starts, and outside the Tokio async runtime executor thread pool.
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
@@ -229,6 +231,8 @@ fn main() -> anyhow::Result<()> {
                         tracing::warn!("Timeout waiting for Top Movers. Falling back to empty.");
                         break;
                     }
+                    // Note: thread::sleep is acceptable here because we are in the main synchronous thread
+                    // before the UI starts, and outside the Tokio async runtime executor thread pool.
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {

@@ -294,6 +294,7 @@ impl ExecutionService for BinanceExecutionService {
                     price,
                     status: crate::domain::trading::types::OrderStatus::New,
                     timestamp: chrono::Utc::now().timestamp(),
+                    correlation_id: None,
                 })
             })
             .collect();

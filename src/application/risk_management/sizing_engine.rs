@@ -217,6 +217,7 @@ impl SizingEngine {
                 timestamp: 0,
                 stop_loss: None,
                 take_profit: None,
+                correlation_id: None,
             };
             let costs = evaluator.evaluate(&proposal);
             target_amt = (target_amt - costs.total_cost).max(Decimal::ZERO);

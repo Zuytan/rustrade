@@ -124,6 +124,7 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
             timestamp: chrono::Utc::now().timestamp_millis(),
             stop_loss: None,
             take_profit: None,
+            correlation_id: None,
         };
 
         proposal_tx.send(proposal).await.unwrap();
@@ -156,6 +157,7 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         timestamp: chrono::Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
 
     proposal_tx.send(proposal).await.unwrap();
@@ -267,6 +269,7 @@ async fn test_pending_order_ttl_cleanup() {
         timestamp: chrono::Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 

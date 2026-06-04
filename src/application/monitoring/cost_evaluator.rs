@@ -47,6 +47,7 @@ pub struct TradeCost {
 ///     timestamp: 0,
 ///     stop_loss: None,
 ///     take_profit: None,
+///     correlation_id: None,
 /// };
 /// let costs = evaluator.evaluate(&proposal);
 /// let expected_profit = Decimal::from(5);
@@ -209,6 +210,7 @@ impl CostEvaluator {
     ///     timestamp: 0,
     ///     stop_loss: None,
     ///     take_profit: None,
+    ///     correlation_id: None,
     /// };
     ///
     /// // Trade costs $1.50, expected profit is $5.00, min ratio is 2.0
@@ -303,6 +305,7 @@ mod tests {
             timestamp: 0,
             stop_loss: None,
             take_profit: None,
+            correlation_id: None,
         }
     }
 

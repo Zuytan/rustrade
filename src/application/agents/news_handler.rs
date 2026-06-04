@@ -168,6 +168,7 @@ pub fn process_bearish_news(
         timestamp,
         stop_loss: None,
         take_profit: None,
+        correlation_id: Some(crate::domain::trading::correlation::generate_correlation_id()),
     };
 
     NewsAction::PanicSell(proposal)

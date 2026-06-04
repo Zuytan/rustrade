@@ -269,6 +269,9 @@ impl UserAgent {
                 timestamp: chrono::Utc::now().timestamp_millis(), // i64
                 stop_loss: None,
                 take_profit: None,
+                correlation_id: Some(
+                    crate::domain::trading::correlation::generate_correlation_id(),
+                ),
             };
 
             match self.client.submit_proposal(proposal) {

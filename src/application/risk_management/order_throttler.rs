@@ -193,6 +193,7 @@ mod tests {
             order_type: OrderType::Market,
             status: OrderStatus::New,
             timestamp: Utc::now().timestamp_millis(),
+            correlation_id: None,
         }
     }
 

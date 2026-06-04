@@ -185,6 +185,7 @@ async fn test_circuit_breaker_on_market_crash() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -260,6 +261,7 @@ async fn test_buy_approval() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -319,6 +321,7 @@ async fn test_buy_rejection_insufficient_funds() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -394,6 +397,7 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -468,6 +472,7 @@ async fn test_sell_approval() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -507,6 +512,7 @@ async fn test_pdt_protection_rejection() {
             order_type: OrderType::Limit,
             status: rustrade::domain::trading::types::OrderStatus::Filled,
             timestamp: Utc::now().timestamp_millis(),
+            correlation_id: None,
         })
         .await
         .unwrap();
@@ -556,6 +562,7 @@ async fn test_pdt_protection_rejection() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
 
     // Handle command directly (via Command Pattern!)
@@ -646,6 +653,7 @@ async fn test_sector_exposure_limit() {
         order_type: OrderType::Market,
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -734,6 +742,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -760,6 +769,7 @@ async fn test_circuit_breaker_triggers_liquidation() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal2).await.unwrap();
 
@@ -926,6 +936,7 @@ async fn test_sentiment_risk_adjustment() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 
@@ -961,6 +972,7 @@ async fn test_sentiment_risk_adjustment() {
         timestamp: Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal2).await.unwrap();
 

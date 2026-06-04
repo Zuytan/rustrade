@@ -51,6 +51,7 @@ impl SignalProcessor {
             context.cumulative_delta.value,
             context.volume_profile.clone(),
             &context.ofi_history,
+            context.config.strategy.strict_sell_htf_confirmation,
         )
     }
 
@@ -121,6 +122,7 @@ impl SignalProcessor {
             timestamp,
             stop_loss: signal.suggested_stop_loss,
             take_profit: signal.suggested_take_profit,
+            correlation_id: Some(crate::domain::trading::correlation::generate_correlation_id()),
         })
     }
 
@@ -288,6 +290,9 @@ impl SignalProcessor {
                     timestamp,
                     stop_loss: None,
                     take_profit: None,
+                    correlation_id: Some(
+                        crate::domain::trading::correlation::generate_correlation_id(),
+                    ),
                 });
             }
         }

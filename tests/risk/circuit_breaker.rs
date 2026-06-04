@@ -141,6 +141,7 @@ async fn test_circuit_breaker_triggers_on_crash() {
         timestamp: chrono::Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
 
     proposal_tx.send(proposal).await.unwrap();

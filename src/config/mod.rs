@@ -20,6 +20,7 @@ pub use crate::domain::market::strategy_config::StrategyMode;
 use anyhow::{Context, Result};
 use std::env;
 use std::str::FromStr;
+use tracing::info;
 
 /// Application execution mode
 #[derive(Debug, Clone)]
@@ -95,7 +96,7 @@ impl Config {
         let observability = ObservabilityEnvConfig::from_env();
         let simulation = SimulationEnvConfig::from_env();
 
-        Ok(Self {
+        let config = Self {
             mode,
             asset_class,
             broker,
@@ -104,7 +105,12 @@ impl Config {
             platform,
             observability,
             simulation,
-        })
+        };
+
+        // Safety gate: prevent accidental live trading
+        config.validate_live_trading_gate()?;
+
+        Ok(config)
     }
 
     pub fn create_fee_model(
@@ -124,6 +130,37 @@ impl Config {
                 self.platform.slippage_pct,
             )),
         }
+    }
+
+    /// Validates that live trading is intentionally enabled when using production Alpaca endpoints.
+    ///
+    /// If the Alpaca base URL points to a production endpoint (not paper-api), this check
+    /// requires the `TRADING_LIVE=true` environment variable to be explicitly set. This
+    /// prevents accidental live trading with real money.
+    fn validate_live_trading_gate(&self) -> Result<()> {
+        if let Mode::Alpaca = self.mode {
+            let base_url = &self.broker.alpaca.base_url;
+            let is_production =
+                base_url.contains("api.alpaca.markets") && !base_url.contains("paper-api");
+
+            if is_production {
+                let live_flag = env::var("TRADING_LIVE").unwrap_or_default().to_lowercase();
+
+                if live_flag != "true" {
+                    anyhow::bail!(
+                        "🚨 LIVE TRADING GATE: Alpaca base URL points to PRODUCTION ({}). \
+                         Set TRADING_LIVE=true to confirm you intend to trade with real money. \
+                         If this is unintentional, change ALPACA_BASE_URL to https://paper-api.alpaca.markets",
+                        base_url
+                    );
+                }
+                info!(
+                    "⚠️  LIVE TRADING MODE ENABLED — Trading with real money on {}",
+                    base_url
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Create a RiskConfig domain value object from this Config

@@ -82,6 +82,7 @@ async fn test_pdt_protection_boundary() {
         timestamp: chrono::Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
 
     proposal_tx.send(proposal).await.unwrap();
@@ -113,6 +114,7 @@ async fn test_pdt_protection_boundary() {
         timestamp: chrono::Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal2).await.unwrap();
 
@@ -204,6 +206,7 @@ async fn test_max_daily_loss_prevents_trading() {
         timestamp: chrono::Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
 
     proposal_tx.send(proposal).await.unwrap();
@@ -293,6 +296,7 @@ async fn test_circuit_breaker_on_drawdown() {
         timestamp: chrono::Utc::now().timestamp_millis(),
         stop_loss: None,
         take_profit: None,
+        correlation_id: None,
     };
     proposal_tx.send(proposal).await.unwrap();
 

@@ -291,7 +291,7 @@ mod tests {
         AnalysisContext {
             symbol: "TEST".to_string(),
             current_price: Decimal::from_f64_retain(price).unwrap(),
-            price_f64: price,
+            strict_sell_htf_confirmation: false,
             fast_sma: Some(Decimal::from_f64_retain(fast_sma).unwrap()),
             slow_sma: Some(Decimal::from_f64_retain(slow_sma).unwrap()),
             trend_sma: Some(dec!(99.0)), // Below price to allow buy signals

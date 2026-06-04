@@ -2,7 +2,9 @@ use chrono::{NaiveDate, TimeZone, Utc};
 use clap::Parser;
 use rustrade::application::benchmarking::engine::BenchmarkEngine;
 use rustrade::config::StrategyMode;
+use rustrade::infrastructure::alpaca::AlpacaMarketDataService;
 use std::str::FromStr;
+use std::sync::Arc;
 use tracing::info;
 
 #[derive(Parser)]
@@ -52,7 +54,41 @@ async fn main() -> anyhow::Result<()> {
         std::env::set_var("ASSET_CLASS", &cli.asset_class);
     }
 
-    let engine = BenchmarkEngine::new().await;
+    // Load env
+    if dotenvy::from_filename(".env.benchmark").is_err() {
+        dotenvy::dotenv().ok();
+    }
+
+    let api_key = std::env::var("ALPACA_API_KEY").expect("ALPACA_API_KEY must be set");
+    let api_secret = std::env::var("ALPACA_SECRET_KEY").expect("ALPACA_SECRET_KEY must be set");
+    let data_url = std::env::var("ALPACA_DATA_URL")
+        .unwrap_or_else(|_| "https://data.alpaca.markets".to_string());
+    let api_base_url = std::env::var("ALPACA_BASE_URL")
+        .unwrap_or_else(|_| "https://paper-api.alpaca.markets".to_string());
+    let ws_url = std::env::var("ALPACA_WS_URL")
+        .unwrap_or_else(|_| "wss://stream.data.alpaca.markets/v2/iex".to_string());
+
+    let base_config = rustrade::config::Config::from_env().unwrap_or_else(|e| {
+        tracing::error!("Failed to load config from env: {}", e);
+        panic!("Failed to load config")
+    });
+
+    let asset_class = rustrade::config::AssetClass::from_str(&cli.asset_class)
+        .unwrap_or(rustrade::config::AssetClass::Stock);
+
+    let market_service = Arc::new(
+        AlpacaMarketDataService::builder()
+            .api_key(api_key)
+            .api_secret(api_secret)
+            .data_base_url(data_url)
+            .api_base_url(api_base_url)
+            .ws_url(ws_url)
+            .min_volume_threshold(0.0)
+            .asset_class(asset_class)
+            .build(),
+    );
+
+    let engine = BenchmarkEngine::new(market_service, base_config);
 
     let mut symbol_list: Vec<String> = cli
         .symbols

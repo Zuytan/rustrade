@@ -1,5 +1,28 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.19 - Critical Analysis Remediation & Webhook Alerting (June 2026)
+
+### Safety-Critical Fixes (P0)
+- **Live Trading Safety Gate**: Prevented accidental live trading by requiring an explicit `TRADING_LIVE=true` environment variable check when starting the system with Alpaca production URL.
+- **SNN Cold-Start Guard**: Added check to skip SNN strategy analysis if weights/model are not loaded, avoiding random signaling behavior.
+- **Graceful Mutex Handling**: Replaced crash-prone `.expect("mutex poisoned")` statements in the sector exposure validator with graceful `.ok()` fallbacks returning "Unknown".
+
+### Domain-Driven Design (DDD) Alignment (P0)
+- **Decoupled Benchmarking & Optimization Engines**: Decoupled `BenchmarkEngine` and `OptimizeEngine` from concrete infrastructure types (e.g., `AlpacaMarketDataService`), enabling offline/mock backtesting without Alpaca API credentials.
+
+### Code Quality & safety Improvements (P1)
+- **Safe Feature Engineering Initialization**: Replaced indicator configuration panics with a fallback value logic when period configurations are invalid.
+- **Strict Sell HTF Confirmation**: Added a `strict_sell_htf_confirmation` config flag to symmetrically confirm Sell signals via trend SMA on a higher timeframe.
+- **Type Safety Enhancements**: Removed duplicate `price_f64` field from `AnalysisContext` in favor of on-demand conversion from the precise `Decimal` type.
+- **Documentation**: Documented candle history limits (100-candle cap vs 50 ZScore lookback) and synchronous `sleep` usage.
+
+### Observability & Alerting (P2)
+- **Correlation ID Propagation**: Attached `correlation_id` to `TradeProposal` and `Order` flow to trace requests end-to-end (Analyst → RiskManager → Executor).
+- **Circuit Breaker Webhook Alerting**: Added structured tracing event (`event = "circuit_breaker_triggered"`) and optional webhook alerting (`ALERT_WEBHOOK_URL`) to notify external services asynchronously upon circuit breaker halts.
+
+### Dependency Health & Versioning (P2)
+- **Dependency Maturity Documentation**: Documented limitations of `smartcore` (limited maintenance), `vader_sentiment` (social media focus), and `ort` (future pin to stable release) inside `Cargo.toml`.
+
 ## Version 0.99.18 - Remove Code Coverage & Test Fix (June 2026)
 
 ### CI/CD Workflow Optimization

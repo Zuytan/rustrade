@@ -416,6 +416,7 @@ impl ExecutionService for AlpacaExecutionService {
                     timestamp: chrono::DateTime::parse_from_rfc3339(&ao.created_at)
                         .unwrap_or_default()
                         .timestamp(),
+                    correlation_id: None,
                 }
             })
             .collect();
@@ -537,6 +538,7 @@ impl ExecutionService for AlpacaExecutionService {
                 order_type: crate::domain::trading::types::OrderType::Market,
                 status: crate::domain::trading::types::OrderStatus::Filled, // Today orders are usually resolved
                 timestamp: created_at,
+                correlation_id: None,
             });
         }
 
@@ -637,6 +639,7 @@ mod tests {
             order_type: crate::domain::trading::types::OrderType::Limit,
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: chrono::Utc::now().timestamp(),
+            correlation_id: None,
         };
 
         // 2. Execute (place) the order

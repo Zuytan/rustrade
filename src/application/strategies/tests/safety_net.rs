@@ -8,7 +8,7 @@ fn create_empty_context() -> AnalysisContext {
     AnalysisContext {
         symbol: "TEST".to_string(),
         current_price: Decimal::ZERO,
-        price_f64: 0.0,
+        strict_sell_htf_confirmation: false,
         fast_sma: None,
         slow_sma: None,
         trend_sma: None,
