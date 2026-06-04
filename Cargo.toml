@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.99.19"
+version = "0.99.20"
 edition = "2024"
 default-run = "rustrade"
 

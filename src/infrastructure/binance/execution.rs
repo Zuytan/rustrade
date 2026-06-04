@@ -23,7 +23,7 @@ use serde::Deserialize;
 use sha2::Sha256;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
 pub struct BinanceExecutionService {
     client: ClientWithMiddleware,
@@ -66,7 +66,9 @@ impl BinanceExecutionService {
 
 #[async_trait]
 impl ExecutionService for BinanceExecutionService {
+    #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side, correlation_id = ?order.correlation_id))]
     async fn execute(&self, order: Order) -> Result<()> {
+        let correlation_id = order.correlation_id.clone();
         self.circuit_breaker
             .call(async move {
                 let api_symbol = denormalize_crypto_symbol(&order.symbol);
@@ -126,7 +128,10 @@ impl ExecutionService for BinanceExecutionService {
                 }
 
                 let response_json: serde_json::Value = response.json().await?;
-                info!("Binance order placed successfully: {:?}", response_json);
+                info!(
+                    "Binance order placed successfully: {:?} with correlation_id: {:?}",
+                    response_json, correlation_id
+                );
 
                 Ok(())
             })

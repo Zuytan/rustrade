@@ -44,7 +44,6 @@ impl StreamHealthMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
 
     #[test]
     fn test_heartbeat_healthy() {
@@ -54,10 +53,10 @@ mod tests {
         assert!(monitor.is_healthy());
     }
 
-    #[test]
-    fn test_heartbeat_unhealthy() {
+    #[tokio::test]
+    async fn test_heartbeat_unhealthy() {
         let monitor = StreamHealthMonitor::new("test", Duration::from_millis(10));
-        thread::sleep(Duration::from_millis(20));
+        tokio::time::sleep(Duration::from_millis(20)).await;
         assert!(!monitor.is_healthy());
     }
 }

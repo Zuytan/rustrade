@@ -17,6 +17,7 @@ pub struct PendingOrder {
     pub entry_price: Decimal,        // Track for P&L calculation on sell
     pub filled_at: Option<i64>,      // Timestamp when filled (for TTL cleanup)
     pub submitted_at: i64,           // Timestamp when order was submitted (for stale pending TTL)
+    pub correlation_id: Option<String>,
 }
 
 pub struct OrderReconciler {
@@ -71,24 +72,28 @@ impl OrderReconciler {
                             if pnl < Decimal::ZERO {
                                 risk_state.consecutive_losses += 1;
                                 warn!(
-                                    "RiskManager: Trade LOSS detected for {} (${:.2}). Consecutive losses: {}",
-                                    pending.symbol, pnl, risk_state.consecutive_losses
+                                    "RiskManager: Trade LOSS detected for {} (${:.2}). Consecutive losses: {}. Correlation ID: {:?}",
+                                    pending.symbol,
+                                    pnl,
+                                    risk_state.consecutive_losses,
+                                    pending.correlation_id
                                 );
                                 state_changed = true;
                             } else {
                                 risk_state.consecutive_losses = 0;
                                 state_changed = true;
                                 info!(
-                                    "RiskManager: Trade PROFIT for {} (${:.2}). Loss streak reset.",
-                                    pending.symbol, pnl
+                                    "RiskManager: Trade PROFIT for {} (${:.2}). Loss streak reset. Correlation ID: {:?}",
+                                    pending.symbol, pnl, pending.correlation_id
                                 );
                             }
                         }
 
                         info!(
-                            "RiskManager: Order {} FILLED (tentative) - awaiting portfolio sync for {}",
+                            "RiskManager: Order {} FILLED (tentative) - awaiting portfolio sync for {}. Correlation ID: {:?}",
                             &update.client_order_id[..8],
-                            pending.symbol
+                            pending.symbol,
+                            pending.correlation_id
                         );
                     }
                 }
@@ -134,10 +139,11 @@ impl OrderReconciler {
                     let age_ms = now_ms - filled_at;
                     if age_ms > ttl_ms {
                         warn!(
-                            "RiskManager: Filled order {} TTL expired after {}ms. Forcing cleanup for {}",
+                            "RiskManager: Filled order {} TTL expired after {}ms. Forcing cleanup for {}. Correlation ID: {:?}",
                             &order_id[..8],
                             age_ms,
-                            pending.symbol
+                            pending.symbol,
+                            pending.correlation_id
                         );
                         to_remove.push(order_id.clone());
                         continue;
@@ -153,9 +159,10 @@ impl OrderReconciler {
 
                 if in_portfolio {
                     info!(
-                        "RiskManager: Reconciled order {} - {} now confirmed in portfolio",
+                        "RiskManager: Reconciled order {} - {} now confirmed in portfolio. Correlation ID: {:?}",
                         &order_id[..8],
-                        pending.symbol
+                        pending.symbol,
+                        pending.correlation_id
                     );
                     to_remove.push(order_id.clone());
                 }
@@ -165,10 +172,11 @@ impl OrderReconciler {
                 let age_ms = now_ms - pending.submitted_at;
                 if age_ms > ttl_ms {
                     warn!(
-                        "RiskManager: Stale pending order {} expired after {}ms (never filled). Cleaning up for {}",
+                        "RiskManager: Stale pending order {} expired after {}ms (never filled). Cleaning up for {}. Correlation ID: {:?}",
                         &order_id[..8],
                         age_ms,
-                        pending.symbol
+                        pending.symbol,
+                        pending.correlation_id
                     );
                     to_remove.push(order_id.clone());
                 }

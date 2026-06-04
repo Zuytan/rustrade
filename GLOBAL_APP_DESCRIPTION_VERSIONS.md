@@ -1,5 +1,17 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.20 - Concurrency Refactoring & Correlation ID Propagation (June 2026)
+
+### Concurrency & Performance
+- **Non-Blocking Test Sleeps**: Replaced blocking `std::thread::sleep` calls with non-blocking `tokio::time::sleep` in unit tests for `StreamHealthMonitor`, `BenchmarkTimer`, and `LatencyGuard`. This prevents blocking OS/Tokio threads during test executions and makes tests run under a clean asynchronous flow.
+- **Ctrl+C GUI Graceful Exit**: Added an explicit `std::process::exit(0)` to the background runtime thread after all agents have fully cleaned up and shut down, ensuring that Ctrl+C in the terminal successfully closes the blocking eframe GUI window and exits the program.
+
+### Observability & Traceability
+- **End-to-End Correlation ID Propagation**: Fully wired the `correlation_id` throughout the `Analyst → RiskManager → Executor → Broker (Alpaca/Binance)` pipeline.
+- **Span Instrumentation**: Updated `#[instrument]` tracing macros and logging events in `RiskManager` (handling proposals and order updates), `Executor` (handling orders), and execution services (Alpaca/Binance) to record and carry the `correlation_id`.
+- **Pending Order Correlation Tracking**: Added `correlation_id` to the `PendingOrder` structure in `OrderReconciler` to trace back fills, consecutive loss updates, and TTL expirations/cleanups to the original proposal.
+- **Database Schema & Persistence**: Added a `correlation_id` column to the SQLite `orders` table and implemented automatic migration (`ALTER TABLE orders ADD COLUMN correlation_id TEXT`) to ensure `correlation_id` is successfully saved and reloaded across restarts.
+
 ## Version 0.99.19 - Critical Analysis Remediation & Webhook Alerting (June 2026)
 
 ### Safety-Critical Fixes (P0)

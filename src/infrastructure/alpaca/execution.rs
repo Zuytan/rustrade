@@ -270,7 +270,7 @@ struct AlpacaOrderDetail {
 
 #[async_trait]
 impl ExecutionService for AlpacaExecutionService {
-    #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side))]
+    #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side, correlation_id = ?order.correlation_id))]
     async fn execute(&self, order: Order) -> Result<()> {
         let _latency = LatencyGuard::new(
             self.metrics
@@ -352,8 +352,8 @@ impl ExecutionService for AlpacaExecutionService {
                 .await
                 .context("Failed to parse Alpaca order response")?;
             info!(
-                "Alpaca order placed: {} (status: {})",
-                order_resp.id, order_resp.status
+                "Alpaca order placed: {} (status: {}) with correlation_id: {:?}",
+                order_resp.id, order_resp.status, order.correlation_id
             );
             Ok(())
         } else {

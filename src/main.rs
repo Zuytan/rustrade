@@ -130,6 +130,7 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                     info!("All background tasks completed. Runtime thread exiting.");
+                    std::process::exit(0);
                 }
                 Err(e) => {
                     tracing::error!("Failed to start application: {}", e);

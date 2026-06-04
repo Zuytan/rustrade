@@ -633,11 +633,20 @@ impl RiskManager {
     }
 
     /// Handle order update command
-    #[instrument(skip(self, update), fields(symbol = %update.symbol, order_id = %update.order_id, status = ?update.status))]
+    #[instrument(skip(self, update), fields(symbol = %update.symbol, order_id = %update.order_id, status = ?update.status, correlation_id = tracing::field::Empty))]
     async fn cmd_handle_order_update(
         &mut self,
         update: OrderUpdate,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let correlation_id = self
+            .order_reconciler
+            .pending_orders
+            .get(&update.client_order_id)
+            .and_then(|p| p.correlation_id.clone());
+        if let Some(ref cid) = correlation_id {
+            tracing::Span::current().record("correlation_id", cid);
+        }
+
         if self.handle_order_update(update).await {
             self.persist_state().await;
         }
@@ -663,7 +672,7 @@ impl RiskManager {
     }
 
     /// Handle trade proposal command
-    #[instrument(skip(self, proposal), fields(symbol = %proposal.symbol, side = ?proposal.side))]
+    #[instrument(skip(self, proposal), fields(symbol = %proposal.symbol, side = ?proposal.side, correlation_id = ?proposal.correlation_id))]
     async fn cmd_handle_proposal(
         &mut self,
         proposal: TradeProposal,
@@ -909,6 +918,7 @@ impl RiskManager {
     /// reserved capital in `PortfolioStateManager`. The reservation is released
     /// automatically when the order completes (fill/reject/cancel) via
     /// `OrderReconciler::remove_order`.
+    #[instrument(skip(self, proposal, reservation_token), fields(symbol = %proposal.symbol, side = ?proposal.side, correlation_id = ?proposal.correlation_id))]
     async fn execute_proposal_internal(
         &mut self,
         proposal: TradeProposal,
@@ -941,6 +951,7 @@ impl RiskManager {
                 entry_price: proposal.price,
                 filled_at: None,
                 submitted_at: Utc::now().timestamp_millis(),
+                correlation_id: proposal.correlation_id.clone(),
             },
         );
 
@@ -956,6 +967,7 @@ impl RiskManager {
             side = ?proposal.side,
             qty = %proposal.quantity,
             price = %proposal.price,
+            correlation_id = ?proposal.correlation_id,
             "RiskManager: Submitting order"
         );
 

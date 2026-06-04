@@ -27,14 +27,14 @@ mod tests {
     use super::*;
     use prometheus::{Histogram, HistogramOpts};
 
-    #[test]
-    fn test_latency_guard_records_time() {
+    #[tokio::test]
+    async fn test_latency_guard_records_time() {
         let opts = HistogramOpts::new("test_latency", "test");
         let histogram = Histogram::with_opts(opts).unwrap();
 
         {
             let _guard = LatencyGuard::new(histogram.clone());
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
 
         assert!(histogram.get_sample_sum() >= 0.01);

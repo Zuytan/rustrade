@@ -88,11 +88,11 @@ impl Executor {
         }
     }
 
-    #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side, qty = %order.quantity))]
+    #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side, qty = %order.quantity, correlation_id = ?order.correlation_id))]
     async fn handle_order(&self, mut order: Order) {
         info!(
-            "Executor: Processing Order {}. Symbol: {}, Qty: {}",
-            order.id, order.symbol, order.quantity
+            "Executor: Processing Order {}. Symbol: {}, Qty: {}, correlation_id: {:?}",
+            order.id, order.symbol, order.quantity, order.correlation_id
         );
 
         // 0. IDEMPOTENCY: Persist with 'Pending' status BEFORE execution

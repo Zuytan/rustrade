@@ -59,7 +59,8 @@ impl Database {
                 quantity TEXT NOT NULL,
                 order_type TEXT DEFAULT 'MARKET',
                 status TEXT DEFAULT 'NEW',
-                timestamp INTEGER NOT NULL
+                timestamp INTEGER NOT NULL,
+                correlation_id TEXT
             );
             "#,
         )
@@ -74,6 +75,10 @@ impl Database {
             .await;
 
         let _ = sqlx::query("ALTER TABLE orders ADD COLUMN status TEXT DEFAULT 'NEW'")
+            .execute(&mut *conn)
+            .await;
+
+        let _ = sqlx::query("ALTER TABLE orders ADD COLUMN correlation_id TEXT")
             .execute(&mut *conn)
             .await;
 

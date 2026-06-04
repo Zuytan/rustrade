@@ -39,12 +39,13 @@ impl TradeRepository for SqliteOrderRepository {
     async fn save(&self, order: &Order) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO orders (id, symbol, side, price, quantity, order_type, status, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO orders (id, symbol, side, price, quantity, order_type, status, timestamp, correlation_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 price = excluded.price,
-                quantity = excluded.quantity
+                quantity = excluded.quantity,
+                correlation_id = excluded.correlation_id
             "#,
         )
         .bind(&order.id)
@@ -55,6 +56,7 @@ impl TradeRepository for SqliteOrderRepository {
         .bind(format!("{}", order.order_type)) // Enum as string
         .bind(format!("{:?}", order.status)) // Enum as string (New, Filled, etc.)
         .bind(order.timestamp)
+        .bind(&order.correlation_id)
         .execute(&self.pool)
         .await
         .context("Failed to save order")?;
@@ -142,6 +144,8 @@ impl SqliteOrderRepository {
                 _ => crate::domain::trading::types::OrderStatus::New,
             };
 
+            let correlation_id: Option<String> = row.try_get("correlation_id").unwrap_or(None);
+
             orders.push(Order {
                 id: row.try_get("id")?,
                 symbol: row.try_get("symbol")?,
@@ -151,7 +155,7 @@ impl SqliteOrderRepository {
                 order_type,
                 status,
                 timestamp: row.try_get("timestamp")?,
-                correlation_id: None,
+                correlation_id,
             });
         }
         Ok(orders)

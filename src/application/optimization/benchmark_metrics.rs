@@ -133,23 +133,22 @@ impl BenchmarkStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
     use std::time::Duration;
 
-    #[test]
-    fn test_benchmark_timer_elapsed() {
+    #[tokio::test]
+    async fn test_benchmark_timer_elapsed() {
         let timer = BenchmarkTimer::new("test");
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         let elapsed = timer.elapsed_seconds();
         assert!(elapsed >= 0.1, "Timer should measure at least 100ms");
         assert!(elapsed < 0.2, "Timer should not measure more than 200ms");
     }
 
-    #[test]
-    fn test_benchmark_timer_millis() {
+    #[tokio::test]
+    async fn test_benchmark_timer_millis() {
         let timer = BenchmarkTimer::new("test");
-        thread::sleep(Duration::from_millis(50));
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
         let elapsed_ms = timer.elapsed_millis();
         assert!(elapsed_ms >= 50, "Timer should measure at least 50ms");
