@@ -149,3 +149,160 @@ async fn test_full_backtest_pipeline_e2e() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_multi_asset_backtest_pipeline_e2e() -> anyhow::Result<()> {
+    // 1. Setup mock services
+    let market_data = Arc::new(MockMarketDataService::new_no_sim());
+    let portfolio = Arc::new(tokio::sync::RwLock::new(Portfolio::new()));
+    portfolio.write().await.cash = dec!(10000.0);
+
+    let exec_service = Arc::new(MockExecutionService::new(portfolio.clone()));
+
+    // 2. Setup config
+    let config = Config {
+        mode: Mode::Mock,
+        asset_class: AssetClass::Crypto,
+        broker: rustrade::config::BrokerEnvConfig::default(),
+        strategy: rustrade::domain::config::StrategyConfig {
+            strategy_mode: rustrade::domain::market::strategy_config::StrategyMode::SMC,
+            fast_sma_period: 2,
+            slow_sma_period: 5,
+            rsi_threshold: dec!(100.0),
+            take_profit_pct: dec!(0.10),
+            ..rustrade::domain::config::StrategyConfig::default()
+        },
+        risk: rustrade::domain::risk::risk_config::RiskConfig {
+            max_positions: 2,
+            trade_quantity: dec!(1.0),
+            order_cooldown_seconds: 0,
+            risk_per_trade_percent: dec!(0.01),
+            max_position_size_pct: dec!(1.0),
+            max_daily_loss_pct: dec!(0.5),
+            max_drawdown_pct: dec!(0.5),
+            consecutive_loss_limit: 10,
+            ..rustrade::domain::risk::risk_config::RiskConfig::default()
+        },
+        platform: rustrade::config::PlatformConfig {
+            symbols: vec!["BTC/USD".to_string(), "ETH/USD".to_string()],
+            spread_bps: dec!(0.0),
+            min_profit_ratio: dec!(0.0),
+            slippage_pct: dec!(0.0),
+            commission_per_share: dec!(0.0),
+            ..rustrade::config::PlatformConfig::default()
+        },
+        observability: rustrade::config::ObservabilityEnvConfig {
+            enabled: false,
+            ..rustrade::config::ObservabilityEnvConfig::default()
+        },
+        simulation: rustrade::config::SimulationEnvConfig {
+            enabled: false,
+            ..rustrade::config::SimulationEnvConfig::default()
+        },
+    };
+
+    let analyst_config =
+        rustrade::application::agents::analyst::AnalystConfig::from(config.clone());
+
+    // 3. Create known historical data for BTC and ETH
+    let start_date = Utc.with_ymd_and_hms(2023, 1, 1, 0, 0, 0).unwrap();
+    let mut bars = Vec::new();
+    let pad_count = 100;
+
+    for i in 0..pad_count {
+        // BTC/USD candles
+        bars.push(Candle {
+            symbol: "BTC/USD".to_string(),
+            open: dec!(100.0),
+            high: dec!(101.0),
+            low: dec!(99.0),
+            close: dec!(100.0),
+            volume: dec!(1000.0),
+            timestamp: start_date.timestamp_millis() + (i as i64 * 60_000),
+        });
+        // ETH/USD candles
+        bars.push(Candle {
+            symbol: "ETH/USD".to_string(),
+            open: dec!(10.0),
+            high: dec!(10.1),
+            low: dec!(9.9),
+            close: dec!(10.0),
+            volume: dec!(1000.0),
+            timestamp: start_date.timestamp_millis() + (i as i64 * 60_000),
+        });
+    }
+
+    // SMC trigger sequence for both
+    let smc_btc = [
+        (100.0, 101.0, 99.0, 99.0),
+        (99.0, 104.0, 99.0, 104.0),
+        (104.0, 108.0, 103.0, 108.0),
+        (108.0, 108.0, 102.0, 102.0),
+        (102.0, 105.0, 102.0, 105.0),
+        (105.0, 105.0, 90.0, 90.0),
+        (90.0, 90.0, 80.0, 80.0),
+    ];
+    let smc_eth = [
+        (10.0, 10.1, 9.9, 9.9),
+        (9.9, 10.4, 9.9, 10.4),
+        (10.4, 10.8, 10.3, 10.8),
+        (10.8, 10.8, 10.2, 10.2),
+        (10.2, 10.5, 10.2, 10.5),
+        (10.5, 10.5, 9.0, 9.0),
+        (9.0, 9.0, 8.0, 8.0),
+    ];
+    let base_ts = start_date.timestamp_millis() + (pad_count as i64 * 60_000);
+
+    for (i, ((btc_o, btc_h, btc_l, btc_c), (eth_o, eth_h, eth_l, eth_c))) in
+        smc_btc.into_iter().zip(smc_eth.into_iter()).enumerate()
+    {
+        bars.push(Candle {
+            symbol: "BTC/USD".to_string(),
+            open: Decimal::from_f64_retain(btc_o).unwrap(),
+            high: Decimal::from_f64_retain(btc_h).unwrap(),
+            low: Decimal::from_f64_retain(btc_l).unwrap(),
+            close: Decimal::from_f64_retain(btc_c).unwrap(),
+            volume: dec!(1000.0),
+            timestamp: base_ts + (i as i64 * 60_000),
+        });
+        bars.push(Candle {
+            symbol: "ETH/USD".to_string(),
+            open: Decimal::from_f64_retain(eth_o).unwrap(),
+            high: Decimal::from_f64_retain(eth_h).unwrap(),
+            low: Decimal::from_f64_retain(eth_l).unwrap(),
+            close: Decimal::from_f64_retain(eth_c).unwrap(),
+            volume: dec!(1000.0),
+            timestamp: base_ts + (i as i64 * 60_000),
+        });
+    }
+
+    // Sort chronologically by timestamp
+    bars.sort_by_key(|c| c.timestamp);
+
+    // 4. Run Simulator
+    let simulator = Simulator::new(market_data.clone(), exec_service.clone(), analyst_config);
+    let end_date = Utc.with_ymd_and_hms(2023, 1, 1, 0, 10, 0).unwrap();
+
+    let result = simulator
+        .run_with_multi_bars(
+            &["BTC/USD".to_string(), "ETH/USD".to_string()],
+            &bars,
+            start_date,
+            end_date,
+            None,
+        )
+        .await?;
+
+    // 5. Verify the backtest results
+    assert!(
+        !result.trades.is_empty(),
+        "Simulator should have generated trades for multi-asset"
+    );
+
+    let has_btc = result.trades.iter().any(|t| t.symbol == "BTC/USD");
+    let has_eth = result.trades.iter().any(|t| t.symbol == "ETH/USD");
+    assert!(has_btc, "Should have executed trades for BTC/USD");
+    assert!(has_eth, "Should have executed trades for ETH/USD");
+
+    Ok(())
+}

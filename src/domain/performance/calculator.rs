@@ -142,6 +142,7 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp,
             correlation_id: None,
+            stop_loss: None,
         }
     }
 

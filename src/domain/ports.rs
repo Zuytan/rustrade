@@ -27,7 +27,7 @@ pub trait MarketDataService: Send + Sync {
 
 #[async_trait]
 pub trait ExecutionService: Send + Sync {
-    async fn execute(&self, order: Order) -> Result<()>;
+    async fn execute(&self, order: &Order) -> Result<()>;
     async fn get_portfolio(&self) -> Result<Portfolio>;
     async fn get_today_orders(&self) -> Result<Vec<Order>>;
     async fn get_open_orders(&self) -> Result<Vec<Order>>;
@@ -41,7 +41,7 @@ pub trait ExecutionService: Send + Sync {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OrderUpdate {
     pub order_id: String,
     pub client_order_id: String,
@@ -88,4 +88,9 @@ pub trait ExpectancyEvaluator: Send + Sync {
 pub trait NewsDataService: Send + Sync {
     /// Subscribe to a stream of news events
     async fn subscribe_news(&self) -> Result<Receiver<crate::domain::listener::NewsEvent>>;
+}
+
+#[async_trait]
+pub trait NotificationService: Send + Sync {
+    async fn send_notification(&self, title: &str, message: &str) -> Result<()>;
 }

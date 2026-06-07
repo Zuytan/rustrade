@@ -67,28 +67,31 @@ async fn test_concurrent_proposals_respect_limits() {
         )
         .await;
 
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        mock_exec.clone(),
-        mock_market,
-        state_manager,
         false, // non_pdt_mode
         AssetClass::Stock,
         risk_config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        health_service,
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: mock_exec.clone(),
+            market_service: mock_market.clone(),
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: health_service,
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
 
@@ -194,28 +197,31 @@ async fn test_backpressure_drops_excess_proposals() {
         )
         .await;
 
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        mock_exec,
-        mock_market,
-        state_manager,
         false,
         AssetClass::Stock,
         risk_config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        health_service,
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: mock_exec,
+            market_service: mock_market,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: health_service,
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
 

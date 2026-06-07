@@ -70,7 +70,7 @@ impl ReservationToken {
 /// # struct MockExec;
 /// # #[async_trait]
 /// # impl ExecutionService for MockExec {
-/// #     async fn execute(&self, _: rustrade::domain::trading::types::Order) -> anyhow::Result<()> { Ok(()) }
+/// #     async fn execute(&self, _: &rustrade::domain::trading::types::Order) -> anyhow::Result<()> { Ok(()) }
 /// #     async fn get_portfolio(&self) -> anyhow::Result<Portfolio> {
 /// #         let mut p = Portfolio::new();
 /// #         p.cash = Decimal::from(10000);
@@ -277,7 +277,7 @@ mod tests {
     impl ExecutionService for MockExecutionService {
         async fn execute(
             &self,
-            _order: crate::domain::trading::types::Order,
+            _order: &crate::domain::trading::types::Order,
         ) -> anyhow::Result<()> {
             Ok(())
         }

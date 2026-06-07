@@ -16,6 +16,25 @@ use tokio::sync::RwLock;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info, instrument, warn};
 
+#[derive(Debug, Clone)]
+pub struct ActiveTrailingStop {
+    pub stop_order_id: String,
+    pub stop_state: crate::application::risk_management::trailing_stops::StopState,
+    pub quantity: rust_decimal::Decimal,
+    pub trailing_distance: rust_decimal::Decimal,
+    pub correlation_id: Option<String>,
+}
+
+pub struct ExecutorDependencies {
+    pub execution_service: Arc<dyn ExecutionService>,
+    pub repository: Option<Arc<dyn TradeRepository>>,
+    pub retry_config: RetryConfig,
+    pub health_service: Arc<ConnectionHealthService>,
+    pub fee_model: Arc<dyn FeeModel>,
+    pub agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
+    pub candle_rx: Option<tokio::sync::broadcast::Receiver<crate::domain::trading::types::Candle>>,
+}
+
 pub struct Executor {
     execution_service: Arc<dyn ExecutionService>,
     order_rx: Receiver<Order>,
@@ -25,29 +44,27 @@ pub struct Executor {
     health_service: Arc<ConnectionHealthService>,
     fee_model: Arc<dyn FeeModel>,
     agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
+    candle_rx: Option<tokio::sync::broadcast::Receiver<crate::domain::trading::types::Candle>>,
+    active_trailing_stops: Arc<RwLock<std::collections::HashMap<String, ActiveTrailingStop>>>,
 }
 
 impl Executor {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        execution_service: Arc<dyn ExecutionService>,
         order_rx: Receiver<Order>,
         portfolio: Arc<RwLock<Portfolio>>,
-        repository: Option<Arc<dyn TradeRepository>>,
-        retry_config: RetryConfig,
-        health_service: Arc<ConnectionHealthService>,
-        fee_model: Arc<dyn FeeModel>,
-        agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
+        deps: ExecutorDependencies,
     ) -> Self {
         Self {
-            execution_service,
+            execution_service: deps.execution_service,
             order_rx,
             portfolio,
-            repository,
-            order_monitor: Arc::new(OrderMonitor::new(retry_config)),
-            health_service,
-            fee_model,
-            agent_registry,
+            repository: deps.repository,
+            order_monitor: Arc::new(OrderMonitor::new(deps.retry_config)),
+            health_service: deps.health_service,
+            fee_model: deps.fee_model,
+            agent_registry: deps.agent_registry,
+            candle_rx: deps.candle_rx,
+            active_trailing_stops: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }
 
@@ -59,6 +76,7 @@ impl Executor {
 
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        let mut candle_rx = self.candle_rx.take();
 
         // Initial Heartbeat
         self.agent_registry
@@ -72,6 +90,15 @@ impl Executor {
             tokio::select! {
                 Some(order) = self.order_rx.recv() => {
                     self.handle_order(order).await;
+                }
+                Ok(candle) = async {
+                    if let Some(ref mut rx) = candle_rx {
+                        rx.recv().await
+                    } else {
+                        std::future::pending().await
+                    }
+                } => {
+                    self.handle_candle(candle).await;
                 }
                 _ = interval.tick() => {
                     self.check_timeouts().await;
@@ -95,6 +122,24 @@ impl Executor {
             order.id, order.symbol, order.quantity, order.correlation_id
         );
 
+        // Cancel trailing stops on Sell order exit
+        if order.side == OrderSide::Sell {
+            let mut active_stops = self.active_trailing_stops.write().await;
+            if let Some(active) = active_stops.remove(&order.symbol) {
+                let old_id = active.stop_order_id.clone();
+                let symbol = order.symbol.clone();
+                let exec = self.execution_service.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = exec.cancel_order(&old_id, &symbol).await {
+                        warn!(
+                            "Executor: Failed to cancel trailing stop order {} on sell exit: {}",
+                            old_id, e
+                        );
+                    }
+                });
+            }
+        }
+
         // 0. IDEMPOTENCY: Persist with 'Pending' status BEFORE execution
         order.status = crate::domain::trading::types::OrderStatus::Pending;
         if let Some(repo) = &self.repository
@@ -107,12 +152,9 @@ impl Executor {
             return;
         }
 
-        // 1. Execute External
-        match self.execution_service.execute(order.clone()).await {
+        // 1. Execute External (pass by reference)
+        match self.execution_service.execute(&order).await {
             Ok(_) => {
-                // Track for retry monitoring if applicable
-                self.order_monitor.track_order(order.clone()).await;
-
                 // 2. Retrieve real broker fees (non-blocking, graceful fallback)
                 let real_fees = match self.execution_service.get_order_fees(&order.id).await {
                     Ok(fees) => {
@@ -145,6 +187,59 @@ impl Executor {
                 self.health_service
                     .set_execution_status(ConnectionStatus::Online, None)
                     .await;
+
+                // Track for retry monitoring if applicable (move order)
+                self.order_monitor.track_order(order.clone()).await;
+
+                // 4. Submit initial trailing stop if stop_loss is provided for Buy orders
+                if order.side == OrderSide::Buy
+                    && let Some(sl_price) = order.stop_loss
+                {
+                    let trailing_distance = (order.price - sl_price).abs();
+                    if trailing_distance > rust_decimal::Decimal::ZERO {
+                        let stop_id = uuid::Uuid::new_v4().to_string();
+                        let stop_order = Order {
+                            id: stop_id.clone(),
+                            symbol: order.symbol.clone(),
+                            side: OrderSide::Sell,
+                            price: sl_price,
+                            quantity: order.quantity,
+                            order_type: crate::domain::trading::types::OrderType::Stop,
+                            status: crate::domain::trading::types::OrderStatus::Pending,
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                            correlation_id: order.correlation_id.clone(),
+                            stop_loss: None,
+                        };
+
+                        let exec = self.execution_service.clone();
+                        let stop_order_clone = stop_order.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = exec.execute(&stop_order_clone).await {
+                                error!(
+                                    "Executor: Failed to place initial trailing stop order: {}",
+                                    e
+                                );
+                            }
+                        });
+
+                        let mut active_stops = self.active_trailing_stops.write().await;
+                        active_stops.insert(order.symbol.clone(), ActiveTrailingStop {
+                            stop_order_id: stop_id,
+                            stop_state: crate::application::risk_management::trailing_stops::StopState::on_buy(
+                                order.price,
+                                trailing_distance,
+                                rust_decimal::Decimal::ONE,
+                            ),
+                            quantity: order.quantity,
+                            trailing_distance,
+                            correlation_id: order.correlation_id.clone(),
+                        });
+                        info!(
+                            "Executor: Initialized trailing stop for {} at stop price {}",
+                            order.symbol, sl_price
+                        );
+                    }
+                }
             }
             Err(e) => {
                 error!("Executor: Execution failed for {}: {}", order.id, e);
@@ -155,12 +250,80 @@ impl Executor {
                     )
                     .await;
 
-                // Update persisted status to 'Rejected'
+                // Update persisted status to 'Rejected' (move order)
                 if let Some(repo) = &self.repository {
-                    let mut rejected_order = order.clone();
+                    let mut rejected_order = order;
                     rejected_order.status = crate::domain::trading::types::OrderStatus::Rejected;
                     let _ = repo.save(&rejected_order).await;
                 }
+            }
+        }
+    }
+
+    async fn handle_candle(&self, candle: crate::domain::trading::types::Candle) {
+        let mut active_stops = self.active_trailing_stops.write().await;
+        if let Some(active) = active_stops.get_mut(&candle.symbol) {
+            let old_stop_price = active.stop_state.get_stop_price();
+            let trigger = active.stop_state.on_price_update(
+                candle.close,
+                active.trailing_distance,
+                rust_decimal::Decimal::ONE,
+            );
+
+            if trigger.is_some() {
+                info!(
+                    "Executor: Trailing stop triggered locally for {} at price {}",
+                    candle.symbol, candle.close
+                );
+                active_stops.remove(&candle.symbol);
+            } else if let Some(new_stop_price) = active
+                .stop_state
+                .get_stop_price()
+                .filter(|&p| Some(p) != old_stop_price)
+            {
+                info!(
+                    "Executor: Trailing stop price updated for {} from {:?} to {}",
+                    candle.symbol, old_stop_price, new_stop_price
+                );
+
+                let old_id = active.stop_order_id.clone();
+                let symbol = candle.symbol.clone();
+                let exec = self.execution_service.clone();
+
+                let new_id = uuid::Uuid::new_v4().to_string();
+                let qty = active.quantity;
+                let correlation_id = active.correlation_id.clone();
+
+                let new_stop_order = Order {
+                    id: new_id.clone(),
+                    symbol: symbol.clone(),
+                    side: OrderSide::Sell,
+                    price: new_stop_price,
+                    quantity: qty,
+                    order_type: crate::domain::trading::types::OrderType::Stop,
+                    status: crate::domain::trading::types::OrderStatus::Pending,
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    correlation_id,
+                    stop_loss: None,
+                };
+
+                let new_id_spawn = new_id.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = exec.cancel_order(&old_id, &symbol).await {
+                        warn!(
+                            "Executor: Failed to cancel old trailing stop order {}: {}",
+                            old_id, e
+                        );
+                    }
+                    if let Err(e) = exec.execute(&new_stop_order).await {
+                        error!(
+                            "Executor: Failed to place updated trailing stop order {}: {}",
+                            new_id_spawn, e
+                        );
+                    }
+                });
+
+                active.stop_order_id = new_id;
             }
         }
     }
@@ -333,7 +496,7 @@ mod tests {
     struct MockExecService;
     #[async_trait]
     impl ExecutionService for MockExecService {
-        async fn execute(&self, _order: Order) -> Result<()> {
+        async fn execute(&self, _order: &Order) -> Result<()> {
             Ok(())
         }
         async fn get_portfolio(&self) -> Result<Portfolio> {
@@ -363,7 +526,7 @@ mod tests {
     struct FailExecService;
     #[async_trait]
     impl ExecutionService for FailExecService {
-        async fn execute(&self, _order: Order) -> Result<()> {
+        async fn execute(&self, _order: &Order) -> Result<()> {
             Err(anyhow::anyhow!("Simulated Failure"))
         }
         async fn get_portfolio(&self) -> Result<Portfolio> {
@@ -397,18 +560,21 @@ mod tests {
 
         let fee_model = Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO));
         let mut executor = Executor::new(
-            Arc::new(MockExecService),
             rx,
             portfolio.clone(),
-            None,
-            RetryConfig::default(),
-            Arc::new(ConnectionHealthService::new()),
-            fee_model,
-            Arc::new(
-                crate::application::monitoring::agent_status::AgentStatusRegistry::new(
-                    crate::infrastructure::observability::Metrics::new().unwrap(),
+            ExecutorDependencies {
+                execution_service: Arc::new(MockExecService),
+                repository: None,
+                retry_config: RetryConfig::default(),
+                health_service: Arc::new(ConnectionHealthService::new()),
+                fee_model,
+                agent_registry: Arc::new(
+                    crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                        crate::infrastructure::observability::Metrics::new().unwrap(),
+                    ),
                 ),
-            ),
+                candle_rx: None,
+            },
         );
         tokio::spawn(async move { executor.run().await });
 
@@ -422,6 +588,7 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: 0,
             correlation_id: None,
+            stop_loss: None,
         };
         tx.send(order).await.expect("Failed to send order in test");
 
@@ -443,18 +610,21 @@ mod tests {
 
         let fee_model = Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO));
         let mut executor = Executor::new(
-            Arc::new(FailExecService),
             rx,
             portfolio.clone(),
-            None,
-            RetryConfig::default(),
-            Arc::new(ConnectionHealthService::new()),
-            fee_model,
-            Arc::new(
-                crate::application::monitoring::agent_status::AgentStatusRegistry::new(
-                    crate::infrastructure::observability::Metrics::new().unwrap(),
+            ExecutorDependencies {
+                execution_service: Arc::new(FailExecService),
+                repository: None,
+                retry_config: RetryConfig::default(),
+                health_service: Arc::new(ConnectionHealthService::new()),
+                fee_model,
+                agent_registry: Arc::new(
+                    crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                        crate::infrastructure::observability::Metrics::new().unwrap(),
+                    ),
                 ),
-            ),
+                candle_rx: None,
+            },
         );
         tokio::spawn(async move { executor.run().await });
 
@@ -468,6 +638,7 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: 0,
             correlation_id: None,
+            stop_loss: None,
         };
         tx.send(order).await.expect("Failed to send order in test");
 
@@ -475,5 +646,134 @@ mod tests {
 
         let p = portfolio.read().await;
         assert_eq!(p.cash, Decimal::from(1000)); // Unchanged
+    }
+
+    struct CaptureExecService {
+        executed: Arc<RwLock<Vec<Order>>>,
+        cancelled: Arc<RwLock<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl ExecutionService for CaptureExecService {
+        async fn execute(&self, order: &Order) -> Result<()> {
+            self.executed.write().await.push(order.clone());
+            Ok(())
+        }
+        async fn get_portfolio(&self) -> Result<Portfolio> {
+            Ok(Portfolio::new())
+        }
+        async fn get_today_orders(&self) -> Result<Vec<Order>> {
+            Ok(Vec::new())
+        }
+        async fn get_open_orders(&self) -> Result<Vec<Order>> {
+            Ok(Vec::new())
+        }
+        async fn cancel_order(&self, order_id: &str, _symbol: &str) -> Result<()> {
+            self.cancelled.write().await.push(order_id.to_string());
+            Ok(())
+        }
+        async fn cancel_all_orders(&self) -> Result<()> {
+            Ok(())
+        }
+        async fn subscribe_order_updates(
+            &self,
+        ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+            let (_tx, rx) = tokio::sync::broadcast::channel(1);
+            Ok(rx)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_executor_trailing_stop_loss() {
+        let (tx, rx) = mpsc::channel(10);
+        let (candle_tx, candle_rx) = tokio::sync::broadcast::channel(10);
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(1000);
+        let portfolio = Arc::new(RwLock::new(port));
+
+        let executed = Arc::new(RwLock::new(Vec::new()));
+        let cancelled = Arc::new(RwLock::new(Vec::new()));
+        let mock_exec = Arc::new(CaptureExecService {
+            executed: executed.clone(),
+            cancelled: cancelled.clone(),
+        });
+
+        let fee_model = Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO));
+        let mut executor = Executor::new(
+            rx,
+            portfolio.clone(),
+            ExecutorDependencies {
+                execution_service: mock_exec,
+                repository: None,
+                retry_config: RetryConfig::default(),
+                health_service: Arc::new(ConnectionHealthService::new()),
+                fee_model,
+                agent_registry: Arc::new(
+                    crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                        crate::infrastructure::observability::Metrics::new().unwrap(),
+                    ),
+                ),
+                candle_rx: Some(candle_rx),
+            },
+        );
+        tokio::spawn(async move { executor.run().await });
+
+        // 1. Submit BUY order with stop loss
+        let order = Order {
+            id: "buy_order_1".to_string(),
+            symbol: "ABC".to_string(),
+            side: OrderSide::Buy,
+            price: Decimal::from(100),
+            quantity: Decimal::from(2),
+            order_type: crate::domain::trading::types::OrderType::Limit,
+            status: crate::domain::trading::types::OrderStatus::New,
+            timestamp: 0,
+            correlation_id: None,
+            stop_loss: Some(Decimal::from(90)),
+        };
+        tx.send(order).await.expect("Failed to send order");
+
+        // Allow execution
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Verify that initial BUY and the initial Stop order were submitted
+        let execs = executed.read().await;
+        assert_eq!(execs.len(), 2);
+        assert_eq!(execs[0].id, "buy_order_1");
+        assert_eq!(
+            execs[1].order_type,
+            crate::domain::trading::types::OrderType::Stop
+        );
+        assert_eq!(execs[1].price, Decimal::from(90));
+        assert_eq!(execs[1].side, OrderSide::Sell);
+        let initial_stop_id = execs[1].id.clone();
+        drop(execs);
+
+        // 2. Send candle rising to 110 -> Stop should raise to 100
+        let candle = crate::domain::trading::types::Candle {
+            symbol: "ABC".to_string(),
+            open: Decimal::from(100),
+            high: Decimal::from(110),
+            low: Decimal::from(100),
+            close: Decimal::from(110),
+            volume: Decimal::from(100),
+            timestamp: 0,
+        };
+        candle_tx.send(candle).expect("Failed to send candle");
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Verify old stop order cancelled and new one placed
+        let cancels = cancelled.read().await;
+        assert_eq!(cancels.len(), 1);
+        assert_eq!(cancels[0], initial_stop_id);
+
+        let execs = executed.read().await;
+        assert_eq!(execs.len(), 3);
+        assert_eq!(
+            execs[2].order_type,
+            crate::domain::trading::types::OrderType::Stop
+        );
+        assert_eq!(execs[2].price, Decimal::from(100)); // 110 - 10 trailing distance
     }
 }

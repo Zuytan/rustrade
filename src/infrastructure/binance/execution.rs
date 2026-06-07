@@ -67,18 +67,23 @@ impl BinanceExecutionService {
 #[async_trait]
 impl ExecutionService for BinanceExecutionService {
     #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side, correlation_id = ?order.correlation_id))]
-    async fn execute(&self, order: Order) -> Result<()> {
+    async fn execute(&self, order: &Order) -> Result<()> {
         let correlation_id = order.correlation_id.clone();
+        let api_symbol = denormalize_crypto_symbol(&order.symbol);
+        let side = order.side;
+        let order_type = order.order_type;
+        let quantity = order.quantity;
+        let order_id = order.id.clone();
+        let price = order.price;
+
         self.circuit_breaker
             .call(async move {
-                let api_symbol = denormalize_crypto_symbol(&order.symbol);
-
-                let side = match order.side {
+                let side_str = match side {
                     OrderSide::Buy => "BUY",
                     OrderSide::Sell => "SELL",
                 };
 
-                let order_type = match order.order_type {
+                let order_type_str = match order_type {
                     OrderType::Market => "MARKET",
                     OrderType::Limit => "LIMIT",
                     OrderType::Stop => "STOP_LOSS",
@@ -89,17 +94,17 @@ impl ExecutionService for BinanceExecutionService {
 
                 let mut params = vec![
                     ("symbol", api_symbol.clone()),
-                    ("side", side.to_string()),
-                    ("type", order_type.to_string()),
-                    ("quantity", order.quantity.to_string()),
-                    ("newClientOrderId", order.id.clone()),
+                    ("side", side_str.to_string()),
+                    ("type", order_type_str.to_string()),
+                    ("quantity", quantity.to_string()),
+                    ("newClientOrderId", order_id.clone()),
                     ("timestamp", timestamp.to_string()),
                 ];
 
-                if let OrderType::Limit = order.order_type
-                    && order.price > Decimal::ZERO
+                if let OrderType::Limit = order_type
+                    && price > Decimal::ZERO
                 {
-                    params.push(("price", order.price.to_string()));
+                    params.push(("price", price.to_string()));
                     params.push(("timeInForce", "GTC".to_string()));
                 }
 
@@ -300,6 +305,7 @@ impl ExecutionService for BinanceExecutionService {
                     status: crate::domain::trading::types::OrderStatus::New,
                     timestamp: chrono::Utc::now().timestamp(),
                     correlation_id: None,
+                    stop_loss: None,
                 })
             })
             .collect();

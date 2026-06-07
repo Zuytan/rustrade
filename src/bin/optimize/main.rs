@@ -5,9 +5,14 @@
 //!
 //! For long runs, use an optimized build: `cargo run --release --bin optimize -- run ...`
 
+mod grid;
+mod utils;
+
 use anyhow::{Context, Result};
-use chrono::{NaiveDate, TimeZone, Utc};
 use clap::{Parser, Subcommand};
+use grid::*;
+use utils::*;
+
 use rust_decimal_macros::dec;
 use rustrade::application::optimization::crypto_clusters::{default_clusters, resolve_clusters};
 use rustrade::application::optimization::engine::OptimizeEngine;
@@ -617,8 +622,6 @@ async fn main() -> Result<()> {
             println!("\n✅ Batch optimization complete!\n");
         }
         Commands::DiscoverOptimal { symbol, asset_type } => {
-            use rustrade::domain::risk::optimal_parameters::AssetType;
-
             let asset = AssetType::from_str(&asset_type).unwrap_or(AssetType::Stock);
             let symbol = resolve_discover_symbol(&symbol, asset);
             let persistence = OptimalParametersPersistence::new()?;
@@ -681,11 +684,6 @@ async fn main() -> Result<()> {
                 // Collect results from all periods
                 let mut all_results = Vec::new();
                 for (start, end) in &periods {
-                    // Use default times for DiscoverOptimal (Stock: 14:30-21:00, Crypto: 00:00-23:59)
-                    // But here we rely on parse_date_range defaults if we passed only dates.
-                    // Actually, we need to pass times.
-                    // For now, let's just use the defaults associated with Stock for safety,
-                    // or hardcode based on asset_type.
                     let (s_time, e_time) = match asset {
                         AssetType::Stock => ("14:30:00", "21:00:00"),
                         AssetType::Crypto => ("00:00:00", "23:59:59"),
@@ -792,206 +790,4 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Default symbol for run when asset is crypto and user kept stock default.
-fn resolve_run_symbol(symbol: &str, is_crypto: bool) -> String {
-    if is_crypto && (symbol == "TSLA" || symbol == "AAPL") {
-        "BTC/USD".to_string()
-    } else {
-        symbol.to_string()
-    }
-}
-
-/// Default symbols for batch when asset is crypto.
-fn resolve_batch_symbols(symbols: &str, is_crypto: bool) -> Vec<String> {
-    if is_crypto && symbols.contains("TSLA") {
-        vec!["BTC/USD".to_string(), "ETH/USD".to_string()]
-    } else {
-        symbols.split(',').map(|s| s.trim().to_string()).collect()
-    }
-}
-
-/// Default symbol for discover-optimal when asset is crypto and user kept stock default.
-fn resolve_discover_symbol(
-    symbol: &str,
-    asset: rustrade::domain::risk::optimal_parameters::AssetType,
-) -> String {
-    if asset == rustrade::domain::risk::optimal_parameters::AssetType::Crypto
-        && (symbol == "AAPL" || symbol == "TSLA")
-    {
-        "BTC/USD".to_string()
-    } else {
-        symbol.to_string()
-    }
-}
-
-/// Session times: stock 14:30-21:00, crypto 00:00-23:59 (24/7).
-fn resolve_session_times(
-    start: Option<&str>,
-    end: Option<&str>,
-    is_crypto: bool,
-) -> (String, String) {
-    let (s, e) = match (start, end) {
-        (Some(s), Some(e)) => (s.to_string(), e.to_string()),
-        _ if is_crypto => ("00:00:00".to_string(), "23:59:59".to_string()),
-        _ => ("14:30:00".to_string(), "21:00:00".to_string()),
-    };
-    (s, e)
-}
-
-/// Parses start and end date strings into DateTime<Utc>.
-fn parse_date_range(
-    start: &str,
-    end: &str,
-    start_time: &str,
-    end_time: &str,
-) -> Result<(chrono::DateTime<Utc>, chrono::DateTime<Utc>)> {
-    let start_date = NaiveDate::parse_from_str(start, "%Y-%m-%d")
-        .context(format!("Invalid start date format: {}", start))?;
-    let end_date = NaiveDate::parse_from_str(end, "%Y-%m-%d")
-        .context(format!("Invalid end date format: {}", end))?;
-
-    let start_time_parsed = chrono::NaiveTime::parse_from_str(start_time, "%H:%M:%S")
-        .context(format!("Invalid start time format: {}", start_time))?;
-    let end_time_parsed = chrono::NaiveTime::parse_from_str(end_time, "%H:%M:%S")
-        .context(format!("Invalid end time format: {}", end_time))?;
-
-    let start_dt = Utc
-        .from_local_datetime(&start_date.and_time(start_time_parsed))
-        .single()
-        .context("Failed to create start datetime")?;
-    let end_dt = Utc
-        .from_local_datetime(&end_date.and_time(end_time_parsed))
-        .single()
-        .context("Failed to create end datetime")?;
-
-    Ok((start_dt, end_dt))
-}
-
-/// Loads a parameter grid from a TOML file.
-fn load_grid_from_toml(path: &str) -> Result<ParameterGrid> {
-    let content = std::fs::read_to_string(path)
-        .context(format!("Failed to read grid config file: {}", path))?;
-    let grid: ParameterGrid =
-        toml::from_str(&content).context(format!("Failed to parse grid config TOML: {}", path))?;
-    Ok(grid)
-}
-
-/// Default parameter grid for crypto (genetic algo bounds). More responsive SMAs, shorter cooldowns (24/7).
-fn default_grid_crypto() -> ParameterGrid {
-    get_grid_for_profile(
-        rustrade::domain::risk::risk_appetite::RiskProfile::Balanced,
-        rustrade::domain::risk::optimal_parameters::AssetType::Crypto,
-    )
-}
-
-/// Grid for Ensemble strategy (StatMomentum + ZScoreMR + SMC). Sets modern param bounds for genetic search.
-/// Legacy params are kept narrow; the 8 modern params drive the Ensemble's signal generation.
-fn grid_for_ensemble_crypto() -> ParameterGrid {
-    ParameterGrid {
-        fast_sma: vec![10, 20],
-        slow_sma: vec![50, 80],
-        rsi_threshold: vec![dec!(60.0), dec!(70.0)],
-        trend_divergence_threshold: vec![dec!(0.005), dec!(0.01)],
-        trailing_stop_atr_multiplier: vec![dec!(2.0), dec!(3.0), dec!(4.0)],
-        order_cooldown_seconds: vec![0, 120, 300],
-        stat_momentum_lookback: Some(vec![8, 10, 14, 20]),
-        stat_momentum_threshold: Some(vec![dec!(1.0), dec!(1.5), dec!(2.0), dec!(2.5)]),
-        zscore_lookback: Some(vec![15, 20, 25, 30]),
-        zscore_entry_threshold: Some(vec![dec!(-2.5), dec!(-2.0), dec!(-1.5)]),
-        zscore_exit_threshold: Some(vec![dec!(-0.5), dec!(0.0), dec!(0.5)]),
-        ofi_threshold: Some(vec![dec!(0.2), dec!(0.3), dec!(0.4)]),
-        smc_ob_lookback: Some(vec![15, 20, 25, 30]),
-        smc_min_fvg_size_pct: Some(vec![dec!(0.001), dec!(0.005), dec!(0.01), dec!(0.02)]),
-    }
-}
-
-/// Returns a parameter grid tailored for a specific risk profile and asset type.
-/// Crypto uses more responsive SMAs and shorter cooldowns (24/7 volatile markets).
-fn get_grid_for_profile(
-    profile: RiskProfile,
-    asset: rustrade::domain::risk::optimal_parameters::AssetType,
-) -> ParameterGrid {
-    let is_crypto = asset == rustrade::domain::risk::optimal_parameters::AssetType::Crypto;
-    match profile {
-        RiskProfile::Conservative => ParameterGrid {
-            fast_sma: vec![10, 15, 20],
-            slow_sma: vec![50, 60, 80, 100],
-            rsi_threshold: vec![dec!(54.0), dec!(58.0), dec!(62.0), dec!(66.0)],
-            trend_divergence_threshold: vec![dec!(0.002), dec!(0.003), dec!(0.005)],
-            trailing_stop_atr_multiplier: vec![dec!(1.5), dec!(2.0), dec!(2.5), dec!(3.0)],
-            order_cooldown_seconds: if is_crypto {
-                vec![60, 180, 420]
-            } else {
-                vec![300, 600, 900]
-            },
-            ..Default::default()
-        },
-        RiskProfile::Balanced => ParameterGrid {
-            fast_sma: if is_crypto {
-                vec![8, 14, 20, 26]
-            } else {
-                vec![12, 18, 22, 28]
-            },
-            slow_sma: vec![50, 65, 85, 110],
-            rsi_threshold: vec![dec!(58.0), dec!(63.0), dec!(68.0), dec!(72.0)],
-            trend_divergence_threshold: vec![dec!(0.003), dec!(0.005), dec!(0.007), dec!(0.01)],
-            trailing_stop_atr_multiplier: vec![dec!(2.0), dec!(2.75), dec!(3.5), dec!(4.5)],
-            order_cooldown_seconds: if is_crypto {
-                vec![0, 120, 300]
-            } else {
-                vec![0, 180, 420, 600]
-            },
-            ..Default::default()
-        },
-        RiskProfile::Aggressive => ParameterGrid {
-            fast_sma: if is_crypto {
-                vec![10, 18, 26]
-            } else {
-                vec![18, 24, 30]
-            },
-            slow_sma: vec![55, 70, 90, 120],
-            rsi_threshold: vec![dec!(62.0), dec!(67.0), dec!(72.0), dec!(76.0)],
-            trend_divergence_threshold: vec![dec!(0.004), dec!(0.006), dec!(0.009), dec!(0.012)],
-            trailing_stop_atr_multiplier: vec![dec!(3.0), dec!(4.0), dec!(5.0), dec!(6.0)],
-            order_cooldown_seconds: if is_crypto {
-                vec![0, 60]
-            } else {
-                vec![0, 60, 180]
-            },
-            ..Default::default()
-        },
-    }
-}
-
-/// Calculates the number of parameter combinations in a grid.
-fn calculate_grid_combinations(grid: &ParameterGrid) -> usize {
-    let mut count = 0;
-    for fast in &grid.fast_sma {
-        for slow in &grid.slow_sma {
-            if fast >= slow {
-                continue;
-            }
-            count += grid.rsi_threshold.len()
-                * grid.trend_divergence_threshold.len()
-                * grid.trailing_stop_atr_multiplier.len()
-                * grid.order_cooldown_seconds.len();
-        }
-    }
-    count
-}
-
-/// Returns the optimal strategy for each risk profile based on benchmark analysis.
-///
-/// Mapping based on comprehensive testing across 5 symbols, 9 strategies, 3 risk levels:
-/// - Conservative (1-3): ZScoreMR - Safe mean reversion, avoids choppy trending markets
-/// - Balanced (4-6): RegimeAdaptive - Steady gains with good risk/reward balance  
-/// - Aggressive (7-10): SMC - Best alpha generator with proven robust scaling
-fn get_strategy_for_profile(profile: RiskProfile) -> StrategyMode {
-    match profile {
-        RiskProfile::Conservative => StrategyMode::ZScoreMR,
-        RiskProfile::Balanced => StrategyMode::RegimeAdaptive,
-        RiskProfile::Aggressive => StrategyMode::SMC,
-    }
 }

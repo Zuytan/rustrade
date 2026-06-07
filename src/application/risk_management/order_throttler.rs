@@ -194,6 +194,7 @@ mod tests {
             status: OrderStatus::New,
             timestamp: Utc::now().timestamp_millis(),
             correlation_id: None,
+            stop_loss: None,
         }
     }
 

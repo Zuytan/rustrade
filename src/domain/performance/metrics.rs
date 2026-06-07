@@ -322,6 +322,238 @@ impl PerformanceMetrics {
             exposure_pct,
         }
     }
+
+    /// Calculate performance metrics directly using a pre-calculated daily equity curve.
+    /// benchmark_returns should be returns of the benchmark (e.g. SPY daily returns).
+    pub fn calculate_from_equity_curve(
+        trades: &[Trade],
+        daily_equity: &[(i64, Decimal)], // (Timestamp in seconds, Equity)
+        benchmark_returns: Option<&[Decimal]>,
+    ) -> Self {
+        let initial_equity = daily_equity
+            .first()
+            .map(|(_, e)| *e)
+            .unwrap_or(Decimal::ZERO);
+        let final_equity = daily_equity
+            .last()
+            .map(|(_, e)| *e)
+            .unwrap_or(Decimal::ZERO);
+
+        let mut period_days = 0.0;
+        if !daily_equity.is_empty() {
+            let start_ts = daily_equity.first().unwrap().0;
+            let end_ts = daily_equity.last().unwrap().0;
+            period_days = ((end_ts - start_ts) as f64 / 86400.0).max(0.0);
+        }
+
+        let total_return = final_equity - initial_equity;
+        let total_return_pct = if initial_equity > Decimal::ZERO {
+            (total_return / initial_equity) * dec!(100)
+        } else {
+            Decimal::ZERO
+        };
+
+        // Annualized return using CAGR (Compound Annual Growth Rate)
+        let annualized_return_pct = if period_days > 0.0 && initial_equity > Decimal::ZERO {
+            let total_return_frac =
+                total_return.to_f64().unwrap_or(0.0) / initial_equity.to_f64().unwrap_or(1.0);
+            let years = period_days / 365.0;
+            if years > 0.0 && total_return_frac > -1.0 {
+                let ann_f64 = ((1.0 + total_return_frac).powf(1.0 / years) - 1.0) * 100.0;
+                Decimal::from_f64_retain(ann_f64).unwrap_or(Decimal::ZERO)
+            } else {
+                Decimal::ZERO
+            }
+        } else {
+            Decimal::ZERO
+        };
+
+        // Standard Stats
+        let winning_trades: Vec<&Trade> = trades.iter().filter(|t| t.pnl > Decimal::ZERO).collect();
+        let losing_trades: Vec<&Trade> = trades.iter().filter(|t| t.pnl < Decimal::ZERO).collect();
+        let total_trades = trades.len();
+        let num_wins = winning_trades.len();
+        let num_losses = losing_trades.len();
+
+        let win_rate = if total_trades > 0 {
+            (num_wins as f64 / total_trades as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        let gross_profit: Decimal = winning_trades.iter().map(|t| t.pnl).sum();
+        let gross_loss: Decimal = losing_trades.iter().map(|t| t.pnl).sum();
+
+        let profit_factor = if gross_loss < Decimal::ZERO {
+            gross_profit.to_f64().unwrap_or(0.0) / gross_loss.abs().to_f64().unwrap_or(1.0)
+        } else if gross_profit > Decimal::ZERO {
+            f64::INFINITY
+        } else {
+            0.0
+        };
+
+        let average_win = if num_wins > 0 {
+            gross_profit / Decimal::from(num_wins)
+        } else {
+            Decimal::ZERO
+        };
+        let average_loss = if num_losses > 0 {
+            gross_loss / Decimal::from(num_losses)
+        } else {
+            Decimal::ZERO
+        };
+        let largest_win = winning_trades
+            .iter()
+            .map(|t| t.pnl)
+            .max()
+            .unwrap_or(Decimal::ZERO);
+        let largest_loss = losing_trades
+            .iter()
+            .map(|t| t.pnl)
+            .min()
+            .unwrap_or(Decimal::ZERO);
+        let (max_consecutive_wins, max_consecutive_losses) =
+            Self::calculate_consecutive_streaks(trades);
+
+        // Time Series Metrics (Sharpe, Drawdown)
+        let equity_values: Vec<Decimal> = daily_equity.iter().map(|(_, e)| *e).collect();
+        let max_drawdown_pct = Self::calculate_max_drawdown(&equity_values);
+        let max_drawdown = (max_drawdown_pct / dec!(100)) * initial_equity;
+
+        let returns = Stats::calculate_returns(&equity_values);
+        let sharpe_ratio = Stats::sharpe_ratio(&returns, true); // Annualize
+        let sortino_ratio = Self::calculate_sortino_ratio(&returns);
+        let omega_ratio = Self::calculate_omega_ratio(&returns, Decimal::ZERO);
+
+        let mdp_f64 = max_drawdown_pct.to_f64().unwrap_or(0.0);
+        let calmar_ratio = if mdp_f64.abs() > 0.01 {
+            annualized_return_pct.to_f64().unwrap_or(0.0) / mdp_f64.abs()
+        } else {
+            0.0
+        };
+
+        let days_in_market = Self::calculate_days_in_market(trades);
+        let exposure_pct = if period_days > 0.0 {
+            Decimal::from_f64_retain((days_in_market / period_days) * 100.0)
+                .unwrap_or(Decimal::ZERO)
+        } else {
+            Decimal::ZERO
+        };
+
+        let (alpha, beta) = if let Some(benchmark_rets) = benchmark_returns {
+            let (_a, b, _) = Stats::alpha_beta(&returns, benchmark_rets);
+            let sum_returns: Decimal = benchmark_rets.iter().sum();
+            let n_b_returns = Decimal::from(benchmark_rets.len().max(1));
+            let benchmark_annual =
+                sum_returns / n_b_returns * Decimal::from(252) * Decimal::from(100);
+
+            let alpha_ann = annualized_return_pct - (b * benchmark_annual);
+            let alpha_f64 = alpha_ann.to_f64().unwrap_or(0.0);
+            let beta_f64 = b.to_f64().unwrap_or(0.0);
+            (alpha_f64, beta_f64)
+        } else {
+            (0.0, 0.0)
+        };
+
+        Self {
+            total_return,
+            total_return_pct,
+            annualized_return_pct,
+            sharpe_ratio: sharpe_ratio.to_f64().unwrap_or(0.0),
+            sortino_ratio,
+            calmar_ratio,
+            omega_ratio,
+            alpha,
+            beta,
+            max_drawdown,
+            max_drawdown_pct,
+            total_trades,
+            winning_trades: num_wins,
+            losing_trades: num_losses,
+            win_rate,
+            gross_profit,
+            gross_loss,
+            profit_factor,
+            average_win,
+            average_loss,
+            largest_win,
+            largest_loss,
+            max_consecutive_wins,
+            max_consecutive_losses,
+            total_days: period_days,
+            days_in_market,
+            exposure_pct,
+        }
+    }
+
+    /// Calculate performance metrics for multiple assets.
+    /// Reconstructs the daily equity curve using daily closes of all traded assets.
+    pub fn calculate_multi_asset(
+        trades: &[Trade],
+        initial_equity: Decimal,
+        daily_prices: &std::collections::HashMap<String, Vec<(i64, Decimal)>>, // symbol -> (timestamp seconds, close price)
+        benchmark_returns: Option<&[Decimal]>,
+    ) -> Self {
+        if daily_prices.is_empty() {
+            // Fallback if no daily price data
+            return Self::calculate_time_series_metrics_with_benchmark(
+                trades,
+                &[],
+                initial_equity,
+                None,
+            );
+        }
+
+        // 1. Collect all unique timestamps
+        let mut unique_timestamps: std::collections::BTreeSet<i64> =
+            std::collections::BTreeSet::new();
+        for prices in daily_prices.values() {
+            for &(ts, _) in prices {
+                unique_timestamps.insert(ts);
+            }
+        }
+
+        // 2. Build lookup maps for faster price lookup
+        let mut price_lookups: std::collections::HashMap<
+            String,
+            std::collections::BTreeMap<i64, Decimal>,
+        > = std::collections::HashMap::new();
+        for (symbol, prices) in daily_prices {
+            let entry = price_lookups.entry(symbol.clone()).or_default();
+            for &(ts, price) in prices {
+                entry.insert(ts, price);
+            }
+        }
+
+        // 3. Reconstruct equity curve day-by-day
+        let mut daily_equity = Vec::new();
+        for ts in &unique_timestamps {
+            let mut realized_pnl = Decimal::ZERO;
+            let mut unrealized_pnl = Decimal::ZERO;
+
+            for trade in trades {
+                let entry_ts = trade.entry_timestamp / 1000;
+                let exit_ts = trade.exit_timestamp.map(|t| t / 1000).unwrap_or(i64::MAX);
+
+                if exit_ts <= *ts {
+                    realized_pnl += trade.pnl;
+                } else if entry_ts <= *ts {
+                    // Open position: value it at the closest price on or before `ts`
+                    let close_price = price_lookups
+                        .get(&trade.symbol)
+                        .and_then(|lookup| lookup.range(..=*ts).next_back().map(|(_, &p)| p))
+                        .unwrap_or(trade.entry_price);
+
+                    unrealized_pnl += (close_price - trade.entry_price) * trade.quantity;
+                }
+            }
+
+            let total_equity = initial_equity + realized_pnl + unrealized_pnl;
+            daily_equity.push((*ts, total_equity));
+        }
+
+        Self::calculate_from_equity_curve(trades, &daily_equity, benchmark_returns)
+    }
     fn calculate_max_drawdown(equity_curve: &[Decimal]) -> Decimal {
         let mut max_dd = Decimal::ZERO;
         let mut peak = Decimal::ZERO;

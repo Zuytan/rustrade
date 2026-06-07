@@ -1,7 +1,7 @@
 use crate::application::agents::analyst::{Analyst, AnalystConfig, AnalystDependencies};
 use crate::domain::ports::{ExecutionService, MarketDataService};
 use crate::domain::trading::types::MarketEvent;
-use crate::domain::trading::types::{Candle, Order};
+use crate::domain::trading::types::{Candle, Order, OrderSide, Trade};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
@@ -74,6 +74,398 @@ impl Simulator {
             .await
             .context("Failed to fetch historical bars")?;
         self.run_with_bars(symbol, &bars, start, end, None).await
+    }
+
+    pub async fn run_multi_asset(
+        &self,
+        symbols: &[String],
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        timeframe: &str,
+    ) -> Result<BacktestResult> {
+        if symbols.is_empty() {
+            anyhow::bail!("Simulator: no symbols provided for run_multi_asset");
+        }
+
+        // Fetch historical bars for all symbols
+        let mut futures = Vec::new();
+        for symbol in symbols {
+            let market = self.market_data.clone();
+            let symbol_clone = symbol.clone();
+            let tf = timeframe.to_string();
+            futures.push(tokio::spawn(async move {
+                market
+                    .get_historical_bars(&symbol_clone, start, end, &tf)
+                    .await
+            }));
+        }
+
+        let results = futures::future::join_all(futures).await;
+        let mut all_candles = Vec::new();
+        for (idx, res) in results.into_iter().enumerate() {
+            let symbol = &symbols[idx];
+            let bars = res
+                .context(format!("Failed to join thread for {}", symbol))?
+                .context(format!("Failed to fetch historical bars for {}", symbol))?;
+            all_candles.extend(bars);
+        }
+
+        if all_candles.is_empty() {
+            anyhow::bail!("Simulator: no bars fetched for any symbol");
+        }
+
+        // Sort chronologically by timestamp
+        all_candles.sort_by_key(|c| c.timestamp);
+
+        self.run_with_multi_bars(symbols, &all_candles, start, end, None)
+            .await
+    }
+
+    pub async fn run_with_multi_bars(
+        &self,
+        symbols: &[String],
+        bars: &[Candle],
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        spy_bars: Option<Vec<Candle>>,
+    ) -> Result<BacktestResult> {
+        if bars.is_empty() {
+            anyhow::bail!("Simulator: no bars provided in run_with_multi_bars");
+        }
+        let bars_owned = bars.to_vec();
+
+        // 1. Pre-process daily prices for each symbol
+        let mut daily_prices: std::collections::HashMap<String, Vec<(i64, Decimal)>> =
+            std::collections::HashMap::new();
+
+        let mut grouped_bars: std::collections::HashMap<String, Vec<Candle>> =
+            std::collections::HashMap::new();
+        for bar in bars {
+            grouped_bars
+                .entry(bar.symbol.clone())
+                .or_default()
+                .push(bar.clone());
+        }
+
+        for (symbol, symbol_bars) in &grouped_bars {
+            let mut daily_map: std::collections::BTreeMap<String, (i64, Decimal)> =
+                std::collections::BTreeMap::new();
+            for bar in symbol_bars {
+                let dt = chrono::DateTime::from_timestamp(bar.timestamp, 0)
+                    .unwrap_or_default()
+                    .with_timezone(&Utc);
+                let date_key = dt.format("%Y-%m-%d").to_string();
+                daily_map.insert(date_key, (bar.timestamp, bar.close));
+            }
+            let closes: Vec<(i64, Decimal)> = daily_map.values().cloned().collect();
+            daily_prices.insert(symbol.clone(), closes);
+        }
+
+        let initial_portfolio = self.execution_service.get_portfolio().await?;
+        let initial_equity = initial_portfolio.cash;
+
+        let (market_tx, market_rx) = mpsc::channel(1000);
+        let (proposal_tx, mut proposal_rx) = mpsc::channel(100);
+
+        let sim_config = self.config.clone();
+
+        let strategy = crate::application::strategies::StrategyFactory::create(
+            sim_config.strategy.strategy_mode,
+            &sim_config,
+        );
+
+        let (_analyst_cmd_tx, analyst_cmd_rx) = mpsc::channel(1);
+
+        let mut analyst = Analyst::new(
+            market_rx,
+            analyst_cmd_rx,
+            proposal_tx,
+            sim_config,
+            strategy,
+            AnalystDependencies {
+                execution_service: self.execution_service.clone(),
+                market_service: self.market_data.clone(),
+                candle_repository: Some(Arc::new(InMemoryCandleRepository::new(
+                    bars_owned.clone(),
+                ))),
+                strategy_repository: None,
+                win_rate_provider: None,
+                ui_candle_tx: None,
+                spread_cache: Arc::new(
+                    crate::application::market_data::spread_cache::SpreadCache::new(),
+                ),
+                connection_health_service: {
+                    let health = Arc::new(crate::application::monitoring::connection_health_service::ConnectionHealthService::new());
+                    health.set_market_data_status(
+                        crate::application::monitoring::connection_health_service::ConnectionStatus::Online,
+                        Some("Simulation Started".to_string())
+                    ).await;
+                    health
+                },
+                agent_registry: Arc::new(
+                    crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                        crate::infrastructure::observability::Metrics::new().unwrap(),
+                    ),
+                ),
+            },
+        );
+
+        let analyst_handle = tokio::spawn(async move {
+            analyst.run().await;
+        });
+
+        // Spawn Feeder
+        let feeder_handle = tokio::spawn(async move {
+            for bar in bars_owned {
+                let event = MarketEvent::Candle(bar);
+                if market_tx.send(event).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut executed_trades = Vec::new();
+        let max_drawdown_pct = Decimal::new(-50, 0); // -50% max loss
+
+        while let Some(prop) = proposal_rx.recv().await {
+            // Circuit Breaker
+            if let Ok(portfolio) = self.execution_service.get_portfolio().await {
+                // For multi-asset, we calculate current equity across all active positions
+                let mut current_equity = portfolio.cash;
+                for pos in portfolio.positions.values() {
+                    let last_price = pos.average_price; // Fallback to average_price
+                    current_equity += pos.quantity * last_price;
+                }
+
+                let drawdown_pct = if !initial_equity.is_zero() {
+                    (current_equity - initial_equity)
+                        .checked_div(initial_equity)
+                        .map(|r| r * Decimal::from(100))
+                        .unwrap_or(Decimal::ZERO)
+                } else {
+                    Decimal::ZERO
+                };
+
+                if drawdown_pct < max_drawdown_pct {
+                    break;
+                }
+            }
+
+            let costs = self
+                .config
+                .fee_model
+                .calculate_cost(prop.quantity, prop.price, prop.side);
+            let slippage_amount = costs.slippage_cost;
+            let slippage_per_unit = if prop.quantity.is_zero() {
+                Decimal::ZERO
+            } else {
+                slippage_amount
+                    .checked_div(prop.quantity)
+                    .unwrap_or(Decimal::ZERO)
+            };
+            let execution_price = match prop.side {
+                crate::domain::trading::types::OrderSide::Buy => prop.price + slippage_per_unit,
+                crate::domain::trading::types::OrderSide::Sell => prop.price - slippage_per_unit,
+            };
+
+            let order = crate::domain::trading::types::Order {
+                id: uuid::Uuid::new_v4().to_string(),
+                symbol: prop.symbol.clone(),
+                side: prop.side,
+                price: execution_price,
+                quantity: prop.quantity,
+                order_type: crate::domain::trading::types::OrderType::Market,
+                status: crate::domain::trading::types::OrderStatus::Filled,
+                timestamp: prop.timestamp,
+                correlation_id: prop.correlation_id.clone(),
+                stop_loss: prop.stop_loss,
+            };
+
+            if let Err(e) = self.execution_service.execute(&order).await {
+                tracing::warn!(
+                    "Simulator: Failed to execute order (id={}): {}",
+                    order.id,
+                    e
+                );
+            } else {
+                executed_trades.push(order);
+            }
+        }
+
+        feeder_handle.await?;
+        analyst_handle.await?;
+
+        // Calculate Final Portfolio Equity
+        let final_portfolio = self.execution_service.get_portfolio().await?;
+        let mut final_equity = final_portfolio.cash;
+        for pos in final_portfolio.positions.values() {
+            // Find latest close for this symbol
+            let last_close = grouped_bars
+                .get(&pos.symbol)
+                .and_then(|v| v.last())
+                .map(|b| b.close)
+                .unwrap_or(pos.average_price);
+            final_equity += pos.quantity * last_close;
+        }
+
+        let mut total_return_pct = if !initial_equity.is_zero() {
+            (final_equity - initial_equity)
+                .checked_div(initial_equity)
+                .map(|r| r * Decimal::from(100))
+                .unwrap_or(Decimal::ZERO)
+        } else {
+            Decimal::ZERO
+        };
+
+        let min_return = Decimal::new(-100, 0);
+        if total_return_pct < min_return {
+            total_return_pct = min_return;
+        }
+
+        // Buy & hold return of the primary/first symbol
+        let first_symbol = symbols.first().map(|s| s.as_str()).unwrap_or("");
+        let start_price = grouped_bars
+            .get(first_symbol)
+            .and_then(|v| v.first())
+            .map(|b| b.close)
+            .unwrap_or(Decimal::ZERO);
+        let last_close = grouped_bars
+            .get(first_symbol)
+            .and_then(|v| v.last())
+            .map(|b| b.close)
+            .unwrap_or(Decimal::ZERO);
+
+        let buy_and_hold_return_pct = if !start_price.is_zero() {
+            (last_close - start_price)
+                .checked_div(start_price)
+                .map(|r| r * Decimal::from(100))
+                .unwrap_or(Decimal::ZERO)
+        } else {
+            Decimal::ZERO
+        };
+
+        // SPY benchmark for alpha/beta
+        let spy_bars_resolved: Vec<Candle> = if let Some(s) = spy_bars {
+            s
+        } else {
+            self.market_data
+                .get_historical_bars("SPY", start, end, "1Day")
+                .await
+                .unwrap_or_default()
+        };
+
+        // First convert daily prices to the format expected by calculate_multi_asset
+        let trades_realized = local_orders_to_trades(&executed_trades);
+
+        // Alpha/Beta estimation using SPY
+        let mut daily_closes_flat = Vec::new();
+        let mut benchmark_returns = Vec::new();
+        if !daily_prices.is_empty() {
+            // Construct simulated equity curve day-by-day
+            // We use the metrics calculation's daily equity curve timestamps
+            let mut unique_timestamps: std::collections::BTreeSet<i64> =
+                std::collections::BTreeSet::new();
+            for prices in daily_prices.values() {
+                for &(ts, _) in prices {
+                    unique_timestamps.insert(ts);
+                }
+            }
+
+            // Build lookup maps for faster price lookup
+            let mut price_lookups: std::collections::HashMap<
+                String,
+                std::collections::BTreeMap<i64, Decimal>,
+            > = std::collections::HashMap::new();
+            for (symbol, prices) in &daily_prices {
+                let mut entry = std::collections::BTreeMap::new();
+                for &(ts, price) in prices {
+                    entry.insert(ts, price);
+                }
+                price_lookups.insert(symbol.clone(), entry);
+            }
+
+            for ts in unique_timestamps {
+                let mut realized_pnl = Decimal::ZERO;
+                let mut unrealized_pnl = Decimal::ZERO;
+
+                for trade in &trades_realized {
+                    let entry_ts = trade.entry_timestamp / 1000;
+                    let exit_ts = trade.exit_timestamp.map(|t| t / 1000).unwrap_or(i64::MAX);
+
+                    if exit_ts <= ts {
+                        realized_pnl += trade.pnl;
+                    } else if entry_ts <= ts {
+                        let close_price = price_lookups
+                            .get(&trade.symbol)
+                            .and_then(|lookup| lookup.range(..=ts).next_back().map(|(_, &p)| p))
+                            .unwrap_or(trade.entry_price);
+
+                        unrealized_pnl += (close_price - trade.entry_price) * trade.quantity;
+                    }
+                }
+                daily_closes_flat.push((ts * 1000, initial_equity + realized_pnl + unrealized_pnl));
+            }
+
+            // Calculate SPY returns if available
+            if !spy_bars_resolved.is_empty() && daily_closes_flat.len() > 1 {
+                let mut spy_daily_map: std::collections::BTreeMap<String, Decimal> =
+                    std::collections::BTreeMap::new();
+                for bar in &spy_bars_resolved {
+                    let dt = chrono::DateTime::from_timestamp(bar.timestamp, 0)
+                        .unwrap_or_default()
+                        .with_timezone(&Utc);
+                    let date_key = dt.format("%Y-%m-%d").to_string();
+                    spy_daily_map.insert(date_key, bar.close);
+                }
+
+                for i in 1..daily_closes_flat.len() {
+                    let prev_ts = daily_closes_flat[i - 1].0;
+                    let curr_ts = daily_closes_flat[i].0;
+                    let prev_dt = chrono::DateTime::from_timestamp(prev_ts / 1000, 0)
+                        .unwrap_or_default()
+                        .format("%Y-%m-%d")
+                        .to_string();
+                    let curr_dt = chrono::DateTime::from_timestamp(curr_ts / 1000, 0)
+                        .unwrap_or_default()
+                        .format("%Y-%m-%d")
+                        .to_string();
+
+                    if let (Some(&prev_spy), Some(&curr_spy)) =
+                        (spy_daily_map.get(&prev_dt), spy_daily_map.get(&curr_dt))
+                        && prev_spy > Decimal::ZERO
+                    {
+                        benchmark_returns.push((curr_spy - prev_spy) / prev_spy);
+                    }
+                }
+            }
+        }
+
+        let metrics =
+            crate::domain::performance::metrics::PerformanceMetrics::calculate_multi_asset(
+                &trades_realized,
+                initial_equity,
+                &daily_prices,
+                if benchmark_returns.is_empty() {
+                    None
+                } else {
+                    Some(&benchmark_returns)
+                },
+            );
+
+        let alpha = metrics.alpha;
+        let beta = metrics.beta;
+
+        Ok(BacktestResult {
+            trades: executed_trades,
+            initial_equity,
+            final_equity,
+            total_return_pct,
+            buy_and_hold_return_pct,
+            daily_closes: daily_closes_flat,
+            alpha,
+            beta,
+            benchmark_correlation: 0.0,
+        })
     }
 
     /// Run backtest with pre-fetched bars (avoids repeated API calls when optimizing).
@@ -307,9 +699,10 @@ impl Simulator {
                 status: crate::domain::trading::types::OrderStatus::Filled,
                 timestamp: prop.timestamp,
                 correlation_id: prop.correlation_id.clone(),
+                stop_loss: prop.stop_loss,
             };
 
-            if let Err(e) = self.execution_service.execute(order.clone()).await {
+            if let Err(e) = self.execution_service.execute(&order).await {
                 tracing::warn!(
                     "Simulator: Failed to execute order (id={}): {}",
                     order.id,
@@ -445,6 +838,42 @@ impl Simulator {
     }
 }
 
+fn local_orders_to_trades(orders: &[Order]) -> Vec<Trade> {
+    let mut trades = Vec::new();
+    let mut open_positions: std::collections::HashMap<String, &Order> =
+        std::collections::HashMap::new();
+    for order in orders {
+        match order.side {
+            OrderSide::Buy => {
+                open_positions.insert(order.symbol.clone(), order);
+            }
+            OrderSide::Sell => {
+                if let Some(buy) = open_positions.remove(&order.symbol) {
+                    let pnl = (order.price - buy.price) * order.quantity;
+                    trades.push(Trade {
+                        id: order.id.clone(),
+                        symbol: order.symbol.clone(),
+                        side: OrderSide::Buy,
+                        entry_price: buy.price,
+                        exit_price: Some(order.price),
+                        quantity: order.quantity,
+                        pnl,
+                        entry_timestamp: buy.timestamp,
+                        exit_timestamp: Some(order.timestamp),
+                        strategy_used: None,
+                        regime_detected: None,
+                        entry_reason: None,
+                        exit_reason: None,
+                        slippage: None,
+                        fees: rust_decimal::Decimal::ZERO,
+                    });
+                }
+            }
+        }
+    }
+    trades
+}
+
 // Helper Repository for Simulator
 struct InMemoryCandleRepository {
     candles: Mutex<Vec<Candle>>,
@@ -464,24 +893,27 @@ impl CandleRepository for InMemoryCandleRepository {
         Ok(())
     }
 
-    async fn get_range(&self, _symbol: &str, start_ts: i64, end_ts: i64) -> Result<Vec<Candle>> {
+    async fn get_range(&self, symbol: &str, start_ts: i64, end_ts: i64) -> Result<Vec<Candle>> {
         let candles = self
             .candles
             .lock()
             .expect("InMemoryCandleRepository mutex poisoned - concurrent panic");
         Ok(candles
             .iter()
-            .filter(|c| c.timestamp >= start_ts && c.timestamp <= end_ts)
+            .filter(|c| c.symbol == symbol && c.timestamp >= start_ts && c.timestamp <= end_ts)
             .cloned()
             .collect())
     }
 
-    async fn get_latest_timestamp(&self, _symbol: &str) -> Result<Option<i64>> {
+    async fn get_latest_timestamp(&self, symbol: &str) -> Result<Option<i64>> {
         let candles = self
             .candles
             .lock()
             .expect("InMemoryCandleRepository mutex poisoned - concurrent panic");
-        Ok(candles.last().map(|c| c.timestamp))
+        Ok(candles
+            .iter()
+            .rfind(|c| c.symbol == symbol)
+            .map(|c| c.timestamp))
     }
 
     async fn count_candles(&self, _symbol: &str, _start_ts: i64, _end_ts: i64) -> Result<usize> {

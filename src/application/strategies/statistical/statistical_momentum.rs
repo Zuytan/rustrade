@@ -103,6 +103,7 @@ impl TradingStrategy for StatisticalMomentumStrategy {
             let atr = ctx.atr.unwrap_or(Decimal::ONE);
             use rust_decimal_macros::dec;
             let stop_loss = ctx.current_price - (atr * dec!(2.0));
+            let take_profit = ctx.current_price + (atr * dec!(4.0)); // 1:2 Risk-to-Reward ratio based on ATR
 
             return Some(
                 Signal::buy(format!(
@@ -110,7 +111,8 @@ impl TradingStrategy for StatisticalMomentumStrategy {
                     momentum, ctx.current_price, ctx.trend_sma
                 ))
                 .with_confidence(confidence)
-                .with_stop_loss(stop_loss),
+                .with_stop_loss(stop_loss)
+                .with_take_profit(take_profit),
             );
         }
 

@@ -119,19 +119,20 @@ impl CandlePipeline {
         ctx.context.update(ctx.candle);
 
         // Collect training data if collector is active
-        #[allow(clippy::collapsible_if)]
-        if let Some(collector_lock) = &self.data_collector {
-            if let Ok(mut collector) = collector_lock.lock() {
-                // Convert Decimal price to f64
-                let price_f64 =
-                    rust_decimal::prelude::ToPrimitive::to_f64(&ctx.candle.close).unwrap_or(0.0);
-                collector.process_update(
-                    ctx.symbol,
-                    price_f64,
-                    ctx.candle.timestamp,
-                    &ctx.context.last_features,
-                );
-            }
+        if let Some(mut collector) = self
+            .data_collector
+            .as_ref()
+            .and_then(|lock| lock.lock().ok())
+        {
+            // Convert Decimal price to f64
+            let price_f64 =
+                rust_decimal::prelude::ToPrimitive::to_f64(&ctx.candle.close).unwrap_or(0.0);
+            collector.process_update(
+                ctx.symbol,
+                price_f64,
+                ctx.candle.timestamp,
+                &ctx.context.last_features,
+            );
         }
     }
 
@@ -208,26 +209,25 @@ impl CandlePipeline {
         }
 
         // Check partial take-profit if trailing stop not triggered
-        #[allow(clippy::collapsible_if)]
-        if signal_side.is_none() && has_position {
-            if let Some(_proposal) =
-                super::signal_processor::SignalProcessor::check_partial_take_profit(
-                    ctx.context,
-                    ctx.symbol,
-                    ctx.candle.close,
-                    ctx.candle.timestamp * 1000,
-                    ctx.portfolio.map(|p| &p.positions),
-                    ctx.context.last_entry_time,
-                    ctx.context.min_hold_time_ms,
-                )
-            {
-                debug!(
-                    "CandlePipeline [{}]: Partial take-profit triggered",
-                    ctx.symbol
-                );
-                // Note: In the full implementation, this would be sent directly
-                // For now, we'll handle it in the main analyst loop
-            }
+        if signal_side.is_none()
+            && has_position
+            && super::signal_processor::SignalProcessor::check_partial_take_profit(
+                ctx.context,
+                ctx.symbol,
+                ctx.candle.close,
+                ctx.candle.timestamp * 1000,
+                ctx.portfolio.map(|p| &p.positions),
+                ctx.context.last_entry_time,
+                ctx.context.min_hold_time_ms,
+            )
+            .is_some()
+        {
+            debug!(
+                "CandlePipeline [{}]: Partial take-profit triggered",
+                ctx.symbol
+            );
+            // Note: In the full implementation, this would be sent directly
+            // For now, we'll handle it in the main analyst loop
         }
 
         None

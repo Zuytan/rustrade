@@ -2,6 +2,11 @@ use super::common::AlpacaBar;
 // CRYPTO_UNIVERSE removed - now using dynamic discovery
 use super::websocket::AlpacaWebSocketManager;
 use crate::config::AssetClass;
+
+mod crypto_movers;
+mod response_parser;
+mod sector_provider;
+
 use crate::domain::ports::MarketDataService;
 use crate::domain::trading::types::MarketEvent;
 use crate::infrastructure::core::circuit_breaker::CircuitBreaker;
@@ -11,6 +16,7 @@ use async_trait::async_trait;
 use chrono::{NaiveDate, TimeZone};
 use reqwest_middleware::ClientWithMiddleware;
 use rust_decimal::Decimal;
+pub use sector_provider::AlpacaSectorProvider;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::{
@@ -982,241 +988,6 @@ impl MarketDataService for AlpacaMarketDataService {
                 }
                 Err(e)
             }
-        }
-    }
-}
-
-// ===== Sector Provider =====
-
-#[derive(Debug, Deserialize)]
-struct AlpacaAsset {
-    #[serde(default)]
-    sector: String,
-}
-
-pub struct AlpacaSectorProvider {
-    client: ClientWithMiddleware,
-    api_key: String,
-    api_secret: String,
-    base_url: String,
-}
-
-impl AlpacaSectorProvider {
-    pub fn new(api_key: String, api_secret: String, base_url: String) -> Self {
-        Self {
-            client: HttpClientFactory::create_client(),
-            api_key,
-            api_secret,
-            base_url,
-        }
-    }
-}
-
-#[async_trait]
-impl crate::domain::ports::SectorProvider for AlpacaSectorProvider {
-    async fn get_sector(&self, symbol: &str) -> Result<String> {
-        let url = format!("{}/v2/assets/{}", self.base_url, symbol);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("APCA-API-KEY-ID", &self.api_key)
-            .header("APCA-API-SECRET-KEY", &self.api_secret)
-            .send()
-            .await?;
-
-        if response.status().is_success() {
-            let asset: AlpacaAsset = response.json().await?;
-            if asset.sector.is_empty() {
-                Ok("Unknown".to_string())
-            } else {
-                Ok(asset.sector)
-            }
-        } else {
-            Ok("Unknown".to_string())
-        }
-    }
-}
-
-// ===== Internal Modules =====
-
-mod response_parser {
-    use super::*;
-    use serde_json::Value;
-
-    #[derive(Debug, Deserialize)]
-    pub struct Mover {
-        pub symbol: String,
-    }
-
-    pub fn parse_movers(json: Value) -> Result<Vec<Mover>> {
-        let movers: Vec<Mover> = if let Some(gainers) = json.get("gainers") {
-            if gainers.is_null() {
-                vec![]
-            } else {
-                serde_json::from_value(gainers.clone()).context("Failed to parse gainers array")?
-            }
-        } else if let Some(movers_array) = json.as_array() {
-            serde_json::from_value(Value::Array(movers_array.clone()))
-                .context("Failed to parse movers array")?
-        } else {
-            vec![]
-        };
-
-        Ok(movers)
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub struct SnapshotTrade {
-        #[serde(rename = "p")]
-        pub price: f64,
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub struct SnapshotDay {
-        #[serde(rename = "v")]
-        pub volume: f64,
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub struct Snapshot {
-        #[serde(rename = "latestTrade")]
-        pub latest_trade: Option<SnapshotTrade>,
-        #[serde(rename = "dailyBar")]
-        pub daily_bar: Option<SnapshotDay>,
-        #[serde(rename = "prevDailyBar")]
-        pub prev_daily_bar: Option<SnapshotDay>,
-    }
-
-    pub fn parse_snapshots(json: Value) -> Result<std::collections::HashMap<String, Snapshot>> {
-        serde_json::from_value(json).context("Failed to parse snapshots response")
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub struct CryptoBarsResponse {
-        pub bars: std::collections::HashMap<String, Vec<AlpacaBar>>,
-    }
-
-    pub fn parse_crypto_bars(
-        json: Value,
-    ) -> Result<std::collections::HashMap<String, Vec<AlpacaBar>>> {
-        let response: CryptoBarsResponse =
-            serde_json::from_value(json).context("Failed to parse crypto bars response")?;
-        Ok(response.bars)
-    }
-}
-
-mod crypto_movers {
-    use super::*;
-
-    pub struct Scanner<'a> {
-        pub client: &'a ClientWithMiddleware,
-        pub api_key: &'a str,
-        pub api_secret: &'a str,
-        pub base_url: &'a str,
-        pub min_volume: f64,
-    }
-
-    impl<'a> Scanner<'a> {
-        pub async fn scan(&self, symbols: &[String]) -> Result<Vec<String>> {
-            if symbols.is_empty() {
-                return Ok(vec![]);
-            }
-
-            let now = chrono::Utc::now();
-            let start = now - chrono::Duration::days(7); // Look back 7 days to find ANY data
-            let timeframe_str = "1Day".to_string();
-            let start_str = start.to_rfc3339();
-            let end_str = now.to_rfc3339();
-            let limit_str = "10".to_string();
-
-            let mut all_movers = Vec::new();
-
-            // Batch symbols to avoid URL length limits (approx 40 symbols per batch)
-            const BATCH_SIZE: usize = 40;
-            for chunk in symbols.chunks(BATCH_SIZE) {
-                let symbols_param = chunk.join(",");
-                let url = format!("{}/v1beta3/crypto/us/bars", self.base_url);
-
-                let url_with_query = build_url_with_query(
-                    &url,
-                    &[
-                        ("symbols", &symbols_param),
-                        ("timeframe", &timeframe_str),
-                        ("start", &start_str),
-                        ("end", &end_str),
-                        ("limit", &limit_str),
-                    ],
-                );
-
-                let response = match self
-                    .client
-                    .get(&url_with_query)
-                    .header("APCA-API-KEY-ID", self.api_key)
-                    .header("APCA-API-SECRET-KEY", self.api_secret)
-                    .send()
-                    .await
-                {
-                    Ok(res) => res,
-                    Err(e) => {
-                        error!("MarketScanner: Crypto bars batch fetch failed: {}", e);
-                        continue;
-                    }
-                };
-
-                if !response.status().is_success() {
-                    let err = response.text().await.unwrap_or_default();
-                    error!("MarketScanner: Crypto bars fetch failed for batch: {}", err);
-                    continue;
-                }
-
-                let json_val: serde_json::Value = match response.json().await {
-                    Ok(val) => val,
-                    Err(e) => {
-                        error!("MarketScanner: Failed to parse JSON for batch: {}", e);
-                        continue;
-                    }
-                };
-
-                match response_parser::parse_crypto_bars(json_val) {
-                    Ok(bars_map) => {
-                        for (symbol, bars) in bars_map {
-                            if let Some(bar) = bars.first() {
-                                let price_change_pct = (bar.close - bar.open) / bar.open;
-
-                                if bar.volume >= self.min_volume {
-                                    all_movers.push((symbol, price_change_pct.abs()));
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("MarketScanner: Failed to parse crypto bars: {}", e);
-                    }
-                }
-            }
-
-            all_movers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-            info!(
-                "MarketScanner: Scanned {} symbols. Found {} with valid data (volume >= {}).",
-                symbols.len(),
-                all_movers.len(),
-                self.min_volume
-            );
-
-            let top_movers: Vec<String> = all_movers.into_iter().take(10).map(|(s, _)| s).collect();
-
-            if top_movers.len() < 10 {
-                info!(
-                    "MarketScanner: Returning top {} movers (less than requested 10).",
-                    top_movers.len()
-                );
-            } else {
-                info!("MarketScanner: Returning top 10 movers.");
-            }
-
-            Ok(top_movers)
         }
     }
 }

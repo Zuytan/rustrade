@@ -294,7 +294,7 @@ impl MockExecutionService {
 
 #[async_trait]
 impl ExecutionService for MockExecutionService {
-    async fn execute(&self, order: Order) -> Result<()> {
+    async fn execute(&self, order: &Order) -> Result<()> {
         info!("MockExecution: Placing order {}...", order.id);
 
         // Simulate Network Latency

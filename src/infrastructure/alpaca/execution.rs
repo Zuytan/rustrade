@@ -271,7 +271,7 @@ struct AlpacaOrderDetail {
 #[async_trait]
 impl ExecutionService for AlpacaExecutionService {
     #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side, correlation_id = ?order.correlation_id))]
-    async fn execute(&self, order: Order) -> Result<()> {
+    async fn execute(&self, order: &Order) -> Result<()> {
         let _latency = LatencyGuard::new(
             self.metrics
                 .api_latency_seconds
@@ -417,6 +417,7 @@ impl ExecutionService for AlpacaExecutionService {
                         .unwrap_or_default()
                         .timestamp(),
                     correlation_id: None,
+                    stop_loss: None,
                 }
             })
             .collect();
@@ -539,6 +540,7 @@ impl ExecutionService for AlpacaExecutionService {
                 status: crate::domain::trading::types::OrderStatus::Filled, // Today orders are usually resolved
                 timestamp: created_at,
                 correlation_id: None,
+                stop_loss: None,
             });
         }
 
@@ -640,10 +642,11 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: chrono::Utc::now().timestamp(),
             correlation_id: None,
+            stop_loss: None,
         };
 
         // 2. Execute (place) the order
-        service.execute(order).await?;
+        service.execute(&order).await?;
         info!("Integration test: Order placed {}", order_id);
 
         // 3. Attempt to retrieve fees (should return Some(Decimal) or None, but NOT 404)

@@ -1,6 +1,7 @@
 use super::traits::{AnalysisContext, Signal, TradingStrategy};
 use super::{SMCStrategy, StatisticalMomentumStrategy, ZScoreMeanReversionStrategy};
 use crate::application::agents::analyst_config::AnalystConfig;
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -157,6 +158,11 @@ impl TradingStrategy for EnsembleStrategy {
         let mut sell_reasons = Vec::new();
         let mut total_weight = 0.0_f64;
 
+        let mut buy_sl_weighted = Decimal::ZERO;
+        let mut buy_tp_weighted = Decimal::ZERO;
+        let mut buy_sl_weight = 0.0_f64;
+        let mut buy_tp_weight = 0.0_f64;
+
         for strategy in &self.strategies {
             let w = self.weight_for(strategy.name());
             total_weight += w;
@@ -167,6 +173,17 @@ impl TradingStrategy for EnsembleStrategy {
                         buy_weight += w;
                         buy_confidence_weighted += signal.confidence * w;
                         buy_reasons.push(format!("{}: {}", strategy.name(), signal.reason));
+
+                        if let Some(sl) = signal.suggested_stop_loss {
+                            let w_dec = Decimal::from_f64_retain(w).unwrap_or(Decimal::ONE);
+                            buy_sl_weighted += sl * w_dec;
+                            buy_sl_weight += w;
+                        }
+                        if let Some(tp) = signal.suggested_take_profit {
+                            let w_dec = Decimal::from_f64_retain(w).unwrap_or(Decimal::ONE);
+                            buy_tp_weighted += tp * w_dec;
+                            buy_tp_weight += w;
+                        }
                     }
                     crate::domain::trading::types::OrderSide::Sell => {
                         sell_votes += 1;
@@ -212,15 +229,23 @@ impl TradingStrategy for EnsembleStrategy {
         // Check for buy consensus (weighted)
         if buy_consensus {
             let avg_confidence = buy_confidence_weighted / buy_weight;
-            return Some(
-                Signal::buy(format!(
-                    "Ensemble ({}/{} agree): {}",
-                    buy_votes,
-                    total_strategies,
-                    buy_reasons.join("; ")
-                ))
-                .with_confidence(avg_confidence),
-            );
+            let mut sig = Signal::buy(format!(
+                "Ensemble ({}/{} agree): {}",
+                buy_votes,
+                total_strategies,
+                buy_reasons.join("; ")
+            ))
+            .with_confidence(avg_confidence);
+
+            if buy_sl_weight > 0.0 {
+                let sl_weight_dec = Decimal::from_f64_retain(buy_sl_weight).unwrap_or(Decimal::ONE);
+                sig = sig.with_stop_loss((buy_sl_weighted / sl_weight_dec).round_dp(4));
+            }
+            if buy_tp_weight > 0.0 {
+                let tp_weight_dec = Decimal::from_f64_retain(buy_tp_weight).unwrap_or(Decimal::ONE);
+                sig = sig.with_take_profit((buy_tp_weighted / tp_weight_dec).round_dp(4));
+            }
+            return Some(sig);
         } else if buy_weight > 0.0 {
             tracing::info!(
                 "Ensemble: Buy threshold NOT met. Weight: {:.2}/{:.2} (Votes: {}/{}) - Reasons: {}",

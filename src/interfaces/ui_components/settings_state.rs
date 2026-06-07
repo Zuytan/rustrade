@@ -118,6 +118,17 @@ impl SettingsPanel {
         self.max_drawdown_pct = settings.risk.max_drawdown_pct.clone();
         self.consecutive_loss_limit = settings.risk.consecutive_loss_limit.clone();
 
+        // Tab Selection
+        if let Some(ref tab_str) = settings.active_tab {
+            self.active_tab = match tab_str.as_str() {
+                "Language" => SettingsTab::Language,
+                "Shortcuts" => SettingsTab::Shortcuts,
+                "Help" => SettingsTab::Help,
+                "About" => SettingsTab::About,
+                _ => SettingsTab::TradingEngine,
+            };
+        }
+
         // Analyst Settings
         self.fast_sma_period = settings.analyst.fast_sma_period.clone();
         self.slow_sma_period = settings.analyst.slow_sma_period.clone();

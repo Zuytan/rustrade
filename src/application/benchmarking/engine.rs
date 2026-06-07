@@ -94,6 +94,34 @@ impl BenchmarkEngine {
             .await
     }
 
+    pub async fn run_multi_asset(
+        &self,
+        symbols: Vec<String>,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        strategy: StrategyMode,
+        risk_score: Option<u8>,
+        timeframe: &str,
+    ) -> anyhow::Result<BacktestResult> {
+        let mut app_config = self.base_config.clone();
+        app_config.strategy.strategy_mode = strategy;
+
+        if let Some(score) = risk_score {
+            app_config.strategy.risk_appetite_score = Some(score);
+        }
+
+        let mut config: AnalystConfig = app_config.clone().into();
+
+        if let Some(score) = app_config.strategy.risk_appetite_score
+            && let Ok(appetite) = RiskAppetite::new(score)
+        {
+            config.apply_risk_appetite(&appetite);
+        }
+
+        self.execute_simulation_multi(&symbols, start, end, config, timeframe)
+            .await
+    }
+
     pub async fn run_parallel(
         &self,
         symbols: Vec<String>,
@@ -282,6 +310,56 @@ impl BenchmarkEngine {
         let simulator = Simulator::new(self.market_service.clone(), execution_service, config);
 
         simulator.run(symbol, start, end, timeframe).await
+    }
+
+    async fn execute_simulation_multi(
+        &self,
+        symbols: &[String],
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        config: AnalystConfig,
+        timeframe: &str,
+    ) -> anyhow::Result<BacktestResult> {
+        let mut portfolio = Portfolio::new();
+        portfolio.cash = Decimal::new(100000, 0);
+        let portfolio_lock = Arc::new(RwLock::new(portfolio));
+
+        // Use standard benchmark costs
+        let slippage = Decimal::from_f64_retain(0.001).expect("0.001 is a valid f64 for Decimal");
+        let commission = Decimal::from_f64_retain(0.001).expect("0.001 is a valid f64 for Decimal");
+        let fee_model = Arc::new(ConstantFeeModel::new(commission, slippage));
+
+        // Check for simulation mode (Step 2: High-Fidelity Simulation)
+        let execution_service = if self.base_config.simulation.enabled {
+            use crate::infrastructure::simulation::latency_model::NetworkLatency;
+            use crate::infrastructure::simulation::slippage_model::VolatilitySlippage;
+
+            let latency_model = Arc::new(NetworkLatency::new(
+                self.base_config.simulation.latency_base_ms,
+                self.base_config.simulation.latency_jitter_ms,
+            ));
+            let slippage_model = Arc::new(VolatilitySlippage::new(
+                self.base_config.simulation.slippage_volatility,
+            ));
+
+            Arc::new(MockExecutionService::with_simulation_models(
+                portfolio_lock.clone(),
+                fee_model,
+                latency_model,
+                slippage_model,
+            ))
+        } else {
+            Arc::new(MockExecutionService::with_costs(
+                portfolio_lock.clone(),
+                fee_model,
+            ))
+        };
+
+        let simulator = Simulator::new(self.market_service.clone(), execution_service, config);
+
+        simulator
+            .run_multi_asset(symbols, start, end, timeframe)
+            .await
     }
 }
 

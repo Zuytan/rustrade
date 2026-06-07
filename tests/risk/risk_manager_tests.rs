@@ -141,24 +141,27 @@ async fn test_circuit_breaker_on_market_crash() {
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Stock,
         config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        },
     )
     .expect("Test config should be valid");
 
@@ -225,28 +228,31 @@ async fn test_buy_approval() {
         .set_market_data_status(ConnectionStatus::Online, None)
         .await;
 
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Stock,
         RiskConfig::default(),
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        connection_service,
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: connection_service,
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -285,28 +291,31 @@ async fn test_buy_rejection_insufficient_funds() {
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Stock,
         RiskConfig::default(),
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -357,28 +366,31 @@ async fn test_buy_rejection_insufficient_buying_power_high_equity() {
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
     // Default config: 10% max position size = $10,000 (approx 10% of $101,000 equity)
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service.clone(),
-        state_manager,
         false,
         AssetClass::Stock,
         RiskConfig::default(),
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service: market_service.clone(),
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
 
@@ -436,28 +448,31 @@ async fn test_sell_approval() {
         .set_market_data_status(ConnectionStatus::Online, None)
         .await;
 
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Stock,
         RiskConfig::default(),
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        connection_service,
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: connection_service,
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -503,7 +518,7 @@ async fn test_pdt_protection_rejection() {
 
     // Simulate a BUY today
     exec_service
-        .execute(Order {
+        .execute(&Order {
             id: "buy1".to_string(),
             symbol: "ABC".to_string(),
             side: OrderSide::Buy,
@@ -513,6 +528,7 @@ async fn test_pdt_protection_rejection() {
             status: rustrade::domain::trading::types::OrderStatus::Filled,
             timestamp: Utc::now().timestamp_millis(),
             correlation_id: None,
+            stop_loss: None,
         })
         .await
         .unwrap();
@@ -528,24 +544,27 @@ async fn test_pdt_protection_rejection() {
     };
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false, // non_pdt_mode = false (trigger protection)
         AssetClass::Stock,
         risk_config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        },
     )
     .expect("Test config should be valid");
 
@@ -617,24 +636,27 @@ async fn test_sector_exposure_limit() {
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Stock,
         config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        },
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -699,24 +721,27 @@ async fn test_circuit_breaker_triggers_liquidation() {
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Stock,
         config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        },
     )
     .expect("Test config should be valid");
 
@@ -791,28 +816,31 @@ async fn test_crypto_daily_reset() {
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
     let (_, dummy_cmd_rx) = mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Crypto, // Enable Crypto mode
         RiskConfig::default(),
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
 
@@ -883,28 +911,31 @@ async fn test_sentiment_risk_adjustment() {
         )
         .await;
 
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         risk_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Crypto,
         risk_config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        connection_service,
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: connection_service,
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });
@@ -1018,24 +1049,27 @@ async fn test_blind_liquidation_panic_mode() {
 
     let state_manager = Arc::new(PortfolioStateManager::new(exec_service.clone(), 5000));
 
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut rm = RiskManager::new(
         proposal_rx,
         risk_cmd_rx,
         order_tx,
-        exec_service,
-        market_service,
-        state_manager,
         false,
         AssetClass::Crypto,
         risk_config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        RiskManagerDependencies {
+            execution_service: exec_service,
+            market_service,
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        },
     )
     .expect("Test config should be valid");
     tokio::spawn(async move { rm.run().await });

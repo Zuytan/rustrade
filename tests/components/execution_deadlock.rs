@@ -80,10 +80,11 @@ async fn test_execution_timeouts_on_deadlock() {
         status: rustrade::domain::trading::types::OrderStatus::New,
         timestamp: 0,
         correlation_id: None,
+        stop_loss: None,
     };
 
     let start = std::time::Instant::now();
-    let result = service.execute(order).await;
+    let result = service.execute(&order).await;
     let duration = start.elapsed();
 
     assert!(result.is_err());

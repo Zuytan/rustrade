@@ -4,10 +4,10 @@ use rust_decimal_macros::dec;
 use rustrade::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use rustrade::application::risk_management::risk_manager::RiskManager;
 use rustrade::config::AssetClass;
-use rustrade::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
+use rustrade::domain::ports::MarketDataService;
 use rustrade::domain::risk::risk_config::RiskConfig;
 use rustrade::domain::trading::portfolio::{Portfolio, Position};
-use rustrade::domain::trading::types::{Candle, MarketEvent, Order};
+use rustrade::domain::trading::types::{Candle, MarketEvent};
 use rustrade::infrastructure::observability::Metrics;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,34 +17,7 @@ use tokio::sync::mpsc;
 
 // --- Mocks ---
 
-struct MockExecutionService;
-#[async_trait]
-impl ExecutionService for MockExecutionService {
-    async fn execute(&self, _order: Order) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn get_portfolio(&self) -> anyhow::Result<Portfolio> {
-        Ok(Portfolio::new())
-    }
-    async fn get_today_orders(&self) -> anyhow::Result<Vec<Order>> {
-        Ok(vec![])
-    }
-    async fn get_open_orders(&self) -> anyhow::Result<Vec<Order>> {
-        Ok(vec![])
-    }
-    async fn cancel_order(&self, _id: &str, _s: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn cancel_all_orders(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn subscribe_order_updates(
-        &self,
-    ) -> anyhow::Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
-        let (tx, _) = tokio::sync::broadcast::channel(1);
-        Ok(tx.subscribe())
-    }
-}
+mod test_utils;
 
 struct MockMarketData {
     prices: RwLock<HashMap<String, Decimal>>,
@@ -84,7 +57,7 @@ async fn test_circuit_breaker_skipped_on_missing_prices() {
     let (_cmd_tx, cmd_rx) = mpsc::channel(10);
     let (order_tx, mut order_rx) = mpsc::channel(10);
 
-    let _execution_service = Arc::new(MockExecutionService);
+    let _execution_service = Arc::new(test_utils::MockExecutionService::new());
     let market_data = Arc::new(MockMarketData {
         prices: RwLock::new(HashMap::new()),
     });
@@ -108,41 +81,9 @@ async fn test_circuit_breaker_skipped_on_missing_prices() {
     // Here we need to trick PSM or mock ExecutionService to return THIS portfolio.
     // Easier: MockExecutionService returns a fixed portfolio.
 
-    struct FixedPortfolioExecutionService {
-        portfolio: RwLock<Portfolio>,
-    }
-    #[async_trait]
-    impl ExecutionService for FixedPortfolioExecutionService {
-        async fn get_portfolio(&self) -> anyhow::Result<Portfolio> {
-            Ok(self.portfolio.read().await.clone())
-        }
-        // ... (other methods same as above)
-        async fn execute(&self, _order: Order) -> anyhow::Result<()> {
-            Ok(())
-        }
-        async fn get_today_orders(&self) -> anyhow::Result<Vec<Order>> {
-            Ok(vec![])
-        }
-        async fn get_open_orders(&self) -> anyhow::Result<Vec<Order>> {
-            Ok(vec![])
-        }
-        async fn cancel_order(&self, _id: &str, _s: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-        async fn cancel_all_orders(&self) -> anyhow::Result<()> {
-            Ok(())
-        }
-        async fn subscribe_order_updates(
-            &self,
-        ) -> anyhow::Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
-            let (tx, _) = tokio::sync::broadcast::channel(1);
-            Ok(tx.subscribe())
-        }
-    }
-
-    let mixed_exec_service = Arc::new(FixedPortfolioExecutionService {
-        portfolio: RwLock::new(portfolio.clone()),
-    });
+    let mixed_exec_service = Arc::new(test_utils::MockExecutionService::with_portfolio(
+        portfolio.clone(),
+    ));
 
     let psm = Arc::new(PortfolioStateManager::new(mixed_exec_service.clone(), 100));
 
@@ -165,25 +106,28 @@ async fn test_circuit_breaker_skipped_on_missing_prices() {
         ),
     );
 
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     // Create RiskManager
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         cmd_rx,
         order_tx,
-        mixed_exec_service,
-        market_data.clone(),
-        psm.clone(),
         false, // non_pdt
         AssetClass::Stock,
         risk_config,
-        None, // Perf monitor
-        None, // Correlation
-        None, // Risk State Repo
-        None, // Candle Repo
-        spread_cache,
-        health_service,
-        Metrics::default(), // Assuming default works, or mock it
-        agent_registry,
+        RiskManagerDependencies {
+            execution_service: mixed_exec_service,
+            market_service: market_data.clone(),
+            portfolio_state_manager: psm.clone(),
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache,
+            connection_health_service: health_service,
+            metrics: Metrics::default(),
+            agent_registry,
+        },
     )
     .unwrap();
 

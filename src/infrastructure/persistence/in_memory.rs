@@ -157,6 +157,7 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: Utc::now().timestamp(),
             correlation_id: None,
+            stop_loss: None,
         }
     }
 

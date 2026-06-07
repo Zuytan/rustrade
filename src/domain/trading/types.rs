@@ -113,6 +113,7 @@ pub struct Order {
     pub status: OrderStatus,
     pub timestamp: i64,
     pub correlation_id: Option<String>,
+    pub stop_loss: Option<Decimal>,
 }
 
 /// Represents a completed trade with profit/loss information.

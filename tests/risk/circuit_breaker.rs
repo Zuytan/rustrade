@@ -59,24 +59,27 @@ async fn test_circuit_breaker_triggers_on_crash() {
     };
 
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        execution_service.clone(),
-        market_service.clone(),
-        state_manager.clone(),
         true, // Non-PDT
         rustrade::config::AssetClass::Stock,
         config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
-        Metrics::default(),
-        Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        RiskManagerDependencies {
+            execution_service: execution_service.clone(),
+            market_service: market_service.clone(),
+            portfolio_state_manager: state_manager.clone(),
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: Arc::new(rustrade::application::monitoring::connection_health_service::ConnectionHealthService::new()),
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(rustrade::infrastructure::observability::Metrics::new().unwrap())),
+        },
     )
     .expect("Test config should be valid");
 

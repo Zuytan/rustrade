@@ -188,7 +188,7 @@ mod tests {
 
     #[async_trait]
     impl ExecutionService for MockExecService {
-        async fn execute(&self, _order: Order) -> Result<()> {
+        async fn execute(&self, _order: &Order) -> Result<()> {
             unimplemented!()
         }
         async fn get_portfolio(&self) -> Result<Portfolio> {

@@ -405,13 +405,26 @@ impl TradingStrategy for SMCStrategy {
                         // Stop Loss Strategy:
                         // 1. If an Order Block (OB) exists, place stop below the OB (standard SMC).
                         // 2. If no OB, place stop below the FVG invalidation level.
-                        if let Some(ob_level) = ob {
-                            // If OB exists, stop goes below OB
-                            signal = signal.with_stop_loss(ob_level * dec!(0.999)); // 0.1% buffer
+                        let stop_loss = if let Some(ob_level) = ob {
+                            ob_level * dec!(0.999) // 0.1% buffer
                         } else {
-                            // Stop below FVG invalidation level
-                            signal = signal.with_stop_loss(invalidation_level * dec!(0.999));
-                        }
+                            invalidation_level * dec!(0.999)
+                        };
+
+                        // Ensure stop_loss is below current_price to avoid negative/zero risk
+                        let stop_loss = if stop_loss < ctx.current_price {
+                            stop_loss
+                        } else {
+                            let atr = ctx.atr.unwrap_or_else(|| ctx.current_price * dec!(0.0075));
+                            ctx.current_price - (atr * dec!(2.0))
+                        };
+
+                        let risk = ctx.current_price - stop_loss;
+                        let take_profit = ctx.current_price + (risk * dec!(3.0));
+
+                        signal = signal
+                            .with_stop_loss(stop_loss)
+                            .with_take_profit(take_profit);
 
                         return Some(signal);
                     }
@@ -464,11 +477,26 @@ impl TradingStrategy for SMCStrategy {
                         let mut signal = Signal::sell(reason).with_confidence(confidence);
 
                         // Stop Loss: Just above FVG top (Low1) or OB High
-                        if let Some(ob_level) = ob {
-                            signal = signal.with_stop_loss(ob_level * dec!(1.001));
+                        let stop_loss = if let Some(ob_level) = ob {
+                            ob_level * dec!(1.001)
                         } else {
-                            signal = signal.with_stop_loss(invalidation_level * dec!(1.001));
-                        }
+                            invalidation_level * dec!(1.001)
+                        };
+
+                        // Ensure stop_loss is above current_price
+                        let stop_loss = if stop_loss > ctx.current_price {
+                            stop_loss
+                        } else {
+                            let atr = ctx.atr.unwrap_or_else(|| ctx.current_price * dec!(0.0075));
+                            ctx.current_price + (atr * dec!(2.0))
+                        };
+
+                        let risk = stop_loss - ctx.current_price;
+                        let take_profit = ctx.current_price - (risk * dec!(3.0));
+
+                        signal = signal
+                            .with_stop_loss(stop_loss)
+                            .with_take_profit(take_profit);
 
                         return Some(signal);
                     }

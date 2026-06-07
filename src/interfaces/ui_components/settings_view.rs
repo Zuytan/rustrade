@@ -292,6 +292,13 @@ fn render_save_button(
                 sma_threshold: panel.sma_threshold.clone(),
                 profit_target_multiplier: panel.profit_target_multiplier.clone(),
             },
+            active_tab: Some(match panel.active_tab {
+                SettingsTab::TradingEngine => "TradingEngine".to_string(),
+                SettingsTab::Language => "Language".to_string(),
+                SettingsTab::Shortcuts => "Shortcuts".to_string(),
+                SettingsTab::Help => "Help".to_string(),
+                SettingsTab::About => "About".to_string(),
+            }),
         };
 
         if let Ok(persistence) = SettingsPersistence::new() {

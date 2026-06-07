@@ -1,5 +1,24 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.21 - Multi-Asset Simulation & Server REST/WS API Integration (June 2026)
+
+### Execution & Trading Engine
+- **Trailing Stop Loss Dynamique**: Connecté le service `TrailingStops` dans l'agent `Executor` pour calculer et soumettre dynamiquement les ajustements de stop-loss suiveur au broker.
+- **Arbitrage de base**: Implémenté `ArbitrageEngine` dans la couche domain (`domain/trading/arbitrage.rs`) permettant d'identifier les opportunités d'arbitrage spatial et triangulaire.
+
+### Backtesting & Performance
+- **Multi-Asset Flow Synchronization**: Refactorisé `Simulator` pour trier et fusionner chronologiquement les flux de bougies SMC/standards provenant de plusieurs symboles, évitant ainsi tout biais d'anticipation ou désynchronisation temporelle lors des backtests multi-asset.
+- **Portfolio Equity Metrics**: Ajouté des calculs de performance multi-asset dans `PerformanceMetrics` et `BenchmarkEngine` pour analyser les performances d'un portefeuille sur la base de sa courbe d'équité cumulée.
+- **InMemoryCandleRepository Symbol Isolation**: Corrigé une faille d'isolation où les requêtes de bougies passées mélangeaient les symboles, perturbant le calcul des indicateurs en simulation.
+
+### Interface & API Observability
+- **REST & WebSocket API Server**: Intégré Axum dans l'infrastructure API pour le mode Server (headless), fournissant des endpoints de statut de portefeuille (`/api/portfolio`), des positions actives (`/api/positions`), et un flux WebSocket pour la diffusion en temps réel.
+- **egui Sidebar Active Tab Persistence**: Étendu `PersistedSettings` et `settings_persistence.rs` pour sauvegarder et restaurer l'onglet actif (`active_tab`) de la barre latérale egui, améliorant l'expérience utilisateur.
+
+### Code Quality & Hygiene
+- **Optimisation des Clones**: Éliminé des clones excessifs sur la signature de `ExecutionService::execute` en passant par référence.
+- **Lints & Warnings**: Corrigé les alertes Clippy (`collapsible_if`, `filter().next_back()` remplacé par `rfind()`). Tout le workspace compile désormais proprement avec 100% de tests unitaires et d'intégration validés.
+
 ## Version 0.99.20 - Concurrency Refactoring & Correlation ID Propagation (June 2026)
 
 ### Concurrency & Performance

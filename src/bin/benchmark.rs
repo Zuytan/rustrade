@@ -74,9 +74,16 @@ fn parse_periods(s: &str, is_crypto: bool) -> anyhow::Result<Vec<PeriodWindow>> 
             .trim();
         let start_date = NaiveDate::parse_from_str(start_str, "%Y-%m-%d")?;
         let end_date = NaiveDate::parse_from_str(end_str, "%Y-%m-%d")?;
-        let start_dt =
-            Utc.from_utc_datetime(&start_date.and_hms_opt(start_h, start_m, start_s).unwrap());
-        let end_dt = Utc.from_utc_datetime(&end_date.and_hms_opt(end_h, end_m, end_s).unwrap());
+        let start_dt = Utc.from_utc_datetime(
+            &start_date
+                .and_hms_opt(start_h, start_m, start_s)
+                .context("invalid start time")?,
+        );
+        let end_dt = Utc.from_utc_datetime(
+            &end_date
+                .and_hms_opt(end_h, end_m, end_s)
+                .context("invalid end time")?,
+        );
         let label = format!("{} to {}", start_str, end_str);
         out.push((label, start_dt, end_dt));
     }
@@ -191,8 +198,8 @@ async fn create_benchmark_engine(asset_class_str: &str) -> anyhow::Result<Benchm
         dotenvy::dotenv().ok();
     }
 
-    let api_key = env::var("ALPACA_API_KEY").expect("ALPACA_API_KEY must be set");
-    let api_secret = env::var("ALPACA_SECRET_KEY").expect("ALPACA_SECRET_KEY must be set");
+    let api_key = env::var("ALPACA_API_KEY").context("ALPACA_API_KEY must be set")?;
+    let api_secret = env::var("ALPACA_SECRET_KEY").context("ALPACA_SECRET_KEY must be set")?;
     let data_url =
         env::var("ALPACA_DATA_URL").unwrap_or_else(|_| "https://data.alpaca.markets".to_string());
     let api_base_url = env::var("ALPACA_BASE_URL")
@@ -200,10 +207,8 @@ async fn create_benchmark_engine(asset_class_str: &str) -> anyhow::Result<Benchm
     let ws_url = env::var("ALPACA_WS_URL")
         .unwrap_or_else(|_| "wss://stream.data.alpaca.markets/v2/iex".to_string());
 
-    let base_config = rustrade::config::Config::from_env().unwrap_or_else(|e| {
-        tracing::error!("Failed to load config from env: {}", e);
-        panic!("Failed to load config")
-    });
+    let base_config =
+        rustrade::config::Config::from_env().context("Failed to load config from env")?;
 
     let asset_class = rustrade::config::AssetClass::from_str(asset_class_str)
         .unwrap_or(rustrade::config::AssetClass::Stock);
@@ -285,11 +290,18 @@ async fn main() -> anyhow::Result<()> {
             let (start_h, start_m, start_s) = if is_crypto { (0, 0, 0) } else { (14, 30, 0) };
             let (end_h, end_m, end_s) = if is_crypto { (23, 59, 59) } else { (21, 0, 0) };
 
-            let start_dt =
-                Utc.from_utc_datetime(&start_date.and_hms_opt(start_h, start_m, start_s).unwrap());
+            let start_dt = Utc.from_utc_datetime(
+                &start_date
+                    .and_hms_opt(start_h, start_m, start_s)
+                    .context("invalid start time")?,
+            );
             let end_dt = if let Some(e) = &end {
                 let end_date = NaiveDate::parse_from_str(e, "%Y-%m-%d")?;
-                Utc.from_utc_datetime(&end_date.and_hms_opt(end_h, end_m, end_s).unwrap())
+                Utc.from_utc_datetime(
+                    &end_date
+                        .and_hms_opt(end_h, end_m, end_s)
+                        .context("invalid end time")?,
+                )
             } else {
                 start_dt + chrono::Duration::days(days)
             };
@@ -403,7 +415,7 @@ async fn main() -> anyhow::Result<()> {
                                         .partial_cmp(&b.objective_score)
                                         .unwrap_or(std::cmp::Ordering::Equal)
                                 })
-                                .unwrap();
+                                .context("No optimization result found in sub-selection")?;
                             Ok(best.params.clone())
                         }
                     };
@@ -544,16 +556,17 @@ async fn main() -> anyhow::Result<()> {
                         // Apply Overrides AFTER risk appetite to ensure they persist
                         if let Some(m) = atr_multiplier {
                             config.strategy.trailing_stop_atr_multiplier =
-                                Decimal::from_f64(m).unwrap_or(Decimal::from_f64(2.5).unwrap());
+                                Decimal::from_f64(m).context("invalid atr_multiplier float")?;
                         }
                         if let Some(tp) = take_profit_pct {
                             config.strategy.take_profit_pct =
-                                Decimal::from_f64(tp).unwrap_or(Decimal::ZERO);
+                                Decimal::from_f64(tp).context("invalid take_profit_pct float")?;
                         }
                         if let Some(pct) = fee_pct {
                             use rustrade::domain::trading::fee_model::ConstantFeeModel;
                             use std::sync::Arc;
-                            let fee_dec = Decimal::from_f64(pct).unwrap_or(Decimal::ZERO);
+                            let fee_dec =
+                                Decimal::from_f64(pct).context("invalid fee_pct float")?;
                             config.fee_model =
                                 Arc::new(ConstantFeeModel::new(fee_dec, Decimal::ZERO));
                         }

@@ -32,6 +32,7 @@ pub struct PersistedSettings {
     pub risk_score: u8,
     pub risk: RiskSettings,
     pub analyst: AnalystSettings,
+    pub active_tab: Option<String>,
 }
 
 pub struct SettingsPersistence {

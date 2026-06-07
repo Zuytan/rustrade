@@ -62,6 +62,7 @@ impl OrderRetryStrategy {
                 correlation_id: Some(
                     crate::domain::trading::correlation::generate_correlation_id(),
                 ),
+                stop_loss: None,
             };
         }
 
@@ -80,6 +81,7 @@ impl OrderRetryStrategy {
             status: crate::domain::trading::types::OrderStatus::New,
             timestamp: chrono::Utc::now().timestamp_millis(),
             correlation_id: Some(crate::domain::trading::correlation::generate_correlation_id()),
+            stop_loss: None,
         }
     }
 }

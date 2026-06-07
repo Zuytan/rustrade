@@ -30,18 +30,18 @@ pub async fn detect_market_regime(
     // 1. Try Fast Feature-based Detection (Phase 4 Enhanced)
     // If we have calculated features (Hurst, Volatility) for the current candle, use them.
     // This is O(1) compared to O(N) fetching and processing historical candles.
-    if let (Some(hurst), Some(vol)) = (
-        context.last_features.hurst_exponent,
-        context.last_features.realized_volatility,
-    ) {
-        #[allow(clippy::collapsible_if)]
-        if let Ok(regime) = context.regime_detector.detect_from_features(
-            Some(hurst),
-            Some(vol),
-            context.last_features.skewness,
-        ) {
-            return regime;
-        }
+    if let Some(regime) = context
+        .last_features
+        .hurst_exponent
+        .zip(context.last_features.realized_volatility)
+        .and_then(|(hurst, vol)| {
+            context
+                .regime_detector
+                .detect_from_features(Some(hurst), Some(vol), context.last_features.skewness)
+                .ok()
+        })
+    {
+        return regime;
     }
 
     // 2. Fallback to Historical Candle Analysis

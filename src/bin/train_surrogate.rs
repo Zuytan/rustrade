@@ -10,7 +10,7 @@
 //!   --symbol BTC/USD --days 7 --epochs 50 --lr 0.001
 //! ```
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use clap::Parser;
 use ndarray::{Array1, Array2};
@@ -165,8 +165,8 @@ struct TrainingData {
 }
 
 async fn fetch_and_encode_data(args: &Args) -> Result<TrainingData> {
-    let api_key = std::env::var("ALPACA_API_KEY").expect("ALPACA_API_KEY must be set");
-    let api_secret = std::env::var("ALPACA_SECRET_KEY").expect("ALPACA_SECRET_KEY must be set");
+    let api_key = std::env::var("ALPACA_API_KEY").context("ALPACA_API_KEY must be set")?;
+    let api_secret = std::env::var("ALPACA_SECRET_KEY").context("ALPACA_SECRET_KEY must be set")?;
     let data_url = std::env::var("ALPACA_DATA_URL")
         .unwrap_or_else(|_| "https://data.alpaca.markets".to_string());
     let api_base_url = std::env::var("ALPACA_BASE_URL")
@@ -186,7 +186,7 @@ async fn fetch_and_encode_data(args: &Args) -> Result<TrainingData> {
     let end = if let Some(end_str) = &args.end {
         chrono::NaiveDate::parse_from_str(end_str, "%Y-%m-%d")?
             .and_hms_opt(23, 59, 59)
-            .unwrap()
+            .context("invalid end time")?
             .and_utc()
     } else {
         Utc::now()
@@ -195,7 +195,7 @@ async fn fetch_and_encode_data(args: &Args) -> Result<TrainingData> {
     let start = if let Some(start_str) = &args.start {
         chrono::NaiveDate::parse_from_str(start_str, "%Y-%m-%d")?
             .and_hms_opt(0, 0, 0)
-            .unwrap()
+            .context("invalid start time")?
             .and_utc()
     } else {
         end - Duration::days(args.days)
@@ -229,7 +229,7 @@ async fn fetch_and_encode_data(args: &Args) -> Result<TrainingData> {
 
     for bar in &bars {
         let features = feature_service.update(bar);
-        let price = bar.close.to_f64().unwrap_or(0.0);
+        let price = bar.close.to_f64().context("invalid close price")?;
         prices.push(price);
         atrs.push(
             features
@@ -238,7 +238,7 @@ async fn fetch_and_encode_data(args: &Args) -> Result<TrainingData> {
                 .unwrap_or(1.0)
                 .max(1e-10),
         );
-        volumes.push(bar.volume.to_f64().unwrap_or(0.0));
+        volumes.push(bar.volume.to_f64().context("invalid volume")?);
         ema200s.push(features.sma_200.and_then(|e| e.to_f64()).unwrap_or(price));
         bb_widths.push(features.bb_width.and_then(|b| b.to_f64()).unwrap_or(0.0));
         vwaps.push(features.vwap.and_then(|v| v.to_f64()).unwrap_or(price));

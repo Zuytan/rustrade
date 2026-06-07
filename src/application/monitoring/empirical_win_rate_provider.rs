@@ -341,6 +341,7 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp: 0,
             correlation_id: None,
+            stop_loss: None,
         }
     }
 
@@ -355,6 +356,7 @@ mod tests {
             status: crate::domain::trading::types::OrderStatus::Filled,
             timestamp: 1000,
             correlation_id: None,
+            stop_loss: None,
         }
     }
 

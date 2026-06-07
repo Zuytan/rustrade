@@ -10,6 +10,8 @@ pub mod observability;
 pub mod persistence;
 pub mod sentiment;
 
+pub mod api;
+pub mod notifications;
 pub mod optimal_parameters_persistence;
 pub mod settings_persistence;
 pub mod simulation;

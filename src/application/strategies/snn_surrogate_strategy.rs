@@ -295,16 +295,34 @@ impl TradingStrategy for SnnSurrogateStrategy {
         match max_idx {
             0 => {
                 let confidence = (buy_logit - hold_logit).clamp(0.0, 1.0);
+                let atr = ctx.atr.unwrap_or_else(|| {
+                    use rust_decimal_macros::dec;
+                    ctx.current_price * dec!(0.0075) // fallback to 0.75% of price as 1 ATR
+                });
+                use rust_decimal_macros::dec;
+                let stop_loss = ctx.current_price - (atr * dec!(2.0));
+                let take_profit = ctx.current_price + (atr * dec!(4.0));
                 Some(
                     Signal::buy("SNN Surrogate (15m): Bullish Pattern Detected")
-                        .with_confidence(confidence),
+                        .with_confidence(confidence)
+                        .with_stop_loss(stop_loss)
+                        .with_take_profit(take_profit),
                 )
             }
             1 => {
                 let confidence = (sell_logit - hold_logit).clamp(0.0, 1.0);
+                let atr = ctx.atr.unwrap_or_else(|| {
+                    use rust_decimal_macros::dec;
+                    ctx.current_price * dec!(0.0075) // fallback to 0.75% of price as 1 ATR
+                });
+                use rust_decimal_macros::dec;
+                let stop_loss = ctx.current_price + (atr * dec!(2.0));
+                let take_profit = ctx.current_price - (atr * dec!(4.0));
                 Some(
                     Signal::sell("SNN Surrogate (15m): Bearish Pattern Detected")
-                        .with_confidence(confidence),
+                        .with_confidence(confidence)
+                        .with_stop_loss(stop_loss)
+                        .with_take_profit(take_profit),
                 )
             }
             _ => None,

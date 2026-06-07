@@ -24,6 +24,10 @@ async fn main() -> Result<()> {
     // Load environment variables
     dotenvy::dotenv().ok();
 
+    // Setup log broadcast channel for WebSocket API
+    let (log_tx, _) = tokio::sync::broadcast::channel::<String>(1000);
+    let broadcast_log_layer = rustrade::infrastructure::api::BroadcastLogLayer::new(log_tx.clone());
+
     // Setup logging (stdout only, no UI channel needed)
     let stdout_layer = tracing_subscriber::fmt::layer().with_target(false).pretty();
 
@@ -32,6 +36,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(filter)
         .with(stdout_layer)
+        .with(broadcast_log_layer)
         .init();
 
     info!("Rustrade Server {} starting...", env!("CARGO_PKG_VERSION"));
@@ -53,6 +58,30 @@ async fn main() -> Result<()> {
     let cancel_token = tokio_util::sync::CancellationToken::new();
     let (handle, mut join_set) = app.start(cancel_token.clone()).await?;
     info!("Trading system running.");
+
+    // Start API Server
+    let api_port = std::env::var("PORT")
+        .or_else(|_| std::env::var("API_PORT"))
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse::<u16>()
+        .unwrap_or(8080);
+
+    let portfolio_clone = handle.portfolio.clone();
+    let exec_service_clone = handle.execution_service.clone();
+    let log_tx_clone = log_tx.clone();
+
+    tokio::spawn(async move {
+        if let Err(e) = rustrade::infrastructure::api::run_api_server(
+            api_port,
+            portfolio_clone,
+            exec_service_clone,
+            log_tx_clone,
+        )
+        .await
+        {
+            tracing::error!("API Server error: {}", e);
+        }
+    });
 
     // Start metrics reporter if enabled
     if config.observability.enabled {

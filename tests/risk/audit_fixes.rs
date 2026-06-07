@@ -70,28 +70,31 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
         .await;
 
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        mock_exec.clone(),
-        mock_market.clone(),
-        state_manager,
         false, // non_pdt_mode
         AssetClass::Stock,
         risk_config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        health_service,
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: mock_exec.clone(),
+            market_service: mock_market.clone(),
+            portfolio_state_manager: state_manager,
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: health_service,
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
 
@@ -136,7 +139,7 @@ async fn test_consecutive_loss_triggers_circuit_breaker() {
             .expect("Channel closed");
 
         // Mock Execution (will trigger OrderUpdate with Filled status, which RiskManager processes)
-        mock_exec.execute(order).await.unwrap();
+        mock_exec.execute(&order).await.unwrap();
 
         // Wait for RiskManager to process the update
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
@@ -226,28 +229,31 @@ async fn test_pending_order_ttl_cleanup() {
         .await;
 
     let (_, dummy_cmd_rx) = tokio::sync::mpsc::channel(1);
+    use rustrade::application::risk_management::risk_manager::RiskManagerDependencies;
     let mut risk_manager = RiskManager::new(
         proposal_rx,
         dummy_cmd_rx,
         order_tx,
-        mock_exec.clone(),
-        mock_market.clone(),
-        state_manager.clone(),
         false,
         AssetClass::Stock,
         risk_config,
-        None,
-        None,
-        None,
-        None,
-        Arc::new(SpreadCache::new()),
-        health_service,
-        Metrics::default(),
-        Arc::new(
-            rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
-                rustrade::infrastructure::observability::Metrics::new().unwrap(),
+        RiskManagerDependencies {
+            execution_service: mock_exec.clone(),
+            market_service: mock_market.clone(),
+            portfolio_state_manager: state_manager.clone(),
+            performance_monitor: None,
+            correlation_service: None,
+            risk_state_repository: None,
+            candle_repository: None,
+            spread_cache: Arc::new(SpreadCache::new()),
+            connection_health_service: health_service,
+            metrics: Metrics::default(),
+            agent_registry: Arc::new(
+                rustrade::application::monitoring::agent_status::AgentStatusRegistry::new(
+                    rustrade::infrastructure::observability::Metrics::new().unwrap(),
+                ),
             ),
-        ),
+        },
     )
     .expect("Test config should be valid");
 
@@ -280,7 +286,7 @@ async fn test_pending_order_ttl_cleanup() {
         .expect("Timed out waiting for order - Proposal likely rejected by RiskManager")
         .expect("Order channel closed unexpectedly");
 
-    mock_exec.execute(order).await.unwrap();
+    mock_exec.execute(&order).await.unwrap();
 
     // 6. Wait for TTL expiry (TTL = 100ms, Check Interval = 1s)
     // We wait 2.5s to ensure at least one valuation tick happens

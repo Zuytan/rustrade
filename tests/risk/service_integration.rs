@@ -83,7 +83,7 @@ struct MockExecution {
 
 #[async_trait::async_trait]
 impl ExecutionService for MockExecution {
-    async fn execute(&self, order: Order) -> Result<()> {
+    async fn execute(&self, order: &Order) -> Result<()> {
         self.orders.write().await.push(order.clone());
         Ok(())
     }

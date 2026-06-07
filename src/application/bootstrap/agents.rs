@@ -119,7 +119,7 @@ impl AgentsBootstrap {
                 candle_repository: Some(persistence.candle_repository.clone()),
                 strategy_repository: Some(persistence.strategy_repository.clone()),
                 win_rate_provider: Some(win_rate_provider),
-                ui_candle_tx: Some(candle_tx),
+                ui_candle_tx: Some(candle_tx.clone()),
                 spread_cache: services.spread_cache.clone(),
                 connection_health_service: connection_health_service.clone(),
                 agent_registry: agent_registry.clone(),
@@ -236,25 +236,31 @@ impl AgentsBootstrap {
             ),
         );
 
+        use crate::application::risk_management::risk_manager::RiskManagerDependencies;
         let mut risk_manager = RiskManager::new(
             proposal_rx,
             risk_cmd_rx,
             order_tx,
-            services.execution_service.clone(),
-            services.market_service.clone(),
-            portfolio_state_manager,
             config.platform.non_pdt_mode,
             config.asset_class,
             risk_config,
-            services.performance_monitor.clone(),
-            correlation_service,
-            Some(persistence.risk_state_repository.clone()),
-            Some(persistence.candle_repository.clone()),
-            services.spread_cache.clone(),
-            connection_health_service.clone(),
-            metrics.clone(),
-            agent_registry.clone(),
+            RiskManagerDependencies {
+                execution_service: services.execution_service.clone(),
+                market_service: services.market_service.clone(),
+                portfolio_state_manager,
+                performance_monitor: services.performance_monitor.clone(),
+                correlation_service,
+                risk_state_repository: Some(persistence.risk_state_repository.clone()),
+                candle_repository: Some(persistence.candle_repository.clone()),
+                spread_cache: services.spread_cache.clone(),
+                connection_health_service: connection_health_service.clone(),
+                metrics: metrics.clone(),
+                agent_registry: agent_registry.clone(),
+            },
         )?;
+        risk_manager.set_notification_service(Arc::new(
+            crate::infrastructure::notifications::MultiChannelNotificationService::from_env(),
+        ));
         risk_manager.set_alert_webhook_url(config.observability.alert_webhook_url.clone());
 
         // 5. Order Throttler & Executor
@@ -270,15 +276,19 @@ impl AgentsBootstrap {
             enable_retry: true,
         };
 
+        use crate::application::agents::executor::ExecutorDependencies;
         let mut executor = Executor::new(
-            services.execution_service.clone(),
             throttled_order_rx,
             portfolio.clone(),
-            Some(persistence.order_repository.clone()),
-            retry_config,
-            connection_health_service.clone(),
-            config.create_fee_model(),
-            agent_registry.clone(),
+            ExecutorDependencies {
+                execution_service: services.execution_service.clone(),
+                repository: Some(persistence.order_repository.clone()),
+                retry_config,
+                health_service: connection_health_service.clone(),
+                fee_model: config.create_fee_model(),
+                agent_registry: agent_registry.clone(),
+                candle_rx: Some(candle_tx.subscribe()),
+            },
         );
 
         // SPAWN TASKS

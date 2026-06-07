@@ -94,6 +94,10 @@ impl TradingStrategy for OrderFlowStrategy {
 
             if ofi_momentum_rising && delta_confirmed && ctx.ofi_value > self.ofi_threshold {
                 let confidence = if near_hvn { 0.9 } else { 0.7 };
+                let atr = ctx.atr.unwrap_or(ctx.current_price * dec!(0.01));
+                let stop_loss = ctx.current_price - (atr * dec!(2.0));
+                let take_profit = ctx.current_price + (atr * dec!(4.0));
+
                 return Some(
                     Signal::buy(format!(
                         "Stacked Bullish OFI (OFI={}, Momentum={}, Delta={}, HVN={})",
@@ -106,7 +110,9 @@ impl TradingStrategy for OrderFlowStrategy {
                         ctx.cumulative_delta,
                         if near_hvn { "Yes" } else { "No" }
                     ))
-                    .with_confidence(confidence),
+                    .with_confidence(confidence)
+                    .with_stop_loss(stop_loss)
+                    .with_take_profit(take_profit),
                 );
             }
         }
@@ -149,6 +155,10 @@ impl TradingStrategy for OrderFlowStrategy {
 
             if ofi_momentum_falling && delta_confirmed && ctx.ofi_value < -self.ofi_threshold {
                 let confidence = if near_hvn { 0.9 } else { 0.7 };
+                let atr = ctx.atr.unwrap_or(ctx.current_price * dec!(0.01));
+                let stop_loss = ctx.current_price + (atr * dec!(2.0));
+                let take_profit = ctx.current_price - (atr * dec!(4.0));
+
                 return Some(
                     Signal::sell(format!(
                         "Stacked Bearish OFI (OFI={}, Momentum={}, Delta={}, HVN={})",
@@ -161,7 +171,9 @@ impl TradingStrategy for OrderFlowStrategy {
                         ctx.cumulative_delta,
                         if near_hvn { "Yes" } else { "No" }
                     ))
-                    .with_confidence(confidence),
+                    .with_confidence(confidence)
+                    .with_stop_loss(stop_loss)
+                    .with_take_profit(take_profit),
                 );
             }
         }

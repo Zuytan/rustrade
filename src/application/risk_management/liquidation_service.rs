@@ -6,7 +6,7 @@
 use crate::application::market_data::spread_cache::SpreadCache;
 use crate::application::monitoring::portfolio_state_manager::PortfolioStateManager;
 use crate::application::risk_management::order_retry_strategy::OrderRetryStrategy;
-use crate::domain::ports::{ExecutionService, MarketDataService};
+use crate::domain::ports::{ExecutionService, MarketDataService, NotificationService};
 use crate::domain::trading::types::{Order, OrderSide};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -27,6 +27,7 @@ pub struct LiquidationService {
     market_service: Arc<dyn MarketDataService>,
     order_retry_strategy: OrderRetryStrategy,
     spread_cache: Arc<SpreadCache>,
+    notification_service: Arc<dyn NotificationService>,
 }
 
 impl LiquidationService {
@@ -43,7 +44,15 @@ impl LiquidationService {
             market_service,
             order_retry_strategy: OrderRetryStrategy::new(),
             spread_cache,
+            notification_service: Arc::new(
+                crate::infrastructure::notifications::LoggingNotificationService,
+            ),
         }
+    }
+
+    /// Configure notification service dynamically
+    pub fn set_notification_service(&mut self, service: Arc<dyn NotificationService>) {
+        self.notification_service = service;
     }
 
     /// Generate liquidation orders for all open positions without executing them
@@ -123,25 +132,37 @@ impl LiquidationService {
             .generate_liquidation_orders(reason, current_prices)
             .await;
 
+        let mut liquidated_symbols = Vec::new();
         for order in orders {
             warn!(
                 "LiquidationService: Placing EMERGENCY {:?} SELL for {} (Qty: {}) @ {}",
                 order.order_type, order.symbol, order.quantity, order.price
             );
+            liquidated_symbols.push(order.symbol.clone());
 
+            let symbol_to_log = order.symbol.clone();
             if let Err(e) = tx.send(order).await {
                 error!(
                     "LiquidationService: Failed to send liquidation order for {}: {}",
-                    "unknown",
-                    e // Symbol is in order but hard to access here without clone
+                    symbol_to_log, e
                 );
-                // We should probably log the symbol from order
             }
         }
 
         info!(
             "LiquidationService: Emergency liquidation orders placed. Trading HALTED. Manual review required."
         );
+
+        // Alert via multi-channel notification service
+        let title = "PORTFOLIO LIQUIDATED - EMERGENCY HALT";
+        let message = format!(
+            "Reason: {}\nLiquidated symbols: {:?}\nSystem status: HALTED. Manual intervention required.",
+            reason, liquidated_symbols
+        );
+        let _ = self
+            .notification_service
+            .send_notification(title, &message)
+            .await;
     }
     /// Execute a batch of orders with robust retry logic (Exponential Backoff)
     /// Used by ShutdownService or other direct execution contexts.
@@ -156,7 +177,7 @@ impl LiquidationService {
         for order in orders {
             let mut attempts = 0;
             loop {
-                match execution_service.execute(order.clone()).await {
+                match execution_service.execute(&order).await {
                     Ok(_) => {
                         info!(
                             "LiquidationService: Successfully executed {} for {}",
@@ -171,8 +192,16 @@ impl LiquidationService {
                                 "LiquidationService: FAILED to execute {} for {} after {} attempts: {}",
                                 order.side, order.symbol, attempts, e
                             );
-                            // TODO: In a real system, we might want to alert via multiple channels (SMS, PagerDuty)
-                            // For now, logging error is the best we can do.
+                            // Alert via multi-channel notification service on execution failure
+                            let title = "ORDER EXECUTION FAILED";
+                            let message = format!(
+                                "Failed to execute order: {:?} {} (Qty: {}) after {} attempts. Error: {}",
+                                order.side, order.symbol, order.quantity, attempts, e
+                            );
+                            let _ = self
+                                .notification_service
+                                .send_notification(title, &message)
+                                .await;
                             break;
                         } else {
                             let delay = base_delay_ms * 2u64.pow(attempts as u32 - 1);
@@ -207,7 +236,7 @@ mod tests {
 
     #[async_trait]
     impl ExecutionService for RetryMockExecutionService {
-        async fn execute(&self, _order: Order) -> anyhow::Result<()> {
+        async fn execute(&self, _order: &Order) -> anyhow::Result<()> {
             let current = self.fail_count.fetch_add(1, Ordering::SeqCst);
             if current < self.succeed_after {
                 anyhow::bail!("Simulated Failure");
@@ -306,6 +335,7 @@ mod tests {
             status: OrderStatus::New,
             timestamp: 0,
             correlation_id: None,
+            stop_loss: None,
         };
 
         service

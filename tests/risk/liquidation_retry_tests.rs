@@ -47,7 +47,7 @@ struct StatefulMockExecution {
 
 #[async_trait]
 impl ExecutionService for StatefulMockExecution {
-    async fn execute(&self, _order: Order) -> Result<()> {
+    async fn execute(&self, _order: &Order) -> Result<()> {
         Ok(())
     }
 

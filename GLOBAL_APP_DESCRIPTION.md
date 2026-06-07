@@ -15,7 +15,7 @@ The application operates as a mesh of autonomous agents communicating via high-p
     - **Heartbeat Monitoring**: Integrates `StreamHealthMonitor` to detect "zombie" connections; marks stream as Offline if no data is received within a 10s threshold.
 - **Analyst Agent**: The "Brain". Modular architecture (`RegimeHandler`, `PositionLifecycle`, `NewsHandler`) separating regime detection, position management, and news processing. Maintains symbol state and generates trade proposals.
 - **Risk Manager**: The "Gatekeeper". Validates every proposal against a strict set of risk rules and portfolio limits. Enforces real-time connectivity checks before approving trades.
-- **Executor Agent**: Handles order placement, modification, and reconciliation. Automatically reconciles locally 'Pending' orders with exchange state on startup. Includes high-fidelity fee retrieval from broker APIs to ensure P&L accuracy.
+- **Executor Agent**: Handles order placement, modification, and reconciliation. Automatically reconciles locally 'Pending' orders with exchange state on startup. Includes high-fidelity fee retrieval from broker APIs to ensure P&L accuracy. Integrates trailing stop loss updates dynamically submitted to the broker at runtime.
 - **Connection Health Service**: Centralized monitor that tracks and broadcasts the status of market data and execution streams across all agents.
 - **Listener Agent**: Monitors news feeds (RSS, Social) and uses NLP to trigger immediate reactions to market-moving events.
 - **User Agent**: Manages the UI/Dashboard state and handles user commands.
@@ -68,6 +68,7 @@ Rustrade supports a diverse suite of strategies. The system has evolved to prior
 - **Spiking Neural Network**: `SnnSurrogate` (Gradient-based Surrogate SNN using competitive excitatory/inhibitory pathways).
 - **Adaptive**: `RegimeAdaptive` (Dynamic ensemble that switches strategies and risk profile based on Hurst Exponent and Volatility).
 - **Ensemble**: Voting system combining multiple strategies (StatMomentum, ZScore, SMC, and an optional SNN Surrogate module).
+- **Arbitrage**: `ArbitrageEngine` (Triangular and spatial arbitrage opportunities detection and execution engine).
 
 
 
@@ -116,6 +117,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
   - **Simple Mode**: Risk Score slider with **automatic strategy selection** (Risk 1-3→ZScoreMR, 4-6→RegimeAdaptive, 7-10→SMC).
   - **Crypto Mode**: **Dynamic Symbol Selector** allows searching and selecting from all available exchange pairs.
   - **Advanced Mode**: Granular control over SMA periods, RSI thresholds, manual strategy override.
+  - **Persistence**: Extended egui desktop GUI storage using `PersistedSettings` to serialize and restore panels state (e.g., active tabs).
 - **Internationalization (I18n)**: Full support for English and French, with dynamic language switching.
 
 ## 6. Infrastructure & Data
@@ -143,6 +145,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 
 - **Simulator & Optimization**:
   - Detailed backtesting engine capable of replaying historical data (including specific crash scenarios) to verify strategy logic and metrics (Alpha, Beta, Sharpe, Calmar, Omega).
+  - **Multi-Asset Simulation**: Evaluates portfolios across multiple symbols chronologically, merging asset feeds and computing portfolio-level performance metrics based on dynamic equity curves.
   - **Walk-Forward Backtesting**: Train/test window splitting for out-of-sample Sharpe and overfitting detection. Includes advanced **Block Bootstrap Monte Carlo** sampling to preserve autocorrelation and volatility clustering for robust downside risk assessment.
   - **Parallel Execution**: Leverages `Rayon` for multi-threaded backtesting, delivering massive speedups on multi-core CPU architectures.
 - **Quality Assurance**:
@@ -154,7 +157,7 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 
 ### Headless Deployment
 Rustrade is optimized for headless server deployments:
-- **Server Binary**: `cargo run --bin server` runs the full trading system without a GUI.
+- **Server Binary**: `cargo run --bin server` runs the full trading system without a GUI, hosting an Axum server with REST endpoints for positions/portfolio status and real-time WebSockets.
 - **Production Builds**: The `ui` feature flag can be disabled for minimal resource footprint.
 - **Common commands**: `cargo run --bin rustrade` (desktop UI), `cargo run --bin server` (headless), `cargo run --bin benchmark -- --symbol SPY` (backtest).
 

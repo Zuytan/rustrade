@@ -45,6 +45,7 @@ fn test_serialization_roundtrip() {
             sma_threshold: "0.002".to_string(),
             profit_target_multiplier: "3.0".to_string(),
         },
+        active_tab: Some("Language".to_string()),
     };
 
     let serialized = serde_json::to_string(&settings).expect("Failed to serialize");
@@ -55,4 +56,5 @@ fn test_serialization_roundtrip() {
     assert_eq!(deserialized.risk_score, 8);
     assert_eq!(deserialized.risk.max_position_size_pct, "0.15");
     assert_eq!(deserialized.analyst.fast_sma_period, "10");
+    assert_eq!(deserialized.active_tab.as_deref(), Some("Language"));
 }

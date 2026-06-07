@@ -104,32 +104,30 @@ impl SizingEngine {
         );
 
         // NEW: Apply volatility targeting if enabled
-        if config.enable_vol_targeting {
-            #[allow(clippy::collapsible_if)]
-            if let Some(prices) = recent_prices {
-                if let Some(realized_vol) = calculate_realized_volatility(prices, 252.0) {
-                    if realized_vol > 0.0 {
-                        // Vol targeting: scale position inversely to volatility
-                        let realized_vol_dec =
-                            Decimal::from_f64_retain(realized_vol).unwrap_or(Decimal::ONE);
-                        if realized_vol_dec > Decimal::ZERO {
-                            let vol_multiplier = config.target_volatility / realized_vol_dec;
-                            let vol_multiplier = vol_multiplier.clamp(dec!(0.25), dec!(2.0));
+        let realized_vol_dec = if config.enable_vol_targeting {
+            recent_prices
+                .and_then(|prices| calculate_realized_volatility(prices, 252.0))
+                .filter(|&vol| vol > 0.0)
+                .and_then(Decimal::from_f64_retain)
+                .filter(|&vol_dec| vol_dec > Decimal::ZERO)
+        } else {
+            None
+        };
 
-                            info!(
-                                "SizingEngine: Vol targeting for {} - Realized: {}%, Target: {}%, Multiplier: {}x",
-                                symbol,
-                                realized_vol_dec * dec!(100),
-                                config.target_volatility * dec!(100),
-                                vol_multiplier
-                            );
+        if let Some(realized_vol_dec) = realized_vol_dec {
+            let vol_multiplier = config.target_volatility / realized_vol_dec;
+            let vol_multiplier = vol_multiplier.clamp(dec!(0.25), dec!(2.0));
 
-                            base_qty *= vol_multiplier;
-                            base_qty = base_qty.round_dp(4);
-                        }
-                    }
-                }
-            }
+            info!(
+                "SizingEngine: Vol targeting for {} - Realized: {}%, Target: {}%, Multiplier: {}x",
+                symbol,
+                realized_vol_dec * dec!(100),
+                config.target_volatility * dec!(100),
+                vol_multiplier
+            );
+
+            base_qty *= vol_multiplier;
+            base_qty = base_qty.round_dp(4);
         }
 
         // Apply slippage adjustment

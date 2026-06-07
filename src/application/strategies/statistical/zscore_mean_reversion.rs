@@ -87,7 +87,7 @@ impl Default for ZScoreMeanReversionStrategy {
 
 impl TradingStrategy for ZScoreMeanReversionStrategy {
     fn analyze(&self, ctx: &AnalysisContext) -> Option<Signal> {
-        let (zscore, _mean, _std_dev) = self.calculate_stats(ctx)?;
+        let (zscore, mean, std_dev) = self.calculate_stats(ctx)?;
 
         // BUY: Price significantly below mean (oversold). Confidence scales with Z magnitude.
         if !ctx.has_position && zscore < self.entry_threshold {
@@ -96,6 +96,11 @@ impl TradingStrategy for ZScoreMeanReversionStrategy {
                 .unwrap_or(0.0);
             let confidence = (0.5 + (excess * 0.15)).min(0.95);
 
+            // Stop Loss set to mean - 3.0 standard deviations
+            let stop_loss = mean - (std_dev * Decimal::new(3, 0));
+            // Take Profit set to mean + exit_threshold (usually exit_threshold = 0.0 so exactly mean)
+            let take_profit = mean + (std_dev * self.exit_threshold);
+
             return Some(
                 Signal::buy(format!(
                     "Z-Score MR: Price {} is {} std devs below mean (Z={})",
@@ -103,8 +108,9 @@ impl TradingStrategy for ZScoreMeanReversionStrategy {
                     zscore.abs(),
                     zscore
                 ))
-                .with_confidence(confidence),
-                // TODO: Add SL/TP once we expose Mean/Std
+                .with_confidence(confidence)
+                .with_stop_loss(stop_loss)
+                .with_take_profit(take_profit),
             );
         }
 
@@ -216,6 +222,8 @@ mod tests {
         let sig = signal.unwrap();
         assert!(matches!(sig.side, OrderSide::Buy));
         assert!(sig.reason.contains("Z-Score MR"));
+        assert!(sig.suggested_stop_loss.is_some());
+        assert!(sig.suggested_take_profit.is_some());
     }
 
     #[test]

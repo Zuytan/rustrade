@@ -294,7 +294,98 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
         });
     });
 
-    ui.add_space(DesignSystem::SPACING_LARGE);
+    ui.add_space(DesignSystem::SPACING_MEDIUM);
+
+    // --- Performance Ratios Banner ---
+    let perf_metrics = agent.get_performance_metrics();
+    ui.horizontal(|ui| {
+        ui.add_space(DesignSystem::SPACING_SMALL);
+        ui.label(
+            egui::RichText::new("Performance Ratios:")
+                .size(11.0)
+                .color(DesignSystem::TEXT_MUTED)
+                .strong(),
+        );
+        ui.add_space(DesignSystem::SPACING_SMALL);
+
+        // Sharpe Ratio
+        ui.label(
+            egui::RichText::new("Sharpe:")
+                .size(11.0)
+                .color(DesignSystem::TEXT_SECONDARY),
+        );
+        let sharpe_color = if perf_metrics.sharpe_ratio >= 2.0 {
+            DesignSystem::SUCCESS
+        } else if perf_metrics.sharpe_ratio >= 1.0 {
+            DesignSystem::TEXT_PRIMARY
+        } else {
+            DesignSystem::TEXT_MUTED
+        };
+        ui.label(
+            egui::RichText::new(format!("{:.2}", perf_metrics.sharpe_ratio))
+                .size(11.0)
+                .strong()
+                .color(sharpe_color),
+        );
+
+        ui.add_space(DesignSystem::SPACING_MEDIUM);
+        ui.label(
+            egui::RichText::new("|")
+                .size(11.0)
+                .color(DesignSystem::BORDER_SUBTLE),
+        );
+        ui.add_space(DesignSystem::SPACING_MEDIUM);
+
+        // Sortino Ratio
+        ui.label(
+            egui::RichText::new("Sortino:")
+                .size(11.0)
+                .color(DesignSystem::TEXT_SECONDARY),
+        );
+        let sortino_color = if perf_metrics.sortino_ratio >= 2.0 {
+            DesignSystem::SUCCESS
+        } else if perf_metrics.sortino_ratio >= 1.0 {
+            DesignSystem::TEXT_PRIMARY
+        } else {
+            DesignSystem::TEXT_MUTED
+        };
+        ui.label(
+            egui::RichText::new(format!("{:.2}", perf_metrics.sortino_ratio))
+                .size(11.0)
+                .strong()
+                .color(sortino_color),
+        );
+
+        ui.add_space(DesignSystem::SPACING_MEDIUM);
+        ui.label(
+            egui::RichText::new("|")
+                .size(11.0)
+                .color(DesignSystem::BORDER_SUBTLE),
+        );
+        ui.add_space(DesignSystem::SPACING_MEDIUM);
+
+        // Profit Factor
+        ui.label(
+            egui::RichText::new("Profit Factor:")
+                .size(11.0)
+                .color(DesignSystem::TEXT_SECONDARY),
+        );
+        let pf_color = if perf_metrics.profit_factor >= 1.5 {
+            DesignSystem::SUCCESS
+        } else if perf_metrics.profit_factor >= 1.0 {
+            DesignSystem::TEXT_PRIMARY
+        } else {
+            DesignSystem::DANGER
+        };
+        ui.label(
+            egui::RichText::new(format!("{:.2}", perf_metrics.profit_factor))
+                .size(11.0)
+                .strong()
+                .color(pf_color),
+        );
+    });
+
+    ui.add_space(DesignSystem::SPACING_MEDIUM);
 
     // ---------------------------------------------------------
     // 3. MAIN SPLIT VIEW (Charts vs Live Positions)
