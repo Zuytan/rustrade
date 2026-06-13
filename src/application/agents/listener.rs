@@ -6,9 +6,14 @@ use tracing::{error, info, warn};
 use crate::domain::listener::{ListenerAction, ListenerConfig, ListenerRule, NewsEvent};
 use crate::domain::ports::NewsDataService;
 
+pub enum ListenerCommand {
+    UpdateUrls(Vec<String>),
+}
+
 pub struct ListenerAgent {
     news_service: Arc<dyn NewsDataService>,
     config: ListenerConfig,
+    listener_cmd_rx: tokio::sync::Mutex<mpsc::Receiver<ListenerCommand>>,
     analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
     /// Optional broadcast sender to forward news events to UI
     news_broadcast_tx: Option<broadcast::Sender<NewsEvent>>,
@@ -20,12 +25,14 @@ impl ListenerAgent {
     pub fn new(
         news_service: Arc<dyn NewsDataService>,
         config: ListenerConfig,
+        listener_cmd_rx: mpsc::Receiver<ListenerCommand>,
         analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
         agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     ) -> Self {
         Self {
             news_service,
             config,
+            listener_cmd_rx: tokio::sync::Mutex::new(listener_cmd_rx),
             analyst_cmd_tx,
             news_broadcast_tx: None,
             sentiment_broadcast_tx: None,
@@ -37,6 +44,7 @@ impl ListenerAgent {
     pub fn with_news_broadcast(
         news_service: Arc<dyn NewsDataService>,
         config: ListenerConfig,
+        listener_cmd_rx: mpsc::Receiver<ListenerCommand>,
         analyst_cmd_tx: mpsc::Sender<crate::application::agents::analyst::AnalystCommand>,
         news_broadcast_tx: broadcast::Sender<NewsEvent>,
         sentiment_broadcast_tx: broadcast::Sender<crate::domain::sentiment::Sentiment>,
@@ -45,6 +53,7 @@ impl ListenerAgent {
         Self {
             news_service,
             config,
+            listener_cmd_rx: tokio::sync::Mutex::new(listener_cmd_rx),
             analyst_cmd_tx,
             news_broadcast_tx: Some(news_broadcast_tx),
             sentiment_broadcast_tx: Some(sentiment_broadcast_tx),
@@ -119,6 +128,7 @@ impl ListenerAgent {
             };
 
             let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            let mut cmd_rx_guard = self.listener_cmd_rx.lock().await;
 
             loop {
                 tokio::select! {
@@ -139,12 +149,39 @@ impl ListenerAgent {
                                     let _ = tx.send(event.clone());
                                 }
 
+                                // Broadcast Global Sentiment
+                                if let Some(tx) = &self.sentiment_broadcast_tx
+                                    && let Some(score) = event.sentiment_score
+                                {
+                                    let value = (score * 50.0 + 50.0).clamp(0.0, 100.0) as u8;
+                                    let sent = crate::domain::sentiment::Sentiment {
+                                        symbol: Some("GLOBAL".to_string()),
+                                        value,
+                                        classification: crate::domain::sentiment::SentimentClassification::from_score(value),
+                                        timestamp: chrono::Utc::now(),
+                                        source: event.source.clone(),
+                                    };
+                                    let _ = tx.send(sent);
+                                }
+
                                 self.process_event(&event).await;
                              }
                              None => {
                                  warn!("Listener Agent news stream ended. Re-establishing...");
                                  break; // Break inner loop to reconnect
                              }
+                         }
+                     }
+
+                     cmd = cmd_rx_guard.recv() => {
+                         match cmd {
+                             Some(ListenerCommand::UpdateUrls(urls)) => {
+                                 info!("Listener Agent received UpdateUrls command: {:?}", urls);
+                                 if let Err(e) = self.news_service.update_urls(urls).await {
+                                     error!("Failed to dynamically update URLs: {}", e);
+                                 }
+                             }
+                             None => {}
                          }
                      }
                 }
@@ -175,20 +212,21 @@ impl ListenerAgent {
             ListenerAction::SellImmediate => crate::domain::listener::NewsSentiment::Bearish,
         };
 
+        let score = event.sentiment_score.unwrap_or(match sentiment {
+            crate::domain::listener::NewsSentiment::Bullish => 0.5,
+            crate::domain::listener::NewsSentiment::Bearish => -0.5,
+            crate::domain::listener::NewsSentiment::Neutral => 0.0,
+        });
+
         let signal = crate::domain::listener::NewsSignal {
             symbol: rule.target_symbol.clone(),
             sentiment,
+            score,
             headline: event.title.clone(),
             source: event.source.clone(),
             url: event.url.clone(),
         };
-
         if let Some(tx) = &self.sentiment_broadcast_tx {
-            let score = event.sentiment_score.unwrap_or(match sentiment {
-                crate::domain::listener::NewsSentiment::Bullish => 0.5,
-                crate::domain::listener::NewsSentiment::Bearish => -0.5,
-                crate::domain::listener::NewsSentiment::Neutral => 0.0,
-            });
             let value = (score * 50.0 + 50.0).clamp(0.0, 100.0) as u8;
 
             let sent = crate::domain::sentiment::Sentiment {
@@ -262,12 +300,20 @@ mod tests {
             }],
         };
 
+        let (_listener_cmd_tx, listener_cmd_rx) = mpsc::channel(10);
+
         let agent_registry = Arc::new(
             crate::application::monitoring::agent_status::AgentStatusRegistry::new(
                 crate::infrastructure::observability::Metrics::new().unwrap(),
             ),
         );
-        let agent = ListenerAgent::new(news_service, config, analyst_cmd_tx, agent_registry);
+        let agent = ListenerAgent::new(
+            news_service,
+            config,
+            listener_cmd_rx,
+            analyst_cmd_tx,
+            agent_registry,
+        );
 
         // Spawn agent
         tokio::spawn(async move {

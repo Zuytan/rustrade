@@ -45,6 +45,10 @@ pub struct SettingsPanel {
     // --- Help Tab State ---
     pub help_search_query: String,
     pub help_selected_category: String,
+
+    // --- News / External Data ---
+    pub rss_urls: Vec<String>,
+    pub new_rss_url_input: String,
 }
 
 impl Default for SettingsPanel {
@@ -88,6 +92,10 @@ impl SettingsPanel {
             primary_timeframe: "15Min".to_string(),
             trend_timeframe: "4Hour".to_string(),
             trend_sma_period: "50".to_string(),
+
+            // News Defaults
+            rss_urls: Vec::new(),
+            new_rss_url_input: "".to_string(),
         };
         // Initialize strings based on default risk score
         panel.update_from_score(5);
@@ -99,7 +107,18 @@ impl SettingsPanel {
                     info!("Applying persisted settings");
                     panel.apply_persisted_settings(&settings);
                 }
-                Ok(None) => info!("No persisted settings found, using defaults"),
+                Ok(None) => {
+                    info!("No persisted settings found, using defaults");
+                    // Fallback to .env for RSS if available to match backend behavior
+                    if let Ok(url_str) = std::env::var("NEWS_RSS_URL") {
+                        for url in url_str.split(',') {
+                            let trim = url.trim();
+                            if !trim.is_empty() {
+                                panel.rss_urls.push(trim.to_string());
+                            }
+                        }
+                    }
+                }
                 Err(e) => error!("Failed to load settings: {}", e),
             },
             Err(e) => error!("Failed to initialize settings persistence: {}", e),
@@ -167,6 +186,9 @@ impl SettingsPanel {
         if let Some(ref period) = settings.analyst.trend_sma_period {
             self.trend_sma_period = period.clone();
         }
+
+        // News Settings
+        self.rss_urls = settings.news.rss_urls.clone();
     }
 
     /// Maps risk score to optimal strategy based on benchmark results

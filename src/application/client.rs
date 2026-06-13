@@ -1,4 +1,5 @@
 use crate::application::agents::analyst::AnalystCommand;
+use crate::application::agents::listener::ListenerCommand;
 use crate::application::agents::sentinel::SentinelCommand;
 use crate::application::risk_management::commands::RiskCommand;
 use crate::application::system::SystemHandle;
@@ -87,6 +88,15 @@ impl SystemClient {
             .analyst_cmd_tx
             .try_send(cmd)
             .map_err(|e| anyhow::anyhow!("Failed to send analyst command: {}", e))
+    }
+
+    pub fn send_listener_command(&self, cmd: ListenerCommand) -> Result<()> {
+        if let Some(tx) = &self.handle.listener_cmd_tx {
+            tx.try_send(cmd)
+                .map_err(|e| anyhow::anyhow!("Failed to send listener command: {}", e))
+        } else {
+            anyhow::bail!("Listener agent is not configured or running")
+        }
     }
 
     /// Request available tradable symbols from Sentinel asynchronously

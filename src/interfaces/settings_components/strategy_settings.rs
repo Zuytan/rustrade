@@ -296,4 +296,6 @@ pub fn render_strategy_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i1
                 );
             });
         });
+
+    ui.add_space(40.0); // More space between groups
 }

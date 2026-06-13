@@ -8,7 +8,7 @@ use tracing::{error, info};
 use crate::application::agents::{
     analyst::{Analyst, AnalystCommand, AnalystConfig, AnalystDependencies},
     executor::Executor,
-    listener::ListenerAgent,
+    listener::{ListenerAgent, ListenerCommand},
     scanner::MarketScanner,
     sentinel::{Sentinel, SentinelCommand},
 };
@@ -39,6 +39,7 @@ pub struct AgentsHandle {
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
     pub risk_cmd_tx: mpsc::Sender<RiskCommand>,
     pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>,
+    pub listener_cmd_tx: Option<mpsc::Sender<ListenerCommand>>,
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub candle_rx: broadcast::Receiver<Candle>,
     pub sentiment_rx: broadcast::Receiver<Sentiment>,
@@ -73,7 +74,7 @@ impl AgentsBootstrap {
 
         // Broadcast channels
         let (candle_tx, candle_rx) = broadcast::channel(100);
-        let (sentiment_broadcast_tx, sentiment_broadcast_rx) = broadcast::channel(8);
+        let (sentiment_broadcast_tx, _sentiment_broadcast_rx) = broadcast::channel(8);
 
         // 1. Sentinel
         let mut sentinel = Sentinel::new(
@@ -351,20 +352,42 @@ impl AgentsBootstrap {
         });
 
         // Listener Agent (Optional)
-        let news_rx = if std::env::var("NEWS_RSS_URL").is_ok() {
-            let (news_broadcast_tx, news_broadcast_rx) = broadcast::channel(20);
-            spawn_listener(
-                &mut join_set,
-                analyst_cmd_tx.clone(),
-                news_broadcast_tx.clone(),
-                sentiment_broadcast_tx.clone(),
-                agent_registry.clone(),
-                cancel_token.clone(),
-            );
-            Some(news_broadcast_rx)
-        } else {
-            None
-        };
+        // Check if settings have RSS URLs, fallback to .env for backward compatibility
+        let persisted_settings =
+            crate::infrastructure::settings_persistence::SettingsPersistence::new()
+                .ok()
+                .and_then(|p| p.load().unwrap_or(None));
+        let mut rss_urls = persisted_settings
+            .as_ref()
+            .map(|s| s.news.rss_urls.clone())
+            .unwrap_or_default();
+
+        if rss_urls.is_empty()
+            && let Ok(url_str) = std::env::var("NEWS_RSS_URL")
+        {
+            for url in url_str.split(',') {
+                let trim = url.trim();
+                if !trim.is_empty() {
+                    rss_urls.push(trim.to_string());
+                }
+            }
+        }
+
+        // Always spawn listener so it can receive dynamic URL updates later
+        let (news_broadcast_tx, news_broadcast_rx) = broadcast::channel(20);
+        let (listener_cmd_tx, listener_cmd_rx) = mpsc::channel(10);
+        spawn_listener(
+            &mut join_set,
+            rss_urls,
+            listener_cmd_rx,
+            analyst_cmd_tx.clone(),
+            news_broadcast_tx.clone(),
+            sentiment_broadcast_tx.clone(),
+            agent_registry.clone(),
+            cancel_token.clone(),
+        );
+        let news_rx = Some(news_broadcast_rx);
+        let listener_cmd_tx = Some(listener_cmd_tx);
 
         // Forward Sentiment Broadcast to RiskManager
         let mut sentiment_rx_for_risk = sentiment_broadcast_tx.subscribe();
@@ -397,9 +420,10 @@ impl AgentsBootstrap {
                 sentinel_cmd_tx,
                 risk_cmd_tx,
                 analyst_cmd_tx,
+                listener_cmd_tx,
                 proposal_tx,
                 candle_rx,
-                sentiment_rx: sentiment_broadcast_rx,
+                sentiment_rx: sentiment_broadcast_tx.subscribe(),
                 news_rx,
             },
             join_set,
@@ -433,8 +457,11 @@ fn create_strategy(config: &Config, analyst_config: &AnalystConfig) -> Arc<dyn T
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_listener(
     join_set: &mut tokio::task::JoinSet<()>,
+    rss_urls: Vec<String>,
+    listener_cmd_rx: mpsc::Receiver<ListenerCommand>,
     logger_analyst_tx: mpsc::Sender<AnalystCommand>,
     news_tx_for_listener: broadcast::Sender<NewsEvent>,
     sentiment_broadcast_tx: broadcast::Sender<Sentiment>,
@@ -472,14 +499,14 @@ fn spawn_listener(
             ],
         };
 
-        let news_rss_url =
-            std::env::var("NEWS_RSS_URL").expect("NEWS_RSS_URL must be set to spawn listener");
+        let urls_lock = Arc::new(RwLock::new(rss_urls));
         let news_service: Arc<dyn crate::domain::ports::NewsDataService> =
-            Arc::new(RssNewsService::new(&news_rss_url, 60));
+            Arc::new(RssNewsService::new(urls_lock, 60));
 
         let listener = ListenerAgent::with_news_broadcast(
             news_service,
             config,
+            listener_cmd_rx,
             logger_analyst_tx, // Fixed variable name matching
             news_tx_for_listener,
             sentiment_broadcast_tx,

@@ -61,6 +61,9 @@ pub struct SymbolContext {
     pub risk_base_score: Option<u8>,
     /// Consecutive "normal" regime bars required before restoring base risk (hysteresis).
     pub risk_restore_bars_remaining: Option<u32>,
+    /// Sentiment tracking for non-mathematical data crossing
+    pub sentiment_ema: Option<Decimal>,
+    pub sentiment_history: VecDeque<Decimal>,
 }
 
 impl SymbolContext {
@@ -113,6 +116,8 @@ impl SymbolContext {
             ofi_history: VecDeque::with_capacity(20),
             risk_base_score: None,
             risk_restore_bars_remaining: None,
+            sentiment_ema: None,
+            sentiment_history: VecDeque::with_capacity(10), // Short memory for sentiment (10 latest news)
         }
     }
 
@@ -178,6 +183,21 @@ impl SymbolContext {
             .front()
             .map(|c| c.symbol.clone())
             .unwrap_or_else(|| "UNKNOWN".to_string())
+    }
+
+    /// Update the sentiment tracked for this symbol
+    pub fn update_sentiment(&mut self, score: Decimal) {
+        if self.sentiment_history.len() >= 10 {
+            self.sentiment_history.pop_front();
+        }
+        self.sentiment_history.push_back(score);
+
+        // Simple Moving Average for sentiment smoothing
+        let sum: Decimal = self.sentiment_history.iter().sum();
+        let len = Decimal::from(self.sentiment_history.len());
+        if len > Decimal::ZERO {
+            self.sentiment_ema = Some(sum / len);
+        }
     }
 }
 

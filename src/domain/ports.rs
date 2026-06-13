@@ -88,6 +88,11 @@ pub trait ExpectancyEvaluator: Send + Sync {
 pub trait NewsDataService: Send + Sync {
     /// Subscribe to a stream of news events
     async fn subscribe_news(&self) -> Result<Receiver<crate::domain::listener::NewsEvent>>;
+
+    /// Dynamically update the news sources (e.g., RSS URLs)
+    async fn update_urls(&self, _urls: Vec<String>) -> Result<()> {
+        Ok(()) // Default no-op for services that don't support dynamic URLs
+    }
 }
 
 #[async_trait]

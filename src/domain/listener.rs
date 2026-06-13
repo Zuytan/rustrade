@@ -23,6 +23,7 @@ pub enum NewsSentiment {
 pub struct NewsSignal {
     pub symbol: String,
     pub sentiment: NewsSentiment,
+    pub score: f64, // Added to track continuous sentiment score
     pub headline: String,
     pub source: String,
     pub url: Option<String>,

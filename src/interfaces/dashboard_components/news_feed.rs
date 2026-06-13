@@ -7,6 +7,7 @@ pub fn render_news_feed(
     events: &std::collections::VecDeque<NewsEvent>,
     i18n: &crate::infrastructure::i18n::I18nService,
     max_height: f32,
+    has_feeds: bool,
 ) {
     egui::ScrollArea::vertical()
         .id_salt("news_feed_scroll")
@@ -18,8 +19,13 @@ pub fn render_news_feed(
                     .corner_radius(6)
                     .inner_margin(12)
                     .show(ui, |ui| {
+                        let text = if has_feeds {
+                            i18n.t("waiting_news")
+                        } else {
+                            "Aucun flux RSS configuré. Allez dans les paramètres." // French directly as fallback if no i18n
+                        };
                         ui.label(
-                            egui::RichText::new(i18n.t("waiting_news"))
+                            egui::RichText::new(text)
                                 .color(egui::Color32::from_gray(120))
                                 .italics(),
                         );

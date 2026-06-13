@@ -137,13 +137,27 @@ pub fn process_bearish_news(
     };
 
     info!(
-        "NewsHandler: Processing BEARISH news for {}. PnL: {}%",
+        "NewsHandler: Processing BEARISH news for {}. PnL: {}%, Sentiment EMA: {:?}",
         signal.symbol,
-        pnl_pct * dec!(100.0)
+        pnl_pct * dec!(100.0),
+        context.sentiment_ema
     );
 
-    if pnl_pct > dec!(0.05) {
-        // SCENARIO 1: Profitable Position -> Tighten Stop to Protect Gains
+    // DIVERGENCE DETECTION:
+    // If the position is winning (even slightly, > 0.5%), and math is ok,
+    // but the continuous sentiment EMA is showing a negative trend (<-0.2),
+    // we tighten the stop to lock in the gain before the price inevitably drops.
+    let sentiment_is_bearish = context.sentiment_ema.unwrap_or(Decimal::ZERO) < dec!(-0.2);
+
+    if pnl_pct > dec!(0.005) && sentiment_is_bearish {
+        info!(
+            "NewsHandler: ⚠️ SENTIMENT DIVERGENCE DETECTED for {}. Position is winning but sentiment EMA is bearish. Tightening Stop!",
+            signal.symbol
+        );
+        tighten_stop_on_bearish_news(context, &signal.symbol, current_price);
+        return NewsAction::TightenStop;
+    } else if pnl_pct > dec!(0.05) {
+        // SCENARIO 1: Highly Profitable Position -> Tighten Stop to Protect Gains
         tighten_stop_on_bearish_news(context, &signal.symbol, current_price);
         return NewsAction::TightenStop;
     }
@@ -253,6 +267,7 @@ mod tests {
             symbol: "TEST".to_string(),
             headline: "Test bearish news".to_string(),
             sentiment: NewsSentiment::Bearish,
+            score: -0.8,
             source: "test".to_string(),
             url: None,
         };
@@ -281,6 +296,7 @@ mod tests {
             symbol: "TEST".to_string(),
             headline: "Test bearish news".to_string(),
             sentiment: NewsSentiment::Bearish,
+            score: -0.5,
             source: "test".to_string(),
             url: None,
         };

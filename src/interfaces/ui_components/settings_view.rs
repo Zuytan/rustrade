@@ -197,6 +197,67 @@ fn render_trading_engine_content(ui: &mut egui::Ui, panel: &mut SettingsPanel, i
     } else {
         settings_components::render_strategy_settings(ui, panel, i18n);
     }
+
+    ui.add_space(40.0);
+
+    // --- News / Data Sources Group ---
+    crate::interfaces::components::card::Card::new()
+        .title("Flux d'actualités (RSS)")
+        .show(ui, |ui| {
+            ui.add_space(15.0);
+
+            ui.label(
+                egui::RichText::new("URLs des flux RSS :")
+                    .size(14.0)
+                    .color(DesignSystem::TEXT_PRIMARY),
+            );
+
+            ui.add_space(5.0);
+
+            // List existing URLs
+            if panel.rss_urls.is_empty() {
+                ui.label(
+                    egui::RichText::new("Aucun flux configuré. Ajoutez-en un ci-dessous.")
+                        .italics()
+                        .color(DesignSystem::TEXT_MUTED),
+                );
+            } else {
+                let mut to_remove = None;
+                for (i, url) in panel.rss_urls.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(url);
+                        if ui.button("✖").on_hover_text("Supprimer").clicked() {
+                            to_remove = Some(i);
+                        }
+                    });
+                }
+                if let Some(idx) = to_remove {
+                    panel.rss_urls.remove(idx);
+                }
+            }
+
+            ui.add_space(10.0);
+
+            // Add new URL input
+            ui.label(
+                egui::RichText::new("Ajouter un ou plusieurs flux (un par ligne) :")
+                    .size(12.0)
+                    .color(DesignSystem::TEXT_SECONDARY),
+            );
+            ui.horizontal(|ui| {
+                ui.text_edit_multiline(&mut panel.new_rss_url_input);
+                if ui.button("Ajouter").clicked() {
+                    for line in panel.new_rss_url_input.lines() {
+                        let trim = line.trim();
+                        if !trim.is_empty() {
+                            panel.rss_urls.push(trim.to_string());
+                        }
+                    }
+                    panel.new_rss_url_input.clear();
+                }
+            });
+            ui.add_space(15.0);
+        });
 }
 
 /// Renders the Simple/Advanced mode toggle buttons
@@ -275,6 +336,9 @@ fn render_save_button(
                 ConfigMode::Advanced => "Advanced".to_string(),
             },
             risk_score: panel.risk_score,
+            news: crate::infrastructure::settings_persistence::NewsSettings {
+                rss_urls: panel.rss_urls.clone(),
+            },
             risk: RiskSettings {
                 max_position_size_pct: panel.max_position_size_pct.clone(),
                 max_daily_loss_pct: panel.max_daily_loss_pct.clone(),
@@ -326,6 +390,17 @@ fn render_save_button(
             client.send_analyst_command(AnalystCommand::UpdateConfig(Box::new(analyst_cfg)))
         {
             error!("Failed to send analyst config update: {}", e);
+        }
+
+        // Listener Config (Dynamic RSS update)
+        let listener_cmd = crate::application::agents::listener::ListenerCommand::UpdateUrls(
+            panel.rss_urls.clone(),
+        );
+        if let Err(e) = client.send_listener_command(listener_cmd) {
+            error!(
+                "Failed to send listener update command (may not be running): {}",
+                e
+            );
         }
     }
 }

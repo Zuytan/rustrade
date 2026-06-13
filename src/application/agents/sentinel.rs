@@ -83,6 +83,37 @@ impl Sentinel {
             }
         };
 
+        // Warmup: Pull initial prices for the dashboard so it's not empty while waiting for the first websocket tick
+        if !current_symbols.is_empty() {
+            info!(
+                "Sentinel: Pulling initial market data snapshots for {} symbols...",
+                current_symbols.len()
+            );
+            match self
+                .market_service
+                .get_prices(current_symbols.clone())
+                .await
+            {
+                Ok(prices) => {
+                    for (symbol, price) in prices {
+                        let event = MarketEvent::Quote {
+                            symbol,
+                            price,
+                            quantity: rust_decimal::Decimal::ZERO,
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                        };
+                        if let Err(e) = self.market_tx.send(event).await {
+                            error!("Sentinel: Failed to forward initial REST price: {}", e);
+                        }
+                    }
+                    info!("Sentinel: Successfully pushed initial prices.");
+                }
+                Err(e) => {
+                    error!("Sentinel: Failed to fetch initial REST prices: {}", e);
+                }
+            }
+        }
+
         let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(2));
         let mut agent_health_check_interval = tokio::time::interval(Duration::from_secs(5));
 

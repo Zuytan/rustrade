@@ -117,12 +117,20 @@ impl DashboardViewModel {
     }
 
     pub fn get_sentiment_metrics(agent: &UserAgent) -> SentimentMetrics {
+        let has_feeds = !agent.settings_panel.rss_urls.is_empty();
+
         if agent.symbol_sentiments.is_empty() {
+            let (title, is_loading) = if has_feeds {
+                (agent.i18n.t("waiting_data").to_string(), true)
+            } else {
+                (agent.i18n.t("sentiment_unconfigured").to_string(), false)
+            };
+
             return SentimentMetrics {
-                title: agent.i18n.t("waiting_data").to_string(),
+                title,
                 value: 50,
-                color: egui::Color32::GRAY,
-                is_loading: true,
+                color: egui::Color32::from_gray(120),
+                is_loading,
             };
         }
 
@@ -134,7 +142,7 @@ impl DashboardViewModel {
             .map(|pf| pf.positions.keys().cloned().collect())
             .unwrap_or_default();
 
-        let relevant_values: Vec<u8> = if held_symbols.is_empty() {
+        let mut relevant_values: Vec<u8> = if held_symbols.is_empty() {
             // No positions — use all known sentiments
             agent.symbol_sentiments.values().map(|s| s.value).collect()
         } else {
@@ -144,6 +152,13 @@ impl DashboardViewModel {
                 .map(|s| s.value)
                 .collect()
         };
+
+        if relevant_values.is_empty() {
+            // Fallback to GLOBAL sentiment if present
+            if let Some(global) = agent.symbol_sentiments.get("GLOBAL") {
+                relevant_values.push(global.value);
+            }
+        }
 
         if relevant_values.is_empty() {
             return SentimentMetrics {

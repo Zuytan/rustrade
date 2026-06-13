@@ -33,6 +33,9 @@ fn test_serialization_roundtrip() {
             max_drawdown_pct: "0.06".to_string(),
             consecutive_loss_limit: "4".to_string(),
         },
+        news: rustrade::infrastructure::settings_persistence::NewsSettings {
+            rss_urls: vec!["https://example.com/rss".to_string()],
+        },
         analyst: AnalystSettings {
             strategy_mode: "RegimeAdaptive".to_string(),
             fast_sma_period: "10".to_string(),

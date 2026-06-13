@@ -1164,6 +1164,7 @@ async fn test_news_intelligence_filters() {
     let signal = rustrade::domain::listener::NewsSignal {
         symbol: "BTC/USD".to_string(),
         sentiment: rustrade::domain::listener::NewsSentiment::Bullish,
+        score: 0.5,
         headline: "Moon".to_string(),
         source: "Twitter".to_string(),
         url: Some("".to_string()),

@@ -13,7 +13,7 @@ use crate::application::bootstrap::{
 };
 
 use crate::application::{
-    agents::{analyst::AnalystCommand, sentinel::SentinelCommand},
+    agents::{analyst::AnalystCommand, listener::ListenerCommand, sentinel::SentinelCommand},
     market_data::spread_cache::SpreadCache,
     monitoring::connection_health_service::ConnectionHealthService,
     monitoring::performance_monitoring_service::PerformanceMonitoringService,
@@ -37,6 +37,7 @@ pub struct SystemHandle {
     pub sentinel_cmd_tx: mpsc::Sender<SentinelCommand>,
     pub risk_cmd_tx: mpsc::Sender<RiskCommand>,
     pub analyst_cmd_tx: mpsc::Sender<AnalystCommand>,
+    pub listener_cmd_tx: Option<mpsc::Sender<ListenerCommand>>,
     pub proposal_tx: mpsc::Sender<TradeProposal>,
     pub portfolio: Arc<RwLock<Portfolio>>,
     pub execution_service: Arc<dyn ExecutionService>,
@@ -213,6 +214,7 @@ impl Application {
                 sentinel_cmd_tx: agents.sentinel_cmd_tx,
                 risk_cmd_tx: agents.risk_cmd_tx,
                 analyst_cmd_tx: agents.analyst_cmd_tx,
+                listener_cmd_tx: agents.listener_cmd_tx,
                 proposal_tx: agents.proposal_tx,
                 portfolio: self.portfolio.clone(),
                 execution_service: self.execution_service.clone(),

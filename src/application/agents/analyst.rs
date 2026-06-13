@@ -587,6 +587,16 @@ impl Analyst {
             return;
         }
 
+        // Update the continuous sentiment tracker (Alternative Data)
+        use rust_decimal::prelude::FromPrimitive;
+        if let Some(score_dec) = Decimal::from_f64(signal.score) {
+            context.update_sentiment(score_dec);
+            info!(
+                "Analyst: Updated sentiment EMA for {} to {:?}",
+                signal.symbol, context.sentiment_ema
+            );
+        }
+
         use super::news_handler::{NewsAction, process_bearish_news, send_news_proposal};
 
         match signal.sentiment {

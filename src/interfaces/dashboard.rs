@@ -637,7 +637,14 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
 
                     match agent.right_panel_tab {
                         crate::application::agents::user_agent::RightPanelTab::News => {
-                            render_news_feed(ui, &agent.news_events, &agent.i18n, scroll_height);
+                            let has_feeds = !agent.settings_panel.rss_urls.is_empty();
+                            render_news_feed(
+                                ui,
+                                &agent.news_events,
+                                &agent.i18n,
+                                scroll_height,
+                                has_feeds,
+                            );
                         }
                         crate::application::agents::user_agent::RightPanelTab::Activity => {
                             render_activity_feed(

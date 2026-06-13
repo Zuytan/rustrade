@@ -29,12 +29,19 @@ pub struct AnalystSettings {
     pub trend_sma_period: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NewsSettings {
+    pub rss_urls: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedSettings {
     pub config_mode: String, // "Simple" or "Advanced"
     pub risk_score: u8,
     pub risk: RiskSettings,
     pub analyst: AnalystSettings,
+    #[serde(default)]
+    pub news: NewsSettings,
     pub active_tab: Option<String>,
 }
 
