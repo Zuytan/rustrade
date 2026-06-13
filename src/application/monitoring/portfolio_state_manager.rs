@@ -153,9 +153,17 @@ impl PortfolioStateManager {
     /// This invalidates all existing snapshots by incrementing the version.
     pub async fn refresh(&self) -> anyhow::Result<VersionedPortfolio> {
         // Fetch fresh portfolio from exchange
-        let portfolio = self.execution_service.get_portfolio().await?;
+        let mut portfolio = self.execution_service.get_portfolio().await?;
 
         let mut state = self.current_state.write().await;
+
+        // Preserve non-exchange managed fields
+        portfolio.trade_history = state.portfolio.trade_history.clone();
+        if portfolio.starting_cash == rust_decimal::Decimal::ZERO {
+            portfolio.starting_cash = state.portfolio.starting_cash;
+        }
+        portfolio.max_equity = state.portfolio.max_equity;
+        portfolio.realized_pnl = state.portfolio.realized_pnl;
 
         // Increment version and update state
         state.version += 1;
@@ -163,6 +171,12 @@ impl PortfolioStateManager {
         state.timestamp = chrono::Utc::now().timestamp_millis();
 
         Ok(state.clone())
+    }
+
+    /// Update the internal starting cash (e.g. daily_start_equity)
+    pub async fn update_starting_cash(&self, amount: rust_decimal::Decimal) {
+        let mut state = self.current_state.write().await;
+        state.portfolio.starting_cash = amount;
     }
 
     /// Reserve exposure for a pending trade with optimistic locking

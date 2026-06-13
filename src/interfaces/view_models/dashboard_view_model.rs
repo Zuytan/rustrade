@@ -51,12 +51,24 @@ impl DashboardViewModel {
                         mv += position_cost;
                     }
                 }
-                let pnl = mv - cost_basis;
-                let pnl_pct = if cost_basis > Decimal::ZERO {
-                    pnl / cost_basis * Decimal::from(100)
+                let current_equity = pf.cash + mv;
+
+                // Calculate true daily P&L using starting_cash tracked by RiskManager
+                let (pnl, pnl_pct) = if pf.starting_cash > Decimal::ZERO {
+                    let p = current_equity - pf.starting_cash;
+                    let pct = p / pf.starting_cash * Decimal::from(100);
+                    (p, pct)
                 } else {
-                    Decimal::ZERO
+                    // Fallback if starting_cash isn't loaded yet (e.g. startup phase)
+                    let p = mv - cost_basis;
+                    let pct = if cost_basis > Decimal::ZERO {
+                        p / cost_basis * Decimal::from(100)
+                    } else {
+                        Decimal::ZERO
+                    };
+                    (p, pct)
                 };
+
                 (pnl, pnl_pct, pf.positions.len(), mv)
             }
             Err(_) => (Decimal::ZERO, Decimal::ZERO, 0, Decimal::ZERO),

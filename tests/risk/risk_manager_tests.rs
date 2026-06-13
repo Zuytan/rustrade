@@ -853,15 +853,9 @@ async fn test_crypto_daily_reset() {
     rm.get_state_mut().session_start_equity = Decimal::from(5000);
     rm.get_state_mut().daily_drawdown_reset = false;
 
-    // rm.risk_state = rm.state_manager.get_state().clone(); // No longer needed/possible
-
     let current_equity = Decimal::from(10000);
-    rm.check_daily_reset(current_equity); // Use public method if available, or internal via test? check_daily_reset is private!
-    // check_daily_reset is private in RiskManager.
-    // Tests are external? No, they are integration tests. They can only access public methods.
-    // But this test calls rm.check_daily_reset.
-    // If check_daily_reset is private, this test was ALREADY broken or accessing via some other way?
-    // In original code, check_daily_reset was private "fn check_daily_reset".
+    rm.check_daily_reset(current_equity).await;
+
     // So this test file MUST have been a unit test module inside risk_manager.rs originally, OR check_daily_reset was pub(crate).
     // But here it's in tests/risk/risk_manager_tests.rs.
     // It seems the test code I see was pasted from somewhere else or intended to be internal.

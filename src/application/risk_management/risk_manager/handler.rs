@@ -88,7 +88,10 @@ impl RiskManager {
         self.update_portfolio_valuation().await?;
         if !self.circuit_breaker_service.is_halted() {
             let snapshot = self.portfolio_state_manager.get_snapshot().await;
-            if self.check_daily_reset(snapshot.portfolio.total_equity(&self.current_prices)) {
+            if self
+                .check_daily_reset(snapshot.portfolio.total_equity(&self.current_prices))
+                .await
+            {
                 self.persist_state().await;
             }
         }
@@ -175,7 +178,7 @@ impl RiskManager {
         }
 
         // Check daily reset
-        if self.check_daily_reset(current_equity) {
+        if self.check_daily_reset(current_equity).await {
             self.persist_state().await;
         }
 

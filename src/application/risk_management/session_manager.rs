@@ -69,10 +69,21 @@ impl SessionManager {
         }
 
         let initial_equity = portfolio.total_equity(current_prices);
+
+        let mut daily_start = initial_equity;
+        // If broker already provided a true starting_cash (e.g. Alpaca last_equity), use it!
+        if portfolio.starting_cash > Decimal::ZERO {
+            daily_start = portfolio.starting_cash;
+            info!(
+                "SessionManager: Using broker-provided starting cash: {}",
+                daily_start
+            );
+        }
+
         let mut risk_state = RiskState {
             id: "global".to_string(),
             session_start_equity: initial_equity,
-            daily_start_equity: initial_equity,
+            daily_start_equity: daily_start,
             equity_high_water_mark: initial_equity,
             consecutive_losses: 0,
             reference_date: Utc::now().date_naive(),
@@ -122,7 +133,14 @@ impl SessionManager {
                         let today = Utc::now().date_naive();
                         if state.reference_date == today {
                             risk_state.session_start_equity = state.session_start_equity;
-                            risk_state.daily_start_equity = state.daily_start_equity;
+
+                            // If the broker explicitly gave us starting cash, trust the broker over the DB.
+                            if portfolio.starting_cash > Decimal::ZERO {
+                                risk_state.daily_start_equity = portfolio.starting_cash;
+                            } else {
+                                risk_state.daily_start_equity = state.daily_start_equity;
+                            }
+
                             risk_state.reference_date = state.reference_date;
                             info!(
                                 "SessionManager: Restored intraday equity baselines from persistence."

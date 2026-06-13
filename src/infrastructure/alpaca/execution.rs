@@ -141,6 +141,12 @@ impl AlpacaExecutionService {
                     portfolio.cash = cash;
                     portfolio.day_trades_count = account_resp.daytrade_count as u64;
 
+                    if let Some(last_eq_str) = &account_resp.last_equity
+                        && let Ok(last_eq) = last_eq_str.parse::<Decimal>()
+                    {
+                        portfolio.starting_cash = last_eq;
+                    }
+
                     for alp_pos in positions_resp {
                         let alp_symbol = alp_pos.symbol.clone();
 
@@ -177,7 +183,14 @@ impl AlpacaExecutionService {
                 match breaker_clone.call(fetch_result).await {
                     Ok(portfolio) => {
                         let mut guard = portfolio_clone.write().await;
-                        *guard = portfolio.clone();
+                        let mut updated = portfolio.clone();
+                        updated.trade_history = guard.trade_history.clone();
+                        if updated.starting_cash == Decimal::ZERO {
+                            updated.starting_cash = guard.starting_cash;
+                        }
+                        updated.max_equity = guard.max_equity;
+                        updated.realized_pnl = guard.realized_pnl;
+                        *guard = updated;
                         backoff_ms = 1000; // Reset on success
                     }
                     Err(e) => {
@@ -239,6 +252,8 @@ struct AlpacaAccount {
     _equity: String,
     #[serde(default)]
     daytrade_count: i64,
+    #[serde(default)]
+    last_equity: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
