@@ -1,18 +1,30 @@
-// Risk management and position control modules
-pub mod circuit_breaker_service; // New
-pub mod commands;
-pub mod hard_stop_manager; // New - per-trade loss limits
-pub mod liquidation_service;
-pub mod order_monitor;
-pub mod order_reconciler;
-pub mod order_retry_strategy;
-pub mod order_throttler;
-pub mod pipeline;
-pub mod portfolio_valuation_service;
-pub mod position_manager;
-pub mod risk_manager;
-pub mod session_manager;
-pub mod sizing_engine;
-pub mod state;
-pub mod trailing_stops; // New
-pub mod volatility; // NEW: Volatility calculation for vol targeting
+pub mod core;
+pub mod emergency;
+pub mod execution;
+pub mod position;
+pub mod session;
+pub mod validation;
+
+// Re-exports so that existing imports like `use crate::application::risk_management::risk_manager` continue to work unchanged.
+pub use core::risk_manager;
+pub use core::state;
+
+pub use validation::circuit_breaker_service;
+pub use validation::commands;
+pub use validation::pipeline;
+
+pub use execution::order_monitor;
+pub use execution::order_reconciler;
+pub use execution::order_retry_strategy;
+pub use execution::order_throttler;
+
+pub use position::hard_stop_manager;
+pub use position::portfolio_valuation_service;
+pub use position::position_manager;
+pub use position::sizing_engine;
+pub use position::trailing_stops;
+
+pub use session::session_manager;
+pub use session::volatility;
+
+pub use emergency::liquidation_service;

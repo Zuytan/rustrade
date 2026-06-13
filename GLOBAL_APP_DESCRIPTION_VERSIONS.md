@@ -1,6 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.24 - Architectural Resolution Phases 2-4: Modularization, Tests & Bounded Contexts (June 2026)
+
+### Restructuring & Modularization
+- **Alpaca Market Data Service Splitting**: Split `src/infrastructure/alpaca/market_data.rs` (993 LoC) into a modular `src/infrastructure/alpaca/market_data/` folder containing `mod.rs`, `historical.rs`, `price.rs`, and `subscription.rs`.
+- **Reorganization of Bounded Contexts**: Regrouped monitoring and risk management modules into logical domain subdirectories under `src/application/monitoring/` and `src/application/risk_management/`.
+- **Backward-Compatible Module Re-exports**: Implemented standard re-export headers in `mod.rs` files of reorganized folders to preserve 100% backward-compatibility for all consumers.
+
+### Testing & Validation
+- **Optimizer Unit Testing**: Added comprehensive unit tests to `walk_forward.rs` covering parameter grids generation, objective scoring rankings, and metrics mappings.
+- **Coverage Check**: Audited and verified code coverage across all core safety and risk modules.
+
 ## Version 0.99.23 - Architectural Resolution Phase 1: Quick Wins (June 2026)
+
 
 ### Code Safety & Cleanliness
 - **Production .unwrap() Audit**: Fixed all genuine production .unwrap() calls across the codebase, replacing them with safe error propagation (?) or pattern matching. Unwraps inside test modules were verified and left as they are safe in tests.

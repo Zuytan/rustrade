@@ -488,3 +488,154 @@ pub(crate) fn backtest_result_to_opt_result_impl(
     opt_result.calculate_objective_score();
     opt_result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn test_rank_results() {
+        let market_data = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
+        let exec_factory = Arc::new(|| -> Arc<dyn ExecutionService> {
+            let p_lock = Arc::new(tokio::sync::RwLock::new(
+                crate::domain::trading::portfolio::Portfolio::new(),
+            ));
+            Arc::new(crate::infrastructure::mock::MockExecutionService::new(
+                p_lock,
+            ))
+        });
+
+        let optimizer = GridSearchOptimizer::new(
+            market_data,
+            exec_factory,
+            ParameterGrid {
+                fast_sma: vec![5],
+                slow_sma: vec![10],
+                rsi_threshold: vec![dec!(60.0)],
+                trend_divergence_threshold: vec![dec!(0.005)],
+                trailing_stop_atr_multiplier: vec![dec!(3.0)],
+                order_cooldown_seconds: vec![0],
+                stat_momentum_lookback: None,
+                stat_momentum_threshold: None,
+                zscore_lookback: None,
+                zscore_entry_threshold: None,
+                zscore_exit_threshold: None,
+                ofi_threshold: None,
+                smc_ob_lookback: None,
+                smc_min_fvg_size_pct: None,
+            },
+            StrategyMode::SMC,
+            dec!(0.001),
+        );
+
+        let res1 = OptimizationResult {
+            params: AnalystConfig::default(),
+            sharpe_ratio: dec!(1.5),
+            total_return: dec!(10.0),
+            max_drawdown: dec!(5.0),
+            win_rate: dec!(0.6),
+            total_trades: 10,
+            objective_score: dec!(1.5),
+            alpha: dec!(0.1),
+            beta: dec!(1.0),
+            in_sample_sharpe: None,
+            risk_score: None,
+        };
+        let res2 = OptimizationResult {
+            params: AnalystConfig::default(),
+            sharpe_ratio: dec!(2.5),
+            total_return: dec!(20.0),
+            max_drawdown: dec!(3.0),
+            win_rate: dec!(0.7),
+            total_trades: 15,
+            objective_score: dec!(2.5),
+            alpha: dec!(0.2),
+            beta: dec!(0.9),
+            in_sample_sharpe: None,
+            risk_score: None,
+        };
+        let res3 = OptimizationResult {
+            params: AnalystConfig::default(),
+            sharpe_ratio: dec!(0.5),
+            total_return: dec!(5.0),
+            max_drawdown: dec!(10.0),
+            win_rate: dec!(0.4),
+            total_trades: 5,
+            objective_score: dec!(0.5),
+            alpha: dec!(0.0),
+            beta: dec!(1.2),
+            in_sample_sharpe: None,
+            risk_score: None,
+        };
+
+        let ranked = optimizer.rank_results(vec![res1.clone(), res2.clone(), res3.clone()], 2);
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].objective_score, dec!(2.5));
+        assert_eq!(ranked[1].objective_score, dec!(1.5));
+    }
+
+    #[test]
+    fn test_generate_combinations() {
+        let market_data = Arc::new(crate::infrastructure::mock::MockMarketDataService::new());
+        let exec_factory = Arc::new(|| -> Arc<dyn ExecutionService> {
+            let p_lock = Arc::new(tokio::sync::RwLock::new(
+                crate::domain::trading::portfolio::Portfolio::new(),
+            ));
+            Arc::new(crate::infrastructure::mock::MockExecutionService::new(
+                p_lock,
+            ))
+        });
+
+        let optimizer = GridSearchOptimizer::new(
+            market_data,
+            exec_factory,
+            ParameterGrid {
+                fast_sma: vec![5, 10, 20],
+                slow_sma: vec![10, 15, 30],
+                rsi_threshold: vec![dec!(60.0)],
+                trend_divergence_threshold: vec![dec!(0.005)],
+                trailing_stop_atr_multiplier: vec![dec!(3.0)],
+                order_cooldown_seconds: vec![0],
+                stat_momentum_lookback: None,
+                stat_momentum_threshold: None,
+                zscore_lookback: None,
+                zscore_entry_threshold: None,
+                zscore_exit_threshold: None,
+                ofi_threshold: None,
+                smc_ob_lookback: None,
+                smc_min_fvg_size_pct: None,
+            },
+            StrategyMode::SMC,
+            dec!(0.001),
+        );
+
+        let combinations = optimizer.generate_combinations();
+        assert!(!combinations.is_empty());
+
+        for combo in &combinations {
+            assert!(combo.strategy.fast_sma_period < combo.strategy.slow_sma_period);
+        }
+    }
+
+    #[test]
+    fn test_backtest_result_to_opt_result_mapping() {
+        let config = AnalystConfig::default();
+        let result = BacktestResult {
+            trades: vec![],
+            final_equity: dec!(10000.0),
+            initial_equity: dec!(10000.0),
+            total_return_pct: dec!(0.0),
+            buy_and_hold_return_pct: dec!(0.0),
+            daily_closes: vec![],
+            alpha: 0.0,
+            beta: 1.0,
+            benchmark_correlation: 0.0,
+        };
+
+        let opt_result = backtest_result_to_opt_result_impl(config, result);
+        assert_eq!(opt_result.total_return, dec!(0.0));
+        assert_eq!(opt_result.alpha, dec!(0.0));
+        assert_eq!(opt_result.beta, dec!(1.0));
+    }
+}
