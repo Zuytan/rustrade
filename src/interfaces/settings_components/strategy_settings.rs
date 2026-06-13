@@ -26,30 +26,38 @@ fn ui_setting_with_hint(ui: &mut egui::Ui, label: &str, value: &mut String, hint
         .on_hover_text(hint);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // Styled Input Field
-            let response = ui.add(
-                egui::TextEdit::singleline(value)
-                    .font(egui::FontId::proportional(14.0))
-                    .desired_width(120.0)
-                    .min_size(egui::vec2(120.0, 32.0))
-                    .vertical_align(egui::Align::Center)
-                    .frame(false), // Custom frame
-            );
+            let desired_size = egui::vec2(120.0, 32.0);
+            let (rect, _response) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
 
-            // Draw custom frame around text edit
-            let rect = response.rect.expand(4.0);
-            let stroke_color = if response.has_focus() {
+            // Stable ID for the TextEdit focus tracking
+            let id = ui.make_persistent_id(label);
+            let has_focus = ui.memory(|mem| mem.focused() == Some(id));
+
+            // Draw custom frame around text edit FIRST
+            let stroke_color = if has_focus {
                 DesignSystem::BORDER_FOCUS
             } else {
                 DesignSystem::BORDER_SUBTLE
             };
+            ui.painter()
+                .rect_filled(rect, DesignSystem::ROUNDING_SMALL, DesignSystem::BG_INPUT);
             ui.painter().rect_stroke(
                 rect,
-                4.0,
+                DesignSystem::ROUNDING_SMALL,
                 egui::Stroke::new(1.0, stroke_color),
                 egui::StrokeKind::Outside,
             );
-            ui.painter().rect_filled(rect, 4.0, DesignSystem::BG_INPUT);
+
+            // Put the TextEdit inside the pre-allocated rect (with padding) SECOND
+            let inner_rect = rect.shrink(4.0);
+            ui.put(
+                inner_rect,
+                egui::TextEdit::singleline(value)
+                    .id_source(label)
+                    .font(egui::FontId::proportional(14.0))
+                    .vertical_align(egui::Align::Center)
+                    .frame(false), // Custom frame drawn above
+            );
         });
     });
     // Add significant vertical spacing between rows
@@ -104,6 +112,126 @@ pub fn render_strategy_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i1
         .title(i18n.t("settings_group_strategy"))
         .show(ui, |ui| {
             ui.add_space(15.0);
+
+            // Active Strategy Selection Dropdown
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(i18n.t("settings_strat_mode_label"))
+                        .size(14.0)
+                        .color(DesignSystem::TEXT_PRIMARY),
+                );
+
+                use crate::domain::market::strategy_config::StrategyMode;
+                egui::ComboBox::from_id_salt("advanced_strategy_mode_select")
+                    .selected_text(match panel.selected_strategy {
+                        StrategyMode::RegimeAdaptive => i18n.t("strategy_mode_regime_adaptive"),
+                        StrategyMode::SMC => i18n.t("strategy_mode_smc"),
+                        StrategyMode::Ensemble => i18n.t("strategy_mode_ensemble"),
+                        StrategyMode::ZScoreMR => i18n.t("strategy_mode_zscore_mr"),
+                        StrategyMode::StatMomentum => i18n.t("strategy_mode_stat_momentum"),
+                        StrategyMode::OrderFlow => i18n.t("strategy_mode_order_flow"),
+                        StrategyMode::ML => i18n.t("strategy_mode_ml"),
+                        StrategyMode::SnnSurrogate => i18n.t("strategy_mode_snn_surrogate"),
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut panel.selected_strategy,
+                            StrategyMode::RegimeAdaptive,
+                            i18n.t("strategy_mode_regime_adaptive"),
+                        );
+                        ui.selectable_value(
+                            &mut panel.selected_strategy,
+                            StrategyMode::SMC,
+                            i18n.t("strategy_mode_smc"),
+                        );
+                        ui.selectable_value(
+                            &mut panel.selected_strategy,
+                            StrategyMode::Ensemble,
+                            i18n.t("strategy_mode_ensemble"),
+                        );
+                        ui.selectable_value(
+                            &mut panel.selected_strategy,
+                            StrategyMode::ZScoreMR,
+                            i18n.t("strategy_mode_zscore_mr"),
+                        );
+                        ui.selectable_value(
+                            &mut panel.selected_strategy,
+                            StrategyMode::StatMomentum,
+                            i18n.t("strategy_mode_stat_momentum"),
+                        );
+                        ui.selectable_value(
+                            &mut panel.selected_strategy,
+                            StrategyMode::OrderFlow,
+                            i18n.t("strategy_mode_order_flow"),
+                        );
+                        ui.selectable_value(
+                            &mut panel.selected_strategy,
+                            StrategyMode::ML,
+                            i18n.t("strategy_mode_ml"),
+                        );
+                        ui.selectable_value(
+                            &mut panel.selected_strategy,
+                            StrategyMode::SnnSurrogate,
+                            i18n.t("strategy_mode_snn_surrogate"),
+                        );
+                    });
+            });
+            ui.add_space(15.0);
+            ui.separator();
+            ui.add_space(15.0);
+
+            // Timeframe Settings collapsing header
+            ui.collapsing(i18n.t("settings_timeframe_config_title"), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(i18n.t("settings_primary_timeframe"))
+                            .size(14.0)
+                            .color(DesignSystem::TEXT_PRIMARY),
+                    );
+
+                    let tf_options = ["1Min", "5Min", "15Min", "1Hour", "4Hour", "1Day"];
+                    egui::ComboBox::from_id_salt("primary_timeframe_select")
+                        .selected_text(&panel.primary_timeframe)
+                        .show_ui(ui, |ui| {
+                            for tf in tf_options {
+                                ui.selectable_value(
+                                    &mut panel.primary_timeframe,
+                                    tf.to_string(),
+                                    tf,
+                                );
+                            }
+                        });
+                });
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(i18n.t("settings_trend_timeframe"))
+                            .size(14.0)
+                            .color(DesignSystem::TEXT_PRIMARY),
+                    );
+
+                    let tf_options = ["1Min", "5Min", "15Min", "1Hour", "4Hour", "1Day"];
+                    egui::ComboBox::from_id_salt("trend_timeframe_select")
+                        .selected_text(&panel.trend_timeframe)
+                        .show_ui(ui, |ui| {
+                            for tf in tf_options {
+                                ui.selectable_value(&mut panel.trend_timeframe, tf.to_string(), tf);
+                            }
+                        });
+                });
+                ui.add_space(10.0);
+
+                ui_setting_with_hint(
+                    ui,
+                    i18n.t("settings_trend_sma_period"),
+                    &mut panel.trend_sma_period,
+                    i18n.t("settings_trend_sma_period_hint"),
+                );
+
+                ui.separator();
+                ui.add_space(10.0);
+            });
 
             ui.collapsing(i18n.t("settings_subgroup_trend"), |ui| {
                 ui_setting_with_hint(

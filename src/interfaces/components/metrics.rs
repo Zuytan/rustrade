@@ -3,6 +3,7 @@ use crate::interfaces::design_system::DesignSystem;
 use eframe::egui;
 
 /// A specialized card for displaying a key metric
+#[allow(clippy::too_many_arguments)]
 pub fn render_metric_card(
     ui: &mut egui::Ui,
     title: &str,
@@ -11,31 +12,54 @@ pub fn render_metric_card(
     context: Option<&str>,
     icon: Option<&str>,
     active: bool,
+    min_height: f32,
 ) {
     Card::new()
         .title(title)
-        .min_height(110.0)
+        .min_height(min_height)
         .active(active)
         .show(ui, |ui| {
+            let available_h = ui.available_height();
+            let viewport_w = ui.ctx().viewport_rect().width();
+            let sidebar_w = (viewport_w * 0.08).clamp(80.0, 120.0);
+            let est_col_w = (viewport_w - sidebar_w - 32.0) / 5.0;
+            let show_details = available_h > 45.0 && est_col_w > 100.0;
+
+            let font_size = if est_col_w < 90.0 {
+                12.0
+            } else if est_col_w < 120.0 {
+                16.0
+            } else if est_col_w < 150.0 {
+                22.0
+            } else {
+                28.0
+            };
+
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(
-                        egui::RichText::new(value)
-                            .size(28.0)
-                            .strong()
-                            .color(value_color),
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(value)
+                                .size(font_size)
+                                .strong()
+                                .color(value_color),
+                        )
+                        .wrap(),
                     );
 
-                    if let Some(ctx) = context {
-                        ui.label(
-                            egui::RichText::new(ctx)
-                                .size(11.0)
-                                .color(DesignSystem::TEXT_MUTED),
+                    if show_details && let Some(ctx) = context {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(ctx)
+                                    .size(11.0)
+                                    .color(DesignSystem::TEXT_MUTED),
+                            )
+                            .wrap(),
                         );
                     }
                 });
 
-                if let Some(emoji) = icon {
+                if show_details && let Some(emoji) = icon {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             egui::RichText::new(emoji)

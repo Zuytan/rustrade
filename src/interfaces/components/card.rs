@@ -45,6 +45,11 @@ impl Card {
     ) -> egui::InnerResponse<R> {
         let mut frame = DesignSystem::card_frame();
 
+        // Reduce padding if available space is small to prevent clipping and layout overflow
+        if ui.available_height() < 100.0 || ui.available_width() < 150.0 {
+            frame = frame.inner_margin(egui::Margin::symmetric(10, 6));
+        }
+
         if self.active {
             frame = frame
                 .stroke(egui::Stroke::new(1.5, DesignSystem::ACCENT_PRIMARY))
@@ -63,11 +68,14 @@ impl Card {
             }
 
             if let Some(title) = self.title {
-                ui.label(
-                    egui::RichText::new(title)
-                        .size(12.0)
-                        .color(DesignSystem::TEXT_SECONDARY)
-                        .strong(),
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(title)
+                            .size(11.0)
+                            .color(DesignSystem::TEXT_SECONDARY)
+                            .strong(),
+                    )
+                    .wrap(),
                 );
                 ui.add_space(DesignSystem::SPACING_SMALL);
             }

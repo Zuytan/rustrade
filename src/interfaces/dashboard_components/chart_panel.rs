@@ -58,7 +58,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                         .corner_radius(6)
                         .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
                         .show(ui, |ui| {
-                            ui.horizontal(|ui| {
+                            ui.horizontal_wrapped(|ui| {
                                 ui.label(
                                     egui::RichText::new(agent.i18n.t("strategy_label"))
                                         .strong()
@@ -91,8 +91,8 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                                     egui::RichText::new(agent.i18n.tf(
                                         "sma_label",
                                         &[
-                                            ("fast", &strat_info.fast_sma.to_string()),
-                                            ("slow", &strat_info.slow_sma.to_string()),
+                                            ("fast", &format!("{:.2}", strat_info.fast_sma)),
+                                            ("slow", &format!("{:.2}", strat_info.slow_sma)),
                                         ],
                                     ))
                                     .color(egui::Color32::from_gray(160))
@@ -106,7 +106,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                 // The Plot
                 let height = ui.available_height() - 20.0;
                 Plot::new(format!("chart_{}", selected_symbol))
-                    .height(height.max(300.0))
+                    .height(height.max(100.0))
                     .show_grid([true, true])
                     .legend(Legend::default())
                     .x_axis_formatter(|mark, _range| {

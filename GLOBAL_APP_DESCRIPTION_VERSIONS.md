@@ -1,5 +1,14 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.22 - Responsive Dashboard Sizing & Viewport Alignment (June 2026)
+
+### Interface & Sizing Correctness
+- **Viewport-Based Metrics Column Sizing**: Migrated the 5 top-level dashboard metrics columns to estimate widths using the absolute physical window width (`viewport_rect().width()`) minus the left dynamic sidebar width rather than layout-determined `available_width()`. This breaks the layout feedback loops where labels were stretching horizontal columns and forcing the right panels off-screen.
+- **Top Header Wrap & Adaptive Display**: Wrapped the header total value and P&L pill in a `horizontal_wrapped` layout. Conditionally hid the system status, HFT indicator, and latency widgets on narrow screens (`viewport_w < 600.0`) to preserve horizontal bounds.
+- **Remaining Split View Height Calculation**: Refactored the split view height calculation to dynamically subtract metrics cards and headers from the available height, ensuring the layout fits the window vertically down to the pixel.
+- **Split Proportions & Right Panel Protection**: Added horizontal split width constraints to guarantee a minimum width of `160.0` px for the right-hand panel (market, positions, news/activity feeds) so it is never compressed or pushed out of visibility.
+- **Strategy Info Wrapping**: Wrapped the strategy parameters in `horizontal_wrapped` inside the chart panel, avoiding horizontal stretching from long strategy display names.
+
 ## Version 0.99.21 - Multi-Asset Simulation & Server REST/WS API Integration (June 2026)
 
 ### Execution & Trading Engine

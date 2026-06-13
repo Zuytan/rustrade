@@ -170,7 +170,19 @@ fn create_biased_model(name: &str, bias_class: usize) -> PathBuf {
 
     let json = serde_json::to_string(&network).unwrap();
     let mut path = std::env::temp_dir();
-    path.push(format!("mock_snn_biased_{}.json", name));
+
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    std::thread::current().id().hash(&mut hasher);
+    let thread_id_hash = hasher.finish();
+
+    path.push(format!(
+        "mock_snn_biased_{}_{}_{}.json",
+        name,
+        thread_id_hash,
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    ));
     fs::write(&path, json).unwrap();
     path
 }

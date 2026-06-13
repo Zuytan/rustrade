@@ -4366,7 +4366,7 @@ dependencies = [
 
 [[package]]
 name = "rustrade"
-version = "0.99.21"
+version = "0.99.22"
 dependencies = [
  "anyhow",
  "async-trait",

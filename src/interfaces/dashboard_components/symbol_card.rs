@@ -66,9 +66,27 @@ pub fn render_symbol_card(
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                     ui.painter().circle_filled(rect.center(), 4.0, dot_color);
-                    resp.on_hover_text(format!(
-                        "Mood: {} ({})",
-                        sentiment.classification, sentiment.value
+
+                    let classification_key = match sentiment.classification {
+                        crate::domain::sentiment::SentimentClassification::ExtremeFear => {
+                            "sentiment_extreme_fear"
+                        }
+                        crate::domain::sentiment::SentimentClassification::Fear => "sentiment_fear",
+                        crate::domain::sentiment::SentimentClassification::Neutral => {
+                            "sentiment_neutral"
+                        }
+                        crate::domain::sentiment::SentimentClassification::Greed => {
+                            "sentiment_greed"
+                        }
+                        crate::domain::sentiment::SentimentClassification::ExtremeGreed => {
+                            "sentiment_extreme_greed"
+                        }
+                    };
+                    let mood_desc = agent.i18n.t(classification_key);
+
+                    resp.on_hover_text(agent.i18n.tf(
+                        "sentiment_mood_hover",
+                        &[("mood", mood_desc), ("score", &sentiment.value.to_string())],
                     ));
                 }
 

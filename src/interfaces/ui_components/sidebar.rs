@@ -86,7 +86,8 @@ pub fn render_sidebar(
                 .stroke(stroke)
                 .inner_margin(egui::Margin::symmetric(0, 12))
                 .show(ui, |ui| {
-                    ui.set_width(80.0);
+                    let btn_width = ui.available_width() - 12.0;
+                    ui.set_width(btn_width);
                     if ui
                         .vertical_centered(|ui| {
                             ui.label(egui::RichText::new(view.icon()).size(24.0));

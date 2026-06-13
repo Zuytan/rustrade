@@ -72,10 +72,14 @@ pub fn render_activity_feed(
 
 /// Helper function to render the logs panel (Moved from ui.rs)
 pub fn render_logs_panel(agent: &mut UserAgent, ctx: &egui::Context) {
+    let screen_height = ctx.viewport_rect().height();
+    let logs_default_height = screen_height * 0.25;
+    let logs_min_height = screen_height * 0.05;
+
     egui::TopBottomPanel::bottom("logs_panel")
         .resizable(true)
-        .default_height(250.0)
-        .min_height(30.0)
+        .default_height(logs_default_height)
+        .min_height(logs_min_height)
         .show_animated(ctx, !agent.logs_collapsed, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {

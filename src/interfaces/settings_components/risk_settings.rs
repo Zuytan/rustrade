@@ -43,15 +43,16 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
 
             // Show derived profile badge
             if let Ok(appetite) = RiskAppetite::new(panel.risk_score) {
-                let (profile_text, color) = match appetite.profile() {
-                    RiskProfile::Conservative => ("Conservative (Prudent)", DesignSystem::SUCCESS), // Green
-                    RiskProfile::Balanced => ("Balanced (Équilibré)", DesignSystem::WARNING), // Yellow
-                    RiskProfile::Aggressive => ("Aggressive (Agressif)", DesignSystem::DANGER), // Red
+                let (profile_key, color) = match appetite.profile() {
+                    RiskProfile::Conservative => ("profile_conservative", DesignSystem::SUCCESS), // Green
+                    RiskProfile::Balanced => ("profile_balanced", DesignSystem::WARNING), // Yellow
+                    RiskProfile::Aggressive => ("profile_aggressive", DesignSystem::DANGER), // Red
                 };
+                let profile_text = i18n.t(profile_key);
 
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("Profile:")
+                        egui::RichText::new(i18n.t("settings_risk_profile_label"))
                             .size(18.0)
                             .color(DesignSystem::TEXT_PRIMARY),
                     ); // Larger
@@ -65,20 +66,68 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
 
                 ui.add_space(20.0);
 
-                // Show selected strategy
+                // Show selected strategy as a dropdown
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("Strategy:")
+                        egui::RichText::new(i18n.t("settings_risk_strategy_label"))
                             .size(18.0)
                             .color(DesignSystem::TEXT_PRIMARY),
                     );
-                    let strategy_name = format!("{:?}", panel.selected_strategy);
-                    ui.label(
-                        egui::RichText::new(strategy_name)
-                            .strong()
-                            .size(18.0)
-                            .color(DesignSystem::ACCENT_PRIMARY),
-                    );
+
+                    use crate::domain::market::strategy_config::StrategyMode;
+                    egui::ComboBox::from_id_salt("simple_strategy_mode_select")
+                        .selected_text(match panel.selected_strategy {
+                            StrategyMode::RegimeAdaptive => i18n.t("strategy_mode_regime_adaptive"),
+                            StrategyMode::SMC => i18n.t("strategy_mode_smc"),
+                            StrategyMode::Ensemble => i18n.t("strategy_mode_ensemble"),
+                            StrategyMode::ZScoreMR => i18n.t("strategy_mode_zscore_mr"),
+                            StrategyMode::StatMomentum => i18n.t("strategy_mode_stat_momentum"),
+                            StrategyMode::OrderFlow => i18n.t("strategy_mode_order_flow"),
+                            StrategyMode::ML => i18n.t("strategy_mode_ml"),
+                            StrategyMode::SnnSurrogate => i18n.t("strategy_mode_snn_surrogate"),
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut panel.selected_strategy,
+                                StrategyMode::RegimeAdaptive,
+                                i18n.t("strategy_mode_regime_adaptive"),
+                            );
+                            ui.selectable_value(
+                                &mut panel.selected_strategy,
+                                StrategyMode::SMC,
+                                i18n.t("strategy_mode_smc"),
+                            );
+                            ui.selectable_value(
+                                &mut panel.selected_strategy,
+                                StrategyMode::Ensemble,
+                                i18n.t("strategy_mode_ensemble"),
+                            );
+                            ui.selectable_value(
+                                &mut panel.selected_strategy,
+                                StrategyMode::ZScoreMR,
+                                i18n.t("strategy_mode_zscore_mr"),
+                            );
+                            ui.selectable_value(
+                                &mut panel.selected_strategy,
+                                StrategyMode::StatMomentum,
+                                i18n.t("strategy_mode_stat_momentum"),
+                            );
+                            ui.selectable_value(
+                                &mut panel.selected_strategy,
+                                StrategyMode::OrderFlow,
+                                i18n.t("strategy_mode_order_flow"),
+                            );
+                            ui.selectable_value(
+                                &mut panel.selected_strategy,
+                                StrategyMode::ML,
+                                i18n.t("strategy_mode_ml"),
+                            );
+                            ui.selectable_value(
+                                &mut panel.selected_strategy,
+                                StrategyMode::SnnSurrogate,
+                                i18n.t("strategy_mode_snn_surrogate"),
+                            );
+                        });
                 });
 
                 ui.add_space(30.0); // More space
@@ -91,7 +140,7 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
                     .show(ui, |ui| {
                         let stats = [
                             (
-                                "Risk per Trade",
+                                i18n.t("settings_stat_risk_per_trade"),
                                 format!(
                                     "{:.1}%",
                                     appetite.calculate_risk_per_trade_percent()
@@ -99,7 +148,7 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
                                 ),
                             ),
                             (
-                                "Max Drawdown",
+                                i18n.t("settings_stat_max_drawdown"),
                                 format!(
                                     "{:.1}%",
                                     panel
@@ -110,7 +159,7 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
                                 ),
                             ),
                             (
-                                "Target Profit",
+                                i18n.t("settings_stat_target_profit"),
                                 format!(
                                     "{:.1}x ATR",
                                     appetite.calculate_profit_target_multiplier()
@@ -143,7 +192,7 @@ pub fn render_risk_settings(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: 
 
                 // Apply Optimal Settings button
                 ui.add_space(20.0);
-                render_optimal_settings_button(ui, panel, appetite.profile());
+                render_optimal_settings_button(ui, panel, appetite.profile(), i18n);
             }
         });
 
@@ -155,6 +204,7 @@ fn render_optimal_settings_button(
     ui: &mut egui::Ui,
     panel: &mut SettingsPanel,
     profile: RiskProfile,
+    i18n: &I18nService,
 ) {
     // Prefer optimal params for exact risk score (from optimize --risk-score N), else profile
     let optimal =
@@ -164,7 +214,7 @@ fn render_optimal_settings_button(
         Some(params) => {
             // Show Apply button
             let button = egui::Button::new(
-                egui::RichText::new("🎯 Apply Optimal Settings")
+                egui::RichText::new(i18n.t("settings_risk_apply_optimal"))
                     .size(14.0)
                     .color(DesignSystem::TEXT_PRIMARY),
             )
@@ -176,33 +226,42 @@ fn render_optimal_settings_button(
 
             // Show metadata
             ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new(format!(
-                    "Optimized on {} using {}",
-                    params.optimization_date.format("%Y-%m-%d"),
-                    params.symbol_used
-                ))
-                .color(DesignSystem::TEXT_SECONDARY)
-                .size(12.0),
+
+            let date_str = params.optimization_date.format("%Y-%m-%d").to_string();
+            let optimized_on_text = i18n.tf(
+                "settings_risk_optimized_on",
+                &[("date", &date_str), ("symbol", &params.symbol_used)],
             );
             ui.label(
-                egui::RichText::new(format!(
-                    "Sharpe: {:.2} | Return: {:.1}% | Win Rate: {:.0}%",
-                    params.sharpe_ratio, params.total_return, params.win_rate
-                ))
-                .color(DesignSystem::TEXT_SECONDARY)
-                .size(12.0),
+                egui::RichText::new(optimized_on_text)
+                    .color(DesignSystem::TEXT_SECONDARY)
+                    .size(12.0),
+            );
+
+            let sharpe_str = format!("{:.2}", params.sharpe_ratio);
+            let return_str = format!("{:.1}", params.total_return);
+            let win_rate_str = format!("{:.0}", params.win_rate);
+            let metrics_text = i18n.tf(
+                "settings_risk_optimized_metrics",
+                &[
+                    ("sharpe", &sharpe_str),
+                    ("return", &return_str),
+                    ("win_rate", &win_rate_str),
+                ],
+            );
+            ui.label(
+                egui::RichText::new(metrics_text)
+                    .color(DesignSystem::TEXT_SECONDARY)
+                    .size(12.0),
             );
         }
         None => {
             // Show disabled state or hint
             ui.label(
-                egui::RichText::new(
-                    "💡 Run 'optimize discover-optimal' to generate optimal settings",
-                )
-                .color(DesignSystem::TEXT_SECONDARY)
-                .size(12.0)
-                .italics(),
+                egui::RichText::new(i18n.t("settings_risk_optimize_hint"))
+                    .color(DesignSystem::TEXT_SECONDARY)
+                    .size(12.0)
+                    .italics(),
             );
         }
     }

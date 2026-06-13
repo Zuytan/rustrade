@@ -54,8 +54,9 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                         .color(DesignSystem::ACCENT_PRIMARY)
                         .width(2.0);
 
+                    let plot_height = (ui.ctx().viewport_rect().height() * 0.30).clamp(150.0, 450.0);
                     egui_plot::Plot::new("equity_curve_plot")
-                        .height(250.0)
+                        .height(plot_height)
                         .show_axes([true, true])
                         .show_grid([true, true])
                         .show(ui, |plot_ui| {

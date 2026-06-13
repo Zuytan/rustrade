@@ -36,8 +36,9 @@ impl eframe::App for UserAgent {
         ctx.request_repaint(); // Ensure continuous updates for logs/charts
 
         // --- 2. Sidebar (Left) ---
+        let sidebar_width = (ctx.viewport_rect().width() * 0.08).clamp(80.0, 120.0);
         egui::SidePanel::left("sidebar_panel")
-            .exact_width(100.0)
+            .exact_width(sidebar_width)
             .frame(
                 egui::Frame::NONE
                     .fill(crate::interfaces::design_system::DesignSystem::BG_WINDOW)
@@ -54,6 +55,9 @@ impl eframe::App for UserAgent {
                     &self.i18n,
                 );
             });
+
+        // --- 3. Logs Panel (Bottom) ---
+        render_logs_panel(self, ctx);
 
         // --- 4. Central Panel ---
         egui::CentralPanel::default()
@@ -95,9 +99,6 @@ impl eframe::App for UserAgent {
                     );
                 }
             });
-
-        // Logs Panel (using extracted helper)
-        render_logs_panel(self, ctx);
     }
 }
 

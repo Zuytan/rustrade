@@ -24,6 +24,9 @@ pub struct AnalystSettings {
     pub min_profit_ratio: String,
     pub sma_threshold: String,
     pub profit_target_multiplier: String,
+    pub primary_timeframe: Option<String>,
+    pub trend_timeframe: Option<String>,
+    pub trend_sma_period: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

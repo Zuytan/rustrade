@@ -29,6 +29,7 @@ pub fn render_settings_view(
     symbol_refs: Option<SymbolSelectorRefs<'_>>,
 ) {
     let total_height = ui.available_height();
+    let sidebar_width = (ui.available_width() * 0.22).clamp(140.0, 220.0);
 
     ui.horizontal(|ui| {
         // --- Sidebar (Left) ---
@@ -36,7 +37,7 @@ pub fn render_settings_view(
             .fill(DesignSystem::BG_PANEL)
             .inner_margin(egui::Margin::symmetric(10, 20))
             .show(ui, |ui| {
-                ui.set_width(180.0);
+                ui.set_width(sidebar_width);
                 ui.set_min_height(total_height);
                 render_settings_sidebar(ui, panel, i18n);
             });
@@ -89,13 +90,13 @@ pub fn render_settings_view(
                             settings_components::render_language_settings(ui, i18n);
                         }
                         SettingsTab::Help => {
-                            settings_components::render_help_tab(ui, i18n);
+                            settings_components::render_help_tab(ui, panel, i18n);
                         }
                         SettingsTab::Shortcuts => {
-                            settings_components::render_shortcuts_tab(ui, i18n);
+                            settings_components::render_shortcuts_tab(ui, panel, i18n);
                         }
                         SettingsTab::About => {
-                            settings_components::render_about_tab(ui, i18n);
+                            settings_components::render_about_tab(ui, panel, i18n);
                         }
                     });
             });
@@ -291,6 +292,9 @@ fn render_save_button(
                 min_profit_ratio: panel.min_profit_ratio.clone(),
                 sma_threshold: panel.sma_threshold.clone(),
                 profit_target_multiplier: panel.profit_target_multiplier.clone(),
+                primary_timeframe: Some(panel.primary_timeframe.clone()),
+                trend_timeframe: Some(panel.trend_timeframe.clone()),
+                trend_sma_period: Some(panel.trend_sma_period.clone()),
             },
             active_tab: Some(match panel.active_tab {
                 SettingsTab::TradingEngine => "TradingEngine".to_string(),

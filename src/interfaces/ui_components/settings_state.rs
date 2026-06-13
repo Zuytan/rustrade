@@ -36,6 +36,15 @@ pub struct SettingsPanel {
 
     pub sma_threshold: String,
     pub profit_target_multiplier: String,
+
+    // --- Strategy: Timeframes ---
+    pub primary_timeframe: String,
+    pub trend_timeframe: String,
+    pub trend_sma_period: String,
+
+    // --- Help Tab State ---
+    pub help_search_query: String,
+    pub help_selected_category: String,
 }
 
 impl Default for SettingsPanel {
@@ -51,6 +60,10 @@ impl SettingsPanel {
             config_mode: ConfigMode::Simple, // Default to simple for novices
             risk_score: 5,                   // Default balanced score
             selected_strategy: crate::domain::market::strategy_config::StrategyMode::RegimeAdaptive, // Default for risk 5
+
+            // Help defaults
+            help_search_query: "".to_string(),
+            help_selected_category: "all".to_string(),
 
             // Risk Defaults
             max_position_size_pct: "0.10".to_string(),
@@ -70,6 +83,11 @@ impl SettingsPanel {
 
             sma_threshold: "0.001".to_string(),
             profit_target_multiplier: "2.0".to_string(),
+
+            // Timeframe Defaults (aligned to Crypto 15Min default)
+            primary_timeframe: "15Min".to_string(),
+            trend_timeframe: "4Hour".to_string(),
+            trend_sma_period: "50".to_string(),
         };
         // Initialize strings based on default risk score
         panel.update_from_score(5);
@@ -139,6 +157,16 @@ impl SettingsPanel {
         self.min_profit_ratio = settings.analyst.min_profit_ratio.clone();
         self.sma_threshold = settings.analyst.sma_threshold.clone();
         self.profit_target_multiplier = settings.analyst.profit_target_multiplier.clone();
+
+        if let Some(ref tf) = settings.analyst.primary_timeframe {
+            self.primary_timeframe = tf.clone();
+        }
+        if let Some(ref tf) = settings.analyst.trend_timeframe {
+            self.trend_timeframe = tf.clone();
+        }
+        if let Some(ref period) = settings.analyst.trend_sma_period {
+            self.trend_sma_period = period.clone();
+        }
     }
 
     /// Maps risk score to optimal strategy based on benchmark results
@@ -226,6 +254,36 @@ impl SettingsPanel {
         config.strategy.min_profit_ratio = self.min_profit_ratio.parse().unwrap_or(dec!(1.5));
         config.strategy.profit_target_multiplier =
             self.profit_target_multiplier.parse().unwrap_or(dec!(2.0));
+
+        // Timeframe Config
+        if let Ok(tf) = self.primary_timeframe.parse() {
+            config.strategy.primary_timeframe = tf;
+        }
+        if let Ok(tf) = self.trend_timeframe.parse() {
+            config.strategy.trend_timeframe = tf;
+        }
+        config.strategy.trend_sma_period = self.trend_sma_period.parse().unwrap_or(50);
+
+        // Ensure enabled_timeframes contains the necessary timeframes
+        let mut enabled = vec![
+            crate::domain::market::timeframe::Timeframe::OneMin,
+            crate::domain::market::timeframe::Timeframe::FiveMin,
+            crate::domain::market::timeframe::Timeframe::FifteenMin,
+            crate::domain::market::timeframe::Timeframe::OneHour,
+            crate::domain::market::timeframe::Timeframe::FourHour,
+            crate::domain::market::timeframe::Timeframe::OneDay,
+        ];
+        if let Ok(tf) = self.primary_timeframe.parse()
+            && !enabled.contains(&tf)
+        {
+            enabled.push(tf);
+        }
+        if let Ok(tf) = self.trend_timeframe.parse()
+            && !enabled.contains(&tf)
+        {
+            enabled.push(tf);
+        }
+        config.strategy.enabled_timeframes = enabled;
 
         config
     }

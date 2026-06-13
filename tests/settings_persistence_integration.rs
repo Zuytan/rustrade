@@ -44,6 +44,9 @@ fn test_serialization_roundtrip() {
             min_profit_ratio: "2.0".to_string(),
             sma_threshold: "0.002".to_string(),
             profit_target_multiplier: "3.0".to_string(),
+            primary_timeframe: Some("15Min".to_string()),
+            trend_timeframe: Some("4Hour".to_string()),
+            trend_sma_period: Some("50".to_string()),
         },
         active_tab: Some("Language".to_string()),
     };

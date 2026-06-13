@@ -323,5 +323,15 @@ impl UserAgent {
         if self.chat_history.len() > 1000 {
             self.chat_history.drain(0..100);
         }
+
+        // Update trade counts dynamically from portfolio history
+        if let Ok(pf) = self.portfolio.try_read() {
+            self.total_trades = pf.trade_history.len();
+            self.winning_trades = pf
+                .trade_history
+                .iter()
+                .filter(|t| t.pnl > Decimal::ZERO)
+                .count();
+        }
     }
 }

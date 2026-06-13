@@ -1,9 +1,13 @@
 use crate::domain::listener::NewsEvent;
 use eframe::egui;
-use std::collections::VecDeque;
 
 /// Helper function to render the news feed widget
-pub fn render_news_feed(ui: &mut egui::Ui, events: &VecDeque<NewsEvent>, max_height: f32) {
+pub fn render_news_feed(
+    ui: &mut egui::Ui,
+    events: &std::collections::VecDeque<NewsEvent>,
+    i18n: &crate::infrastructure::i18n::I18nService,
+    max_height: f32,
+) {
     egui::ScrollArea::vertical()
         .id_salt("news_feed_scroll")
         .max_height(max_height)
@@ -15,7 +19,7 @@ pub fn render_news_feed(ui: &mut egui::Ui, events: &VecDeque<NewsEvent>, max_hei
                     .inner_margin(12)
                     .show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new("Waiting for news...")
+                            egui::RichText::new(i18n.t("waiting_news"))
                                 .color(egui::Color32::from_gray(120))
                                 .italics(),
                         );
@@ -37,9 +41,9 @@ pub fn render_news_feed(ui: &mut egui::Ui, events: &VecDeque<NewsEvent>, max_hei
                     };
 
                     let sentiment_label = match event.sentiment_score {
-                        Some(score) if score > 0.3 => "📈 Bullish",
-                        Some(score) if score < -0.3 => "📉 Bearish",
-                        _ => "➖ Neutral",
+                        Some(score) if score > 0.3 => i18n.t("sentiment_bullish_badge"),
+                        Some(score) if score < -0.3 => i18n.t("sentiment_bearish_badge"),
+                        _ => i18n.t("sentiment_neutral_badge"),
                     };
 
                     egui::Frame::NONE

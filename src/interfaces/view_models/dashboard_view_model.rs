@@ -107,7 +107,7 @@ impl DashboardViewModel {
     pub fn get_sentiment_metrics(agent: &UserAgent) -> SentimentMetrics {
         if agent.symbol_sentiments.is_empty() {
             return SentimentMetrics {
-                title: "No Data".to_string(),
+                title: agent.i18n.t("waiting_data").to_string(),
                 value: 50,
                 color: egui::Color32::GRAY,
                 is_loading: true,
@@ -135,7 +135,7 @@ impl DashboardViewModel {
 
         if relevant_values.is_empty() {
             return SentimentMetrics {
-                title: "Neutral".to_string(),
+                title: agent.i18n.t("sentiment_neutral").to_string(),
                 value: 50,
                 color: egui::Color32::GRAY,
                 is_loading: false,
@@ -148,8 +148,21 @@ impl DashboardViewModel {
         let color =
             egui::Color32::from_hex(classification.color_hex()).unwrap_or(egui::Color32::GRAY);
 
+        let label_key = match classification {
+            crate::domain::sentiment::SentimentClassification::ExtremeFear => {
+                "sentiment_extreme_fear"
+            }
+            crate::domain::sentiment::SentimentClassification::Fear => "sentiment_fear",
+            crate::domain::sentiment::SentimentClassification::Neutral => "sentiment_neutral",
+            crate::domain::sentiment::SentimentClassification::Greed => "sentiment_greed",
+            crate::domain::sentiment::SentimentClassification::ExtremeGreed => {
+                "sentiment_extreme_greed"
+            }
+        };
+        let title = agent.i18n.t(label_key).to_string();
+
         SentimentMetrics {
-            title: classification.to_string(),
+            title,
             value: avg,
             color,
             is_loading: false,
