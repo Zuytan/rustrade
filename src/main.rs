@@ -79,6 +79,10 @@ fn main() -> anyhow::Result<()> {
             .build()
             .expect("Failed to build Tokio runtime");
 
+        let handle = rt.handle().clone();
+        let _ =
+            rustrade::interfaces::dashboard_components::architecture_view::TOKIO_HANDLE.set(handle);
+
         rt.block_on(async move {
             info!("Background Runtime Started.");
 

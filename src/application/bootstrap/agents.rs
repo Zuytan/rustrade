@@ -317,6 +317,39 @@ impl AgentsBootstrap {
             tokio::select! { _ = executor.run() => {}, _ = ct6.cancelled() => {} }
         });
 
+        // Spawn periodic heartbeat update for ConnectionHealthService
+        let health_service_for_heartbeat = connection_health_service.clone();
+        let registry_for_heartbeat = agent_registry.clone();
+        let ct_health = cancel_token.clone();
+        join_set.spawn(async move {
+            loop {
+                let m_status = health_service_for_heartbeat.get_market_data_status().await;
+                let e_status = health_service_for_heartbeat.get_execution_status().await;
+
+                use crate::application::monitoring::connection_health_service::ConnectionStatus;
+                let health = if m_status == ConnectionStatus::Offline
+                    && e_status == ConnectionStatus::Offline
+                {
+                    crate::application::monitoring::agent_status::HealthStatus::Dead
+                } else if m_status == ConnectionStatus::Degraded
+                    || e_status == ConnectionStatus::Degraded
+                {
+                    crate::application::monitoring::agent_status::HealthStatus::Degraded
+                } else {
+                    crate::application::monitoring::agent_status::HealthStatus::Healthy
+                };
+
+                registry_for_heartbeat
+                    .update_heartbeat("ConnectionHealthService", health)
+                    .await;
+
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
+                    _ = ct_health.cancelled() => break,
+                }
+            }
+        });
+
         // Listener Agent (Optional)
         let news_rx = if std::env::var("NEWS_RSS_URL").is_ok() {
             let (news_broadcast_tx, news_broadcast_rx) = broadcast::channel(20);
