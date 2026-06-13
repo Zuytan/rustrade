@@ -1,3 +1,5 @@
+#![cfg(feature = "oanda")]
+
 //! OANDA infrastructure - Forex sector provider.
 //!
 //! Provides [OandaSectorProvider]. Market data and execution for OANDA v20 API

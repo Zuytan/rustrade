@@ -340,9 +340,9 @@ impl PerformanceMetrics {
             .unwrap_or(Decimal::ZERO);
 
         let mut period_days = 0.0;
-        if !daily_equity.is_empty() {
-            let start_ts = daily_equity.first().unwrap().0;
-            let end_ts = daily_equity.last().unwrap().0;
+        if let (Some(first), Some(last)) = (daily_equity.first(), daily_equity.last()) {
+            let start_ts = first.0;
+            let end_ts = last.0;
             period_days = ((end_ts - start_ts) as f64 / 86400.0).max(0.0);
         }
 

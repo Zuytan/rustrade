@@ -204,7 +204,7 @@ impl Simulator {
                 },
                 agent_registry: Arc::new(
                     crate::application::monitoring::agent_status::AgentStatusRegistry::new(
-                        crate::infrastructure::observability::Metrics::new().unwrap(),
+                        crate::infrastructure::observability::Metrics::new()?,
                     ),
                 ),
             },
@@ -558,7 +558,7 @@ impl Simulator {
                 },
                 agent_registry: Arc::new(
                     crate::application::monitoring::agent_status::AgentStatusRegistry::new(
-                        crate::infrastructure::observability::Metrics::new().unwrap(),
+                        crate::infrastructure::observability::Metrics::new()?,
                     ),
                 ),
             },

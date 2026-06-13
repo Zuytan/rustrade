@@ -31,6 +31,7 @@ use crate::domain::trading::types::{Candle, TradeProposal};
 use crate::infrastructure::alpaca::AlpacaSectorProvider;
 use crate::infrastructure::binance::BinanceSectorProvider;
 use crate::infrastructure::news::rss::RssNewsService;
+#[cfg(feature = "oanda")]
 use crate::infrastructure::oanda::OandaSectorProvider;
 use crate::infrastructure::observability::Metrics;
 
@@ -128,17 +129,27 @@ impl AgentsBootstrap {
         );
 
         // 4. Risk Manager
-        let sector_provider: Option<Arc<dyn crate::domain::ports::SectorProvider>> =
-            match config.mode {
-                Mode::Alpaca => Some(Arc::new(AlpacaSectorProvider::new(
-                    config.broker.alpaca.api_key.clone(),
-                    config.broker.alpaca.secret_key.clone(),
-                    config.broker.alpaca.base_url.clone(),
-                ))),
-                Mode::Mock => None,
-                Mode::Oanda => Some(Arc::new(OandaSectorProvider)),
-                Mode::Binance => Some(Arc::new(BinanceSectorProvider)),
-            };
+        let sector_provider: Option<Arc<dyn crate::domain::ports::SectorProvider>> = match config
+            .mode
+        {
+            Mode::Alpaca => Some(Arc::new(AlpacaSectorProvider::new(
+                config.broker.alpaca.api_key.clone(),
+                config.broker.alpaca.secret_key.clone(),
+                config.broker.alpaca.base_url.clone(),
+            ))),
+            Mode::Mock => None,
+            Mode::Oanda => {
+                #[cfg(feature = "oanda")]
+                {
+                    Some(Arc::new(OandaSectorProvider))
+                }
+                #[cfg(not(feature = "oanda"))]
+                {
+                    panic!("Oanda support is disabled. Compile with --features oanda to enable.");
+                }
+            }
+            Mode::Binance => Some(Arc::new(BinanceSectorProvider)),
+        };
 
         let base_risk = if config.asset_class == crate::config::AssetClass::Crypto {
             crate::domain::risk::risk_config::RiskConfig::crypto_default()

@@ -1,6 +1,6 @@
 [package]
 name = "rustrade"
-version = "0.99.22"
+version = "0.99.23"
 edition = "2024"
 default-run = "rustrade"
 
@@ -8,6 +8,7 @@ default-run = "rustrade"
 default = ["ui"]
 ui = ["dep:eframe", "dep:egui", "dep:egui_plot"]
 surrogate = []
+oanda = []
 
 [[bin]]
 name = "rustrade"

@@ -1,5 +1,12 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.23 - Architectural Resolution Phase 1: Quick Wins (June 2026)
+
+### Code Safety & Cleanliness
+- **Production .unwrap() Audit**: Fixed all genuine production .unwrap() calls across the codebase, replacing them with safe error propagation (?) or pattern matching. Unwraps inside test modules were verified and left as they are safe in tests.
+- **Mock Module Restructuring**: Split the monolithic `src/infrastructure/mock.rs` file (612 LoC) into a modular subdirectory `src/infrastructure/mock/` containing `mod.rs`, `market_data_service.rs`, `execution_service.rs`, and `null_repositories.rs`.
+- **OANDA Integration Feature Flag**: Introduced an `oanda` feature flag in `Cargo.toml` and wrapped `oanda` infrastructure modules in `#[cfg(feature = "oanda")]` to prevent Forex code from adding unnecessary bloat by default.
+
 ## Version 0.99.22 - Responsive Dashboard Sizing & Viewport Alignment (June 2026)
 
 ### Interface & Sizing Correctness

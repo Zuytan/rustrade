@@ -1,237 +1,16 @@
-use crate::domain::ports::{ExecutionService, MarketDataService, OrderUpdate};
-use crate::domain::trading::fee_model::{ConstantFeeModel, FeeModel}; // Added
-use crate::domain::trading::types::{MarketEvent, Order};
+use crate::domain::ports::{ExecutionService, OrderUpdate};
+use crate::domain::trading::fee_model::{ConstantFeeModel, FeeModel};
+use crate::domain::trading::portfolio::Portfolio;
+use crate::domain::trading::types::{Order, OrderSide, OrderStatus};
+use crate::infrastructure::simulation::latency_model::{LatencyModel, ZeroLatency};
+use crate::infrastructure::simulation::slippage_model::{SlippageModel, ZeroSlippage};
 use anyhow::Result;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio::sync::broadcast;
-use tokio::sync::{
-    RwLock,
-    mpsc::{self, Receiver, Sender},
-};
 use tracing::info;
-
-#[derive(Clone)]
-pub struct MockMarketDataService {
-    subscribers: Arc<RwLock<Vec<Sender<MarketEvent>>>>,
-    pub simulation_enabled: bool,
-    current_prices: Arc<RwLock<std::collections::HashMap<String, Decimal>>>,
-}
-
-impl MockMarketDataService {
-    pub fn new() -> Self {
-        Self {
-            subscribers: Arc::new(RwLock::new(Vec::new())),
-            simulation_enabled: true,
-            current_prices: Arc::new(RwLock::new(std::collections::HashMap::new())),
-        }
-    }
-
-    pub fn new_no_sim() -> Self {
-        Self {
-            subscribers: Arc::new(RwLock::new(Vec::new())),
-            simulation_enabled: false,
-            current_prices: Arc::new(RwLock::new(std::collections::HashMap::new())),
-        }
-    }
-}
-
-impl Default for MockMarketDataService {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl MockMarketDataService {
-    pub async fn publish(&self, event: MarketEvent) {
-        if let MarketEvent::Quote { symbol, price, .. } = &event {
-            self.current_prices
-                .write()
-                .await
-                .insert(symbol.clone(), *price);
-        }
-
-        let mut subs = self.subscribers.write().await;
-
-        if subs.is_empty() {
-            return;
-        }
-
-        let mut active_subs = Vec::new();
-        let mut sent_count = 0;
-        for tx in subs.iter() {
-            if tx.send(event.clone()).await.is_ok() {
-                active_subs.push(tx.clone());
-                sent_count += 1;
-            }
-        }
-        *subs = active_subs;
-
-        if matches!(event, MarketEvent::Quote { symbol, .. } if symbol.contains("BTC")) {
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            static COUNTER: AtomicUsize = AtomicUsize::new(0);
-            let count = COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
-            #[allow(clippy::manual_is_multiple_of)]
-            if count.is_multiple_of(10) {
-                info!(
-                    "MockMarketDataService: Published {} events to {} subscribers",
-                    count, sent_count
-                );
-            }
-        }
-    }
-
-    pub async fn set_price(&self, symbol: &str, price: Decimal) {
-        self.current_prices
-            .write()
-            .await
-            .insert(symbol.to_string(), price);
-
-        self.publish(MarketEvent::Quote {
-            symbol: symbol.to_string(),
-            price,
-            quantity: Decimal::ONE,
-            timestamp: chrono::Utc::now().timestamp(),
-        })
-        .await;
-    }
-}
-
-#[async_trait]
-impl MarketDataService for MockMarketDataService {
-    async fn subscribe(&self, symbols: Vec<String>) -> Result<Receiver<MarketEvent>> {
-        let (tx, rx) = mpsc::channel(100);
-
-        self.subscribers.write().await.push(tx.clone());
-
-        let symbols_clone = symbols.clone();
-        let service_clone = self.clone();
-
-        if self.simulation_enabled {
-            tokio::spawn(async move {
-                use chrono::Utc;
-                use std::time::Duration;
-                use tokio::time;
-
-                let mut prices: std::collections::HashMap<String, f64> =
-                    std::collections::HashMap::new();
-                let mut iteration = 0u64;
-
-                for symbol in &symbols_clone {
-                    let base_price = if symbol.contains("BTC") {
-                        96000.0
-                    } else if symbol.contains("ETH") {
-                        3400.0
-                    } else if symbol.contains("AVAX") {
-                        40.0
-                    } else {
-                        150.0
-                    };
-                    prices.insert(symbol.clone(), base_price);
-                }
-
-                info!(
-                    "MockMarketDataService: Starting price simulation for {:?}",
-                    symbols_clone
-                );
-
-                let mut interval = time::interval(Duration::from_millis(500));
-
-                loop {
-                    interval.tick().await;
-                    iteration += 1;
-
-                    for (idx, symbol) in symbols_clone.iter().enumerate() {
-                        let current_price = prices.get(symbol).copied().unwrap_or(100.0);
-
-                        let seed = (iteration + idx as u64) * 1103515245 + 12345;
-                        let random_val = (((seed / 65536) % 1000) as f64 / 1000.0) - 0.5;
-                        let change_pct = random_val * 0.01;
-                        let new_price = current_price * (1.0 + change_pct);
-
-                        prices.insert(symbol.clone(), new_price);
-
-                        let event = MarketEvent::Quote {
-                            symbol: symbol.clone(),
-                            price: Decimal::from_f64_retain(new_price).unwrap_or(Decimal::ZERO),
-                            quantity: Decimal::ONE,
-                            timestamp: Utc::now().timestamp(),
-                        };
-
-                        service_clone.publish(event).await;
-                    }
-                }
-            });
-
-            info!(
-                "MockMarketDataService: Subscribed to {:?} (Simulation Enabled)",
-                symbols
-            );
-        } else {
-            info!(
-                "MockMarketDataService: Subscribed to {:?} (Simulation Disabled)",
-                symbols
-            );
-        }
-
-        Ok(rx)
-    }
-
-    async fn get_tradable_assets(&self) -> Result<Vec<String>> {
-        Ok(vec![
-            "AAPL".to_string(),
-            "MSFT".to_string(),
-            "NVDA".to_string(),
-            "TSLA".to_string(),
-            "GOOGL".to_string(),
-            "BTC/USD".to_string(),
-            "ETH/USD".to_string(),
-        ])
-    }
-
-    async fn get_top_movers(&self) -> Result<Vec<String>> {
-        Ok(vec![
-            "AAPL".to_string(),
-            "MSFT".to_string(),
-            "NVDA".to_string(),
-            "TSLA".to_string(),
-            "GOOGL".to_string(),
-        ])
-    }
-
-    async fn get_prices(
-        &self,
-        symbols: Vec<String>,
-    ) -> Result<std::collections::HashMap<String, rust_decimal::Decimal>> {
-        let stored_prices = self.current_prices.read().await;
-        let mut result = std::collections::HashMap::new();
-
-        for sym in symbols {
-            let price = stored_prices
-                .get(&sym)
-                .copied()
-                .unwrap_or(Decimal::from(100));
-            result.insert(sym, price);
-        }
-        Ok(result)
-    }
-
-    async fn get_historical_bars(
-        &self,
-        _symbol: &str,
-        _start: chrono::DateTime<chrono::Utc>,
-        _end: chrono::DateTime<chrono::Utc>,
-        _timeframe: &str,
-    ) -> Result<Vec<crate::domain::trading::types::Candle>> {
-        Ok(vec![])
-    }
-}
-
-use crate::domain::trading::portfolio::Portfolio;
-
-use crate::infrastructure::simulation::latency_model::{LatencyModel, ZeroLatency};
-use crate::infrastructure::simulation::slippage_model::{SlippageModel, ZeroSlippage};
 
 pub struct MockExecutionService {
     portfolio: Arc<RwLock<Portfolio>>,
@@ -318,13 +97,7 @@ impl ExecutionService for MockExecutionService {
             self.slippage_model
                 .calculate_execution_price(order.price, order.quantity, order.side);
 
-        // Calculate commissions (fee model now only handles commission part mostly, but legacy might still have slippage)
-        // We set slippage_pct to 0 in costs calculation context if we want to separate totally,
-        // but let's assume FeeModel provided is 'CommissionOnly' or similar,
-        // OR we interpret fee_model.calculate_costs strictly.
-        // For backwards compatibility, if FeeModel returns slippage_cost, we add it.
-        // But cleaner is to use execution price.
-
+        // Calculate commissions
         let costs = self
             .fee_model
             .calculate_cost(order.quantity, execution_price, order.side);
@@ -343,7 +116,7 @@ impl ExecutionService for MockExecutionService {
         );
 
         match order.side {
-            crate::domain::trading::types::OrderSide::Buy => {
+            OrderSide::Buy => {
                 let total_needed = cost + commission;
                 if port.cash < total_needed {
                     // Reduce quantity to what cash allows (no margin / no negative cash)
@@ -408,7 +181,7 @@ impl ExecutionService for MockExecutionService {
                     pos.quantity = total_qty;
                 }
             }
-            crate::domain::trading::types::OrderSide::Sell => {
+            OrderSide::Sell => {
                 // Prevent selling more than we hold
                 let current_qty = port
                     .positions
@@ -437,10 +210,7 @@ impl ExecutionService for MockExecutionService {
                     orders
                         .iter()
                         .rev()
-                        .find(|o| {
-                            o.symbol == order.symbol
-                                && o.side == crate::domain::trading::types::OrderSide::Buy
-                        })
+                        .find(|o| o.symbol == order.symbol && o.side == OrderSide::Buy)
                         .cloned()
                 } else {
                     None
@@ -485,7 +255,7 @@ impl ExecutionService for MockExecutionService {
             client_order_id: order.id.clone(),
             symbol: order.symbol.clone(),
             side: order.side,
-            status: crate::domain::trading::types::OrderStatus::Filled,
+            status: OrderStatus::Filled,
             filled_qty: order.quantity,
             filled_avg_price: Some(execution_price),
             timestamp: update_timestamp,
@@ -523,89 +293,10 @@ impl ExecutionService for MockExecutionService {
 
     async fn cancel_all_orders(&self) -> Result<()> {
         info!("MockExecution: Cancelling all orders");
-        // Clear internal list or mark as cancelled?
-        // For simplicity in mock, we just log.
-        // If we want to be strict, we'd update status of all open orders.
         Ok(())
     }
 
     async fn subscribe_order_updates(&self) -> Result<broadcast::Receiver<OrderUpdate>> {
         Ok(self.order_update_sender.subscribe())
-    }
-}
-
-pub struct NullTradeRepository;
-
-#[async_trait]
-impl crate::domain::repositories::TradeRepository for NullTradeRepository {
-    async fn save(&self, _trade: &Order) -> Result<()> {
-        Ok(())
-    }
-    async fn find_by_symbol(&self, _symbol: &str) -> Result<Vec<Order>> {
-        Ok(vec![])
-    }
-    async fn find_by_status(
-        &self,
-        _status: crate::domain::trading::types::OrderStatus,
-    ) -> Result<Vec<Order>> {
-        Ok(vec![])
-    }
-    async fn find_recent(&self, _limit: usize) -> Result<Vec<Order>> {
-        Ok(vec![])
-    }
-    async fn get_all(&self) -> Result<Vec<Order>> {
-        Ok(vec![])
-    }
-    async fn count(&self) -> Result<usize> {
-        Ok(0)
-    }
-}
-
-pub struct NullCandleRepository;
-
-#[async_trait]
-impl crate::domain::repositories::CandleRepository for NullCandleRepository {
-    async fn save(&self, _candle: &crate::domain::trading::types::Candle) -> Result<()> {
-        Ok(())
-    }
-    async fn get_range(
-        &self,
-        _symbol: &str,
-        _start_ts: i64,
-        _end_ts: i64,
-    ) -> Result<Vec<crate::domain::trading::types::Candle>> {
-        Ok(vec![])
-    }
-    async fn get_latest_timestamp(&self, _symbol: &str) -> Result<Option<i64>> {
-        Ok(None)
-    }
-    async fn count_candles(&self, _symbol: &str, _start_ts: i64, _end_ts: i64) -> Result<usize> {
-        Ok(0)
-    }
-    async fn prune(&self, _days_retention: i64) -> Result<u64> {
-        Ok(0)
-    }
-}
-
-pub struct NullStrategyRepository;
-
-#[async_trait]
-impl crate::domain::repositories::StrategyRepository for NullStrategyRepository {
-    async fn save(
-        &self,
-        _config: &crate::domain::market::strategy_config::StrategyDefinition,
-    ) -> Result<()> {
-        Ok(())
-    }
-    async fn find_by_symbol(
-        &self,
-        _symbol: &str,
-    ) -> Result<Option<crate::domain::market::strategy_config::StrategyDefinition>> {
-        Ok(None)
-    }
-    async fn get_all_active(
-        &self,
-    ) -> Result<Vec<crate::domain::market::strategy_config::StrategyDefinition>> {
-        Ok(vec![])
     }
 }

@@ -108,7 +108,7 @@ pub fn render_architecture_view(ui: &mut egui::Ui, agent: &UserAgent) {
         let last_ua_hb_id = ui.make_persistent_id("last_user_agent_heartbeat");
         let last_ua_hb: Option<f64> = ui.data(|d| d.get_temp(last_ua_hb_id));
         let time = ui.ctx().input(|i| i.time);
-        if last_ua_hb.is_none() || time - last_ua_hb.unwrap() > 2.0 {
+        if last_ua_hb.is_none_or(|hb| time - hb > 2.0) {
             ui.data_mut(|d| d.insert_temp(last_ua_hb_id, time));
             if let Some(handle) = TOKIO_HANDLE.get() {
                 let registry_clone = registry.clone();

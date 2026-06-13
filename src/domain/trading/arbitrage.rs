@@ -40,11 +40,23 @@ impl ArbitrageEngine {
                 continue;
             }
 
-            if best_buy.is_none() || price < best_buy.unwrap().1 {
-                best_buy = Some((exchange, price));
+            match best_buy {
+                Some((_, buy_price)) if price < buy_price => {
+                    best_buy = Some((exchange, price));
+                }
+                None => {
+                    best_buy = Some((exchange, price));
+                }
+                _ => {}
             }
-            if best_sell.is_none() || price > best_sell.unwrap().1 {
-                best_sell = Some((exchange, price));
+            match best_sell {
+                Some((_, sell_price)) if price > sell_price => {
+                    best_sell = Some((exchange, price));
+                }
+                None => {
+                    best_sell = Some((exchange, price));
+                }
+                _ => {}
             }
         }
 
