@@ -154,7 +154,7 @@ fn render_settings_sidebar(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: &
                 DesignSystem::TEXT_SECONDARY
             };
             let border = if is_selected {
-                egui::Stroke::new(1.0, DesignSystem::ACCENT_PRIMARY)
+                egui::Stroke::new(1.0_f32, DesignSystem::ACCENT_PRIMARY)
             } else {
                 egui::Stroke::NONE
             };

@@ -25,7 +25,10 @@ pub fn render_metric_card(
                 color: egui::Color32::from_black_alpha(100),
             })
             // Top Accent Line
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(10)))
+            .stroke(egui::Stroke::new(
+                1.0_f32,
+                egui::Color32::from_white_alpha(10),
+            ))
             .show(ui, |ui| {
                 ui.set_width(166.0);
                 ui.set_height(76.0);
@@ -99,7 +102,7 @@ pub fn render_metric_card(
                                 points.iter().map(|p| to_screen.transform_pos(*p)).collect();
                             painter.add(egui::Shape::line(
                                 screen_points,
-                                egui::Stroke::new(2.0, value_color),
+                                egui::Stroke::new(2.0_f32, value_color),
                             ));
 
                             ui.label(

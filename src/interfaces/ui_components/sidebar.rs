@@ -75,7 +75,7 @@ pub fn render_sidebar(
             };
 
             let stroke = if is_selected {
-                egui::Stroke::new(1.5, DesignSystem::ACCENT_PRIMARY)
+                egui::Stroke::new(1.5_f32, DesignSystem::ACCENT_PRIMARY)
             } else {
                 egui::Stroke::NONE
             };

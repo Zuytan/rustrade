@@ -9,7 +9,7 @@ pub fn render_donut_chart(ui: &mut egui::Ui, percentage: f32, color: egui::Color
     ui.painter().circle_stroke(
         rect.center(),
         size / 2.0 - 2.0,
-        egui::Stroke::new(4.0, DesignSystem::BORDER_SUBTLE),
+        egui::Stroke::new(4.0_f32, DesignSystem::BORDER_SUBTLE),
     );
 
     if percentage > 0.0 {
@@ -34,6 +34,6 @@ pub fn render_donut_chart(ui: &mut egui::Ui, percentage: f32, color: egui::Color
         }
 
         ui.painter()
-            .add(PathShape::line(points, Stroke::new(4.0, color)));
+            .add(PathShape::line(points, Stroke::new(4.0_f32, color)));
     }
 }

@@ -10,7 +10,7 @@ use eframe::egui;
 fn render_keycap(ui: &mut egui::Ui, text: &str) {
     egui::Frame::NONE
         .fill(DesignSystem::BG_INPUT)
-        .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
+        .stroke(egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE))
         .corner_radius(DesignSystem::ROUNDING_SMALL)
         .inner_margin(egui::Margin::symmetric(8, 4))
         .show(ui, |ui| {
@@ -53,7 +53,7 @@ pub fn render_help_tab(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: &I18n
         ui.painter().rect_stroke(
             rect,
             DesignSystem::ROUNDING_SMALL,
-            egui::Stroke::new(1.0, stroke_color),
+            egui::Stroke::new(1.0_f32, stroke_color),
             egui::StrokeKind::Outside,
         );
 
@@ -111,7 +111,7 @@ pub fn render_help_tab(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: &I18n
             .stroke(if is_selected {
                 egui::Stroke::NONE
             } else {
-                egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE)
+                egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE)
             })
             .min_size(egui::vec2(60.0, 26.0));
 
@@ -162,7 +162,7 @@ pub fn render_help_tab(ui: &mut egui::Ui, panel: &mut SettingsPanel, i18n: &I18n
 
             egui::Frame::NONE
                 .fill(DesignSystem::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
+                .stroke(egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE))
                 .corner_radius(DesignSystem::ROUNDING_MEDIUM)
                 .inner_margin(12)
                 .show(ui, |ui| {
@@ -380,7 +380,7 @@ pub fn render_about_tab(ui: &mut egui::Ui, _panel: &SettingsPanel, i18n: &I18nSe
             for (name, label, desc) in tech {
                 egui::Frame::NONE
                     .fill(DesignSystem::BG_CARD)
-                    .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
+                    .stroke(egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE))
                     .corner_radius(DesignSystem::ROUNDING_MEDIUM)
                     .inner_margin(12)
                     .show(ui, |ui| {

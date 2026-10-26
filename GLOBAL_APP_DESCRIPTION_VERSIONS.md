@@ -1,5 +1,17 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.25 - Outlier Filter Recovery & Rust 1.99 Toolchain Compliance (October 2026)
+
+### Market Data Reliability
+- **Outlier Filter Lockout Fix**: `CandleAggregator` no longer freezes a symbol after a genuine price move larger than `MAX_PRICE_DEVIATION_PCT` (1.5%). Previously, rejected quotes never updated the reference close, so a gap or fast move caused every subsequent quote to be rejected indefinitely (observed live on AVAX/USD: 711 rejections over ~6 hours).
+- **Consistent-Rejection Re-anchoring**: After `REANCHOR_AFTER_CONSECUTIVE_REJECTIONS` (10) consecutive rejected quotes that agree with each other (within 1.5% of the streak anchor), the aggregator accepts the new price level, updates the reference close and discards the stale partial candle. Erratic bad quotes reset the streak and never trigger re-anchoring; any accepted quote also resets it.
+- **Regression Tests**: Added tests for persistent level shifts, erratic outliers and streak reset.
+
+### Toolchain & Code Quality
+- **Rust 1.99 Clippy Compliance**: Upgraded `async-trait` 0.1.89 → 0.1.92 to fix 50 `double_must_use` false positives emitted from the macro expansion.
+- **Explicit `f32` Literals in UI**: Fixed 38 implicit float fallbacks in egui stroke/size calls (now a future hard error).
+- **Signal Processor**: Simplified the min-hold-time guard with the `?` operator (no behavior change).
+
 ## Version 0.99.24 - Architectural Resolution Phases 2-4: Modularization, Tests & Bounded Contexts (June 2026)
 
 ### Restructuring & Modularization

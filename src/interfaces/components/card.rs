@@ -52,7 +52,7 @@ impl Card {
 
         if self.active {
             frame = frame
-                .stroke(egui::Stroke::new(1.5, DesignSystem::ACCENT_PRIMARY))
+                .stroke(egui::Stroke::new(1.5_f32, DesignSystem::ACCENT_PRIMARY))
                 .shadow(egui::epaint::Shadow {
                     offset: [0, 4],
                     blur: 15,

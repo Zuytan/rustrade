@@ -415,7 +415,7 @@ pub fn render_dashboard(ui: &mut egui::Ui, agent: &mut UserAgent) {
     egui::Frame::NONE
         .fill(DesignSystem::BG_CARD)
         .corner_radius(DesignSystem::ROUNDING_SMALL)
-        .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
+        .stroke(egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE))
         .inner_margin(egui::Margin::symmetric(16, 6))
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {

@@ -52,12 +52,12 @@ impl DesignSystem {
         visuals.panel_fill = Self::BG_PANEL;
         visuals.extreme_bg_color = Self::BG_INPUT;
 
-        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, Self::BORDER_SUBTLE);
-        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, Self::TEXT_PRIMARY);
+        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, Self::BORDER_SUBTLE);
+        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, Self::TEXT_PRIMARY);
         visuals.widgets.noninteractive.corner_radius = Self::ROUNDING_SMALL.into();
 
         // Inactive widgets (buttons, inactive handles, slider tracks)
-        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, Self::TEXT_SECONDARY);
+        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, Self::TEXT_SECONDARY);
         visuals.widgets.inactive.weak_bg_fill = Self::BG_INPUT; // Dark inset track background
         visuals.widgets.inactive.bg_fill = Self::BG_CARD_HOVER; // Lighter distinct background for handles
         visuals.widgets.inactive.corner_radius = Self::ROUNDING_SMALL.into();
@@ -65,17 +65,17 @@ impl DesignSystem {
         // Hovered widgets
         visuals.widgets.hovered.bg_fill = Self::ACCENT_PRIMARY; // Vibrant primary accent on hover
         visuals.widgets.hovered.weak_bg_fill = Self::BG_INPUT; // Keep track visible
-        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, Self::TEXT_PRIMARY);
+        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, Self::TEXT_PRIMARY);
         visuals.widgets.hovered.corner_radius = Self::ROUNDING_SMALL.into();
 
         // Active widgets (being clicked or dragged)
         visuals.widgets.active.bg_fill = Self::ACCENT_SECONDARY;
         visuals.widgets.active.weak_bg_fill = Self::BG_INPUT; // Keep track visible
-        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, Self::TEXT_PRIMARY); // Higher thickness and brightness for cursor
+        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5_f32, Self::TEXT_PRIMARY); // Higher thickness and brightness for cursor
         visuals.widgets.active.corner_radius = Self::ROUNDING_SMALL.into();
 
         visuals.selection.bg_fill = Self::ACCENT_PRIMARY.linear_multiply(0.3);
-        visuals.selection.stroke = egui::Stroke::new(1.0, Self::ACCENT_PRIMARY);
+        visuals.selection.stroke = egui::Stroke::new(1.0_f32, Self::ACCENT_PRIMARY);
 
         visuals
     }
@@ -85,7 +85,7 @@ impl DesignSystem {
         egui::Frame::NONE
             .fill(Self::BG_CARD)
             .corner_radius(Self::ROUNDING_MEDIUM)
-            .stroke(egui::Stroke::new(1.0, Self::BORDER_SUBTLE))
+            .stroke(egui::Stroke::new(1.0_f32, Self::BORDER_SUBTLE))
             .inner_margin(Self::SPACING_MEDIUM as i8)
             .shadow(egui::epaint::Shadow {
                 offset: [0, 4],

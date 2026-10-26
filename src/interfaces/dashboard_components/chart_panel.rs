@@ -56,7 +56,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                         .fill(DesignSystem::BG_CARD)
                         .inner_margin(egui::Margin::symmetric(10, 8))
                         .corner_radius(6)
-                        .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
+                        .stroke(egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE))
                         .show(ui, |ui| {
                             ui.horizontal_wrapped(|ui| {
                                 ui.label(
@@ -141,7 +141,7 @@ pub fn render_chart_panel(agent: &mut UserAgent, ui: &mut egui::Ui) {
                             box_elems.push(
                                 BoxElem::new(t, BoxSpread::new(low, min_oc, mid, max_oc, high))
                                     .fill(color)
-                                    .stroke(egui::Stroke::new(1.0, color))
+                                    .stroke(egui::Stroke::new(1.0_f32, color))
                                     .box_width(45.0), // 45 seconds wide (out of 60s candle)
                             );
 

@@ -29,7 +29,7 @@ pub fn render_symbol_card(
     } else {
         DesignSystem::BG_CARD
     };
-    let border_width = if is_selected { 1.5 } else { 1.0 };
+    let border_width = if is_selected { 1.5 } else { 1.0_f32 };
 
     let mut frame = egui::Frame::NONE
         .fill(bg_color)

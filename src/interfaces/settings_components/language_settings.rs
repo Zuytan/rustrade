@@ -23,9 +23,9 @@ pub fn render_language_settings(ui: &mut egui::Ui, i18n: &mut I18nService) {
 
             // Custom Card Frame for Language
             let stroke = if is_selected {
-                egui::Stroke::new(1.5, DesignSystem::ACCENT_PRIMARY)
+                egui::Stroke::new(1.5_f32, DesignSystem::ACCENT_PRIMARY)
             } else {
-                egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE)
+                egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE)
             };
 
             let bg_color = if is_selected {

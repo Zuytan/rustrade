@@ -12,6 +12,10 @@ use tracing::{error, info, warn};
 /// 1.5% is generous enough for volatile crypto while filtering bad bid/ask mid-prices.
 const MAX_PRICE_DEVIATION_PCT: Decimal = dec!(0.015);
 
+/// Number of consecutive, mutually consistent rejected quotes after which the
+/// aggregator accepts the new price level as genuine (e.g. after a stream gap).
+const REANCHOR_AFTER_CONSECUTIVE_REJECTIONS: u32 = 10;
+
 #[derive(Debug)]
 struct CandleBuilder {
     symbol: String,
@@ -87,11 +91,21 @@ impl CandleBuilder {
     }
 }
 
+/// Tracks consecutive rejected quotes that agree with each other, to tell a
+/// genuine price level shift apart from erratic bad quotes.
+#[derive(Debug)]
+struct RejectionStreak {
+    anchor: Decimal,
+    count: u32,
+}
+
 pub struct CandleAggregator {
     // Map Symbol -> Current partial candle
     builders: HashMap<String, CandleBuilder>,
     /// Last confirmed close price per symbol (used for cross-candle outlier filtering)
     last_close: HashMap<String, Decimal>,
+    /// Consecutive consistent outlier rejections per symbol
+    rejection_streaks: HashMap<String, RejectionStreak>,
     repository: Option<Arc<dyn CandleRepository>>,
 }
 
@@ -100,7 +114,40 @@ impl CandleAggregator {
         Self {
             builders: HashMap::new(),
             last_close: HashMap::new(),
+            rejection_streaks: HashMap::new(),
             repository,
+        }
+    }
+
+    /// Record a rejected quote. Returns true once enough consecutive rejected quotes
+    /// agree with each other (within `MAX_PRICE_DEVIATION_PCT` of the streak anchor),
+    /// meaning the market has genuinely moved and the reference must be re-anchored.
+    fn register_rejection(&mut self, symbol: &str, price: Decimal) -> bool {
+        let streak = self
+            .rejection_streaks
+            .entry(symbol.to_string())
+            .or_insert(RejectionStreak {
+                anchor: price,
+                count: 0,
+            });
+
+        let consistent = streak.anchor > Decimal::ZERO
+            && ((price - streak.anchor) / streak.anchor).abs() <= MAX_PRICE_DEVIATION_PCT;
+
+        if consistent {
+            streak.count += 1;
+        } else {
+            *streak = RejectionStreak {
+                anchor: price,
+                count: 1,
+            };
+        }
+
+        if streak.count >= REANCHOR_AFTER_CONSECUTIVE_REJECTIONS {
+            self.rejection_streaks.remove(symbol);
+            true
+        } else {
+            false
         }
     }
 
@@ -149,17 +196,31 @@ impl CandleAggregator {
         // --- OUTLIER FILTER ---
         // Reject quotes that deviate too far from last known price.
         // This prevents bad mid-prices from wide bid/ask spreads from corrupting candles.
+        // A persistent, consistent deviation is a genuine level shift: re-anchor on it
+        // instead of rejecting every subsequent quote forever.
         if self.is_price_outlier(symbol, price) {
+            if !self.register_rejection(symbol, price) {
+                warn!(
+                    "CandleAggregator: {} OUTLIER rejected: {} (last close: {:?})",
+                    symbol,
+                    price,
+                    self.last_close.get(symbol)
+                );
+                return None;
+            }
+
             warn!(
-                "CandleAggregator: {} OUTLIER rejected: {} (last close: {})",
+                "CandleAggregator: {} price level shift confirmed after {} consistent quotes. Re-anchoring reference {:?} -> {}",
                 symbol,
-                price,
-                self.last_close
-                    .get(symbol)
-                    .copied()
-                    .unwrap_or(Decimal::ZERO)
+                REANCHOR_AFTER_CONSECUTIVE_REJECTIONS,
+                self.last_close.get(symbol),
+                price
             );
-            return None;
+            self.last_close.insert(symbol.to_string(), price);
+            // Discard the stale partial candle: the new one starts at the new level.
+            self.builders.remove(symbol);
+        } else {
+            self.rejection_streaks.remove(symbol);
         }
 
         let current_minute = timestamp
@@ -367,6 +428,97 @@ mod tests {
         // But a normal tick should work fine
         let result = agg.on_quote(symbol, dec!(3508), dec!(1.0), t1 + 10000);
         assert!(result.is_none()); // Still same minute, no completion
+    }
+
+    fn ts(minute: u32, second: u32) -> i64 {
+        Utc.with_ymd_and_hms(2024, 1, 1, 0, minute, second)
+            .unwrap()
+            .timestamp_millis()
+    }
+
+    /// Builds and completes a first candle closing at 6.1075 (reference price).
+    fn seed_reference_candle(agg: &mut CandleAggregator, symbol: &str) {
+        agg.on_quote(symbol, dec!(6.1000), dec!(1.0), ts(0, 1));
+        agg.on_quote(symbol, dec!(6.1050), dec!(1.0), ts(0, 10));
+        agg.on_quote(symbol, dec!(6.1020), dec!(1.0), ts(0, 20));
+        agg.on_quote(symbol, dec!(6.1075), dec!(1.0), ts(0, 30));
+        let first = agg.on_quote(symbol, dec!(6.1080), dec!(1.0), ts(1, 0));
+        assert_eq!(first.map(|c| c.close), Some(dec!(6.1075)));
+    }
+
+    #[test]
+    fn test_reanchors_after_persistent_level_shift() {
+        // Regression: a genuine move > MAX_PRICE_DEVIATION_PCT (e.g. after a stream gap)
+        // used to freeze the symbol forever, because rejected quotes never updated
+        // the reference price (observed live on AVAX/USD: 711 rejections over 6h).
+        let mut agg = CandleAggregator::new(None);
+        let symbol = "AVAX/USD";
+        seed_reference_candle(&mut agg, symbol);
+
+        // Market has moved ~1.8% above the reference: all quotes are consistent.
+        let shifted = [dec!(6.2100), dec!(6.2120), dec!(6.2090), dec!(6.2110)];
+        let total = REANCHOR_AFTER_CONSECUTIVE_REJECTIONS as usize + 5;
+        for i in 0..total {
+            let price = shifted[i % shifted.len()];
+            let completed = agg.on_quote(symbol, price, dec!(1.0), ts(5, i as u32));
+            assert!(completed.is_none());
+        }
+
+        // The next minute must complete a candle built on the new price level.
+        let candle = agg
+            .on_quote(symbol, dec!(6.2150), dec!(1.0), ts(6, 0))
+            .expect("aggregator must recover and complete a candle at the new level");
+        assert!(candle.open >= dec!(6.2090), "open was {}", candle.open);
+        assert!(candle.low >= dec!(6.2090), "low was {}", candle.low);
+        assert_eq!(candle.timestamp, ts(5, 0));
+    }
+
+    #[test]
+    fn test_erratic_outliers_never_reanchor() {
+        let mut agg = CandleAggregator::new(None);
+        let symbol = "AVAX/USD";
+        seed_reference_candle(&mut agg, symbol);
+
+        // Wildly inconsistent bad quotes (wide bid/ask mid-prices) must stay rejected,
+        // no matter how many of them arrive.
+        let erratic = [dec!(7.0), dec!(5.0), dec!(7.5), dec!(4.8)];
+        for i in 0..(REANCHOR_AFTER_CONSECUTIVE_REJECTIONS as usize * 3) {
+            let price = erratic[i % erratic.len()];
+            assert!(agg.on_quote(symbol, price, dec!(1.0), ts(1, 1)).is_none());
+        }
+
+        agg.on_quote(symbol, dec!(6.1090), dec!(1.0), ts(1, 30));
+        let candle = agg
+            .on_quote(symbol, dec!(6.1100), dec!(1.0), ts(2, 0))
+            .expect("normal quotes keep building candles");
+        assert_eq!(candle.high, dec!(6.1090));
+        assert_eq!(candle.low, dec!(6.1080));
+    }
+
+    #[test]
+    fn test_accepted_quote_resets_rejection_streak() {
+        let mut agg = CandleAggregator::new(None);
+        let symbol = "AVAX/USD";
+        seed_reference_candle(&mut agg, symbol);
+
+        let almost = REANCHOR_AFTER_CONSECUTIVE_REJECTIONS - 1;
+        for _ in 0..almost {
+            agg.on_quote(symbol, dec!(6.3000), dec!(1.0), ts(1, 1));
+        }
+        // A normal quote proves the old level is still valid: streak resets.
+        agg.on_quote(symbol, dec!(6.1085), dec!(1.0), ts(1, 2));
+        for _ in 0..almost {
+            agg.on_quote(symbol, dec!(6.3000), dec!(1.0), ts(1, 3));
+        }
+
+        let candle = agg
+            .on_quote(symbol, dec!(6.1100), dec!(1.0), ts(2, 0))
+            .expect("candle completes");
+        assert_eq!(
+            candle.high,
+            dec!(6.1085),
+            "outliers must not leak into candle"
+        );
     }
 
     #[test]

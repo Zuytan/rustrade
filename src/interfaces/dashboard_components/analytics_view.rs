@@ -52,7 +52,7 @@ pub fn render_analytics_view(ui: &mut egui::Ui, agent: &mut UserAgent) {
                 if !equity_curve.is_empty() {
                     let line = egui_plot::Line::new("Equity", egui_plot::PlotPoints::from(equity_curve))
                         .color(DesignSystem::ACCENT_PRIMARY)
-                        .width(2.0);
+                        .width(2.0_f32);
 
                     let plot_height = (ui.ctx().viewport_rect().height() * 0.30).clamp(150.0, 450.0);
                     egui_plot::Plot::new("equity_curve_plot")

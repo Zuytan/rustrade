@@ -101,7 +101,7 @@ pub fn render_logs_panel(agent: &mut UserAgent, ctx: &egui::Context) {
                             egui::Color32::from_rgb(33, 38, 45)
                         })
                         .stroke(egui::Stroke::new(
-                            1.0,
+                            1.0_f32,
                             if is_active {
                                 egui::Color32::from_rgb(88, 166, 255)
                             } else {

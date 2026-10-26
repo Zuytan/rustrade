@@ -247,7 +247,7 @@ fn render_status_pill_inline(
     egui::Frame::NONE
         .fill(bg_color)
         .corner_radius(DesignSystem::ROUNDING_SMALL)
-        .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
+        .stroke(egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE))
         .inner_margin(egui::Margin::symmetric(10, 4))
         .show(ui, |ui| {
             ui.label(
@@ -404,7 +404,10 @@ fn render_agent_graph(
         painter.rect_stroke(
             col_rect,
             DesignSystem::ROUNDING_SMALL,
-            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(31, 41, 55, 60)),
+            egui::Stroke::new(
+                1.0_f32,
+                egui::Color32::from_rgba_unmultiplied(31, 41, 55, 60),
+            ),
             egui::StrokeKind::Outside,
         );
 
@@ -430,7 +433,10 @@ fn render_agent_graph(
     painter.rect_stroke(
         mon_rect,
         DesignSystem::ROUNDING_SMALL,
-        egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(31, 41, 55, 40)),
+        egui::Stroke::new(
+            1.0_f32,
+            egui::Color32::from_rgba_unmultiplied(31, 41, 55, 40),
+        ),
         egui::StrokeKind::Outside,
     );
     painter.text(
@@ -472,7 +478,7 @@ fn render_agent_graph(
                 if from_health == HealthStatus::Dead || to_health == HealthStatus::Dead {
                     1.0
                 } else {
-                    1.5
+                    1.5_f32
                 };
 
             let points = get_bezier_points(from_pos, to_pos);
@@ -539,7 +545,7 @@ fn render_agent_graph(
             DesignSystem::BORDER_SUBTLE
         };
 
-        let border_thickness = if is_selected { 2.0 } else { 1.0 };
+        let border_thickness = if is_selected { 2.0 } else { 1.0_f32 };
 
         // Outer glow
         if is_selected || is_hovered {
@@ -555,7 +561,7 @@ fn render_agent_graph(
                 painter.rect_stroke(
                     glow_rect,
                     DesignSystem::ROUNDING_SMALL + expansion * 0.5,
-                    egui::Stroke::new(1.0, glow_color.linear_multiply(alpha)),
+                    egui::Stroke::new(1.0_f32, glow_color.linear_multiply(alpha)),
                     egui::StrokeKind::Outside,
                 );
             }
@@ -750,7 +756,7 @@ fn render_agent_detail_panel(
                         egui::Frame::NONE
                             .fill(DesignSystem::BG_INPUT)
                             .corner_radius(DesignSystem::ROUNDING_SMALL)
-                            .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
+                            .stroke(egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE))
                             .inner_margin(8.0)
                             .show(ui, |ui| {
                                 ui.set_width(ui.available_width());
@@ -848,7 +854,7 @@ fn render_empty_inspector(ui: &mut egui::Ui, text: &str) {
     egui::Frame::NONE
         .fill(DesignSystem::BG_CARD)
         .corner_radius(DesignSystem::ROUNDING_MEDIUM)
-        .stroke(egui::Stroke::new(1.0, DesignSystem::BORDER_SUBTLE))
+        .stroke(egui::Stroke::new(1.0_f32, DesignSystem::BORDER_SUBTLE))
         .inner_margin(24.0)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -887,7 +893,7 @@ fn render_global_halt_status(
         egui::Frame::NONE
             .fill(DesignSystem::DANGER.linear_multiply(0.15))
             .corner_radius(DesignSystem::ROUNDING_SMALL)
-            .stroke(egui::Stroke::new(1.0, DesignSystem::DANGER))
+            .stroke(egui::Stroke::new(1.0_f32, DesignSystem::DANGER))
             .inner_margin(DesignSystem::SPACING_MEDIUM)
             .show(ui, |ui| {
                 ui.centered_and_justified(|ui| {

@@ -43,7 +43,7 @@ impl eframe::App for UserAgent {
                 egui::Frame::NONE
                     .fill(crate::interfaces::design_system::DesignSystem::BG_WINDOW)
                     .stroke(egui::Stroke::new(
-                        1.0,
+                        1.0_f32,
                         crate::interfaces::design_system::DesignSystem::BORDER_SUBTLE,
                     )),
             )

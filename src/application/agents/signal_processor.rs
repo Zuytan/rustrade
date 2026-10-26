@@ -245,14 +245,10 @@ impl SignalProcessor {
         }
 
         // --- ENFORCE MIN HOLD TIME ---
-        if let Some(entry_time) = last_entry_time {
-            let hold_duration_ms = timestamp - entry_time;
-            if hold_duration_ms < min_hold_time_ms {
-                return None;
-            }
-        } else {
-            // If we have a position but no entry time, we treat it as "just entered"
-            // to be safe (Startup Amnesia guard).
+        // If we have a position but no entry time, we treat it as "just entered"
+        // to be safe (Startup Amnesia guard).
+        let entry_time = last_entry_time?;
+        if timestamp - entry_time < min_hold_time_ms {
             return None;
         }
         // -----------------------------

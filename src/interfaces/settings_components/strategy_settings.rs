@@ -44,7 +44,7 @@ fn ui_setting_with_hint(ui: &mut egui::Ui, label: &str, value: &mut String, hint
             ui.painter().rect_stroke(
                 rect,
                 DesignSystem::ROUNDING_SMALL,
-                egui::Stroke::new(1.0, stroke_color),
+                egui::Stroke::new(1.0_f32, stroke_color),
                 egui::StrokeKind::Outside,
             );
 
