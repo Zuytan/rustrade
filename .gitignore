@@ -42,6 +42,8 @@ docs/OPTIMIZATION_BOTTLENECKS.md
 /tmp/
 log/*.log
 *.log
+# Captured runtime logs (may contain live account/trading data)
+*_logs.txt
 
 # --- PYTHON ---
 **/.venv/
