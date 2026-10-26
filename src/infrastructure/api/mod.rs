@@ -1,15 +1,17 @@
+use crate::config::ApiServerConfig;
 use crate::domain::ports::ExecutionService;
 use crate::domain::trading::portfolio::Portfolio;
 use axum::{
     Json, Router,
     extract::{
-        State,
+        Request, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::IntoResponse,
+    http::StatusCode,
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::get,
 };
-use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
 use tracing::field::Visit;
@@ -64,9 +66,13 @@ pub struct ApiState {
     pub log_sender: broadcast::Sender<String>,
 }
 
+/// Header carrying the API key. Query-string keys are deliberately not supported,
+/// as they leak into proxy and access logs.
+pub const API_KEY_HEADER: &str = "X-API-Key";
+
 /// Run the Axum REST and WebSocket server.
 pub async fn run_api_server(
-    port: u16,
+    config: &ApiServerConfig,
     portfolio: Arc<RwLock<Portfolio>>,
     execution_service: Arc<dyn ExecutionService>,
     log_sender: broadcast::Sender<String>,
@@ -77,19 +83,60 @@ pub async fn run_api_server(
         log_sender,
     };
 
-    let app = Router::new()
-        .route("/api/v1/portfolio", get(get_portfolio))
-        .route("/api/v1/positions", get(get_positions))
-        .route("/api/v1/ws", get(ws_handler))
-        .with_state(state);
+    let app = build_router(state, config.api_key.as_deref().map(Arc::from));
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    tracing::info!("API Server listening on http://{}", addr);
+    let addr = config.socket_addr();
+    tracing::info!(
+        "API Server listening on http://{} (auth: {})",
+        addr,
+        if config.api_key.is_some() {
+            "X-API-Key required"
+        } else {
+            "none, loopback only"
+        }
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// Build the API router. When `api_key` is set, every route requires it.
+fn build_router(state: ApiState, api_key: Option<Arc<str>>) -> Router {
+    Router::new()
+        .route("/api/v1/portfolio", get(get_portfolio))
+        .route("/api/v1/positions", get(get_positions))
+        .route("/api/v1/ws", get(ws_handler))
+        .route_layer(middleware::from_fn_with_state(api_key, require_api_key))
+        .with_state(state)
+}
+
+async fn require_api_key(
+    State(expected): State<Option<Arc<str>>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let Some(expected) = expected else {
+        return Ok(next.run(request).await);
+    };
+
+    let provided = request
+        .headers()
+        .get(API_KEY_HEADER)
+        .map(|v| v.as_bytes())
+        .unwrap_or_default();
+
+    if constant_time_eq(provided, expected.as_bytes()) {
+        Ok(next.run(request).await)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
+}
+
+/// Compare secrets without short-circuiting on the first differing byte.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 async fn get_portfolio(State(state): State<ApiState>) -> impl IntoResponse {
@@ -165,5 +212,85 @@ async fn handle_socket(mut socket: WebSocket, state: ApiState) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::mock::MockExecutionService;
+
+    const KEY: &str = "0123456789abcdef0123";
+
+    /// Serve the router on an ephemeral loopback port and return its base URL.
+    async fn spawn_server(api_key: Option<&str>) -> String {
+        let portfolio = Arc::new(RwLock::new(Portfolio::new()));
+        let state = ApiState {
+            portfolio: portfolio.clone(),
+            execution_service: Arc::new(MockExecutionService::new(portfolio)),
+            log_sender: broadcast::channel(16).0,
+        };
+        let app = build_router(state, api_key.map(Arc::from));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        format!("http://{addr}")
+    }
+
+    async fn status(url: &str, key: Option<&str>) -> u16 {
+        let mut req = reqwest::Client::new().get(url);
+        if let Some(k) = key {
+            req = req.header(API_KEY_HEADER, k);
+        }
+        req.send().await.expect("request").status().as_u16()
+    }
+
+    #[tokio::test]
+    async fn test_protected_routes_reject_missing_or_wrong_key() {
+        let base = spawn_server(Some(KEY)).await;
+        for path in ["/api/v1/portfolio", "/api/v1/positions", "/api/v1/ws"] {
+            let url = format!("{base}{path}");
+            assert_eq!(status(&url, None).await, 401, "{path} without key");
+            assert_eq!(
+                status(&url, Some("wrong-key")).await,
+                401,
+                "{path} wrong key"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_valid_key_is_accepted() {
+        let base = spawn_server(Some(KEY)).await;
+        let url = format!("{base}/api/v1/portfolio");
+        assert_eq!(status(&url, Some(KEY)).await, 200);
+    }
+
+    #[tokio::test]
+    async fn test_key_in_query_string_is_not_accepted() {
+        // Query strings end up in proxy/access logs: only the header is honored.
+        let base = spawn_server(Some(KEY)).await;
+        let url = format!("{base}/api/v1/portfolio?api_key={KEY}");
+        assert_eq!(status(&url, None).await, 401);
+    }
+
+    #[tokio::test]
+    async fn test_no_key_configured_allows_access() {
+        // Only reachable on loopback: ApiServerConfig refuses public binds without a key.
+        let base = spawn_server(None).await;
+        let url = format!("{base}/api/v1/positions");
+        assert_eq!(status(&url, None).await, 200);
+    }
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq(b"abc", b"abc"));
+        assert!(!constant_time_eq(b"abc", b"abd"));
+        assert!(!constant_time_eq(b"abc", b"abcd"));
+        assert!(!constant_time_eq(b"", b"a"));
     }
 }

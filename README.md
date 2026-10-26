@@ -98,8 +98,14 @@ The application is configured primarily via environment variables. You can set t
 | `STRATEGY_MODE` | `smc` | `smc`, `zscore`, `stat_momentum`, `order_flow`, `ml`, `ensemble`, `regime`. |
 | `ENSEMBLE_VOTING_THRESHOLD` | `0.5` | Threshold for ensemble strategy agreement. |
 | `RSI_THRESHOLD` | `75.0` | RSI Overbought threshold. |
-| `OBSERVABILITY_ENABLED` | `false` | Enable Prometheus metrics server. |
-| `OBSERVABILITY_PORT` | `9090` | Port for Prometheus metrics. |
+| `OBSERVABILITY_ENABLED` | `true` | Emit periodic `METRICS_JSON:` snapshots to stdout (server mode). |
+
+### Server API (`server` binary)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_BIND_ADDRESS` | `127.0.0.1` | API bind address. A non-loopback address requires `API_KEY`. |
+| `PORT` / `API_PORT` | `8080` | API port. Invalid values abort startup. |
+| `API_KEY` | - | If set (≥ 16 chars), required in the `X-API-Key` header on every route. |
 
 ## 📚 Documentation
 
@@ -127,10 +133,10 @@ cargo run --bin rustrade
 ### Backtesting CLI
 ```bash
 # Backtest a strategy
-cargo run --bin benchmark -- --symbol NVDA --start 2023-01-01 --end 2023-12-31 --strategy smc
+cargo run --release --bin benchmark -- run --symbols NVDA --start 2023-01-01 --end 2023-12-31 --strategy smc
 
 # Parallel Mass Backtest
-cargo run --bin benchmark -- --symbol AAPL,TSLA,NVDA,MSFT --start 2024-01-01 --end 2024-03-31 --parallel
+cargo run --release --bin benchmark -- run --symbols AAPL,TSLA,NVDA,MSFT --start 2024-01-01 --end 2024-03-31 --parallel
 
 # Optimize parameters
 cargo run --bin optimize -- --symbol TSLA --grid-config grid.toml

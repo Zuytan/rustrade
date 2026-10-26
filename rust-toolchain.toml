@@ -1,0 +1,5 @@
+# Pinned toolchain: new stable releases add lints that break `clippy -D warnings`.
+# Bump deliberately (and fix the new lints) rather than letting CI drift.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]

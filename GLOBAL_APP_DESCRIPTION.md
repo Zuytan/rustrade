@@ -158,14 +158,15 @@ Built with `egui` (Native) for low-latency performance, featuring a modular comp
 ### Headless Deployment
 Rustrade is optimized for headless server deployments:
 - **Server Binary**: `cargo run --bin server` runs the full trading system without a GUI, hosting an Axum server with REST endpoints for positions/portfolio status and real-time WebSockets.
+- **API Security**: The API binds to `127.0.0.1` by default (`API_BIND_ADDRESS`, `PORT`/`API_PORT`). When `API_KEY` is set (minimum 16 characters), every route requires it in the `X-API-Key` header (constant-time comparison; query-string keys are rejected). The server refuses to start on a non-loopback address without `API_KEY`, and invalid ports or addresses are startup errors instead of silent fallbacks.
 - **Production Builds**: The `ui` feature flag can be disabled for minimal resource footprint.
-- **Common commands**: `cargo run --bin rustrade` (desktop UI), `cargo run --bin server` (headless), `cargo run --bin benchmark -- --symbol SPY` (backtest).
+- **Common commands**: `cargo run --bin rustrade` (desktop UI), `cargo run --bin server` (headless), `cargo run --release --bin benchmark -- run --symbols SPY` (backtest).
 
 ### Advanced Observability
 The system features a multi-tier observability stack designed for high-frequency monitoring:
 
 #### 1. Real-Time Metrics (Prometheus)
-If `OBSERVABILITY_ENABLED=true`, the system spawns an internal Prometheus server (default: `:9090`).
+Metrics are collected in an internal Prometheus registry. **No HTTP scrape endpoint is served yet**: in server mode, `OBSERVABILITY_ENABLED=true` exports them as periodic `METRICS_JSON:` snapshots on stdout (see section 4). `OBSERVABILITY_PORT` and `OBSERVABILITY_BIND_ADDRESS` are parsed but currently unused.
 - **Business Metrics**: Real-time Win Rate, Current Max Drawdown, and Daily Trade volume.
 - **Performance Metrics**: API Latency histograms (via `LatencyTracker`) and WebSocket connection uptime/reconnection counters.
 - **System Health**: Circuit breaker trip status and Fear & Greed sentiment score integration.
@@ -187,5 +188,5 @@ For lightweight monitoring, the system continues to support periodic structured 
 The project includes comprehensive documentation for contributors:
 - **LICENSE**: MIT License for open-source compliance.
 - **CONTRIBUTING.md**: Development setup, code style guidelines, PR process.
-- **docs/STRATEGIES.md**: Technical documentation for all 10 trading strategies.
+- **docs/STRATEGIES.md**: Technical documentation for all trading strategies.
 - **README.md**: Badges, architecture diagram, screenshots, and quick start guide.

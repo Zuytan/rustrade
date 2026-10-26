@@ -3,12 +3,14 @@
 //! This module provides structured configuration loading from environment variables,
 //! organized by domain: Broker, Strategy, Risk, and Observability.
 
+mod api_config;
 mod broker_config;
 mod observability_config;
 mod risk_env_config;
 mod simulation_config;
 mod strategy_config;
 
+pub use api_config::ApiServerConfig;
 pub use broker_config::{AlpacaConfig, BinanceConfig, BrokerEnvConfig, OandaConfig};
 pub use observability_config::ObservabilityEnvConfig;
 pub use risk_env_config::{PlatformConfig, RiskEnvLoader};

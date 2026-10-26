@@ -11,10 +11,13 @@
 //! # Environment Variables
 //! - `OBSERVABILITY_ENABLED` - Enable metrics reporting (default: true)
 //! - `OBSERVABILITY_INTERVAL` - Interval in seconds between metric outputs (default: 60)
+//! - `API_BIND_ADDRESS` - API bind address (default: 127.0.0.1)
+//! - `PORT` / `API_PORT` - API port (default: 8080)
+//! - `API_KEY` - Required `X-API-Key` header value; mandatory for non-loopback binds
 
 use anyhow::Result;
 use rustrade::application::system::Application;
-use rustrade::config::Config;
+use rustrade::config::{ApiServerConfig, Config};
 use rustrade::infrastructure::observability::MetricsReporter;
 use tracing::info;
 use tracing_subscriber::prelude::*;
@@ -43,8 +46,9 @@ async fn main() -> Result<()> {
     info!("Mode: HEADLESS (no UI)");
     info!("Metrics: Push-based (JSON to stdout)");
 
-    // Load configuration
+    // Load configuration (fail fast before any broker connection)
     let config = Config::from_env()?;
+    let api_config = ApiServerConfig::from_env()?;
     info!(
         "Configuration loaded: Mode={:?}, Asset={:?}, Symbols={:?}",
         config.mode, config.asset_class, config.platform.symbols
@@ -60,19 +64,13 @@ async fn main() -> Result<()> {
     info!("Trading system running.");
 
     // Start API Server
-    let api_port = std::env::var("PORT")
-        .or_else(|_| std::env::var("API_PORT"))
-        .unwrap_or_else(|_| "8080".to_string())
-        .parse::<u16>()
-        .unwrap_or(8080);
-
     let portfolio_clone = handle.portfolio.clone();
     let exec_service_clone = handle.execution_service.clone();
     let log_tx_clone = log_tx.clone();
 
     tokio::spawn(async move {
         if let Err(e) = rustrade::infrastructure::api::run_api_server(
-            api_port,
+            &api_config,
             portfolio_clone,
             exec_service_clone,
             log_tx_clone,

@@ -1,5 +1,22 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.26 - Stabilization: API Security, Pinned Toolchain & Honest Documentation (October 2026)
+
+### Security
+- **API Bound to Loopback by Default**: The server API (`/api/v1/portfolio`, `/api/v1/positions`, `/api/v1/ws`) previously listened on `0.0.0.0` with no authentication, exposing portfolio data and the live log stream. It now binds to `127.0.0.1` unless `API_BIND_ADDRESS` is set.
+- **API Key Authentication**: New `ApiServerConfig` (`src/config/api_config.rs`). When `API_KEY` is set (minimum 16 characters), every route requires it in the `X-API-Key` header, compared in constant time. Query-string keys are rejected because they leak into access logs.
+- **Fail-Closed Startup**: The server refuses to start on a non-loopback address without `API_KEY`. Invalid `PORT`/`API_PORT` or `API_BIND_ADDRESS` values are now startup errors instead of a silent fallback to port 8080. API configuration is validated before any broker connection.
+- **Tests**: 13 new tests covering configuration parsing and HTTP authentication on a real ephemeral server.
+
+### Toolchain
+- **Pinned Rust Toolchain**: Added `rust-toolchain.toml` (1.99.1 with clippy and rustfmt) and pinned every CI job to 1.99.1, so new stable releases can no longer break `clippy -D warnings` unannounced. Upgrades are now a deliberate change.
+
+### Documentation Accuracy
+- **Performance Report**: Removed the illustrative "Preliminary Results (Sample)" table that looked like real results, replaced it with the actual 2026-06-21 crypto run (1/7 profitable, -5.33% average) and explicit validation criteria required before any live capital.
+- **Benchmark Commands**: Fixed commands in `README.md`, `GLOBAL_APP_DESCRIPTION.md` and the performance report (`benchmark run --symbols ...`; the referenced `benchmark_matrix` binary does not exist).
+- **Observability**: Corrected claims of a Prometheus HTTP server on `:9090`; metrics are exported as `METRICS_JSON:` snapshots to stdout and `OBSERVABILITY_PORT` is currently unused.
+- **Strategy Count**: Removed the inaccurate "10 strategies" claim.
+
 ## Version 0.99.25 - Outlier Filter Recovery & Rust 1.99 Toolchain Compliance (October 2026)
 
 ### Market Data Reliability
