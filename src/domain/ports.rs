@@ -39,6 +39,18 @@ pub trait ExecutionService: Send + Sync {
     async fn get_order_fees(&self, _order_id: &str) -> Result<Option<Decimal>> {
         Ok(None)
     }
+    /// Look up an order's current status at the broker by its client order id.
+    /// Returns `Ok(None)` only when the broker confirms the order does not exist.
+    ///
+    /// Defaults to an error (fail-closed): reconciliation must never conclude that an
+    /// order is absent because the broker cannot be asked.
+    async fn find_order_status(
+        &self,
+        _client_order_id: &str,
+        _symbol: &str,
+    ) -> Result<Option<OrderStatus>> {
+        anyhow::bail!("find_order_status is not supported by this execution service")
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

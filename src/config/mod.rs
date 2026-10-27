@@ -69,6 +69,30 @@ impl FromStr for AssetClass {
     }
 }
 
+/// Returns the broker URL that would trade real money in this mode, or `None` for
+/// mock mode and sandbox endpoints.
+///
+/// Fail-closed: a URL is production unless it carries the broker's sandbox marker
+/// (`paper-api` for Alpaca, `testnet` for Binance, `fxpractice` for OANDA).
+pub(crate) fn live_trading_target<'a>(mode: &Mode, broker: &'a BrokerEnvConfig) -> Option<&'a str> {
+    let (url, sandbox_marker) = match mode {
+        Mode::Mock => return None,
+        Mode::Alpaca => (broker.alpaca.base_url.as_str(), "paper-api"),
+        Mode::Binance => (broker.binance.base_url.as_str(), "testnet"),
+        Mode::Oanda => (broker.oanda.api_base_url.as_str(), "fxpractice"),
+    };
+    if url.to_lowercase().contains(sandbox_marker) {
+        None
+    } else {
+        Some(url)
+    }
+}
+
+/// Only an explicit `true` (case-insensitive, surrounding whitespace ignored) confirms live trading.
+pub(crate) fn is_live_confirmed(live_flag: Option<&str>) -> bool {
+    live_flag.is_some_and(|flag| flag.trim().eq_ignore_ascii_case("true"))
+}
+
 /// Main application configuration.
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -110,7 +134,7 @@ impl Config {
         };
 
         // Safety gate: prevent accidental live trading
-        config.validate_live_trading_gate()?;
+        config.validate_live_trading_gate(env::var("TRADING_LIVE").ok().as_deref())?;
 
         Ok(config)
     }
@@ -134,34 +158,50 @@ impl Config {
         }
     }
 
-    /// Validates that live trading is intentionally enabled when using production Alpaca endpoints.
+    /// Validates that live trading is intentionally enabled for every broker.
     ///
-    /// If the Alpaca base URL points to a production endpoint (not paper-api), this check
-    /// requires the `TRADING_LIVE=true` environment variable to be explicitly set. This
-    /// prevents accidental live trading with real money.
-    fn validate_live_trading_gate(&self) -> Result<()> {
-        if let Mode::Alpaca = self.mode {
-            let base_url = &self.broker.alpaca.base_url;
-            let is_production =
-                base_url.contains("api.alpaca.markets") && !base_url.contains("paper-api");
+    /// Any broker URL without a known sandbox marker is treated as production (fail-closed),
+    /// and then requires `TRADING_LIVE=true`. This prevents accidental trading with real money,
+    /// including through proxies or custom endpoints.
+    fn validate_live_trading_gate(&self, live_flag: Option<&str>) -> Result<()> {
+        let Some(url) = live_trading_target(&self.mode, &self.broker) else {
+            return Ok(());
+        };
 
-            if is_production {
-                let live_flag = env::var("TRADING_LIVE").unwrap_or_default().to_lowercase();
-
-                if live_flag != "true" {
-                    anyhow::bail!(
-                        "🚨 LIVE TRADING GATE: Alpaca base URL points to PRODUCTION ({}). \
-                         Set TRADING_LIVE=true to confirm you intend to trade with real money. \
-                         If this is unintentional, change ALPACA_BASE_URL to https://paper-api.alpaca.markets",
-                        base_url
-                    );
-                }
-                info!(
-                    "⚠️  LIVE TRADING MODE ENABLED — Trading with real money on {}",
-                    base_url
-                );
-            }
+        if !is_live_confirmed(live_flag) {
+            let (broker, env_var, sandbox_url) = match self.mode {
+                Mode::Alpaca => (
+                    "Alpaca",
+                    "ALPACA_BASE_URL",
+                    "https://paper-api.alpaca.markets",
+                ),
+                Mode::Binance => (
+                    "Binance",
+                    "BINANCE_BASE_URL",
+                    "https://testnet.binance.vision",
+                ),
+                Mode::Oanda => (
+                    "OANDA",
+                    "OANDA_API_BASE_URL",
+                    "https://api-fxpractice.oanda.com",
+                ),
+                Mode::Mock => return Ok(()),
+            };
+            anyhow::bail!(
+                "🚨 LIVE TRADING GATE: {} URL points to PRODUCTION ({}). \
+                 Set TRADING_LIVE=true to confirm you intend to trade with real money. \
+                 If this is unintentional, change {} to {}",
+                broker,
+                url,
+                env_var,
+                sandbox_url
+            );
         }
+
+        info!(
+            "⚠️  LIVE TRADING MODE ENABLED — Trading with real money on {}",
+            url
+        );
         Ok(())
     }
 
@@ -245,6 +285,116 @@ mod tests {
         assert!(matches!(Mode::from_str("mock").unwrap(), Mode::Mock));
         assert!(matches!(Mode::from_str("ALPACA").unwrap(), Mode::Alpaca));
         assert!(Mode::from_str("invalid").is_err());
+    }
+
+    fn broker_with(alpaca: &str, binance: &str, oanda: &str) -> BrokerEnvConfig {
+        BrokerEnvConfig {
+            alpaca: AlpacaConfig {
+                base_url: alpaca.to_string(),
+                ..Default::default()
+            },
+            binance: BinanceConfig {
+                base_url: binance.to_string(),
+                ..Default::default()
+            },
+            oanda: OandaConfig {
+                api_base_url: oanda.to_string(),
+                ..Default::default()
+            },
+        }
+    }
+
+    const ALPACA_PAPER: &str = "https://paper-api.alpaca.markets";
+    const ALPACA_LIVE: &str = "https://api.alpaca.markets";
+    const BINANCE_TEST: &str = "https://testnet.binance.vision";
+    const BINANCE_LIVE: &str = "https://api.binance.com";
+    const OANDA_PRACTICE: &str = "https://api-fxpractice.oanda.com";
+    const OANDA_LIVE: &str = "https://api-fxtrade.oanda.com";
+
+    #[test]
+    fn test_live_target_sandbox_urls_are_not_live() {
+        let broker = broker_with(ALPACA_PAPER, BINANCE_TEST, OANDA_PRACTICE);
+        assert_eq!(live_trading_target(&Mode::Alpaca, &broker), None);
+        assert_eq!(live_trading_target(&Mode::Binance, &broker), None);
+        assert_eq!(live_trading_target(&Mode::Oanda, &broker), None);
+    }
+
+    #[test]
+    fn test_live_target_production_urls_are_live() {
+        let broker = broker_with(ALPACA_LIVE, BINANCE_LIVE, OANDA_LIVE);
+        assert_eq!(
+            live_trading_target(&Mode::Alpaca, &broker),
+            Some(ALPACA_LIVE)
+        );
+        assert_eq!(
+            live_trading_target(&Mode::Binance, &broker),
+            Some(BINANCE_LIVE)
+        );
+        assert_eq!(live_trading_target(&Mode::Oanda, &broker), Some(OANDA_LIVE));
+    }
+
+    #[test]
+    fn test_live_target_unknown_url_is_treated_as_live() {
+        // A proxy or custom endpoint without a sandbox marker must fail closed.
+        let proxy = "https://broker-proxy.internal";
+        let broker = broker_with(proxy, proxy, proxy);
+        assert_eq!(live_trading_target(&Mode::Alpaca, &broker), Some(proxy));
+        assert_eq!(live_trading_target(&Mode::Binance, &broker), Some(proxy));
+        assert_eq!(live_trading_target(&Mode::Oanda, &broker), Some(proxy));
+    }
+
+    #[test]
+    fn test_live_target_sandbox_marker_is_case_insensitive() {
+        let broker = broker_with(
+            "HTTPS://PAPER-API.ALPACA.MARKETS",
+            "https://TESTNET.binance.vision",
+            "https://API-FXPRACTICE.oanda.com",
+        );
+        assert_eq!(live_trading_target(&Mode::Alpaca, &broker), None);
+        assert_eq!(live_trading_target(&Mode::Binance, &broker), None);
+        assert_eq!(live_trading_target(&Mode::Oanda, &broker), None);
+    }
+
+    #[test]
+    fn test_live_target_mock_is_never_live() {
+        let broker = broker_with(ALPACA_LIVE, BINANCE_LIVE, OANDA_LIVE);
+        assert_eq!(live_trading_target(&Mode::Mock, &broker), None);
+    }
+
+    #[test]
+    fn test_live_flag_parsing() {
+        assert!(!is_live_confirmed(None));
+        assert!(!is_live_confirmed(Some("false")));
+        assert!(!is_live_confirmed(Some("1")));
+        assert!(!is_live_confirmed(Some("")));
+        assert!(is_live_confirmed(Some("true")));
+        assert!(is_live_confirmed(Some("TRUE")));
+        assert!(is_live_confirmed(Some(" true ")));
+    }
+
+    #[test]
+    fn test_gate_blocks_live_binance_without_flag() {
+        let mut config = Config::from_env().expect("Should parse with defaults");
+        config.mode = Mode::Binance;
+        config.broker = broker_with(ALPACA_PAPER, BINANCE_LIVE, OANDA_PRACTICE);
+
+        let err = config
+            .validate_live_trading_gate(None)
+            .expect_err("live Binance without TRADING_LIVE must be refused");
+        let msg = err.to_string();
+        assert!(msg.contains("Binance"));
+        assert!(msg.contains("BINANCE_BASE_URL"));
+        assert!(config.validate_live_trading_gate(Some("true")).is_ok());
+    }
+
+    #[test]
+    fn test_gate_allows_sandbox_without_flag() {
+        let mut config = Config::from_env().expect("Should parse with defaults");
+        config.broker = broker_with(ALPACA_PAPER, BINANCE_TEST, OANDA_PRACTICE);
+        for mode in [Mode::Mock, Mode::Alpaca, Mode::Binance, Mode::Oanda] {
+            config.mode = mode;
+            assert!(config.validate_live_trading_gate(None).is_ok());
+        }
     }
 
     #[test]

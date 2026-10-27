@@ -9,10 +9,13 @@
 use crate::domain::ports::{ExecutionService, OrderUpdate};
 use crate::domain::trading::portfolio::{Portfolio, Position};
 use crate::domain::trading::types::{
-    Order, OrderSide, OrderType, denormalize_crypto_symbol, normalize_crypto_symbol,
+    Order, OrderSide, OrderStatus, OrderType, denormalize_crypto_symbol, normalize_crypto_symbol,
 };
 use crate::infrastructure::core::circuit_breaker::CircuitBreaker;
 use crate::infrastructure::core::http_client_factory::HttpClientFactory;
+use crate::infrastructure::core::order_submission::{
+    AMBIGUOUS_LOOKUP_DELAY, AmbiguousSubmission, classify_send_error, resolve_ambiguous_submission,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
@@ -27,6 +30,8 @@ use tracing::{info, instrument, warn};
 
 pub struct BinanceExecutionService {
     client: ClientWithMiddleware,
+    /// No-retry client used only to submit orders.
+    write_client: ClientWithMiddleware,
     api_key: String,
     api_secret: String,
     base_url: String,
@@ -45,6 +50,7 @@ impl BinanceExecutionService {
 
         Self {
             client,
+            write_client: HttpClientFactory::create_write_client(),
             api_key,
             api_secret,
             base_url,
@@ -76,8 +82,9 @@ impl ExecutionService for BinanceExecutionService {
         let order_id = order.id.clone();
         let price = order.price;
 
-        self.circuit_breaker
-            .call(async move {
+        let result = self
+            .circuit_breaker
+            .call(async {
                 let side_str = match side {
                     OrderSide::Buy => "BUY",
                     OrderSide::Sell => "SELL",
@@ -119,36 +126,118 @@ impl ExecutionService for BinanceExecutionService {
 
                 let url = format!("{}/api/v3/order?{}", self.base_url, signed_query);
 
+                // No automatic retry here: a resent POST could place the order twice.
                 let response = self
-                    .client
+                    .write_client
                     .post(&url)
                     .header("X-MBX-APIKEY", &self.api_key)
                     .send()
                     .await
-                    .context("Failed to place order on Binance")?;
+                    .map_err(|e| classify_send_error(e, "Binance"))?;
 
-                if !response.status().is_success() {
+                let status = response.status();
+                if !status.is_success() {
                     let error_text = response.text().await.unwrap_or_default();
+                    if status.is_server_error() {
+                        return Err(AmbiguousSubmission(format!(
+                            "Binance returned {}: {}",
+                            status, error_text
+                        ))
+                        .into());
+                    }
+                    if is_duplicate_order_rejection(&error_text) {
+                        return Err(AmbiguousSubmission(format!(
+                            "Binance reports duplicate order: {}",
+                            error_text
+                        ))
+                        .into());
+                    }
                     anyhow::bail!("Binance order placement failed: {}", error_text);
                 }
 
-                let response_json: serde_json::Value = response.json().await?;
-                info!(
-                    "Binance order placed successfully: {:?} with correlation_id: {:?}",
-                    response_json, correlation_id
-                );
+                // 2xx means the order is accepted, even if the body cannot be parsed.
+                match response.json::<serde_json::Value>().await {
+                    Ok(response_json) => info!(
+                        "Binance order placed successfully: {:?} with correlation_id: {:?}",
+                        response_json, correlation_id
+                    ),
+                    Err(e) => warn!(
+                        "Binance order {} accepted but response unreadable: {}",
+                        order_id, e
+                    ),
+                }
 
                 Ok(())
             })
+            .await;
+
+        match result {
+            Ok(()) => Ok(()),
+            Err(crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Open(msg)) => {
+                Err(anyhow::anyhow!(
+                    "Binance Execution circuit breaker open: {}",
+                    msg
+                ))
+            }
+            Err(crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Inner(
+                inner,
+            )) => match inner.downcast::<AmbiguousSubmission>() {
+                // Resolved outside the circuit breaker so an open breaker cannot hide the lookup.
+                Ok(ambiguous) => {
+                    resolve_ambiguous_submission(self, order, ambiguous.0, AMBIGUOUS_LOOKUP_DELAY)
+                        .await
+                }
+                Err(definitive) => Err(definitive),
+            },
+        }
+    }
+
+    async fn find_order_status(
+        &self,
+        client_order_id: &str,
+        symbol: &str,
+    ) -> Result<Option<OrderStatus>> {
+        let api_symbol = denormalize_crypto_symbol(symbol);
+        let timestamp = chrono::Utc::now().timestamp_millis();
+        let query_string = format!(
+            "symbol={}&origClientOrderId={}&timestamp={}",
+            api_symbol, client_order_id, timestamp
+        );
+        let signature = self.sign_request(&query_string);
+        let url = format!(
+            "{}/api/v3/order?{}&signature={}",
+            self.base_url, query_string, signature
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
             .await
-            .map_err(|e| match e {
-                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Open(msg) => {
-                    anyhow::anyhow!("Binance Execution circuit breaker open: {}", msg)
-                }
-                crate::infrastructure::core::circuit_breaker::CircuitBreakerError::Inner(inner) => {
-                    inner
-                }
-            })
+            .context("Failed to look up Binance order by client order id")?;
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            if binance_error_code(&body) == Some(BINANCE_ORDER_DOES_NOT_EXIST) {
+                return Ok(None);
+            }
+            anyhow::bail!(
+                "Binance order lookup for {} failed: {} - {}",
+                client_order_id,
+                status,
+                body
+            );
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct BinanceOrderStatus {
+            status: String,
+        }
+        let order: BinanceOrderStatus =
+            serde_json::from_str(&body).context("Failed to parse Binance order lookup response")?;
+        map_binance_status(&order.status).map(Some)
     }
 
     async fn get_portfolio(&self) -> Result<Portfolio> {
@@ -390,6 +479,98 @@ impl ExecutionService for BinanceExecutionService {
         anyhow::bail!(
             "BinanceExecutionService::subscribe_order_updates is not implemented (requires User Data Stream)"
         );
+    }
+}
+
+/// Binance NEW_ORDER_REJECTED code. Shared by many rejections (e.g. insufficient
+/// balance); only its "Duplicate order sent." message means the id was already used.
+const BINANCE_DUPLICATE_ORDER: i64 = -2010;
+/// Binance error code returned when looking up an order that does not exist.
+const BINANCE_ORDER_DOES_NOT_EXIST: i64 = -2013;
+
+/// Extracts the `code` field from a Binance JSON error body.
+fn binance_error_code(body: &str) -> Option<i64> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()?
+        .get("code")?
+        .as_i64()
+}
+
+/// True only for a rejection caused by a reused `newClientOrderId`.
+fn is_duplicate_order_rejection(body: &str) -> bool {
+    binance_error_code(body) == Some(BINANCE_DUPLICATE_ORDER)
+        && body.to_lowercase().contains("duplicate order")
+}
+
+/// Maps a Binance order status string to the domain status.
+/// Unknown values are an error, never a default.
+fn map_binance_status(status: &str) -> Result<OrderStatus> {
+    Ok(match status {
+        "NEW" => OrderStatus::New,
+        "PARTIALLY_FILLED" => OrderStatus::PartiallyFilled,
+        "FILLED" => OrderStatus::Filled,
+        "CANCELED" => OrderStatus::Canceled,
+        "PENDING_CANCEL" => OrderStatus::PendingCancel,
+        "PENDING_NEW" => OrderStatus::PendingNew,
+        "REJECTED" => OrderStatus::Rejected,
+        "EXPIRED" | "EXPIRED_IN_MATCH" => OrderStatus::Expired,
+        other => anyhow::bail!("Unknown Binance order status: {}", other),
+    })
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    #[test]
+    fn test_map_binance_status_known_values() {
+        let cases = [
+            ("NEW", OrderStatus::New),
+            ("PARTIALLY_FILLED", OrderStatus::PartiallyFilled),
+            ("FILLED", OrderStatus::Filled),
+            ("CANCELED", OrderStatus::Canceled),
+            ("PENDING_CANCEL", OrderStatus::PendingCancel),
+            ("PENDING_NEW", OrderStatus::PendingNew),
+            ("REJECTED", OrderStatus::Rejected),
+            ("EXPIRED", OrderStatus::Expired),
+            ("EXPIRED_IN_MATCH", OrderStatus::Expired),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(map_binance_status(raw).expect(raw), expected);
+        }
+    }
+
+    #[test]
+    fn test_map_binance_status_unknown_is_error() {
+        assert!(map_binance_status("new").is_err());
+        assert!(map_binance_status("SOMETHING").is_err());
+    }
+
+    #[test]
+    fn test_binance_error_code_parsing() {
+        assert_eq!(
+            binance_error_code(r#"{"code":-2010,"msg":"Duplicate order sent."}"#),
+            Some(BINANCE_DUPLICATE_ORDER)
+        );
+        assert_eq!(
+            binance_error_code(r#"{"code":-2013,"msg":"Order does not exist."}"#),
+            Some(BINANCE_ORDER_DOES_NOT_EXIST)
+        );
+        assert_eq!(binance_error_code("<html>502</html>"), None);
+    }
+
+    #[test]
+    fn test_duplicate_order_rejection_requires_duplicate_message() {
+        assert!(is_duplicate_order_rejection(
+            r#"{"code":-2010,"msg":"Duplicate order sent."}"#
+        ));
+        // Same code, different cause: a definitive rejection, not an ambiguous one.
+        assert!(!is_duplicate_order_rejection(
+            r#"{"code":-2010,"msg":"Account has insufficient balance for requested action."}"#
+        ));
+        assert!(!is_duplicate_order_rejection(
+            r#"{"code":-1013,"msg":"Duplicate order sent."}"#
+        ));
     }
 }
 

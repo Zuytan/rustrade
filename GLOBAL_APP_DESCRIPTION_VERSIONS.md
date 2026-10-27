@@ -1,5 +1,23 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.28 - P0 Safety: Live Gate for All Brokers, Idempotent Orders & Fail-Closed Reconciliation (October 2026)
+
+### Live Trading Gate
+- **All Brokers Gated**: `TRADING_LIVE=true` is now required for any production endpoint on Alpaca, Binance and OANDA (previously Alpaca only). Binance defaulted to `api.binance.com`, so `MODE=binance` with real keys traded real money without confirmation.
+- **Fail-Closed URL Check**: A URL is production unless it carries the broker's sandbox marker (`paper-api`, `testnet`, `fxpractice`), so proxies and custom endpoints are gated too.
+- **Binance Testnet Defaults**: `BINANCE_BASE_URL` and `BINANCE_WS_URL` default to the Spot testnet. Documented in `.env.example` and `.env.template`.
+
+### Order Submission
+- **No Automatic Resend of Orders**: Order POSTs use a new no-retry client (`HttpClientFactory::create_write_client`). The retrying client could resend an order after a timeout; the broker then rejected the duplicate id and the Executor marked a live order `Rejected`, leaving it untracked and without a stop-loss.
+- **Ambiguous Outcome Resolution**: Timeouts, 5xx and duplicate-id rejections trigger a lookup by client order id (new `ExecutionService::find_order_status`, implemented for Alpaca, Binance and the mock; the default fails closed). An unresolved outcome returns `OrderSubmissionUnknown` and the order stays `Pending`, with the portfolio untouched. Connection failures and other 4xx stay definitive rejections. A 2xx with an unreadable body now counts as accepted.
+- **Broker Status Mapping**: Exhaustive Alpaca and Binance status mappers; unknown statuses are errors, never defaults.
+
+### Executor Reconciliation
+- **Per-Order Lookup**: `reconcile_pending` replaces the startup reconciliation that matched open/today order lists (it always failed on Binance and treated a GTC order filled the day before as `Rejected`). Orders the broker does not know are rejected only after a 30s grace period. Persistence errors are now propagated, and the log reports the real count.
+- **Fail-Closed Startup**: If reconciliation fails, new Buy orders are refused (persisted `Rejected`) and reconciliation is retried with backoff (5s to 60s); the Executor heartbeat reports `Degraded`. Sells (exits) are still processed.
+- **Periodic Pass**: Once reconciled, Pending orders left by ambiguous submissions are resolved at every heartbeat.
+- **Tests**: Reconciliation, refusal while unreconciled, unknown submission, status mappers, live gate table tests.
+
 ## Version 0.99.27 - Dependency Security Update & Unused Dependency Removal (October 2026)
 
 ### Security

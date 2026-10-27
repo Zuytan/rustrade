@@ -1,8 +1,11 @@
 use super::trading_stream::AlpacaTradingStream;
 use crate::domain::ports::ExecutionService;
 use crate::domain::ports::OrderUpdate;
-use crate::domain::trading::types::{Order, OrderSide};
+use crate::domain::trading::types::{Order, OrderSide, OrderStatus};
 use crate::infrastructure::core::http_client_factory::{HttpClientFactory, build_url_with_query};
+use crate::infrastructure::core::order_submission::{
+    AMBIGUOUS_LOOKUP_DELAY, AmbiguousSubmission, classify_send_error, resolve_ambiguous_submission,
+};
 use crate::infrastructure::observability::{LatencyGuard, Metrics};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -12,12 +15,14 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 // ===== Execution Service (REST API) =====
 
 pub struct AlpacaExecutionService {
     client: ClientWithMiddleware,
+    /// No-retry client used only to submit orders.
+    write_client: ClientWithMiddleware,
     api_key: String,
     api_secret: String,
     base_url: String,
@@ -211,6 +216,7 @@ impl AlpacaExecutionService {
 
         Self {
             client,
+            write_client: HttpClientFactory::create_write_client(),
             api_key,
             api_secret,
             base_url,
@@ -347,8 +353,9 @@ impl ExecutionService for AlpacaExecutionService {
 
         let url = format!("{}/v2/orders", self.base_url);
 
-        let response = self
-            .client
+        // No automatic retry here: a resent POST could place the order twice.
+        let send_result = self
+            .write_client
             .post(&url)
             .header("APCA-API-KEY-ID", &self.api_key)
             .header("APCA-API-SECRET-KEY", &self.api_secret)
@@ -358,26 +365,44 @@ impl ExecutionService for AlpacaExecutionService {
                     .context("Failed to serialize order request")?,
             )
             .send()
-            .await
-            .context("Failed to send order to Alpaca")?;
+            .await;
 
-        if response.status().is_success() {
-            let order_resp: AlpacaOrderResponse = response
-                .json()
-                .await
-                .context("Failed to parse Alpaca order response")?;
-            info!(
-                "Alpaca order placed: {} (status: {}) with correlation_id: {:?}",
-                order_resp.id, order_resp.status, order.correlation_id
-            );
-            Ok(())
-        } else {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Alpaca order failed: {}", error_text)
-        }
+        let ambiguous_reason = match send_result {
+            Err(e) => match classify_send_error(e, "Alpaca").downcast::<AmbiguousSubmission>() {
+                Ok(ambiguous) => ambiguous.0,
+                Err(definitive) => return Err(definitive),
+            },
+            Ok(response) if response.status().is_success() => {
+                // 2xx means the order is accepted, even if the body cannot be parsed.
+                match response.json::<AlpacaOrderResponse>().await {
+                    Ok(order_resp) => info!(
+                        "Alpaca order placed: {} (status: {}) with correlation_id: {:?}",
+                        order_resp.id, order_resp.status, order.correlation_id
+                    ),
+                    Err(e) => warn!(
+                        "Alpaca order {} accepted but response unreadable: {}",
+                        order.id, e
+                    ),
+                }
+                return Ok(());
+            }
+            Ok(response) => {
+                let status = response.status();
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                if status.is_server_error() {
+                    format!("Alpaca returned {}: {}", status, error_text)
+                } else if is_duplicate_client_order_id(&error_text) {
+                    format!("Alpaca reports duplicate client_order_id: {}", error_text)
+                } else {
+                    anyhow::bail!("Alpaca order failed: {}", error_text)
+                }
+            }
+        };
+
+        resolve_ambiguous_submission(self, order, ambiguous_reason, AMBIGUOUS_LOOKUP_DELAY).await
     }
 
     async fn get_portfolio(&self) -> Result<crate::domain::trading::portfolio::Portfolio> {
@@ -612,6 +637,124 @@ impl ExecutionService for AlpacaExecutionService {
         }
 
         Ok(fees)
+    }
+
+    #[instrument(skip(self))]
+    async fn find_order_status(
+        &self,
+        client_order_id: &str,
+        _symbol: &str,
+    ) -> Result<Option<OrderStatus>> {
+        let url = build_url_with_query(
+            &format!("{}/v2/orders:by_client_order_id", self.base_url),
+            &[("client_order_id", client_order_id)],
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .header("APCA-API-KEY-ID", &self.api_key)
+            .header("APCA-API-SECRET-KEY", &self.api_secret)
+            .send()
+            .await
+            .context("Failed to look up Alpaca order by client_order_id")?;
+
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Alpaca order lookup for {} failed: {} - {}",
+                client_order_id,
+                status,
+                error_text
+            );
+        }
+
+        let order: AlpacaOrderResponse = response
+            .json()
+            .await
+            .context("Failed to parse Alpaca order lookup response")?;
+        map_alpaca_status(&order.status).map(Some)
+    }
+}
+
+/// Alpaca rejects a reused client_order_id with HTTP 422 and this message.
+fn is_duplicate_client_order_id(error_text: &str) -> bool {
+    error_text
+        .to_lowercase()
+        .contains("client_order_id must be unique")
+}
+
+/// Maps an Alpaca order status string to the domain status.
+/// Unknown values are an error, never a default.
+fn map_alpaca_status(status: &str) -> Result<OrderStatus> {
+    Ok(match status {
+        "new" => OrderStatus::New,
+        "partially_filled" => OrderStatus::PartiallyFilled,
+        "filled" => OrderStatus::Filled,
+        "done_for_day" => OrderStatus::DoneForDay,
+        "canceled" => OrderStatus::Canceled,
+        "expired" => OrderStatus::Expired,
+        "replaced" => OrderStatus::Replaced,
+        "pending_cancel" => OrderStatus::PendingCancel,
+        "pending_replace" => OrderStatus::PendingReplace,
+        "pending_new" => OrderStatus::PendingNew,
+        "accepted" | "accepted_for_bidding" | "held" => OrderStatus::Accepted,
+        "stopped" => OrderStatus::Stopped,
+        "rejected" => OrderStatus::Rejected,
+        "suspended" => OrderStatus::Suspended,
+        "calculated" => OrderStatus::Calculated,
+        other => anyhow::bail!("Unknown Alpaca order status: {}", other),
+    })
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    #[test]
+    fn test_map_alpaca_status_known_values() {
+        let cases = [
+            ("new", OrderStatus::New),
+            ("partially_filled", OrderStatus::PartiallyFilled),
+            ("filled", OrderStatus::Filled),
+            ("done_for_day", OrderStatus::DoneForDay),
+            ("canceled", OrderStatus::Canceled),
+            ("expired", OrderStatus::Expired),
+            ("replaced", OrderStatus::Replaced),
+            ("pending_cancel", OrderStatus::PendingCancel),
+            ("pending_replace", OrderStatus::PendingReplace),
+            ("pending_new", OrderStatus::PendingNew),
+            ("accepted", OrderStatus::Accepted),
+            ("accepted_for_bidding", OrderStatus::Accepted),
+            ("held", OrderStatus::Accepted),
+            ("stopped", OrderStatus::Stopped),
+            ("rejected", OrderStatus::Rejected),
+            ("suspended", OrderStatus::Suspended),
+            ("calculated", OrderStatus::Calculated),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(map_alpaca_status(raw).expect(raw), expected);
+        }
+    }
+
+    #[test]
+    fn test_map_alpaca_status_unknown_is_error() {
+        assert!(map_alpaca_status("something_new").is_err());
+        assert!(map_alpaca_status("").is_err());
+    }
+
+    #[test]
+    fn test_duplicate_client_order_id_detection() {
+        assert!(is_duplicate_client_order_id(
+            r#"{"code":40010001,"message":"client_order_id must be unique"}"#
+        ));
+        assert!(!is_duplicate_client_order_id(
+            r#"{"code":40310000,"message":"insufficient buying power"}"#
+        ));
     }
 }
 

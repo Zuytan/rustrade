@@ -46,10 +46,12 @@ impl BinanceConfig {
         Self {
             api_key: env::var("BINANCE_API_KEY").unwrap_or_default(),
             secret_key: env::var("BINANCE_SECRET_KEY").unwrap_or_default(),
+            // Defaults to the Spot testnet: production must be chosen explicitly
+            // (and confirmed with TRADING_LIVE=true, see Config::validate_live_trading_gate).
             base_url: env::var("BINANCE_BASE_URL")
-                .unwrap_or_else(|_| "https://api.binance.com".to_string()),
+                .unwrap_or_else(|_| "https://testnet.binance.vision".to_string()),
             ws_url: env::var("BINANCE_WS_URL")
-                .unwrap_or_else(|_| "wss://stream.binance.com:9443".to_string()),
+                .unwrap_or_else(|_| "wss://stream.testnet.binance.vision".to_string()),
         }
     }
 }
@@ -109,7 +111,12 @@ mod tests {
     #[test]
     fn test_binance_config_defaults() {
         let config = BinanceConfig::from_env();
-        assert!(config.base_url.contains("binance.com"));
+        if std::env::var("BINANCE_BASE_URL").is_err() {
+            assert!(config.base_url.contains("testnet"));
+        }
+        if std::env::var("BINANCE_WS_URL").is_err() {
+            assert!(config.ws_url.contains("testnet"));
+        }
     }
 
     #[test]

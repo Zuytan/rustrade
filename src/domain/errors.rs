@@ -17,6 +17,17 @@ pub enum TradingError {
     ExecutionFailed { reason: String },
 }
 
+/// The broker may or may not have accepted an order (timeout, 5xx, unconfirmed lookup).
+///
+/// The order must stay `Pending` and be resolved by reconciliation: marking it `Rejected`
+/// could leave a live order untracked, and resubmitting it could double the position.
+#[derive(Debug, Error)]
+#[error("Order {client_order_id} submission outcome unknown: {reason}")]
+pub struct OrderSubmissionUnknown {
+    pub client_order_id: String,
+    pub reason: String,
+}
+
 /// Errors related to risk management violations
 #[derive(Debug, Error)]
 pub enum RiskViolation {

@@ -1,3 +1,4 @@
+use crate::application::monitoring::agent_status::HealthStatus;
 use crate::application::monitoring::connection_health_service::{
     ConnectionHealthService, ConnectionStatus,
 };
@@ -5,16 +6,25 @@ use crate::application::risk_management::{
     order_monitor::{MonitorAction, OrderMonitor},
     order_retry_strategy::RetryConfig,
 };
+use crate::domain::errors::OrderSubmissionUnknown;
 use crate::domain::ports::ExecutionService;
 use crate::domain::repositories::TradeRepository;
 use crate::domain::trading::fee_model::FeeModel;
 use crate::domain::trading::portfolio::{Portfolio, Position};
-use crate::domain::trading::types::{Order, OrderSide};
+use crate::domain::trading::types::{Order, OrderSide, OrderStatus};
 use anyhow::Result;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info, instrument, warn};
+
+/// A pending order the broker does not know is only rejected after this age (ms),
+/// since a just-submitted order may not be visible at the broker yet.
+const RECONCILE_GRACE_MS: i64 = 30_000;
+/// First delay before retrying a failed reconciliation (doubled up to the max).
+const RECONCILE_INITIAL_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5);
+const RECONCILE_MAX_BACKOFF: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Debug, Clone)]
 pub struct ActiveTrailingStop {
@@ -46,6 +56,9 @@ pub struct Executor {
     agent_registry: Arc<crate::application::monitoring::agent_status::AgentStatusRegistry>,
     candle_rx: Option<tokio::sync::broadcast::Receiver<crate::domain::trading::types::Candle>>,
     active_trailing_stops: Arc<RwLock<std::collections::HashMap<String, ActiveTrailingStop>>>,
+    /// False until pending orders have been reconciled with the broker.
+    /// While false, incoming orders are refused (fail-closed).
+    reconciled: AtomicBool,
 }
 
 impl Executor {
@@ -65,14 +78,46 @@ impl Executor {
             agent_registry: deps.agent_registry,
             candle_rx: deps.candle_rx,
             active_trailing_stops: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            reconciled: AtomicBool::new(false),
+        }
+    }
+
+    fn is_reconciled(&self) -> bool {
+        self.reconciled.load(Ordering::SeqCst)
+    }
+
+    /// Runs a reconciliation pass and records whether it fully succeeded.
+    async fn try_reconcile(&self) -> bool {
+        match self.reconcile_pending().await {
+            Ok(_) => {
+                if !self.is_reconciled() {
+                    info!("Executor: Reconciliation complete. Order processing enabled.");
+                }
+                self.reconciled.store(true, Ordering::SeqCst);
+                true
+            }
+            Err(e) => {
+                error!(
+                    "Executor: Reconciliation failed: {}. Incoming orders are refused until it succeeds.",
+                    e
+                );
+                self.reconciled.store(false, Ordering::SeqCst);
+                self.health_service
+                    .set_execution_status(
+                        ConnectionStatus::Offline,
+                        Some(format!("Order reconciliation failed: {}", e)),
+                    )
+                    .await;
+                false
+            }
         }
     }
 
     pub async fn run(&mut self) {
         info!("Executor started. Running startup reconciliation...");
-        if let Err(e) = self.reconcile_on_startup().await {
-            error!("Executor: Startup reconciliation failed: {}", e);
-        }
+        self.try_reconcile().await;
+        let mut reconcile_backoff = RECONCILE_INITIAL_BACKOFF;
+        let mut next_reconcile_retry = tokio::time::Instant::now() + reconcile_backoff;
 
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(5));
@@ -80,10 +125,7 @@ impl Executor {
 
         // Initial Heartbeat
         self.agent_registry
-            .update_heartbeat(
-                "Executor",
-                crate::application::monitoring::agent_status::HealthStatus::Healthy,
-            )
+            .update_heartbeat("Executor", self.heartbeat_status())
             .await;
 
         loop {
@@ -104,14 +146,32 @@ impl Executor {
                     self.check_timeouts().await;
                 }
                 _ = heartbeat_interval.tick() => {
+                    if self.is_reconciled() {
+                        // Periodic pass: resolves orders left Pending by ambiguous submissions.
+                        if let Err(e) = self.reconcile_pending().await {
+                            warn!("Executor: Periodic reconciliation incomplete: {}", e);
+                        }
+                    } else if tokio::time::Instant::now() >= next_reconcile_retry {
+                        if self.try_reconcile().await {
+                            reconcile_backoff = RECONCILE_INITIAL_BACKOFF;
+                        } else {
+                            reconcile_backoff = (reconcile_backoff * 2).min(RECONCILE_MAX_BACKOFF);
+                            next_reconcile_retry = tokio::time::Instant::now() + reconcile_backoff;
+                        }
+                    }
                     self.agent_registry
-                        .update_heartbeat(
-                            "Executor",
-                            crate::application::monitoring::agent_status::HealthStatus::Healthy,
-                        )
+                        .update_heartbeat("Executor", self.heartbeat_status())
                         .await;
                 }
             }
+        }
+    }
+
+    fn heartbeat_status(&self) -> HealthStatus {
+        if self.is_reconciled() {
+            HealthStatus::Healthy
+        } else {
+            HealthStatus::Degraded
         }
     }
 
@@ -121,6 +181,31 @@ impl Executor {
             "Executor: Processing Order {}. Symbol: {}, Qty: {}, correlation_id: {:?}",
             order.id, order.symbol, order.quantity, order.correlation_id
         );
+
+        // Fail-closed: never open new exposure while the broker state of pending orders is
+        // unknown. Sells are let through: they reduce risk (exits, stop-losses), and the
+        // broker rejects selling a position that does not exist.
+        if !self.is_reconciled() && order.side == OrderSide::Sell {
+            warn!(
+                "Executor: Processing exit order {} for {} although pending orders are not reconciled.",
+                order.id, order.symbol
+            );
+        } else if !self.is_reconciled() {
+            error!(
+                "Executor: REFUSING order {} for {}: pending orders are not reconciled with the broker.",
+                order.id, order.symbol
+            );
+            if let Some(repo) = &self.repository {
+                order.status = OrderStatus::Rejected;
+                if let Err(e) = repo.save(&order).await {
+                    error!(
+                        "Executor: Failed to persist refused order {}: {}",
+                        order.id, e
+                    );
+                }
+            }
+            return;
+        }
 
         // Cancel trailing stops on Sell order exit
         if order.side == OrderSide::Sell {
@@ -180,7 +265,12 @@ impl Executor {
                 if let Some(repo) = &self.repository {
                     let mut submitted_order = order.clone();
                     submitted_order.status = crate::domain::trading::types::OrderStatus::New;
-                    let _ = repo.save(&submitted_order).await;
+                    if let Err(e) = repo.save(&submitted_order).await {
+                        error!(
+                            "Executor: Failed to persist submitted order {} as New: {}",
+                            order.id, e
+                        );
+                    }
                 }
 
                 // Broadcast Online if it was offline
@@ -241,6 +331,26 @@ impl Executor {
                     }
                 }
             }
+            Err(e) if e.downcast_ref::<OrderSubmissionUnknown>().is_some() => {
+                // The order may be live at the broker: keep it Pending for reconciliation,
+                // and do not touch the portfolio until its outcome is known.
+                error!(
+                    "Executor: Order {} for {} has an UNKNOWN outcome at the broker: {}. Kept Pending for reconciliation.",
+                    order.id, order.symbol, e
+                );
+                if order.side == OrderSide::Buy && order.stop_loss.is_some() {
+                    error!(
+                        "Executor: No trailing stop placed for {} (order {}): if this order fills, the position is unprotected.",
+                        order.symbol, order.id
+                    );
+                }
+                self.health_service
+                    .set_execution_status(
+                        ConnectionStatus::Offline,
+                        Some(format!("Order outcome unknown: {}", e)),
+                    )
+                    .await;
+            }
             Err(e) => {
                 error!("Executor: Execution failed for {}: {}", order.id, e);
                 self.health_service
@@ -254,7 +364,12 @@ impl Executor {
                 if let Some(repo) = &self.repository {
                     let mut rejected_order = order;
                     rejected_order.status = crate::domain::trading::types::OrderStatus::Rejected;
-                    let _ = repo.save(&rejected_order).await;
+                    if let Err(save_err) = repo.save(&rejected_order).await {
+                        error!(
+                            "Executor: Failed to persist rejected order {}: {}",
+                            rejected_order.id, save_err
+                        );
+                    }
                 }
             }
         }
@@ -338,58 +453,89 @@ impl Executor {
         }
     }
 
-    /// Startup task to sync locally pending orders with exchange state
+    /// Syncs locally Pending orders with the broker, looking each one up by client order id.
+    ///
+    /// - Found → its broker status is persisted.
+    /// - Confirmed absent and older than `RECONCILE_GRACE_MS` → Rejected.
+    /// - Confirmed absent but younger → left Pending (may not be visible yet).
+    /// - Lookup failure → left Pending; the first error is returned after all orders
+    ///   have been tried. Persistence failures are returned too.
+    ///
+    /// Returns the number of orders whose status was resolved.
     #[instrument(skip(self))]
-    async fn reconcile_on_startup(&self) -> Result<()> {
+    async fn reconcile_pending(&self) -> Result<usize> {
         let repo = match &self.repository {
             Some(r) => r,
-            None => return Ok(()),
+            None => return Ok(0),
         };
 
-        // 1. Fetch locally pending orders
-        let local_pending = repo
-            .find_by_status(crate::domain::trading::types::OrderStatus::Pending)
-            .await?;
+        let local_pending = repo.find_by_status(OrderStatus::Pending).await?;
         if local_pending.is_empty() {
-            info!("Executor: No pending orders to reconcile.");
-            return Ok(());
+            return Ok(0);
         }
 
         info!(
             "Executor: Found {} pending orders. Synchronizing with exchange...",
-            local_pending.is_empty()
+            local_pending.len()
         );
 
-        // 2. Fetch exchange orders (Open and Today's)
-        let open_orders = self.execution_service.get_open_orders().await?;
-        let today_orders = self.execution_service.get_today_orders().await?;
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let mut resolved = 0;
+        let mut first_error: Option<anyhow::Error> = None;
 
-        // 3. Reconcile
         for mut order in local_pending {
-            // Check if order ID exists in any exchange list
-            let on_exchange = open_orders.iter().any(|o| o.id == order.id)
-                || today_orders.iter().any(|o| o.id == order.id);
-
-            if on_exchange {
-                info!(
-                    "Executor: Order {} found on exchange. Marking as 'New' (confirmed).",
-                    order.id
-                );
-                order.status = crate::domain::trading::types::OrderStatus::New;
-                let _ = repo.save(&order).await;
-            } else {
-                // Not found: assumed never reached the exchange
-                warn!(
-                    "Executor: Pending order {} NOT found on exchange. Marking as 'Rejected' (failed safety).",
-                    order.id
-                );
-                order.status = crate::domain::trading::types::OrderStatus::Rejected;
-                let _ = repo.save(&order).await;
+            match self
+                .execution_service
+                .find_order_status(&order.id, &order.symbol)
+                .await
+            {
+                Ok(Some(status)) => {
+                    info!(
+                        "Executor: Pending order {} found at broker with status {:?}.",
+                        order.id, status
+                    );
+                    if status == OrderStatus::Filled || status == OrderStatus::PartiallyFilled {
+                        // Portfolio comes from the broker; the local optimistic update was skipped.
+                        warn!(
+                            "Executor: Order {} for {} was {:?} while its outcome was unknown. No trailing stop was placed.",
+                            order.id, order.symbol, status
+                        );
+                    }
+                    order.status = status;
+                    repo.save(&order).await?;
+                    resolved += 1;
+                }
+                Ok(None) if now_ms - order.timestamp >= RECONCILE_GRACE_MS => {
+                    warn!(
+                        "Executor: Pending order {} NOT found at broker. Marking as Rejected.",
+                        order.id
+                    );
+                    order.status = OrderStatus::Rejected;
+                    repo.save(&order).await?;
+                    resolved += 1;
+                }
+                Ok(None) => {
+                    info!(
+                        "Executor: Pending order {} not visible at broker yet. Retrying later.",
+                        order.id
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Executor: Could not look up pending order {}: {}",
+                        order.id, e
+                    );
+                    if first_error.is_none() {
+                        first_error = Some(e.context(format!("lookup of order {}", order.id)));
+                    }
+                }
             }
         }
 
-        info!("Executor: Startup reconciliation complete.");
-        Ok(())
+        match first_error {
+            Some(e) => Err(e),
+            None => Ok(resolved),
+        }
     }
 
     #[instrument(skip(self, order), fields(symbol = %order.symbol, side = ?order.side))]
@@ -775,5 +921,313 @@ mod tests {
             crate::domain::trading::types::OrderType::Stop
         );
         assert_eq!(execs[2].price, Decimal::from(100)); // 110 - 10 trailing distance
+    }
+
+    // ===== Reconciliation & ambiguous submission tests =====
+
+    use crate::domain::errors::OrderSubmissionUnknown;
+    use crate::domain::trading::types::OrderStatus;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Repository that upserts by order id (like the SQLite repository).
+    #[derive(Default)]
+    struct UpsertRepo {
+        orders: Mutex<HashMap<String, Order>>,
+        fail_saves: AtomicBool,
+    }
+
+    impl UpsertRepo {
+        fn with_orders(orders: Vec<Order>) -> Self {
+            let repo = Self::default();
+            for o in orders {
+                repo.orders
+                    .lock()
+                    .expect("repo lock")
+                    .insert(o.id.clone(), o);
+            }
+            repo
+        }
+
+        fn status_of(&self, id: &str) -> Option<OrderStatus> {
+            self.orders
+                .lock()
+                .expect("repo lock")
+                .get(id)
+                .map(|o| o.status)
+        }
+    }
+
+    #[async_trait]
+    impl TradeRepository for UpsertRepo {
+        async fn save(&self, trade: &Order) -> Result<()> {
+            if self.fail_saves.load(Ordering::SeqCst) {
+                anyhow::bail!("disk full");
+            }
+            self.orders
+                .lock()
+                .expect("repo lock")
+                .insert(trade.id.clone(), trade.clone());
+            Ok(())
+        }
+        async fn find_by_symbol(&self, symbol: &str) -> Result<Vec<Order>> {
+            let orders = self.orders.lock().expect("repo lock");
+            Ok(orders
+                .values()
+                .filter(|o| o.symbol == symbol)
+                .cloned()
+                .collect())
+        }
+        async fn find_by_status(&self, status: OrderStatus) -> Result<Vec<Order>> {
+            let orders = self.orders.lock().expect("repo lock");
+            Ok(orders
+                .values()
+                .filter(|o| o.status == status)
+                .cloned()
+                .collect())
+        }
+        async fn find_recent(&self, _limit: usize) -> Result<Vec<Order>> {
+            self.get_all().await
+        }
+        async fn get_all(&self) -> Result<Vec<Order>> {
+            Ok(self
+                .orders
+                .lock()
+                .expect("repo lock")
+                .values()
+                .cloned()
+                .collect())
+        }
+        async fn count(&self) -> Result<usize> {
+            Ok(self.orders.lock().expect("repo lock").len())
+        }
+    }
+
+    type Lookup = fn(&str) -> Result<Option<OrderStatus>>;
+
+    /// Execution service with scripted `execute` and `find_order_status` behavior.
+    struct ScriptedExecService {
+        execute_unknown: bool,
+        lookup: Lookup,
+        execute_calls: AtomicUsize,
+    }
+
+    impl ScriptedExecService {
+        fn new(execute_unknown: bool, lookup: Lookup) -> Self {
+            Self {
+                execute_unknown,
+                lookup,
+                execute_calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl ExecutionService for ScriptedExecService {
+        async fn execute(&self, order: &Order) -> Result<()> {
+            self.execute_calls.fetch_add(1, Ordering::SeqCst);
+            if self.execute_unknown {
+                return Err(OrderSubmissionUnknown {
+                    client_order_id: order.id.clone(),
+                    reason: "timeout".to_string(),
+                }
+                .into());
+            }
+            Ok(())
+        }
+        async fn get_portfolio(&self) -> Result<Portfolio> {
+            Ok(Portfolio::new())
+        }
+        async fn get_today_orders(&self) -> Result<Vec<Order>> {
+            anyhow::bail!("reconciliation must not rely on today's orders")
+        }
+        async fn get_open_orders(&self) -> Result<Vec<Order>> {
+            anyhow::bail!("reconciliation must not rely on open orders")
+        }
+        async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn cancel_all_orders(&self) -> Result<()> {
+            Ok(())
+        }
+        async fn subscribe_order_updates(
+            &self,
+        ) -> Result<tokio::sync::broadcast::Receiver<OrderUpdate>> {
+            let (_tx, rx) = tokio::sync::broadcast::channel(1);
+            Ok(rx)
+        }
+        async fn find_order_status(
+            &self,
+            client_order_id: &str,
+            _symbol: &str,
+        ) -> Result<Option<OrderStatus>> {
+            (self.lookup)(client_order_id)
+        }
+    }
+
+    fn pending_order(id: &str, timestamp_ms: i64) -> Order {
+        Order {
+            id: id.to_string(),
+            symbol: "ABC".to_string(),
+            side: OrderSide::Buy,
+            price: Decimal::from(100),
+            quantity: Decimal::from(2),
+            order_type: crate::domain::trading::types::OrderType::Limit,
+            status: OrderStatus::Pending,
+            timestamp: timestamp_ms,
+            correlation_id: None,
+            stop_loss: None,
+        }
+    }
+
+    fn executor_with(
+        exec: Arc<ScriptedExecService>,
+        repo: Arc<UpsertRepo>,
+        portfolio: Arc<RwLock<Portfolio>>,
+    ) -> (Executor, mpsc::Sender<Order>) {
+        let (tx, rx) = mpsc::channel(10);
+        let executor = Executor::new(
+            rx,
+            portfolio,
+            ExecutorDependencies {
+                execution_service: exec,
+                repository: Some(repo),
+                retry_config: RetryConfig::default(),
+                health_service: Arc::new(ConnectionHealthService::new()),
+                fee_model: Arc::new(ConstantFeeModel::new(Decimal::ZERO, Decimal::ZERO)),
+                agent_registry: Arc::new(
+                    crate::application::monitoring::agent_status::AgentStatusRegistry::new(
+                        crate::infrastructure::observability::Metrics::new().expect("metrics"),
+                    ),
+                ),
+                candle_rx: None,
+            },
+        );
+        (executor, tx)
+    }
+
+    fn old_ts() -> i64 {
+        chrono::Utc::now().timestamp_millis() - 10 * RECONCILE_GRACE_MS
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_applies_broker_status_and_rejects_missing_old_orders() {
+        let repo = Arc::new(UpsertRepo::with_orders(vec![
+            pending_order("filled", old_ts()),
+            pending_order("missing", old_ts()),
+        ]));
+        let exec = Arc::new(ScriptedExecService::new(false, |id| match id {
+            "filled" => Ok(Some(OrderStatus::Filled)),
+            _ => Ok(None),
+        }));
+        let (executor, _tx) =
+            executor_with(exec, repo.clone(), Arc::new(RwLock::new(Portfolio::new())));
+
+        let resolved = executor.reconcile_pending().await.expect("reconcile ok");
+        assert_eq!(resolved, 2);
+        assert_eq!(repo.status_of("filled"), Some(OrderStatus::Filled));
+        assert_eq!(repo.status_of("missing"), Some(OrderStatus::Rejected));
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_keeps_young_missing_order_pending() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let repo = Arc::new(UpsertRepo::with_orders(vec![pending_order("young", now)]));
+        let exec = Arc::new(ScriptedExecService::new(false, |_| Ok(None)));
+        let (executor, _tx) =
+            executor_with(exec, repo.clone(), Arc::new(RwLock::new(Portfolio::new())));
+
+        let resolved = executor.reconcile_pending().await.expect("reconcile ok");
+        assert_eq!(resolved, 0);
+        assert_eq!(repo.status_of("young"), Some(OrderStatus::Pending));
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_lookup_failure_keeps_order_pending_and_errors() {
+        let repo = Arc::new(UpsertRepo::with_orders(vec![
+            pending_order("unreachable", old_ts()),
+            pending_order("filled", old_ts()),
+        ]));
+        let exec = Arc::new(ScriptedExecService::new(false, |id| match id {
+            "filled" => Ok(Some(OrderStatus::Filled)),
+            _ => anyhow::bail!("broker unreachable"),
+        }));
+        let (executor, _tx) =
+            executor_with(exec, repo.clone(), Arc::new(RwLock::new(Portfolio::new())));
+
+        assert!(executor.reconcile_pending().await.is_err());
+        assert_eq!(repo.status_of("unreachable"), Some(OrderStatus::Pending));
+        // Other orders are still reconciled.
+        assert_eq!(repo.status_of("filled"), Some(OrderStatus::Filled));
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_propagates_save_failure() {
+        let repo = Arc::new(UpsertRepo::with_orders(vec![pending_order("o1", old_ts())]));
+        repo.fail_saves.store(true, Ordering::SeqCst);
+        let exec = Arc::new(ScriptedExecService::new(false, |_| {
+            Ok(Some(OrderStatus::Filled))
+        }));
+        let (executor, _tx) = executor_with(exec, repo, Arc::new(RwLock::new(Portfolio::new())));
+
+        assert!(executor.reconcile_pending().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_orders_refused_until_reconciled() {
+        let repo = Arc::new(UpsertRepo::with_orders(vec![pending_order(
+            "stuck",
+            old_ts(),
+        )]));
+        let exec = Arc::new(ScriptedExecService::new(false, |id| match id {
+            "stuck" => anyhow::bail!("broker unreachable"),
+            _ => Ok(None),
+        }));
+        let portfolio = Arc::new(RwLock::new(Portfolio::new()));
+        let (mut executor, tx) = executor_with(exec.clone(), repo.clone(), portfolio);
+        tokio::spawn(async move { executor.run().await });
+
+        let mut order = pending_order("new_order", 0);
+        order.status = OrderStatus::New;
+        tx.send(order).await.expect("send order");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(exec.execute_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(repo.status_of("new_order"), Some(OrderStatus::Rejected));
+        assert_eq!(repo.status_of("stuck"), Some(OrderStatus::Pending));
+
+        // Exits stay possible: a Sell is executed even while unreconciled.
+        let mut exit = pending_order("exit_order", chrono::Utc::now().timestamp_millis());
+        exit.side = OrderSide::Sell;
+        exit.status = OrderStatus::New;
+        tx.send(exit).await.expect("send exit");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(exec.execute_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.status_of("exit_order"), Some(OrderStatus::New));
+    }
+
+    #[tokio::test]
+    async fn test_unknown_submission_keeps_order_pending_and_portfolio_unchanged() {
+        let repo = Arc::new(UpsertRepo::default());
+        let exec = Arc::new(ScriptedExecService::new(true, |_| Ok(None)));
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(1000);
+        let portfolio = Arc::new(RwLock::new(port));
+        let (mut executor, tx) = executor_with(exec.clone(), repo.clone(), portfolio.clone());
+        tokio::spawn(async move { executor.run().await });
+
+        // Fresh timestamp: within the grace period, the periodic pass must not reject it.
+        let mut order = pending_order("ambiguous", chrono::Utc::now().timestamp_millis());
+        order.status = OrderStatus::New;
+        tx.send(order).await.expect("send order");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(exec.execute_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.status_of("ambiguous"), Some(OrderStatus::Pending));
+        let p = portfolio.read().await;
+        assert_eq!(p.cash, Decimal::from(1000));
+        assert!(!p.positions.contains_key("ABC"));
     }
 }

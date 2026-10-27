@@ -6,7 +6,10 @@ use std::time::Duration;
 pub struct HttpClientFactory;
 
 impl HttpClientFactory {
-    /// Creates a new HTTP client with retry middleware
+    /// Creates a new HTTP client with retry middleware.
+    ///
+    /// Only for idempotent requests (GET, DELETE). Never use it to submit orders:
+    /// a retried POST after a timeout can place the same order twice.
     pub fn create_client() -> ClientWithMiddleware {
         // Retry policy:
         // - Exponential backoff
@@ -14,16 +17,26 @@ impl HttpClientFactory {
         // - Base delay 500ms
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
 
-        let client = Client::builder()
+        ClientBuilder::new(Self::base_client())
+            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .build()
+    }
+
+    /// Creates an HTTP client without automatic retries, for order submission.
+    ///
+    /// Ambiguous failures (timeouts, 5xx) must be resolved by looking the order up,
+    /// never by resending it.
+    pub fn create_write_client() -> ClientWithMiddleware {
+        ClientBuilder::new(Self::base_client()).build()
+    }
+
+    fn base_client() -> Client {
+        Client::builder()
             .pool_max_idle_per_host(5)
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .build()
-            .unwrap_or_else(|_| Client::new());
-
-        ClientBuilder::new(client)
-            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build()
+            .unwrap_or_else(|_| Client::new())
     }
 }
 

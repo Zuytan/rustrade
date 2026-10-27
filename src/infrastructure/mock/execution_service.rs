@@ -287,6 +287,19 @@ impl ExecutionService for MockExecutionService {
         Ok(vec![])
     }
 
+    async fn find_order_status(
+        &self,
+        client_order_id: &str,
+        _symbol: &str,
+    ) -> Result<Option<OrderStatus>> {
+        // Orders are recorded only once fully executed by the simulation.
+        let orders = self.orders.read().await;
+        Ok(orders
+            .iter()
+            .any(|o| o.id == client_order_id)
+            .then_some(OrderStatus::Filled))
+    }
+
     async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
         Ok(())
     }

@@ -23,7 +23,9 @@ The application operates as a mesh of autonomous agents communicating via high-p
 
 ### Resilience & Safety
 - **State Persistence ("No Amnesia")**: Critical state is persisted to SQLite.
-- **Production Live Safety Gate**: Enforces a strict guard preventing live trading with real money unless `TRADING_LIVE=true` is explicitly set in environment variables when connecting to Alpaca's production API.
+- **Production Live Safety Gate**: Refuses to start against any production broker endpoint (Alpaca, Binance, OANDA) unless `TRADING_LIVE=true` is explicitly set. Fail-closed: any URL without the broker's sandbox marker (`paper-api`, `testnet`, `fxpractice`) is treated as production. Binance defaults to the Spot testnet.
+- **Idempotent Order Submission**: Order POSTs are never retried automatically. A timeout, 5xx or duplicate-id rejection is resolved by looking the order up by client order id (`ExecutionService::find_order_status`); if still unresolved, the order stays `Pending` (`OrderSubmissionUnknown`) instead of being marked `Rejected`.
+- **Fail-Closed Order Reconciliation**: The Executor reconciles every `Pending` order with the broker at startup and every heartbeat (30s grace before rejecting an order the broker does not know). Until reconciliation succeeds, new Buy orders are refused; exits (Sells) are still processed.
 - **Circuit Breakers**:
   - **Global**: Halts trading on Daily Loss/Drawdown breach.
   - **Alerting Integration**: Supports notifying external channels (e.g. Discord, Slack) via an asynchronous HTTP POST request using `ALERT_WEBHOOK_URL` when a circuit breaker triggers.
