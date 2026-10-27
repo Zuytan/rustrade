@@ -573,19 +573,18 @@ impl Analyst {
         };
 
         // Get latest price
-        let price = context
+        let Some(price) = context
             .candle_history
             .back()
             .map(|c| c.close)
-            .unwrap_or(Decimal::ZERO);
-
-        if price == Decimal::ZERO {
+            .filter(|p| *p > Decimal::ZERO)
+        else {
             warn!(
                 "Analyst: No price data for {}. Cannot process news.",
                 signal.symbol
             );
             return;
-        }
+        };
 
         // Update the continuous sentiment tracker (Alternative Data)
         use rust_decimal::prelude::FromPrimitive;

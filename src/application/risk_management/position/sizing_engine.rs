@@ -1,7 +1,7 @@
 use rust_decimal::Decimal;
 
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::application::market_data::spread_cache::SpreadCache;
 use crate::application::monitoring::cost_evaluator::CostEvaluator;
@@ -41,7 +41,7 @@ impl KellyStats {
         let one_p = Decimal::ONE - p;
         let loss_as_positive = self.avg_loss.abs();
         let numerator = p * self.avg_win - one_p * loss_as_positive;
-        let f_star = numerator.checked_div(self.avg_win).unwrap_or(Decimal::ZERO);
+        let f_star = numerator.checked_div(self.avg_win)?;
         if f_star <= Decimal::ZERO {
             return None;
         }
@@ -132,7 +132,14 @@ impl SizingEngine {
 
         // Apply slippage adjustment
         if let Some(spread_pct_f64) = self.spread_cache.get_spread_pct(symbol) {
-            let spread_pct = Decimal::from_f64_retain(spread_pct_f64).unwrap_or(Decimal::ZERO);
+            // A non-finite spread is unusable: size as if the spread were very wide.
+            let spread_pct = Decimal::from_f64_retain(spread_pct_f64).unwrap_or_else(|| {
+                warn!(
+                    "SizingEngine: Invalid spread {} for {}, applying maximum slippage reduction",
+                    spread_pct_f64, symbol
+                );
+                Decimal::ONE
+            });
             // Reduce size if spread is wide (>20 bps = 0.002 = 0.2%)
             if spread_pct > dec!(0.002) {
                 let slippage_multiplier = dec!(0.002)
@@ -204,7 +211,13 @@ impl SizingEngine {
 
         // 1b. Deduct estimated transaction costs when CostEvaluator is available
         if let Some(ref evaluator) = self.cost_evaluator {
-            let qty_est = target_amt.checked_div(price).unwrap_or(Decimal::ZERO);
+            let Some(qty_est) = target_amt.checked_div(price) else {
+                warn!(
+                    "SizingEngine: Cannot estimate quantity for {} (${} / ${}), skipping trade",
+                    symbol, target_amt, price
+                );
+                return Decimal::ZERO;
+            };
             let proposal = TradeProposal {
                 symbol: symbol.to_string(),
                 side: OrderSide::Buy,
@@ -272,10 +285,13 @@ impl SizingEngine {
         }
 
         // 4. Convert to Shares (checked_div avoids overflow for tiny price)
-        let quantity = target_amt
-            .checked_div(price)
-            .map(|q| q.round_dp(4))
-            .unwrap_or(Decimal::ZERO);
+        let Some(quantity) = target_amt.checked_div(price).map(|q| q.round_dp(4)) else {
+            warn!(
+                "SizingEngine: Cannot convert ${} at ${} into a quantity for {}, skipping trade",
+                target_amt, price, symbol
+            );
+            return Decimal::ZERO;
+        };
         let quantity = apply_halt_multiplier(quantity, halt_level);
         let quantity = apply_regime_multiplier(quantity, regime);
 

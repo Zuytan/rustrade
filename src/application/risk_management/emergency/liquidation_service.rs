@@ -71,11 +71,16 @@ impl LiquidationService {
 
         // Pre-fetch REST prices as fallback for all positions
         let symbols: Vec<String> = snapshot.portfolio.positions.keys().cloned().collect();
-        let fallback_prices = self
-            .market_service
-            .get_prices(symbols)
-            .await
-            .unwrap_or_default();
+        let fallback_prices = match self.market_service.get_prices(symbols).await {
+            Ok(prices) => prices,
+            Err(e) => {
+                warn!(
+                    "LiquidationService: REST price fallback failed ({}). Positions without a live price will be liquidated at market.",
+                    e
+                );
+                std::collections::HashMap::new()
+            }
+        };
 
         for (symbol, position) in &snapshot.portfolio.positions {
             if position.quantity > Decimal::ZERO {
@@ -85,12 +90,12 @@ impl LiquidationService {
                 // Use input price, or fallback to REST price
                 let current_price = current_prices
                     .get(symbol)
-                    .cloned()
-                    .or_else(|| fallback_prices.get(symbol).cloned())
-                    .unwrap_or(Decimal::ZERO);
+                    .or_else(|| fallback_prices.get(symbol))
+                    .copied()
+                    .filter(|p| *p > Decimal::ZERO);
 
-                // Panic mode (Blind Liquidation) if no price or price is zero
-                let panic_mode = current_price <= Decimal::ZERO;
+                // Panic mode (Blind Liquidation) if no usable price
+                let panic_mode = current_price.is_none();
 
                 if panic_mode {
                     warn!(

@@ -70,9 +70,10 @@ impl ArbitrageEngine {
                 return None;
             }
 
-            // Calculate fees
-            let buy_fee_pct = fees.get(buy_ex).copied().unwrap_or(Decimal::ZERO);
-            let sell_fee_pct = fees.get(sell_ex).copied().unwrap_or(Decimal::ZERO);
+            // Calculate fees. An unknown fee is never assumed to be zero: it would
+            // turn ordinary spreads into fake opportunities.
+            let buy_fee_pct = fees.get(buy_ex).copied()?;
+            let sell_fee_pct = fees.get(sell_ex).copied()?;
 
             let buy_fee = buy_price * buy_fee_pct;
             let sell_fee = sell_price * sell_fee_pct;
@@ -143,5 +144,24 @@ mod tests {
 
         let opp = engine.check_opportunity("BTC/USD", &prices, &fees);
         assert!(opp.is_none());
+    }
+
+    #[test]
+    fn test_arbitrage_unknown_fee_is_not_an_opportunity() {
+        // A wide spread with an unknown fee on one leg must not be assumed free.
+        let engine = ArbitrageEngine::new(dec!(10));
+
+        let mut prices = HashMap::new();
+        prices.insert("Alpaca".to_string(), dec!(100));
+        prices.insert("Binance".to_string(), dec!(105));
+
+        let mut fees = HashMap::new();
+        fees.insert("Alpaca".to_string(), dec!(0.001));
+
+        assert!(
+            engine
+                .check_opportunity("BTC/USD", &prices, &fees)
+                .is_none()
+        );
     }
 }

@@ -154,7 +154,8 @@ pub fn check_trailing_stop(
     symbol: &str,
     current_price: Decimal,
 ) -> Option<crate::domain::trading::types::OrderSide> {
-    let atr_decimal = context.last_features.atr.unwrap_or(Decimal::ZERO);
+    // No ATR yet (warmup): the trailing stop cannot be evaluated.
+    let atr_decimal = context.last_features.atr?;
     let multiplier_decimal = context.config.strategy.trailing_stop_atr_multiplier;
 
     context.position_manager.check_trailing_stop(

@@ -49,13 +49,17 @@ impl CorrelationFilter {
                 continue;
             }
 
-            let corr = correlation_matrix
+            // A pair missing from the matrix has no measured correlation: it cannot
+            // breach the threshold, so it is skipped (not assumed to be 0).
+            let Some(corr) = correlation_matrix
                 .get(&(target_symbol.to_string(), existing_symbol.clone()))
                 .or_else(|| {
                     correlation_matrix.get(&(existing_symbol.clone(), target_symbol.to_string()))
                 })
-                .cloned()
-                .unwrap_or(Decimal::ZERO);
+                .copied()
+            else {
+                continue;
+            };
 
             if corr > config.max_correlation_threshold {
                 return Err(format!(

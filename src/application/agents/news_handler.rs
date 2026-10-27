@@ -52,27 +52,15 @@ impl NewsHandler {
         price: Decimal,
         timestamp: i64,
     ) -> NewsAction {
-        let sma_50 = context.last_features.sma_50.unwrap_or(Decimal::ZERO);
-        let rsi = context.last_features.rsi.unwrap_or(dec!(50.0));
+        let sma_50 = context.last_features.sma_50;
+        let rsi = context.last_features.rsi;
 
         info!(
-            "NewsHandler: Analyzing BULLISH news for {}. Price: {}, SMA50: {}, RSI: {}",
+            "NewsHandler: Analyzing BULLISH news for {}. Price: {}, SMA50: {:?}, RSI: {:?}",
             signal.symbol, price, sma_50, rsi
         );
 
-        // 1. Trend Filter: Avoid buying falling knives
-        if price < sma_50 {
-            let reason = format!("Price ({}) below SMA50 ({}) - Bearish Trend", price, sma_50);
-            warn!(
-                "NewsHandler: REJECTED Bullish News for {}. {}",
-                signal.symbol, reason
-            );
-            return NewsAction::Rejected(reason);
-        }
-
-        // 2. Overbought Filter: Avoid FOMO
-        if rsi > dec!(75.0) {
-            let reason = format!("RSI {} indicates Overbought", rsi);
+        if let Err(reason) = check_bullish_news_filters(price, sma_50, rsi) {
             warn!(
                 "NewsHandler: REJECTED Bullish News for {}. {}",
                 signal.symbol, reason
@@ -105,6 +93,38 @@ impl NewsHandler {
 
         NewsAction::NoAction
     }
+}
+
+/// Technical filters a bullish news signal must pass before buying.
+///
+/// Missing indicators (e.g. during warmup) reject the signal: a trend or overbought
+/// filter that cannot be evaluated must not pass.
+fn check_bullish_news_filters(
+    price: Decimal,
+    sma_50: Option<Decimal>,
+    rsi: Option<Decimal>,
+) -> Result<(), String> {
+    let (Some(sma_50), Some(rsi)) = (sma_50, rsi) else {
+        return Err(format!(
+            "Indicators not ready (SMA50: {:?}, RSI: {:?})",
+            sma_50, rsi
+        ));
+    };
+
+    // 1. Trend Filter: Avoid buying falling knives
+    if price < sma_50 {
+        return Err(format!(
+            "Price ({}) below SMA50 ({}) - Bearish Trend",
+            price, sma_50
+        ));
+    }
+
+    // 2. Overbought Filter: Avoid FOMO
+    if rsi > dec!(75.0) {
+        return Err(format!("RSI {} indicates Overbought", rsi));
+    }
+
+    Ok(())
 }
 
 /// Processes a bearish news signal for an existing position.
@@ -147,7 +167,7 @@ pub fn process_bearish_news(
     // If the position is winning (even slightly, > 0.5%), and math is ok,
     // but the continuous sentiment EMA is showing a negative trend (<-0.2),
     // we tighten the stop to lock in the gain before the price inevitably drops.
-    let sentiment_is_bearish = context.sentiment_ema.unwrap_or(Decimal::ZERO) < dec!(-0.2);
+    let sentiment_is_bearish = context.sentiment_ema.is_some_and(|ema| ema < dec!(-0.2));
 
     if pnl_pct > dec!(0.005) && sentiment_is_bearish {
         info!(
@@ -318,5 +338,23 @@ mod tests {
             }
             _ => panic!("Expected PanicSell action for losing position"),
         }
+    }
+
+    #[test]
+    fn test_bullish_filters_pass_in_uptrend() {
+        assert!(check_bullish_news_filters(dec!(110), Some(dec!(100)), Some(dec!(55))).is_ok());
+    }
+
+    #[test]
+    fn test_bullish_filters_reject_missing_indicators() {
+        // Without SMA50 the trend filter used to compare against 0 and always pass.
+        assert!(check_bullish_news_filters(dec!(110), None, Some(dec!(55))).is_err());
+        assert!(check_bullish_news_filters(dec!(110), Some(dec!(100)), None).is_err());
+    }
+
+    #[test]
+    fn test_bullish_filters_reject_downtrend_and_overbought() {
+        assert!(check_bullish_news_filters(dec!(90), Some(dec!(100)), Some(dec!(55))).is_err());
+        assert!(check_bullish_news_filters(dec!(110), Some(dec!(100)), Some(dec!(80))).is_err());
     }
 }

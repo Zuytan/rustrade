@@ -129,10 +129,10 @@ impl TradeEvaluator {
         proposal.order_type = order_type;
 
         // 4. Cost-Aware Trading Filter
-        let atr = context.last_features.atr.unwrap_or(Decimal::ZERO);
+        let atr = context.last_features.atr;
 
         info!(
-            "Analyst [{}]: Calculating Profit Expectancy - ATR={}, Multiplier={}, Quantity={}",
+            "Analyst [{}]: Calculating Profit Expectancy - ATR={:?}, Multiplier={}, Quantity={}",
             input.symbol, atr, context.config.strategy.profit_target_multiplier, proposal.quantity
         );
 
@@ -140,6 +140,23 @@ impl TradeEvaluator {
         let expected_profit = if expectancy.expected_value > Decimal::ZERO {
             expectancy.expected_value * proposal.quantity
         } else {
+            // Without ATR the expected profit is unknown: the trade cannot pass the
+            // profitability filter (it used to be evaluated as a zero profit).
+            let Some(atr) = atr else {
+                if proposal.side == crate::domain::trading::types::OrderSide::Sell {
+                    // Exits reduce risk: never block them for lack of a profit estimate.
+                    info!(
+                        "Analyst [{}]: No ATR available, exit proposal kept without profitability check.",
+                        input.symbol
+                    );
+                    return Some(proposal);
+                }
+                info!(
+                    "Analyst [{}]: No ATR available, cannot estimate expected profit. Skipping.",
+                    input.symbol
+                );
+                return None;
+            };
             self.trade_filter.calculate_expected_profit(
                 &proposal,
                 atr,

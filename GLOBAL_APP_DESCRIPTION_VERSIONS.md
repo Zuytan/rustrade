@@ -1,5 +1,23 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.30 - P1 Reliability: No Zero Defaults on the Risk & Execution Path (October 2026)
+
+### Risk Validation (fail-closed)
+- **Circuit Breaker Validator**: A daily-loss or drawdown check that cannot be computed now rejects the trade ("cannot be evaluated") instead of passing as a zero loss. Subtraction is checked, so extreme values no longer panic.
+- **Position Size Validator**: A buy with zero or negative equity is rejected (it was approved as an "edge case"), and an exposure ratio that overflows is rejected instead of passing as 0%.
+- **Arbitrage**: An unknown exchange fee is no longer assumed to be zero, which turned ordinary spreads into fake opportunities.
+
+### Signals & Sizing
+- **News Buys**: A bullish news signal is rejected while SMA50 or RSI are not ready. Previously the trend filter compared the price against 0 and always passed.
+- **Profit Filter**: Without ATR and without a positive expectancy, a buy proposal is skipped explicitly instead of being evaluated with a zero ATR; exit (sell) proposals are kept.
+- **Trailing Stops**: The check is skipped explicitly while ATR is not available (same behavior, no zero sentinel).
+- **Sizing Engine**: A non-finite spread now applies the maximum slippage reduction instead of none; quantity overflows skip the trade with a warning.
+
+### Data Quality
+- **True Range in Decimal**: The volatility True Range is computed in `Decimal` instead of `f64` with zero fallbacks.
+- **Liquidation**: The missing-price case is an explicit `Option` (panic mode = market order), and a failed REST price fallback is now logged.
+- **Out of scope**: UI chart conversions (`user_agent/metrics.rs`) and strategy OFI fields during warmup still use defaults; they do not feed risk decisions.
+
 ## Version 0.99.29 - P1 Reliability: Fail-Closed Circuit Breaker, Stops After Unknown Outcomes & Startup Errors (October 2026)
 
 ### Risk Management

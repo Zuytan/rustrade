@@ -191,7 +191,8 @@ impl CandlePipeline {
             return None;
         }
 
-        let atr_decimal = ctx.context.last_features.atr.unwrap_or(Decimal::ZERO);
+        // No ATR yet (warmup): the trailing stop cannot be evaluated.
+        let atr_decimal = ctx.context.last_features.atr?;
         let multiplier_decimal = ctx.context.config.strategy.trailing_stop_atr_multiplier;
 
         let signal_side = ctx.context.position_manager.check_trailing_stop(

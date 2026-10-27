@@ -30,7 +30,6 @@ use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, TradeProposal};
 use chrono::Utc;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -490,27 +489,21 @@ impl RiskManager {
 
                     // Calculate proper True Range (TR)
                     // TR = Max(H-L, |H-Cp|, |L-Cp|)
+                    // Computed in Decimal: no lossy f64 conversion, no zero fallback.
                     let last = &candles[candles.len() - 1];
-                    let prev_close = candles[candles.len() - 2]
-                        .close
-                        .to_f64()
-                        .unwrap_or_else(|| last.open.to_f64().unwrap_or(0.0));
+                    let prev_close = candles[candles.len() - 2].close;
 
-                    let high = last.high.to_f64().unwrap_or(0.0);
-                    let low = last.low.to_f64().unwrap_or(0.0);
+                    let tr = (last.high - last.low)
+                        .max((last.high - prev_close).abs())
+                        .max((last.low - prev_close).abs());
 
-                    let tr = (high - low)
-                        .max((high - prev_close).abs())
-                        .max((low - prev_close).abs());
-
-                    if tr > 0.0 {
+                    if tr > Decimal::ZERO {
                         let mut vm = volatility_manager.write().await;
-                        let tr_dec = Decimal::from_f64_retain(tr).unwrap_or(Decimal::ZERO);
-                        vm.update(tr_dec);
+                        vm.update(tr);
                         debug!(
                             "RiskManager: Volatility updated for {}. Latest TR: {}, Avg: {}",
                             benchmark_string,
-                            tr_dec,
+                            tr,
                             vm.get_average_volatility()
                         );
                     }

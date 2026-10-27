@@ -50,9 +50,17 @@ impl CircuitBreakerValidator {
     /// Check daily loss limit
     fn check_daily_loss(&self, ctx: &ValidationContext<'_>) -> Option<String> {
         if ctx.risk_state.session_start_equity > Decimal::ZERO {
-            let daily_loss_pct = (ctx.current_equity - ctx.risk_state.session_start_equity)
-                .checked_div(ctx.risk_state.session_start_equity)
-                .unwrap_or(Decimal::ZERO);
+            let Some(daily_loss_pct) = ctx
+                .current_equity
+                .checked_sub(ctx.risk_state.session_start_equity)
+                .and_then(|d| d.checked_div(ctx.risk_state.session_start_equity))
+            else {
+                // Fail-closed: a safety check that cannot be computed must not pass.
+                return Some(format!(
+                    "Daily loss cannot be evaluated [Start: {}, Current: {}]",
+                    ctx.risk_state.session_start_equity, ctx.current_equity
+                ));
+            };
 
             if daily_loss_pct < -self.config.max_daily_loss_pct {
                 return Some(format!(
@@ -70,9 +78,16 @@ impl CircuitBreakerValidator {
     /// Check drawdown limit from high water mark
     fn check_drawdown(&self, ctx: &ValidationContext<'_>) -> Option<String> {
         if ctx.risk_state.equity_high_water_mark > Decimal::ZERO {
-            let drawdown_pct = (ctx.current_equity - ctx.risk_state.equity_high_water_mark)
-                .checked_div(ctx.risk_state.equity_high_water_mark)
-                .unwrap_or(Decimal::ZERO);
+            let Some(drawdown_pct) = ctx
+                .current_equity
+                .checked_sub(ctx.risk_state.equity_high_water_mark)
+                .and_then(|d| d.checked_div(ctx.risk_state.equity_high_water_mark))
+            else {
+                return Some(format!(
+                    "Drawdown cannot be evaluated [High water mark: {}, Current: {}]",
+                    ctx.risk_state.equity_high_water_mark, ctx.current_equity
+                ));
+            };
 
             if drawdown_pct < -self.config.max_drawdown_pct {
                 return Some(format!(
@@ -413,5 +428,67 @@ mod tests {
                 .unwrap()
                 .contains("Daily loss limit breached")
         );
+    }
+
+    fn ctx_with<'a>(
+        proposal: &'a TradeProposal,
+        portfolio: &'a Portfolio,
+        prices: &'a HashMap<String, Decimal>,
+        risk_state: &'a RiskState,
+        current_equity: Decimal,
+    ) -> ValidationContext<'a> {
+        ValidationContext::new(
+            proposal,
+            portfolio,
+            current_equity,
+            prices,
+            risk_state,
+            None,
+            None,
+            None,
+            Decimal::ZERO,
+            dec!(1000000),
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_reject_when_daily_loss_cannot_be_computed() {
+        // Overflowing arithmetic must reject, not pass as a zero loss.
+        let validator = CircuitBreakerValidator::new(CircuitBreakerConfig::default());
+        let proposal = create_test_proposal();
+        let portfolio = Portfolio::new();
+        let prices = HashMap::new();
+        let risk_state = RiskState {
+            session_start_equity: dec!(0.0000000000000000000000000001),
+            equity_high_water_mark: Decimal::ZERO,
+            ..Default::default()
+        };
+
+        let ctx = ctx_with(&proposal, &portfolio, &prices, &risk_state, Decimal::MIN);
+        let result = validator.validate(&ctx).await;
+        assert!(result.is_rejected());
+        assert!(
+            result
+                .rejection_reason()
+                .expect("reason")
+                .contains("cannot be evaluated")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reject_when_drawdown_cannot_be_computed() {
+        let validator = CircuitBreakerValidator::new(CircuitBreakerConfig::default());
+        let proposal = create_test_proposal();
+        let portfolio = Portfolio::new();
+        let prices = HashMap::new();
+        let risk_state = RiskState {
+            session_start_equity: Decimal::ZERO,
+            equity_high_water_mark: dec!(0.0000000000000000000000000001),
+            ..Default::default()
+        };
+
+        let ctx = ctx_with(&proposal, &portfolio, &prices, &risk_state, Decimal::MIN);
+        assert!(validator.validate(&ctx).await.is_rejected());
     }
 }

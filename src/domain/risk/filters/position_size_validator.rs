@@ -84,9 +84,12 @@ impl RiskValidator for PositionSizeValidator {
             return ValidationResult::Approve;
         }
 
-        // Skip validation if equity is zero or negative (edge case)
+        // Fail-closed: without positive equity, no buy size can be validated.
         if ctx.current_equity <= Decimal::ZERO {
-            return ValidationResult::Approve;
+            return ValidationResult::Reject(format!(
+                "Position size cannot be validated: equity is {}",
+                ctx.current_equity
+            ));
         }
 
         // Calculate total exposure after this trade
@@ -101,9 +104,12 @@ impl RiskValidator for PositionSizeValidator {
         let adjusted_max_pct = self.calculate_adjusted_limit(ctx, ctx.proposal.side);
 
         // Calculate position percentage (checked_div avoids overflow for tiny equity)
-        let position_pct = total_exposure
-            .checked_div(ctx.current_equity)
-            .unwrap_or(Decimal::ZERO);
+        let Some(position_pct) = total_exposure.checked_div(ctx.current_equity) else {
+            return ValidationResult::Reject(format!(
+                "Position size cannot be validated: exposure {} over equity {} overflows",
+                total_exposure, ctx.current_equity
+            ));
+        };
 
         if position_pct > adjusted_max_pct {
             return ValidationResult::Reject(format!(
@@ -409,6 +415,36 @@ mod tests {
         // Total position: 0.1 (existing) + 0.15 (new) = 0.25 BTC
         // Total exposure: 0.25 * $50k = $12.5k = 12.5% of equity
         // 12.5% > 10% limit, so should be rejected
+        let result = validator.validate(&ctx).await;
+        assert!(result.is_rejected());
+    }
+
+    #[tokio::test]
+    async fn test_reject_buy_when_equity_is_zero() {
+        // Exposure over zero equity cannot be computed: must reject, not pass as 0%.
+        let validator = PositionSizeValidator::new(PositionSizeConfig {
+            max_position_size_pct: dec!(0.25),
+        });
+
+        let proposal = create_test_proposal("BTC/USD", OrderSide::Buy, dec!(50000), dec!(10));
+        let portfolio = Portfolio::new();
+        let prices = HashMap::new();
+        let risk_state = RiskState::default();
+
+        let ctx = ValidationContext::new(
+            &proposal,
+            &portfolio,
+            Decimal::ZERO,
+            &prices,
+            &risk_state,
+            None,
+            None,
+            None,
+            Decimal::ZERO,
+            dec!(100000),
+            None,
+        );
+
         let result = validator.validate(&ctx).await;
         assert!(result.is_rejected());
     }
