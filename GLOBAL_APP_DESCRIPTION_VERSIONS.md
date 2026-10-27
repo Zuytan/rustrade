@@ -1,5 +1,13 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.33 - P2 Maintainability: Executor & Risk Manager Split (October 2026)
+
+### Refactoring (no behavior change)
+- **Executor Module**: `src/application/agents/executor.rs` (1,393 lines) is now the `executor/` module: `mod.rs` (agent loop and order handling, 280 lines), `reconciliation.rs` (pending-order reconciliation and its metrics), `acceptance.rs` (accepted-order path and portfolio updates), `trailing_stops.rs` (stop updates per candle) and `tests.rs`.
+- **Risk Manager**: `risk_manager.rs` reduced from 806 to 482 lines (construction, accessors, main loop). Extracted `risk_manager/session.rs` (session initialization, daily reset, persistence), `risk_manager/valuation.rs` (valuation, volatility, circuit breaker check, order reconciliation, liquidation) and `risk_manager/alerts.rs` (webhook and notifications), next to the existing `handler.rs`.
+- **Verified as a pure move**: every code line of the original files is present unchanged in the new files (only imports, module headers and `pub(super)` visibility were added); the full test suite passes unchanged.
+- **Coverage Gate**: The executor minimum in `scripts/check_coverage.py` now targets the `executor/` directory.
+
 ## Version 0.99.32 - P2 Quality: CI Gates, Property Tests & WebSocket Chaos Tests (October 2026)
 
 ### CI

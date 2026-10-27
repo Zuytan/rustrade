@@ -21,7 +21,7 @@ MINIMUMS = {
     "src/domain/trading": 65.0,
     "src/application/risk_management": 72.0,
     "src/application/agents": 58.0,
-    "src/application/agents/executor.rs": 80.0,
+    "src/application/agents/executor": 80.0,
     "src/config": 78.0,
 }
 
