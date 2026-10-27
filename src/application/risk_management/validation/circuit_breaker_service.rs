@@ -35,6 +35,14 @@ impl HaltLevel {
     }
 }
 
+/// Formats a ratio as a percentage for messages, without panicking on overflow.
+fn as_percent(ratio: Decimal) -> String {
+    match ratio.checked_mul(dec!(100)) {
+        Some(pct) => pct.to_string(),
+        None => format!("{} (ratio)", ratio),
+    }
+}
+
 /// Halt level for an equity change against a reference and a positive loss limit.
 ///
 /// Returns the level and the signed change (e.g. -0.015 for -1.5%), or `None` when it
@@ -96,8 +104,8 @@ impl CircuitBreakerService {
                     level,
                     format!(
                         "Daily loss {}% (limit {}%) [Start: {}, Current: {}]",
-                        daily_loss_pct * dec!(100),
-                        self.config.max_daily_loss_pct * dec!(100),
+                        as_percent(daily_loss_pct),
+                        as_percent(self.config.max_daily_loss_pct),
                         risk_state.session_start_equity,
                         current_equity
                     ),
@@ -128,8 +136,8 @@ impl CircuitBreakerService {
                     level,
                     format!(
                         "Max drawdown {}% (limit {}%)",
-                        drawdown_pct * dec!(100),
-                        self.config.max_drawdown_pct * dec!(100)
+                        as_percent(drawdown_pct),
+                        as_percent(self.config.max_drawdown_pct)
                     ),
                 ),
                 None => (
@@ -271,5 +279,98 @@ mod tests {
             cb.check_circuit_breaker(&state(Decimal::ZERO, Decimal::ZERO), dec!(500))
                 .is_none()
         );
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn level_of(result: Option<(HaltLevel, String)>) -> HaltLevel {
+        result.map(|(level, _)| level).unwrap_or(HaltLevel::Normal)
+    }
+
+    /// Any Decimal, including extreme magnitudes and scales.
+    fn any_decimal() -> impl Strategy<Value = Decimal> {
+        (any::<i64>(), 0u32..=28).prop_map(|(m, scale)| Decimal::new(m, scale))
+    }
+
+    fn money() -> impl Strategy<Value = Decimal> {
+        (1i64..10_000_000_000).prop_map(|c| Decimal::new(c, 2))
+    }
+
+    fn limit() -> impl Strategy<Value = Decimal> {
+        (1i64..=5_000).prop_map(|bp| Decimal::new(bp, 4)) // 0.01% .. 50%
+    }
+
+    fn service(daily: Decimal, drawdown: Decimal) -> CircuitBreakerService {
+        CircuitBreakerService::new(CircuitBreakerConfig {
+            max_daily_loss_pct: daily,
+            max_drawdown_pct: drawdown,
+            consecutive_loss_limit: usize::MAX,
+        })
+    }
+
+    fn state(session_start: Decimal, hwm: Decimal) -> RiskState {
+        RiskState {
+            session_start_equity: session_start,
+            equity_high_water_mark: hwm,
+            ..Default::default()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn never_panics_on_any_input(
+            start in any_decimal(),
+            hwm in any_decimal(),
+            equity in any_decimal(),
+            daily in any_decimal(),
+            drawdown in any_decimal(),
+        ) {
+            let _ = service(daily, drawdown).check_circuit_breaker(&state(start, hwm), equity);
+        }
+
+        #[test]
+        fn lower_equity_never_lowers_the_halt_level(
+            start in money(),
+            hwm_extra in money(),
+            e1 in money(),
+            e2 in money(),
+            daily in limit(),
+            drawdown in limit(),
+        ) {
+            let cb = service(daily, drawdown);
+            let s = state(start, start + hwm_extra);
+            let (low, high) = if e1 <= e2 { (e1, e2) } else { (e2, e1) };
+            prop_assert!(
+                level_of(cb.check_circuit_breaker(&s, low))
+                    >= level_of(cb.check_circuit_breaker(&s, high))
+            );
+        }
+
+        #[test]
+        fn no_loss_never_halts(
+            start in money(),
+            gain in money(),
+            daily in limit(),
+            drawdown in limit(),
+        ) {
+            // At or above both the session start and the high water mark.
+            let equity = start + gain;
+            let result = service(daily, drawdown).check_circuit_breaker(&state(start, equity), equity);
+            prop_assert!(result.is_none());
+        }
+
+        #[test]
+        fn non_positive_limit_always_halts(
+            start in money(),
+            equity in money(),
+            bad_limit in (-5_000i64..=0).prop_map(|bp| Decimal::new(bp, 4)),
+        ) {
+            let result = service(bad_limit, dec!(0.10)).check_circuit_breaker(&state(start, start), equity);
+            prop_assert_eq!(level_of(result), HaltLevel::FullHalt);
+        }
     }
 }

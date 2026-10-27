@@ -1,0 +1,48 @@
+# cargo-deny configuration (https://embarkstudios.github.io/cargo-deny/)
+# Run locally: cargo deny check
+
+[graph]
+all-features = false
+
+[advisories]
+version = 2
+yanked = "deny"
+# "Unmaintained" advisories are enforced for our direct dependencies only: the
+# remaining ones come transitively from the egui/eframe UI stack and have no direct fix.
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "0BSD",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CDLA-Permissive-2.0",
+]
+
+# Fonts bundled by egui: OFL and Ubuntu Font Licence are allowed for this crate only.
+[[licenses.exceptions]]
+crate = "epaint_default_fonts"
+allow = ["OFL-1.1", "Ubuntu-font-1.0"]
+
+[bans]
+# Duplicate versions are common in a large dependency tree: report, do not fail.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

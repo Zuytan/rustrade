@@ -40,6 +40,9 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Run tests
         run: cargo nextest run --lib --tests
+      # nextest does not run doctests
+      - name: Run doctests
+        run: cargo test --doc
 
   clippy:
     name: Clippy
@@ -66,7 +69,37 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  deny:
+    name: Dependency Policy (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - uses: taiki-e/install-action@cargo-deny
+      - name: Check licenses, bans, sources and advisories
+        run: cargo deny check
 
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-tarpaulin
+      - name: Measure coverage
+        run: cargo tarpaulin --engine llvm --lib --tests --skip-clean --out Json --out Lcov --output-dir coverage
+      # Minimums apply to the safety-critical modules only (see scripts/check_coverage.py).
+      - name: Enforce coverage minimums
+        run: python3 scripts/check_coverage.py coverage/tarpaulin-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
 
   audit:
     name: Security Audit

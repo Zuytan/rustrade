@@ -233,3 +233,92 @@ mod tests {
         assert_eq!(portfolio.total_pnl(&current_prices), dec!(2500));
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::collection::vec;
+    use proptest::prelude::*;
+
+    fn money() -> impl Strategy<Value = Decimal> {
+        (-1_000_000_000i64..1_000_000_000).prop_map(|c| Decimal::new(c, 2))
+    }
+
+    fn price() -> impl Strategy<Value = Decimal> {
+        (1i64..1_000_000_000).prop_map(|cents| Decimal::new(cents, 2))
+    }
+
+    fn quantity() -> impl Strategy<Value = Decimal> {
+        (1i64..10_000_000).prop_map(|q| Decimal::new(q, 4))
+    }
+
+    /// Positions as (quantity, average price, current price).
+    fn positions() -> impl Strategy<Value = Vec<(Decimal, Decimal, Decimal)>> {
+        vec((quantity(), price(), price()), 0..8)
+    }
+
+    fn build(
+        cash: Decimal,
+        realized: Decimal,
+        pos: &[(Decimal, Decimal, Decimal)],
+    ) -> (Portfolio, HashMap<String, Decimal>) {
+        let mut portfolio = Portfolio::new();
+        portfolio.cash = cash;
+        portfolio.realized_pnl = realized;
+        let mut prices = HashMap::new();
+        for (i, (qty, avg, current)) in pos.iter().enumerate() {
+            let symbol = format!("S{}", i);
+            portfolio.positions.insert(
+                symbol.clone(),
+                Position {
+                    symbol: symbol.clone(),
+                    quantity: *qty,
+                    average_price: *avg,
+                },
+            );
+            prices.insert(symbol, *current);
+        }
+        (portfolio, prices)
+    }
+
+    proptest! {
+        #[test]
+        fn equity_is_cash_plus_marked_positions(cash in money(), pos in positions()) {
+            let (portfolio, prices) = build(cash, Decimal::ZERO, &pos);
+            let expected = cash + pos.iter().map(|(q, _, p)| *q * *p).sum::<Decimal>();
+            prop_assert_eq!(portfolio.total_equity(&prices), expected);
+            prop_assert_eq!(portfolio.total_equity_strict(&prices), Some(expected));
+        }
+
+        #[test]
+        fn unrealized_pnl_is_equity_minus_cost_basis(cash in money(), pos in positions()) {
+            let (portfolio, prices) = build(cash, Decimal::ZERO, &pos);
+            let cost_basis: Decimal = pos.iter().map(|(q, a, _)| *q * *a).sum();
+            prop_assert_eq!(
+                portfolio.unrealized_pnl(&prices),
+                portfolio.total_equity(&prices) - cash - cost_basis
+            );
+        }
+
+        #[test]
+        fn total_pnl_is_realized_plus_unrealized(cash in money(), realized in money(), pos in positions()) {
+            let (portfolio, prices) = build(cash, realized, &pos);
+            prop_assert_eq!(
+                portfolio.total_pnl(&prices),
+                realized + portfolio.unrealized_pnl(&prices)
+            );
+        }
+
+        #[test]
+        fn strict_equity_refuses_any_missing_price(
+            cash in money(),
+            pos in vec((quantity(), price(), price()), 1..8),
+            missing in any::<prop::sample::Index>(),
+        ) {
+            let (portfolio, mut prices) = build(cash, Decimal::ZERO, &pos);
+            let symbol = format!("S{}", missing.index(pos.len()));
+            prices.remove(&symbol);
+            prop_assert_eq!(portfolio.total_equity_strict(&prices), None);
+        }
+    }
+}

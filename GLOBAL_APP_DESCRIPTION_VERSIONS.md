@@ -1,5 +1,23 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.32 - P2 Quality: CI Gates, Property Tests & WebSocket Chaos Tests (October 2026)
+
+### CI
+- **Doctests**: Now run in CI (`cargo nextest` does not run them).
+- **Dependency Policy**: New `deny` job with `deny.toml` (licenses, banned sources, yanked crates, unmaintained direct dependencies). The egui bundled fonts (`epaint_default_fonts`: OFL-1.1, Ubuntu-font-1.0) are allowed as a crate-specific exception. `Cargo.toml` now declares `license = "MIT"` (matching `LICENSE`) and `publish = false`.
+- **Coverage Gate**: New `coverage` job (cargo-tarpaulin) enforcing per-module minimums with `scripts/check_coverage.py`, set a few points below the coverage measured in this version: domain 80%, domain/risk 80%, domain/trading 65%, risk_management 72%, agents 58%, executor 80%, config 78%. Overall coverage (44%) is not gated: the egui UI and binaries are untested.
+
+### Tests
+- **Property Tests (proptest)**: Sizing never exceeds the risk, position, bucket or cash caps and halt levels never increase size; the circuit breaker never panics on any input, is monotonic in equity and always halts on a non-positive limit; portfolio equity, unrealized and total P&L identities hold.
+- **WebSocket Chaos Tests**: Against a local WebSocket server: malformed, duplicated and out-of-order messages, silent (half-open) connections and abrupt disconnects with automatic reconnection.
+- **Stress Tests**: `stress_test_draft.rs` finalized as `stress_tests.rs` (8 scenarios: breaker recovery and failed probe, daily loss, drawdown, losing streak, uncomputable loss, normal conditions).
+
+### Fixes Found by the New Tests
+- **Zero Cash Sizing**: With known zero or negative available cash, the sizing engine skipped the cash cap and sized a full position; it now sizes nothing, in both risk-based and static-quantity modes, with a warning. Note: a portfolio that is not yet synchronized (Alpaca cache before the first sync) or holds its cash in a currency other than USD/USDT (Binance) reports 0 cash, so buys are blocked until real cash is known.
+- **Binance Malformed Trades**: A malformed trade price produced a quote at price 0 (f64 parse with zero fallback). Prices and quantities are now parsed as `Decimal`; malformed trades, non-positive prices and negative quantities are dropped.
+- **Binance Half-Open Connections**: A connection that stopped sending frames blocked the reader forever. A 60s idle timeout now forces a reconnect, read errors use the backoff path, and per-connection writer/ping tasks are stopped on reconnect.
+- **Circuit Breaker Messages**: Percentage formatting could panic on overflow with extreme values; it now uses checked multiplication.
+
 ## Version 0.99.31 - P1 Operations: Versioned SQLite Schema & Prometheus /metrics with Alerting (October 2026)
 
 ### Persistence

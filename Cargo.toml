@@ -1,7 +1,9 @@
 [package]
 name = "rustrade"
-version = "0.99.31"
+version = "0.99.32"
 edition = "2024"
+license = "MIT"
+publish = false
 default-run = "rustrade"
 
 [features]
@@ -34,6 +36,7 @@ required-features = ["surrogate"]
 
 [dev-dependencies]
 tokio-test = "0.4"
+proptest = "1"
 [dependencies]
 rust_decimal_macros = "1.40"
 crossbeam-channel = "0.5.15"
@@ -75,7 +78,7 @@ vader_sentiment = "0.1"
 rayon = "1.12"
 statrs = "0.18"  # Statistical functions (Z-Score, rolling stats)
 
-# Observability (push-based, no HTTP server)
+# Observability (Prometheus registry, served at /metrics by the server API)
 prometheus = "0.14"
 clap = { version = "4.6.1", features = ["derive"] }
 csv = "1.4.0"

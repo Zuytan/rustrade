@@ -172,6 +172,19 @@ impl SizingEngine {
         regime: Option<&MarketRegime>,
         available_cash: Option<Decimal>,
     ) -> Decimal {
+        // Known zero or negative cash means nothing can be bought, whatever the sizing
+        // mode; `None` means unknown. An unsynchronized portfolio can report 0 here, so
+        // this is logged as a warning: buys stay blocked until the cash is known.
+        if let Some(cash) = available_cash
+            && cash <= Decimal::ZERO
+        {
+            warn!(
+                "SizingEngine: No available cash for {} (${}), skipping buy. Is the portfolio synchronized?",
+                symbol, cash
+            );
+            return Decimal::ZERO;
+        }
+
         // Fallback to static quantity if risk sizing is disabled
         if config.risk_per_trade_percent <= Decimal::ZERO {
             info!(
@@ -272,9 +285,9 @@ impl SizingEngine {
             }
         }
 
-        // 3. Cap by available cash (prevents buying more than we can pay for)
+        // 3. Cap by available cash (prevents buying more than we can pay for).
+        // Non-positive cash was already rejected above.
         if let Some(cash) = available_cash
-            && cash > Decimal::ZERO
             && target_amt > cash
         {
             info!(
@@ -473,5 +486,119 @@ mod tests {
             Some(dec!(500)),
         );
         assert_eq!(qty, dec!(5));
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use crate::application::market_data::spread_cache::SpreadCache;
+    use proptest::prelude::*;
+    use std::sync::Arc;
+
+    /// Amount in [min, max) currency units, with 2 decimals.
+    fn money(min: i64, max: i64) -> impl Strategy<Value = Decimal> {
+        (min * 100..max * 100).prop_map(|cents| Decimal::new(cents, 2))
+    }
+
+    /// Price from 0.01 to 1,000,000.
+    fn price() -> impl Strategy<Value = Decimal> {
+        (1i64..100_000_000).prop_map(|cents| Decimal::new(cents, 2))
+    }
+
+    /// Fraction in (0, 1] with 4 decimals.
+    fn fraction() -> impl Strategy<Value = Decimal> {
+        (1i64..=10_000).prop_map(|bp| Decimal::new(bp, 4))
+    }
+
+    fn config(risk: Decimal, max_pos_pct: Decimal, max_positions: usize) -> SizingConfig {
+        SizingConfig {
+            risk_per_trade_percent: risk,
+            max_positions,
+            max_position_size_pct: max_pos_pct,
+            static_trade_quantity: dec!(1),
+            enable_vol_targeting: false,
+            target_volatility: dec!(0.15),
+        }
+    }
+
+    fn engine() -> SizingEngine {
+        SizingEngine::new(Arc::new(SpreadCache::new()))
+    }
+
+    // Rounding the quantity to 4 decimals can add at most 0.00005 share.
+    fn rounding_slack(price: Decimal) -> Decimal {
+        price * dec!(0.00005)
+    }
+
+    proptest! {
+        #[test]
+        fn quantity_respects_every_cap(
+            equity in money(100, 100_000_000),
+            price in price(),
+            risk in fraction(),
+            max_pos_pct in fraction(),
+            max_positions in 0usize..20,
+            cash in proptest::option::of(money(0, 100_000_000)),
+        ) {
+            let cfg = config(risk, max_pos_pct, max_positions);
+            let qty = engine().calculate_quantity(&cfg, equity, price, "X", None, None, None, cash);
+            let notional = qty * price;
+            let slack = rounding_slack(price);
+
+            prop_assert!(qty >= Decimal::ZERO);
+            prop_assert!(notional <= equity * risk + slack);
+            prop_assert!(notional <= equity * max_pos_pct + slack);
+            if max_positions > 0 {
+                prop_assert!(notional <= equity / Decimal::from(max_positions) + slack);
+            }
+            if let Some(cash) = cash {
+                // Includes zero cash: nothing may be bought without money.
+                prop_assert!(notional <= cash + slack, "notional {} > cash {}", notional, cash);
+            }
+        }
+
+        #[test]
+        fn halt_levels_never_increase_size(
+            equity in money(100, 100_000_000),
+            price in price(),
+            risk in fraction(),
+            max_pos_pct in fraction(),
+        ) {
+            let cfg = config(risk, max_pos_pct, 5);
+            let e = engine();
+            let size = |level| e.calculate_quantity(&cfg, equity, price, "X", None, level, None, None);
+
+            let normal = size(None);
+            let warning = size(Some(HaltLevel::Warning));
+            prop_assert!(warning <= normal);
+            prop_assert_eq!(size(Some(HaltLevel::Reduced)), Decimal::ZERO);
+            prop_assert_eq!(size(Some(HaltLevel::FullHalt)), Decimal::ZERO);
+        }
+
+        #[test]
+        fn no_cash_never_buys_in_any_sizing_mode(
+            equity in money(100, 100_000_000),
+            price in price(),
+            // 0 selects the static-quantity mode
+            risk in prop_oneof![Just(Decimal::ZERO), fraction()],
+            cash in money(-100_000, 1),
+        ) {
+            let cfg = config(risk, dec!(0.5), 5);
+            let qty = engine().calculate_quantity(&cfg, equity, price, "X", None, None, None, Some(cash));
+            prop_assert_eq!(qty, Decimal::ZERO);
+        }
+
+        #[test]
+        fn invalid_inputs_never_size_a_trade(
+            equity in money(-100_000, 1),
+            price in price(),
+            risk in fraction(),
+        ) {
+            // Non-positive equity: no position may be sized.
+            let cfg = config(risk, dec!(0.5), 5);
+            let qty = engine().calculate_quantity(&cfg, equity, price, "X", None, None, None, None);
+            prop_assert_eq!(qty, Decimal::ZERO);
+        }
     }
 }
