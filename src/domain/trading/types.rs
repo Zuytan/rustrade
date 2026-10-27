@@ -38,6 +38,17 @@ pub enum OrderStatus {
     Pending, // Added to match usage
 }
 
+impl OrderStatus {
+    /// True when the broker holds no live order and nothing was filled
+    /// (rejected, canceled or expired before any execution).
+    pub fn is_terminal_without_fill(self) -> bool {
+        matches!(
+            self,
+            OrderStatus::Rejected | OrderStatus::Canceled | OrderStatus::Expired
+        )
+    }
+}
+
 impl fmt::Display for OrderStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)

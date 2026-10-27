@@ -31,12 +31,15 @@ impl HttpClientFactory {
     }
 
     fn base_client() -> Client {
+        // This configuration only fails if the TLS backend cannot be initialized. The former
+        // `Client::new()` fallback panicked in that same case (and would have dropped the
+        // timeouts otherwise), so fail loudly with an explicit message instead.
         Client::builder()
             .pool_max_idle_per_host(5)
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .build()
-            .unwrap_or_else(|_| Client::new())
+            .expect("Failed to build HTTP client with timeouts (TLS backend unavailable?)")
     }
 }
 

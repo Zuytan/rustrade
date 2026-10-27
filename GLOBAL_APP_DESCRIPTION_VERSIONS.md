@@ -1,5 +1,20 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.29 - P1 Reliability: Fail-Closed Circuit Breaker, Stops After Unknown Outcomes & Startup Errors (October 2026)
+
+### Risk Management
+- **Fail-Closed Circuit Breaker**: A daily-loss or drawdown check that cannot be computed (non-positive limit, arithmetic overflow) now returns `FullHalt` with an explicit "cannot be evaluated" message. Previously `checked_div(...).unwrap_or(ZERO)` produced a zero ratio and the breaker stayed `Normal`.
+
+### Order Execution
+- **Trailing Stop After Unknown Outcome**: Orders whose submission outcome was unknown are kept in full (including `stop_loss`, which is not persisted) until reconciliation. When the broker confirms them as live or filled, the Executor now runs the normal accepted path: portfolio update, retry tracking and initial trailing stop. Previously a confirmed fill left the position without a stop.
+- **Partial Fills on Canceled/Expired Orders**: `find_order_status` now returns a `BrokerOrderState` with the executed quantity (Alpaca `filled_qty`, Binance `executedQty`). An order canceled or expired after a partial fill is no longer treated as rejected: reconciliation books and protects only the executed quantity.
+- **Shared Status Rule**: `OrderStatus::is_terminal_without_fill` (Rejected, Canceled, Expired) is used by both submission resolution and reconciliation.
+- **Retry Tracking**: Orders already filled at confirmation are no longer added to the retry monitor.
+
+### Startup Robustness
+- **OANDA Without Feature**: `MODE=oanda` on a build without the `oanda` feature now returns a startup error instead of panicking.
+- **HTTP Client Construction**: Removed the misleading `Client::new()` fallback, which panicked in the same TLS-failure case and would have dropped timeouts otherwise; construction now fails with an explicit message.
+
 ## Version 0.99.28 - P0 Safety: Live Gate for All Brokers, Idempotent Orders & Fail-Closed Reconciliation (October 2026)
 
 ### Live Trading Gate

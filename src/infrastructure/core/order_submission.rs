@@ -6,7 +6,7 @@
 
 use crate::domain::errors::OrderSubmissionUnknown;
 use crate::domain::ports::ExecutionService;
-use crate::domain::trading::types::{Order, OrderStatus};
+use crate::domain::trading::types::Order;
 use anyhow::Result;
 use std::time::Duration;
 use tracing::{info, warn};
@@ -37,18 +37,12 @@ pub fn classify_send_error(err: reqwest_middleware::Error, broker: &str) -> anyh
     }
 }
 
-/// Statuses meaning the broker holds no live order.
-fn is_terminal_without_fill(status: OrderStatus) -> bool {
-    matches!(
-        status,
-        OrderStatus::Rejected | OrderStatus::Canceled | OrderStatus::Expired
-    )
-}
-
 /// Resolves an ambiguous submission by looking the order up at the broker.
 ///
 /// - Found and live (or filled) → `Ok(())`: the order was accepted.
-/// - Found but rejected/canceled/expired → definitive error.
+/// - Found rejected/canceled/expired with nothing executed → definitive error.
+/// - Found canceled/expired after a partial fill → `OrderSubmissionUnknown`, so that
+///   reconciliation books the executed quantity only.
 /// - Not found, or lookup failed → `OrderSubmissionUnknown` (order must stay Pending).
 pub async fn resolve_ambiguous_submission<S>(
     service: &S,
@@ -68,18 +62,26 @@ where
     }
 
     match service.find_order_status(&order.id, &order.symbol).await {
-        Ok(Some(status)) if is_terminal_without_fill(status) => {
+        Ok(Some(state)) if state.is_dead_without_fill() => {
             anyhow::bail!(
                 "Order {} was not accepted by the broker (status {:?}): {}",
                 order.id,
-                status,
+                state.status,
                 reason
             )
         }
-        Ok(Some(status)) => {
+        Ok(Some(state)) if state.is_terminal_partial_fill() => Err(OrderSubmissionUnknown {
+            client_order_id: order.id.clone(),
+            reason: format!(
+                "{}; order ended {:?} after a partial fill of {}",
+                reason, state.status, state.filled_qty
+            ),
+        }
+        .into()),
+        Ok(Some(state)) => {
             info!(
                 "Order {} confirmed at broker with status {:?} despite: {}",
-                order.id, status, reason
+                order.id, state.status, reason
             );
             Ok(())
         }
@@ -99,14 +101,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ports::OrderUpdate;
+    use crate::domain::ports::{BrokerOrderState, OrderUpdate};
     use crate::domain::trading::portfolio::Portfolio;
-    use crate::domain::trading::types::{OrderSide, OrderType};
+    use crate::domain::trading::types::{OrderSide, OrderStatus, OrderType};
     use async_trait::async_trait;
     use rust_decimal_macros::dec;
     use tokio::sync::broadcast;
 
-    struct LookupOnly(fn() -> Result<Option<OrderStatus>>);
+    struct LookupOnly(fn() -> Result<Option<BrokerOrderState>>);
 
     #[async_trait]
     impl ExecutionService for LookupOnly {
@@ -135,7 +137,7 @@ mod tests {
             &self,
             _client_order_id: &str,
             _symbol: &str,
-        ) -> Result<Option<OrderStatus>> {
+        ) -> Result<Option<BrokerOrderState>> {
             (self.0)()
         }
     }
@@ -155,7 +157,11 @@ mod tests {
         }
     }
 
-    async fn resolve(lookup: fn() -> Result<Option<OrderStatus>>) -> Result<()> {
+    fn st(status: OrderStatus, filled_qty: rust_decimal::Decimal) -> Option<BrokerOrderState> {
+        Some(BrokerOrderState { status, filled_qty })
+    }
+
+    async fn resolve(lookup: fn() -> Result<Option<BrokerOrderState>>) -> Result<()> {
         resolve_ambiguous_submission(
             &LookupOnly(lookup),
             &order(),
@@ -171,10 +177,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_found_live_order_is_accepted() {
-        assert!(resolve(|| Ok(Some(OrderStatus::New))).await.is_ok());
-        assert!(resolve(|| Ok(Some(OrderStatus::Filled))).await.is_ok());
+        assert!(resolve(|| Ok(st(OrderStatus::New, dec!(0)))).await.is_ok());
         assert!(
-            resolve(|| Ok(Some(OrderStatus::PartiallyFilled)))
+            resolve(|| Ok(st(OrderStatus::Filled, dec!(1))))
+                .await
+                .is_ok()
+        );
+        assert!(
+            resolve(|| Ok(st(OrderStatus::PartiallyFilled, dec!(0.5))))
                 .await
                 .is_ok()
         );
@@ -182,10 +192,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_found_rejected_order_is_definitive_failure() {
-        let err = resolve(|| Ok(Some(OrderStatus::Rejected)))
+        let err = resolve(|| Ok(st(OrderStatus::Rejected, dec!(0))))
             .await
             .expect_err("rejected at broker");
         assert!(!is_unknown(&err));
+        let err = resolve(|| Ok(st(OrderStatus::Canceled, dec!(0))))
+            .await
+            .expect_err("canceled without fill");
+        assert!(!is_unknown(&err));
+    }
+
+    #[tokio::test]
+    async fn test_canceled_after_partial_fill_is_unknown() {
+        // Something was executed: it must not be marked Rejected.
+        let err = resolve(|| Ok(st(OrderStatus::Canceled, dec!(0.4))))
+            .await
+            .expect_err("partial fill then canceled");
+        assert!(is_unknown(&err));
+        let err = resolve(|| Ok(st(OrderStatus::Expired, dec!(0.4))))
+            .await
+            .expect_err("partial fill then expired");
+        assert!(is_unknown(&err));
     }
 
     #[tokio::test]

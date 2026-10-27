@@ -6,7 +6,7 @@
 //! - Open orders management
 //! - HMAC-SHA256 request signing
 
-use crate::domain::ports::{ExecutionService, OrderUpdate};
+use crate::domain::ports::{BrokerOrderState, ExecutionService, OrderUpdate};
 use crate::domain::trading::portfolio::{Portfolio, Position};
 use crate::domain::trading::types::{
     Order, OrderSide, OrderStatus, OrderType, denormalize_crypto_symbol, normalize_crypto_symbol,
@@ -196,7 +196,7 @@ impl ExecutionService for BinanceExecutionService {
         &self,
         client_order_id: &str,
         symbol: &str,
-    ) -> Result<Option<OrderStatus>> {
+    ) -> Result<Option<BrokerOrderState>> {
         let api_symbol = denormalize_crypto_symbol(symbol);
         let timestamp = chrono::Utc::now().timestamp_millis();
         let query_string = format!(
@@ -234,10 +234,17 @@ impl ExecutionService for BinanceExecutionService {
         #[derive(Debug, Deserialize)]
         struct BinanceOrderStatus {
             status: String,
+            #[serde(rename = "executedQty")]
+            executed_qty: String,
         }
         let order: BinanceOrderStatus =
             serde_json::from_str(&body).context("Failed to parse Binance order lookup response")?;
-        map_binance_status(&order.status).map(Some)
+        let status = map_binance_status(&order.status)?;
+        let filled_qty = order
+            .executed_qty
+            .parse::<Decimal>()
+            .context("Invalid executedQty in Binance order lookup response")?;
+        Ok(Some(BrokerOrderState { status, filled_qty }))
     }
 
     async fn get_portfolio(&self) -> Result<Portfolio> {

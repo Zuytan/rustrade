@@ -27,7 +27,7 @@ The application operates as a mesh of autonomous agents communicating via high-p
 - **Idempotent Order Submission**: Order POSTs are never retried automatically. A timeout, 5xx or duplicate-id rejection is resolved by looking the order up by client order id (`ExecutionService::find_order_status`); if still unresolved, the order stays `Pending` (`OrderSubmissionUnknown`) instead of being marked `Rejected`.
 - **Fail-Closed Order Reconciliation**: The Executor reconciles every `Pending` order with the broker at startup and every heartbeat (30s grace before rejecting an order the broker does not know). Until reconciliation succeeds, new Buy orders are refused; exits (Sells) are still processed.
 - **Circuit Breakers**:
-  - **Global**: Halts trading on Daily Loss/Drawdown breach.
+  - **Global**: Halts trading on Daily Loss/Drawdown breach. Fail-closed: a check that cannot be computed triggers a full halt.
   - **Alerting Integration**: Supports notifying external channels (e.g. Discord, Slack) via an asynchronous HTTP POST request using `ALERT_WEBHOOK_URL` when a circuit breaker triggers.
   - **Infrastructure**: Employs **Singleton WebSocket Architecture** and validated API mapping. Account synchronization prioritizes actual `buying_power` (including non-marginable funds for crypto) over raw cash to prevent "Insufficient Balance" rejections in dynamic markets.
   - **Panic Mode**: "Blind Liquidation" logic ensures positions can be exited even if price feeds are down.

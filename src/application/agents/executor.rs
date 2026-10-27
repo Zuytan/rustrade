@@ -59,6 +59,9 @@ pub struct Executor {
     /// False until pending orders have been reconciled with the broker.
     /// While false, incoming orders are refused (fail-closed).
     reconciled: AtomicBool,
+    /// Orders submitted in this session whose outcome is unknown, kept in full
+    /// (stop_loss is not persisted) until reconciliation resolves them.
+    unknown_orders: RwLock<std::collections::HashMap<String, Order>>,
 }
 
 impl Executor {
@@ -79,6 +82,7 @@ impl Executor {
             candle_rx: deps.candle_rx,
             active_trailing_stops: Arc::new(RwLock::new(std::collections::HashMap::new())),
             reconciled: AtomicBool::new(false),
+            unknown_orders: RwLock::new(std::collections::HashMap::new()),
         }
     }
 
@@ -239,98 +243,7 @@ impl Executor {
 
         // 1. Execute External (pass by reference)
         match self.execution_service.execute(&order).await {
-            Ok(_) => {
-                // 2. Retrieve real broker fees (non-blocking, graceful fallback)
-                let real_fees = match self.execution_service.get_order_fees(&order.id).await {
-                    Ok(fees) => {
-                        if let Some(ref f) = fees {
-                            info!("Executor: Real broker fees for {}: ${}", order.id, f);
-                        }
-                        fees
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Executor: Fee retrieval failed for {}: {}, using model estimate",
-                            order.id, e
-                        );
-                        None
-                    }
-                };
-
-                // 3. Update Internal State (Optimistic) with real or estimated fees
-                self.update_portfolio(&order, false, real_fees).await;
-                info!("Executor: Order {} sent to exchange.", order.id);
-
-                // Update persisted status to 'New' (now officially on the exchange)
-                if let Some(repo) = &self.repository {
-                    let mut submitted_order = order.clone();
-                    submitted_order.status = crate::domain::trading::types::OrderStatus::New;
-                    if let Err(e) = repo.save(&submitted_order).await {
-                        error!(
-                            "Executor: Failed to persist submitted order {} as New: {}",
-                            order.id, e
-                        );
-                    }
-                }
-
-                // Broadcast Online if it was offline
-                self.health_service
-                    .set_execution_status(ConnectionStatus::Online, None)
-                    .await;
-
-                // Track for retry monitoring if applicable (move order)
-                self.order_monitor.track_order(order.clone()).await;
-
-                // 4. Submit initial trailing stop if stop_loss is provided for Buy orders
-                if order.side == OrderSide::Buy
-                    && let Some(sl_price) = order.stop_loss
-                {
-                    let trailing_distance = (order.price - sl_price).abs();
-                    if trailing_distance > rust_decimal::Decimal::ZERO {
-                        let stop_id = uuid::Uuid::new_v4().to_string();
-                        let stop_order = Order {
-                            id: stop_id.clone(),
-                            symbol: order.symbol.clone(),
-                            side: OrderSide::Sell,
-                            price: sl_price,
-                            quantity: order.quantity,
-                            order_type: crate::domain::trading::types::OrderType::Stop,
-                            status: crate::domain::trading::types::OrderStatus::Pending,
-                            timestamp: chrono::Utc::now().timestamp_millis(),
-                            correlation_id: order.correlation_id.clone(),
-                            stop_loss: None,
-                        };
-
-                        let exec = self.execution_service.clone();
-                        let stop_order_clone = stop_order.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = exec.execute(&stop_order_clone).await {
-                                error!(
-                                    "Executor: Failed to place initial trailing stop order: {}",
-                                    e
-                                );
-                            }
-                        });
-
-                        let mut active_stops = self.active_trailing_stops.write().await;
-                        active_stops.insert(order.symbol.clone(), ActiveTrailingStop {
-                            stop_order_id: stop_id,
-                            stop_state: crate::application::risk_management::trailing_stops::StopState::on_buy(
-                                order.price,
-                                trailing_distance,
-                                rust_decimal::Decimal::ONE,
-                            ),
-                            quantity: order.quantity,
-                            trailing_distance,
-                            correlation_id: order.correlation_id.clone(),
-                        });
-                        info!(
-                            "Executor: Initialized trailing stop for {} at stop price {}",
-                            order.symbol, sl_price
-                        );
-                    }
-                }
-            }
+            Ok(_) => self.on_order_accepted(&order, true).await,
             Err(e) if e.downcast_ref::<OrderSubmissionUnknown>().is_some() => {
                 // The order may be live at the broker: keep it Pending for reconciliation,
                 // and do not touch the portfolio until its outcome is known.
@@ -338,11 +251,14 @@ impl Executor {
                     "Executor: Order {} for {} has an UNKNOWN outcome at the broker: {}. Kept Pending for reconciliation.",
                     order.id, order.symbol, e
                 );
-                if order.side == OrderSide::Buy && order.stop_loss.is_some() {
-                    error!(
-                        "Executor: No trailing stop placed for {} (order {}): if this order fills, the position is unprotected.",
-                        order.symbol, order.id
-                    );
+                // Keep the full order (incl. stop_loss, not persisted) so that its accepted
+                // path, trailing stop included, runs once reconciliation confirms it.
+                // Without a repository nothing is reconciled, so nothing would ever remove it.
+                if self.repository.is_some() {
+                    self.unknown_orders
+                        .write()
+                        .await
+                        .insert(order.id.clone(), order.clone());
                 }
                 self.health_service
                     .set_execution_status(
@@ -371,6 +287,108 @@ impl Executor {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    /// Post-submission path for an order the broker accepted: fees, optimistic portfolio
+    /// update, persisted as New, retry tracking (if `track_for_retry`) and initial
+    /// trailing stop.
+    async fn on_order_accepted(&self, order: &Order, track_for_retry: bool) {
+        // 2. Retrieve real broker fees (non-blocking, graceful fallback)
+        let real_fees = match self.execution_service.get_order_fees(&order.id).await {
+            Ok(fees) => {
+                if let Some(ref f) = fees {
+                    info!("Executor: Real broker fees for {}: ${}", order.id, f);
+                }
+                fees
+            }
+            Err(e) => {
+                warn!(
+                    "Executor: Fee retrieval failed for {}: {}, using model estimate",
+                    order.id, e
+                );
+                None
+            }
+        };
+
+        // 3. Update Internal State (Optimistic) with real or estimated fees
+        self.update_portfolio(order, false, real_fees).await;
+        info!("Executor: Order {} sent to exchange.", order.id);
+
+        // Update persisted status to 'New' (now officially on the exchange)
+        if let Some(repo) = &self.repository {
+            let mut submitted_order = order.clone();
+            submitted_order.status = crate::domain::trading::types::OrderStatus::New;
+            if let Err(e) = repo.save(&submitted_order).await {
+                error!(
+                    "Executor: Failed to persist submitted order {} as New: {}",
+                    order.id, e
+                );
+            }
+        }
+
+        // Broadcast Online if it was offline
+        self.health_service
+            .set_execution_status(ConnectionStatus::Online, None)
+            .await;
+
+        // Track for retry monitoring if applicable (an order already over is not tracked)
+        if track_for_retry {
+            self.order_monitor.track_order(order.clone()).await;
+        }
+
+        // 4. Submit initial trailing stop if stop_loss is provided for Buy orders
+        if order.side == OrderSide::Buy
+            && let Some(sl_price) = order.stop_loss
+        {
+            let trailing_distance = (order.price - sl_price).abs();
+            if trailing_distance > rust_decimal::Decimal::ZERO {
+                let stop_id = uuid::Uuid::new_v4().to_string();
+                let stop_order = Order {
+                    id: stop_id.clone(),
+                    symbol: order.symbol.clone(),
+                    side: OrderSide::Sell,
+                    price: sl_price,
+                    quantity: order.quantity,
+                    order_type: crate::domain::trading::types::OrderType::Stop,
+                    status: crate::domain::trading::types::OrderStatus::Pending,
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    correlation_id: order.correlation_id.clone(),
+                    stop_loss: None,
+                };
+
+                let exec = self.execution_service.clone();
+                let stop_order_clone = stop_order.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = exec.execute(&stop_order_clone).await {
+                        error!(
+                            "Executor: Failed to place initial trailing stop order: {}",
+                            e
+                        );
+                    }
+                });
+
+                let mut active_stops = self.active_trailing_stops.write().await;
+                active_stops.insert(
+                    order.symbol.clone(),
+                    ActiveTrailingStop {
+                        stop_order_id: stop_id,
+                        stop_state:
+                            crate::application::risk_management::trailing_stops::StopState::on_buy(
+                                order.price,
+                                trailing_distance,
+                                rust_decimal::Decimal::ONE,
+                            ),
+                        quantity: order.quantity,
+                        trailing_distance,
+                        correlation_id: order.correlation_id.clone(),
+                    },
+                );
+                info!(
+                    "Executor: Initialized trailing stop for {} at stop price {}",
+                    order.symbol, sl_price
+                );
             }
         }
     }
@@ -489,23 +507,48 @@ impl Executor {
                 .find_order_status(&order.id, &order.symbol)
                 .await
             {
-                Ok(Some(status)) => {
+                Ok(Some(state)) => {
+                    let status = state.status;
                     info!(
-                        "Executor: Pending order {} found at broker with status {:?}.",
-                        order.id, status
+                        "Executor: Pending order {} found at broker with status {:?} (filled {}).",
+                        order.id, status, state.filled_qty
                     );
-                    if status == OrderStatus::Filled || status == OrderStatus::PartiallyFilled {
-                        // Portfolio comes from the broker; the local optimistic update was skipped.
-                        warn!(
-                            "Executor: Order {} for {} was {:?} while its outcome was unknown. No trailing stop was placed.",
-                            order.id, order.symbol, status
-                        );
+                    let submitted_this_session =
+                        self.unknown_orders.write().await.remove(&order.id);
+                    if !state.is_dead_without_fill() {
+                        match submitted_this_session {
+                            // Run the accepted path that was skipped: portfolio update,
+                            // retry tracking and trailing stop.
+                            Some(mut full_order) => {
+                                if state.is_terminal_partial_fill() {
+                                    // Canceled/expired after a partial fill: book only
+                                    // what was actually executed.
+                                    warn!(
+                                        "Executor: Order {} for {} ended {:?} after a partial fill of {} (ordered {}).",
+                                        order.id,
+                                        order.symbol,
+                                        status,
+                                        state.filled_qty,
+                                        full_order.quantity
+                                    );
+                                    full_order.quantity = state.filled_qty;
+                                }
+                                let still_working = !status.is_terminal_without_fill()
+                                    && status != OrderStatus::Filled;
+                                self.on_order_accepted(&full_order, still_working).await;
+                            }
+                            None => error!(
+                                "Executor: Order {} for {} ({:?}, filled {}) comes from a previous run: no trailing stop could be placed (stop loss is not persisted).",
+                                order.id, order.symbol, status, state.filled_qty
+                            ),
+                        }
                     }
                     order.status = status;
                     repo.save(&order).await?;
                     resolved += 1;
                 }
                 Ok(None) if now_ms - order.timestamp >= RECONCILE_GRACE_MS => {
+                    self.unknown_orders.write().await.remove(&order.id);
                     warn!(
                         "Executor: Pending order {} NOT found at broker. Marking as Rejected.",
                         order.id
@@ -926,6 +969,7 @@ mod tests {
     // ===== Reconciliation & ambiguous submission tests =====
 
     use crate::domain::errors::OrderSubmissionUnknown;
+    use crate::domain::ports::BrokerOrderState;
     use crate::domain::trading::types::OrderStatus;
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -1004,7 +1048,15 @@ mod tests {
         }
     }
 
-    type Lookup = fn(&str) -> Result<Option<OrderStatus>>;
+    type Lookup = fn(&str) -> Result<Option<BrokerOrderState>>;
+
+    /// Broker state with the given executed quantity.
+    fn st(status: OrderStatus, filled_qty: u32) -> Option<BrokerOrderState> {
+        Some(BrokerOrderState {
+            status,
+            filled_qty: Decimal::from(filled_qty),
+        })
+    }
 
     /// Execution service with scripted `execute` and `find_order_status` behavior.
     struct ScriptedExecService {
@@ -1061,7 +1113,7 @@ mod tests {
             &self,
             client_order_id: &str,
             _symbol: &str,
-        ) -> Result<Option<OrderStatus>> {
+        ) -> Result<Option<BrokerOrderState>> {
             (self.lookup)(client_order_id)
         }
     }
@@ -1118,7 +1170,7 @@ mod tests {
             pending_order("missing", old_ts()),
         ]));
         let exec = Arc::new(ScriptedExecService::new(false, |id| match id {
-            "filled" => Ok(Some(OrderStatus::Filled)),
+            "filled" => Ok(st(OrderStatus::Filled, 2)),
             _ => Ok(None),
         }));
         let (executor, _tx) =
@@ -1150,7 +1202,7 @@ mod tests {
             pending_order("filled", old_ts()),
         ]));
         let exec = Arc::new(ScriptedExecService::new(false, |id| match id {
-            "filled" => Ok(Some(OrderStatus::Filled)),
+            "filled" => Ok(st(OrderStatus::Filled, 2)),
             _ => anyhow::bail!("broker unreachable"),
         }));
         let (executor, _tx) =
@@ -1167,7 +1219,7 @@ mod tests {
         let repo = Arc::new(UpsertRepo::with_orders(vec![pending_order("o1", old_ts())]));
         repo.fail_saves.store(true, Ordering::SeqCst);
         let exec = Arc::new(ScriptedExecService::new(false, |_| {
-            Ok(Some(OrderStatus::Filled))
+            Ok(st(OrderStatus::Filled, 2))
         }));
         let (executor, _tx) = executor_with(exec, repo, Arc::new(RwLock::new(Portfolio::new())));
 
@@ -1229,5 +1281,99 @@ mod tests {
         let p = portfolio.read().await;
         assert_eq!(p.cash, Decimal::from(1000));
         assert!(!p.positions.contains_key("ABC"));
+    }
+
+    #[tokio::test]
+    async fn test_unknown_buy_confirmed_filled_updates_portfolio_and_places_stop() {
+        let repo = Arc::new(UpsertRepo::default());
+        let exec = Arc::new(ScriptedExecService::new(true, |id| match id {
+            "ambiguous_buy" => Ok(st(OrderStatus::Filled, 2)),
+            _ => Ok(None),
+        }));
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(1000);
+        let portfolio = Arc::new(RwLock::new(port));
+        let (executor, _tx) = executor_with(exec.clone(), repo.clone(), portfolio.clone());
+        assert!(executor.try_reconcile().await);
+
+        let mut order = pending_order("ambiguous_buy", chrono::Utc::now().timestamp_millis());
+        order.stop_loss = Some(Decimal::from(90));
+        executor.handle_order(order).await;
+        assert_eq!(repo.status_of("ambiguous_buy"), Some(OrderStatus::Pending));
+        assert!(executor.active_trailing_stops.read().await.is_empty());
+
+        // Reconciliation confirms the fill: the skipped accepted path now runs.
+        assert_eq!(executor.reconcile_pending().await.expect("reconcile"), 1);
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        assert_eq!(repo.status_of("ambiguous_buy"), Some(OrderStatus::Filled));
+        let p = portfolio.read().await;
+        assert_eq!(p.cash, Decimal::from(800)); // 1000 - 100 * 2
+        assert!(p.positions.contains_key("ABC"));
+        drop(p);
+        assert!(
+            executor
+                .active_trailing_stops
+                .read()
+                .await
+                .contains_key("ABC")
+        );
+        // Buy + initial stop order submission
+        assert_eq!(exec.execute_calls.load(Ordering::SeqCst), 2);
+        assert!(executor.unknown_orders.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_unknown_order_confirmed_rejected_leaves_portfolio_unchanged() {
+        let repo = Arc::new(UpsertRepo::default());
+        let exec = Arc::new(ScriptedExecService::new(true, |_| {
+            Ok(st(OrderStatus::Rejected, 0))
+        }));
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(1000);
+        let portfolio = Arc::new(RwLock::new(port));
+        let (executor, _tx) = executor_with(exec, repo.clone(), portfolio.clone());
+        assert!(executor.try_reconcile().await);
+
+        let mut order = pending_order("ambiguous_buy", chrono::Utc::now().timestamp_millis());
+        order.stop_loss = Some(Decimal::from(90));
+        executor.handle_order(order).await;
+        executor.reconcile_pending().await.expect("reconcile");
+
+        assert_eq!(repo.status_of("ambiguous_buy"), Some(OrderStatus::Rejected));
+        assert_eq!(portfolio.read().await.cash, Decimal::from(1000));
+        assert!(executor.active_trailing_stops.read().await.is_empty());
+        assert!(executor.unknown_orders.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_unknown_buy_canceled_after_partial_fill_books_filled_quantity() {
+        let repo = Arc::new(UpsertRepo::default());
+        let exec = Arc::new(ScriptedExecService::new(true, |_| {
+            Ok(st(OrderStatus::Canceled, 1))
+        }));
+        let mut port = Portfolio::new();
+        port.cash = Decimal::from(1000);
+        let portfolio = Arc::new(RwLock::new(port));
+        let (executor, _tx) = executor_with(exec, repo.clone(), portfolio.clone());
+        assert!(executor.try_reconcile().await);
+
+        let mut order = pending_order("partial", chrono::Utc::now().timestamp_millis());
+        order.stop_loss = Some(Decimal::from(90));
+        executor.handle_order(order).await;
+        executor.reconcile_pending().await.expect("reconcile");
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        // 1 of 2 executed: only that quantity is booked and protected.
+        assert_eq!(repo.status_of("partial"), Some(OrderStatus::Canceled));
+        let p = portfolio.read().await;
+        assert_eq!(p.cash, Decimal::from(900));
+        assert_eq!(
+            p.positions.get("ABC").map(|pos| pos.quantity),
+            Some(Decimal::from(1))
+        );
+        drop(p);
+        let stops = executor.active_trailing_stops.read().await;
+        assert_eq!(stops.get("ABC").map(|s| s.quantity), Some(Decimal::from(1)));
     }
 }

@@ -1,6 +1,6 @@
 use super::trading_stream::AlpacaTradingStream;
-use crate::domain::ports::ExecutionService;
 use crate::domain::ports::OrderUpdate;
+use crate::domain::ports::{BrokerOrderState, ExecutionService};
 use crate::domain::trading::types::{Order, OrderSide, OrderStatus};
 use crate::infrastructure::core::http_client_factory::{HttpClientFactory, build_url_with_query};
 use crate::infrastructure::core::order_submission::{
@@ -247,6 +247,8 @@ struct AlpacaOrderRequest {
 struct AlpacaOrderResponse {
     id: String,
     status: String,
+    #[serde(default)]
+    filled_qty: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -644,7 +646,7 @@ impl ExecutionService for AlpacaExecutionService {
         &self,
         client_order_id: &str,
         _symbol: &str,
-    ) -> Result<Option<OrderStatus>> {
+    ) -> Result<Option<BrokerOrderState>> {
         let url = build_url_with_query(
             &format!("{}/v2/orders:by_client_order_id", self.base_url),
             &[("client_order_id", client_order_id)],
@@ -677,7 +679,14 @@ impl ExecutionService for AlpacaExecutionService {
             .json()
             .await
             .context("Failed to parse Alpaca order lookup response")?;
-        map_alpaca_status(&order.status).map(Some)
+        let status = map_alpaca_status(&order.status)?;
+        let filled_qty = order
+            .filled_qty
+            .as_deref()
+            .context("Alpaca order lookup response has no filled_qty")?
+            .parse::<Decimal>()
+            .context("Invalid filled_qty in Alpaca order lookup response")?;
+        Ok(Some(BrokerOrderState { status, filled_qty }))
     }
 }
 

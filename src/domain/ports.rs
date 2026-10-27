@@ -39,7 +39,7 @@ pub trait ExecutionService: Send + Sync {
     async fn get_order_fees(&self, _order_id: &str) -> Result<Option<Decimal>> {
         Ok(None)
     }
-    /// Look up an order's current status at the broker by its client order id.
+    /// Look up an order's current state at the broker by its client order id.
     /// Returns `Ok(None)` only when the broker confirms the order does not exist.
     ///
     /// Defaults to an error (fail-closed): reconciliation must never conclude that an
@@ -48,8 +48,28 @@ pub trait ExecutionService: Send + Sync {
         &self,
         _client_order_id: &str,
         _symbol: &str,
-    ) -> Result<Option<OrderStatus>> {
+    ) -> Result<Option<BrokerOrderState>> {
         anyhow::bail!("find_order_status is not supported by this execution service")
+    }
+}
+
+/// An order's state as reported by the broker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BrokerOrderState {
+    pub status: OrderStatus,
+    /// Quantity executed so far (can be > 0 on a canceled or expired order).
+    pub filled_qty: Decimal,
+}
+
+impl BrokerOrderState {
+    /// True when the order is over at the broker and nothing was executed.
+    pub fn is_dead_without_fill(&self) -> bool {
+        self.status.is_terminal_without_fill() && self.filled_qty.is_zero()
+    }
+
+    /// True when the order is over at the broker after a partial execution.
+    pub fn is_terminal_partial_fill(&self) -> bool {
+        self.status.is_terminal_without_fill() && self.filled_qty > Decimal::ZERO
     }
 }
 

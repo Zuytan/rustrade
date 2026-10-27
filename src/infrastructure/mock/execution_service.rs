@@ -1,4 +1,4 @@
-use crate::domain::ports::{ExecutionService, OrderUpdate};
+use crate::domain::ports::{BrokerOrderState, ExecutionService, OrderUpdate};
 use crate::domain::trading::fee_model::{ConstantFeeModel, FeeModel};
 use crate::domain::trading::portfolio::Portfolio;
 use crate::domain::trading::types::{Order, OrderSide, OrderStatus};
@@ -291,13 +291,16 @@ impl ExecutionService for MockExecutionService {
         &self,
         client_order_id: &str,
         _symbol: &str,
-    ) -> Result<Option<OrderStatus>> {
+    ) -> Result<Option<BrokerOrderState>> {
         // Orders are recorded only once fully executed by the simulation.
         let orders = self.orders.read().await;
         Ok(orders
             .iter()
-            .any(|o| o.id == client_order_id)
-            .then_some(OrderStatus::Filled))
+            .find(|o| o.id == client_order_id)
+            .map(|o| BrokerOrderState {
+                status: OrderStatus::Filled,
+                filled_qty: o.quantity,
+            }))
     }
 
     async fn cancel_order(&self, _order_id: &str, _symbol: &str) -> Result<()> {
