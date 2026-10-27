@@ -1,5 +1,18 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.31 - P1 Operations: Versioned SQLite Schema & Prometheus /metrics with Alerting (October 2026)
+
+### Persistence
+- **Versioned Schema Migrations**: The SQLite schema is now versioned with `PRAGMA user_version` (`SCHEMA_VERSION = 1`). Each migration runs in a transaction together with the version bump, and any failure stops startup. Previously, column additions ran as `ALTER TABLE` statements whose errors were silently ignored.
+- **In-Place Upgrade**: Version 1 is the existing baseline, applied idempotently, so databases created before versioning are upgraded without data loss (missing `orders` columns are added after checking `pragma_table_info`).
+- **Downgrade Protection**: A database written by a newer build is refused instead of being used with an unknown schema.
+
+### Observability
+- **Prometheus Endpoint**: `GET /metrics` is served on the server API, with the same port, loopback bind and `X-API-Key` protection as the REST routes. Connection status, cash, position count and uptime are refreshed at scrape time.
+- **Reliability Metrics**: New `rustrade_connection_up{component}`, `rustrade_executor_reconciled` and `rustrade_orders_unknown_outcome`, alongside the existing agent heartbeat and circuit breaker metrics.
+- **Monitoring Files Fixed**: `monitoring/prometheus.yml` scraped `localhost:9090` (Prometheus' own port) and the Grafana dashboard queried metrics that do not exist (`rustrade_win_rate`, `rustrade_pnl_total`). They now target the real endpoint and metrics. Added `monitoring/alerts.yml` (process down, stale agent, broker connection down, orders not reconciled, unknown order outcome, circuit breaker tripped).
+- **Documentation**: `docs/OBSERVABILITY.md` rewritten to match the actual endpoint, metrics and alerts.
+
 ## Version 0.99.30 - P1 Reliability: No Zero Defaults on the Risk & Execution Path (October 2026)
 
 ### Risk Validation (fail-closed)

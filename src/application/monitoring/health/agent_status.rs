@@ -48,6 +48,11 @@ impl AgentStatusRegistry {
         }
     }
 
+    /// Shared Prometheus metrics, for agents publishing their own gauges.
+    pub fn metrics(&self) -> &Metrics {
+        &self.metrics
+    }
+
     /// Update the heartbeat of an agent
     pub async fn update_heartbeat(&self, name: &str, health: HealthStatus) {
         let mut statuses = self.statuses.write().await;

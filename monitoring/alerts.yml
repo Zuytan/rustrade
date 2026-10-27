@@ -1,0 +1,50 @@
+groups:
+  - name: rustrade
+    rules:
+      - alert: RustradeDown
+        expr: up{job="rustrade"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Rustrade /metrics is unreachable"
+
+      - alert: RustradeAgentStale
+        expr: time() - rustrade_agent_last_heartbeat > 60
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Agent {{ $labels.agent }} has not sent a heartbeat for over 60s"
+
+      - alert: RustradeAgentNotHealthy
+        expr: rustrade_agent_up < 1
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Agent {{ $labels.agent }} reports a non-healthy status"
+
+      - alert: RustradeBrokerConnectionDown
+        expr: rustrade_connection_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Broker {{ $labels.component }} connection is offline"
+
+      - alert: RustradeOrdersNotReconciled
+        expr: rustrade_executor_reconciled == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Pending orders are not reconciled with the broker: new buys are refused"
+
+      - alert: RustradeUnknownOrderOutcome
+        expr: rustrade_orders_unknown_outcome > 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} order(s) with an unknown outcome at the broker"
+
+      - alert: RustradeCircuitBreakerTripped
+        expr: rustrade_circuit_breaker_status == 1
+        labels: { severity: critical }
+        annotations:
+          summary: "Circuit breaker tripped: trading halted or reduced"

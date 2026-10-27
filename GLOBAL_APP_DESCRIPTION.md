@@ -22,7 +22,7 @@ The application operates as a mesh of autonomous agents communicating via high-p
 - **Hierarchical Configuration**: A domain-driven settings system where `StrategyConfig`, `RiskConfig`, and `PlatformConfig` are unified into a strict hierarchy. Employs `serde(flatten)` across infrastructure and agent layers to ensure complete parameter consistency and eliminate structural drift.
 
 ### Resilience & Safety
-- **State Persistence ("No Amnesia")**: Critical state is persisted to SQLite.
+- **State Persistence ("No Amnesia")**: Critical state is persisted to SQLite. The schema is versioned (`PRAGMA user_version`, `SCHEMA_VERSION` in `infrastructure/persistence/database.rs`): each migration runs in a transaction, any failure stops startup, and a database from a newer build is refused.
 - **Production Live Safety Gate**: Refuses to start against any production broker endpoint (Alpaca, Binance, OANDA) unless `TRADING_LIVE=true` is explicitly set. Fail-closed: any URL without the broker's sandbox marker (`paper-api`, `testnet`, `fxpractice`) is treated as production. Binance defaults to the Spot testnet.
 - **Idempotent Order Submission**: Order POSTs are never retried automatically. A timeout, 5xx or duplicate-id rejection is resolved by looking the order up by client order id (`ExecutionService::find_order_status`); if still unresolved, the order stays `Pending` (`OrderSubmissionUnknown`) instead of being marked `Rejected`.
 - **Fail-Closed Order Reconciliation**: The Executor reconciles every `Pending` order with the broker at startup and every heartbeat (30s grace before rejecting an order the broker does not know). Until reconciliation succeeds, new Buy orders are refused; exits (Sells) are still processed.
@@ -168,8 +168,8 @@ Rustrade is optimized for headless server deployments:
 The system features a multi-tier observability stack designed for high-frequency monitoring:
 
 #### 1. Real-Time Metrics (Prometheus)
-Metrics are collected in an internal Prometheus registry. **No HTTP scrape endpoint is served yet**: in server mode, `OBSERVABILITY_ENABLED=true` exports them as periodic `METRICS_JSON:` snapshots on stdout (see section 4). `OBSERVABILITY_PORT` and `OBSERVABILITY_BIND_ADDRESS` are parsed but currently unused.
-- **Business Metrics**: Real-time Win Rate, Current Max Drawdown, and Daily Trade volume.
+Metrics are collected in an internal Prometheus registry and served at `GET /metrics` on the server API (same port, loopback bind and `X-API-Key` protection as the REST API). `OBSERVABILITY_PORT` and `OBSERVABILITY_BIND_ADDRESS` are parsed but unused. `monitoring/` provides a Prometheus scrape config, alert rules (`alerts.yml`) and a Grafana "Rustrade Operations" dashboard; see `docs/OBSERVABILITY.md`.
+- **Reliability Metrics (alerting)**: Agent health and last heartbeat, broker connection status (`rustrade_connection_up`, refreshed at scrape time), order reconciliation state (`rustrade_executor_reconciled`) and orders with an unknown broker outcome (`rustrade_orders_unknown_outcome`).
 - **Performance Metrics**: API Latency histograms (via `LatencyTracker`) and WebSocket connection uptime/reconnection counters.
 - **System Health**: Circuit breaker trip status and Fear & Greed sentiment score integration.
 

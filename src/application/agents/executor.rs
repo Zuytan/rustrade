@@ -131,6 +131,7 @@ impl Executor {
         self.agent_registry
             .update_heartbeat("Executor", self.heartbeat_status())
             .await;
+        self.publish_reconciliation_metrics().await;
 
         loop {
             tokio::select! {
@@ -166,9 +167,22 @@ impl Executor {
                     self.agent_registry
                         .update_heartbeat("Executor", self.heartbeat_status())
                         .await;
+                    self.publish_reconciliation_metrics().await;
                 }
             }
         }
+    }
+
+    /// Exports reconciliation state for alerting (`rustrade_executor_reconciled`,
+    /// `rustrade_orders_unknown_outcome`).
+    async fn publish_reconciliation_metrics(&self) {
+        let metrics = self.agent_registry.metrics();
+        metrics
+            .executor_reconciled
+            .set(if self.is_reconciled() { 1.0 } else { 0.0 });
+        metrics
+            .orders_unknown_outcome
+            .set(self.unknown_orders.read().await.len() as f64);
     }
 
     fn heartbeat_status(&self) -> HealthStatus {

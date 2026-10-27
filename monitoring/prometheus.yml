@@ -1,9 +1,17 @@
 global:
-  scrape_interval: 5s
+  scrape_interval: 15s
   evaluation_interval: 15s
+
+rule_files:
+  - alerts.yml
 
 scrape_configs:
   - job_name: 'rustrade'
-    static_configs:
-      - targets: ['localhost:9090']
+    # Rustrade server API (PORT / API_PORT, default 8080, bound to 127.0.0.1 by default).
     metrics_path: '/metrics'
+    static_configs:
+      - targets: ['localhost:8080']
+    # Required when API_KEY is set (Prometheus >= 2.54 / 3.x).
+    # http_headers:
+    #   X-API-Key:
+    #     files: ['/path/to/rustrade_api_key']

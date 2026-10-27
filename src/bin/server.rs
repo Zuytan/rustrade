@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
 
     info!("Rustrade Server {} starting...", env!("CARGO_PKG_VERSION"));
     info!("Mode: HEADLESS (no UI)");
-    info!("Metrics: Push-based (JSON to stdout)");
+    info!("Metrics: Prometheus /metrics on the API server, plus optional JSON to stdout");
 
     // Load configuration (fail fast before any broker connection)
     let config = Config::from_env()?;
@@ -63,19 +63,17 @@ async fn main() -> Result<()> {
     let (handle, mut join_set) = app.start(cancel_token.clone()).await?;
     info!("Trading system running.");
 
-    // Start API Server
-    let portfolio_clone = handle.portfolio.clone();
-    let exec_service_clone = handle.execution_service.clone();
-    let log_tx_clone = log_tx.clone();
+    // Start API Server (REST, WebSocket and Prometheus /metrics)
+    let api_state = rustrade::infrastructure::api::ApiState::new(
+        handle.portfolio.clone(),
+        handle.execution_service.clone(),
+        log_tx.clone(),
+        handle.metrics.clone(),
+        handle.connection_health_service.clone(),
+    );
 
     tokio::spawn(async move {
-        if let Err(e) = rustrade::infrastructure::api::run_api_server(
-            &api_config,
-            portfolio_clone,
-            exec_service_clone,
-            log_tx_clone,
-        )
-        .await
+        if let Err(e) = rustrade::infrastructure::api::run_api_server(&api_config, api_state).await
         {
             tracing::error!("API Server error: {}", e);
         }

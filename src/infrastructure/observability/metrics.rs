@@ -46,6 +46,12 @@ pub struct Metrics {
     pub agent_up: GaugeVec,
     /// Agent last heartbeat timestamp
     pub agent_last_heartbeat: GaugeVec,
+    /// Broker connection status per component (1=Online, 0=Offline)
+    pub connection_up: GaugeVec,
+    /// 1 when the Executor has reconciled pending orders with the broker, else 0
+    pub executor_reconciled: GenericGauge<AtomicF64>,
+    /// Orders submitted this session whose broker outcome is still unknown
+    pub orders_unknown_outcome: GenericGauge<AtomicF64>,
 }
 
 impl Metrics {
@@ -171,6 +177,27 @@ impl Metrics {
         )?;
         registry.register(Box::new(agent_last_heartbeat.clone()))?;
 
+        let connection_up = GaugeVec::new(
+            Opts::new(
+                "rustrade_connection_up",
+                "Broker connection status (1=Online, 0=Offline)",
+            ),
+            &["component"],
+        )?;
+        registry.register(Box::new(connection_up.clone()))?;
+
+        let executor_reconciled = Gauge::with_opts(Opts::new(
+            "rustrade_executor_reconciled",
+            "1 when pending orders are reconciled with the broker (new buys allowed), else 0",
+        ))?;
+        registry.register(Box::new(executor_reconciled.clone()))?;
+
+        let orders_unknown_outcome = Gauge::with_opts(Opts::new(
+            "rustrade_orders_unknown_outcome",
+            "Orders whose submission outcome at the broker is still unknown",
+        ))?;
+        registry.register(Box::new(orders_unknown_outcome.clone()))?;
+
         Ok(Self {
             registry: Arc::new(registry),
             portfolio_value_usd,
@@ -190,6 +217,9 @@ impl Metrics {
             trades_today,
             agent_up,
             agent_last_heartbeat,
+            connection_up,
+            executor_reconciled,
+            orders_unknown_outcome,
         })
     }
 
@@ -278,5 +308,20 @@ mod tests {
         metrics.inc_orders("sell", "rejected");
         let output = metrics.render();
         assert!(output.contains("rustrade_orders_total"));
+    }
+
+    #[test]
+    fn test_reliability_gauges_are_exported() {
+        let metrics = Metrics::new().expect("Failed to create metrics");
+        metrics
+            .connection_up
+            .with_label_values(&["execution"])
+            .set(1.0);
+        metrics.executor_reconciled.set(1.0);
+        metrics.orders_unknown_outcome.set(2.0);
+        let output = metrics.render();
+        assert!(output.contains("rustrade_connection_up{component=\"execution\"} 1"));
+        assert!(output.contains("rustrade_executor_reconciled 1"));
+        assert!(output.contains("rustrade_orders_unknown_outcome 2"));
     }
 }
