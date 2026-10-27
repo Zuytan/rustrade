@@ -1,5 +1,23 @@
 # Rustrade - Historique des Versions
 
+## Version 0.99.27 - Dependency Security Update & Unused Dependency Removal (October 2026)
+
+### Security
+- **17 RustSec Vulnerabilities Fixed** (semver-compatible `cargo update`, `cargo audit` now clean):
+  - `rustls` 0.23.40 → 0.23.46 (TLS secrets exposed in `Debug`, cross-level TLS 1.3 handshake acceptance, pre-auth 1 GiB Brotli allocation, ServerHello downgrade), `rustls-webpki` 0.103.13 → 0.103.16 and `webpki-root-certs` 1.0.7 → 1.0.11 (distrusted intermediates accepted).
+  - `h2` 0.4.14 → 0.4.20 (unbounded empty DATA frames), `quick-xml` 0.39.4 → 0.41.0 via `rss` 2.1.2 (memory-exhaustion DoS in RSS parsing), `crossbeam-epoch` 0.9.18 → 0.9.21, `webbrowser` 1.2.1 → 1.2.5.
+  - `quinn-proto` and `rkyv` advisories were present in the lockfile only (optional features not compiled); `rkyv` is now gone from the lockfile.
+- **Unsound/Yanked Crates Resolved**: `tokio` 1.54.1, `anyhow` 1.0.104, `event-listener` 5.4.2, `memmap2` 0.9.12, plus yanked `chacha20`, `clipboard-win`, `der` and `spin` versions replaced.
+- **Raised Minimum Versions**: `rss` ≥ 2.1.2 and `tokio` ≥ 1.54.1 in `Cargo.toml`, so a regenerated lockfile cannot fall back to vulnerable versions.
+- **Remaining**: 4 "unmaintained" warnings (`ttf-parser`, `zbus_names`, `zvariant`, `zvariant_derive`) come transitively from the egui/eframe UI stack on Linux and have no direct fix.
+
+### Dependency Hygiene
+- **Removed 5 Unused Dependencies**: `ort` (pre-release ONNX Runtime downloading native binaries at build time), `smartcore`, `tower-http`, `tracing-attributes` and `task-local-extensions` were declared but never referenced. Lockfile shrinks from 694 to 639 packages.
+
+### Documentation Accuracy
+- **ML Mode**: Documented that the legacy Random Forest `ML` mode was removed (`STRATEGY_MODE=ml` falls back to `Ensemble`), replaced SmartCore/ONNX inference claims with the SNN surrogate, and replaced the non-existent `train_ml` binary with `train_surrogate`.
+- **`STRATEGY_MODE` Values**: Fixed README values (`zscore`, `stat_momentum`, `order_flow` and `regime` were rejected at startup).
+
 ## Version 0.99.26 - Stabilization: API Security, Pinned Toolchain & Honest Documentation (October 2026)
 
 ### Security

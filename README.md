@@ -36,7 +36,7 @@ A high-performance, multi-agent algorithmic trading system built in Rust. Capabl
 - **Order Flow**: Microstructure volume profile, Cumulative Delta, and Order Flow Imbalance.
 - **Z-Score Mean Reversion**: Pure statistical strategy trading 2+ standard deviations from the mean.
 - **Statistical Momentum**: Volatility-normalized trend following using regression slopes.
-- **Machine Learning (ML)**: Random Forest / Deep Learning predictors trained on 18+ technical features.
+- **Spiking Neural Network (SNN Surrogate)**: Native Rust surrogate-gradient SNN trained offline with `train_surrogate`.
 - **Regime Adaptive**: Dynamically shifts between statistical momentum and mean reversion based on market volatility (Hurst, Skewness).
 - **Ensemble**: Democratic voting system aggregating signals from all active strategies simultaneously.
 
@@ -95,7 +95,7 @@ The application is configured primarily via environment variables. You can set t
 ### Strategy Parameters
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STRATEGY_MODE` | `smc` | `smc`, `zscore`, `stat_momentum`, `order_flow`, `ml`, `ensemble`, `regime`. |
+| `STRATEGY_MODE` | `smc` | `smc`, `zscoremr`, `statmomentum`, `orderflow`, `ensemble`, `regimeadaptive`, `snn_surrogate` (`ml` is deprecated and falls back to `ensemble`). |
 | `ENSEMBLE_VOTING_THRESHOLD` | `0.5` | Threshold for ensemble strategy agreement. |
 | `RSI_THRESHOLD` | `75.0` | RSI Overbought threshold. |
 | `OBSERVABILITY_ENABLED` | `true` | Emit periodic `METRICS_JSON:` snapshots to stdout (server mode). |
@@ -141,8 +141,8 @@ cargo run --release --bin benchmark -- run --symbols AAPL,TSLA,NVDA,MSFT --start
 # Optimize parameters
 cargo run --bin optimize -- --symbol TSLA --grid-config grid.toml
 
-# Train ML Model
-cargo run --bin train_ml
+# Train the SNN surrogate model
+cargo run --release --features surrogate --bin train_surrogate -- --help
 ```
 
 ## 🏗️ Architecture
