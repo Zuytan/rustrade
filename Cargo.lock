@@ -1619,6 +1619,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fin-primitives"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea32cf978f4bc443476d0366f3e4f5ae10f669ce7b93b8d292653ff538d2c505"
+dependencies = [
+ "chrono",
+ "libm",
+ "rust_decimal",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4236,6 +4248,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_plot",
+ "fin-primitives",
  "futures",
  "futures-util",
  "hex",

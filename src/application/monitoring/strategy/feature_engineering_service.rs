@@ -5,14 +5,20 @@ use crate::application::market_data::statistical_features::{
 use crate::application::risk_management::volatility::calculate_realized_volatility;
 use crate::domain::ports::FeatureEngineeringService;
 use crate::domain::trading::types::{Candle, FeatureSet};
+use fin_primitives::signals::indicators::Rsi;
+use fin_primitives::signals::{BarInput, Signal};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 use std::collections::VecDeque;
 use ta::Next;
 use ta::indicators::{
     AverageTrueRange, BollingerBands, ExponentialMovingAverage, MovingAverageConvergenceDivergence,
-    RelativeStrengthIndex, SimpleMovingAverage,
+    SimpleMovingAverage,
 };
+
+/// RSI reported while the Wilder average is still seeding (first `rsi_period` bars).
+const RSI_NEUTRAL: Decimal = dec!(50);
 
 /// Manual ADX implementation using standard Wilder's smoothing
 ///
@@ -124,7 +130,10 @@ impl ManualAdx {
 }
 
 pub struct TechnicalFeatureEngineeringService {
-    rsi: RelativeStrengthIndex,
+    /// Wilder-smoothed RSI computed on the Decimal close (TA-Lib convention).
+    rsi: Rsi,
+    /// Whether the close has changed since the first candle (RSI is 0/0 until it has).
+    rsi_seen_move: bool,
     macd: MovingAverageConvergenceDivergence,
     sma_20: SimpleMovingAverage,
     sma_50: SimpleMovingAverage,
@@ -143,9 +152,10 @@ pub struct TechnicalFeatureEngineeringService {
 impl TechnicalFeatureEngineeringService {
     pub fn new(config: &AnalystConfig) -> Self {
         Self {
-            rsi: RelativeStrengthIndex::new(config.strategy.rsi_period).unwrap_or_else(|_| {
-                RelativeStrengthIndex::new(14).expect("RSI default period 14 must be valid")
+            rsi: Rsi::new("rsi", config.strategy.rsi_period).unwrap_or_else(|_| {
+                Rsi::new("rsi", 14).expect("RSI default period 14 must be valid")
             }),
+            rsi_seen_move: false,
             macd: MovingAverageConvergenceDivergence::new(
                 config.strategy.macd_fast_period,
                 config.strategy.macd_slow_period,
@@ -202,7 +212,23 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
         let low = candle.low.to_f64().unwrap_or(0.0);
         let open = candle.open.to_f64().unwrap_or(0.0);
 
-        let rsi_val = self.rsi.next(price);
+        // With no price change yet, average gain and loss are both zero and RSI is
+        // undefined; report neutral rather than the 100 a zero average loss gives.
+        if self
+            .price_history
+            .back()
+            .is_some_and(|prev| *prev != candle.close)
+        {
+            self.rsi_seen_move = true;
+        }
+        let rsi_val = match self.rsi.update(&BarInput::from_close(candle.close)) {
+            Ok(v) if self.rsi_seen_move => v.scalar_or(RSI_NEUTRAL),
+            Ok(_) => RSI_NEUTRAL,
+            Err(e) => {
+                tracing::warn!("RSI update failed: {}. Using neutral RSI.", e);
+                RSI_NEUTRAL
+            }
+        };
         let macd_val = self.macd.next(price);
         let bb_val = self.bb.next(price);
 
@@ -333,7 +359,7 @@ impl FeatureEngineeringService for TechnicalFeatureEngineeringService {
 
         FeatureSet {
             last_price: to_dec(price),
-            rsi: to_dec(rsi_val),
+            rsi: Some(rsi_val),
             macd_line: to_dec(macd_val.macd),
             macd_signal: to_dec(macd_val.signal),
             macd_hist: to_dec(macd_val.histogram),
@@ -424,6 +450,47 @@ mod tests {
         if let Some(rsi) = features.rsi {
             assert!(rsi >= dec!(0.0) && rsi <= dec!(100.0));
         }
+    }
+
+    #[test]
+    fn test_rsi_uses_wilder_seed_after_warmup() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+        let period = config.strategy.rsi_period;
+
+        // Alternate +2 / -1 so the seed window has avg gain 1.0 and avg loss 0.5.
+        let mut price = 100.0;
+        let mut features = service.update(&create_test_candle(price));
+        for i in 0..period {
+            price += if i % 2 == 0 { 2.0 } else { -1.0 };
+            features = service.update(&create_test_candle(price));
+        }
+
+        // RS = 1.0 / 0.5 = 2, RSI = 100 - 100 / 3
+        let rsi = features.rsi.unwrap();
+        assert!((rsi - dec!(66.6667)).abs() < dec!(0.0001), "got {}", rsi);
+    }
+
+    #[test]
+    fn test_rsi_flat_prices_stay_neutral() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        for _ in 0..50 {
+            service.update(&create_test_candle(100.0));
+        }
+
+        let features = service.update(&create_test_candle(100.0));
+        assert_eq!(features.rsi, Some(dec!(50)));
+    }
+
+    #[test]
+    fn test_rsi_neutral_during_warmup() {
+        let config = AnalystConfig::default();
+        let mut service = TechnicalFeatureEngineeringService::new(&config);
+
+        let features = service.update(&create_trending_candle(100.0, 0.5));
+        assert_eq!(features.rsi, Some(dec!(50)));
     }
 
     #[test]

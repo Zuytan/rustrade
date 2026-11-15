@@ -48,6 +48,7 @@ anyhow = "1.0"
 async-trait = "0.1.89"
 chrono = { version = "0.4.44", features = ["serde"] }
 dotenvy = "0.15"
+fin-primitives = { version = "3.1", default-features = false, features = ["indicators"] }  # Wilder RSI on Decimal closes
 futures-util = "0.3.32"
 rand = "0.10.1"
 reqwest = { version = "0.13", features = ["json", "query"] }
